@@ -34,3 +34,19 @@ test_fixed_vectors_normalise_and_cross :: proc(t: ^testing.T) {
 	testing.expect_value(t, fixed_dot(x, y), 0)
 	testing.expect_value(t, project_onto_plane({5, 7, 9}, y), [3]i64{5, 0, 9})
 }
+
+// Work item 0270: +y turned a quarter turn towards +x is +x, +z off the
+// plane stays, and a vector turned 15 degrees keeps its length.
+@(test)
+test_rotate_in_plane_turns_within_the_plane :: proc(t: ^testing.T) {
+	first, second := [3]i64{0, UNIT_VECTOR_ONE, 0}, [3]i64{UNIT_VECTOR_ONE, 0, 0}
+	quarter := degrees_to_angle_units(90)
+	turned := rotate_in_plane(first, first, second, fixed_cosine(quarter), fixed_sine(quarter))
+	testing.expectf(t, vector_length(turned - second) <= 2, "+y turned to %v", turned)
+	off := [3]i64{0, 0, UNIT_VECTOR_ONE}
+	testing.expect_value(t, rotate_in_plane(off, first, second, fixed_cosine(quarter), fixed_sine(quarter)), off)
+	angle := degrees_to_angle_units(15)
+	vector := [3]i64{3 * UNIT_VECTOR_ONE / 5, 4 * UNIT_VECTOR_ONE / 5, 0}
+	leaned := rotate_in_plane(vector, first, second, fixed_cosine(angle), fixed_sine(angle))
+	testing.expectf(t, abs(vector_length(leaned) - vector_length(vector)) <= 2, "the length went from %d to %d", vector_length(vector), vector_length(leaned))
+}

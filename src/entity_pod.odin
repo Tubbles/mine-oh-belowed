@@ -20,8 +20,10 @@ import "platform"
 // hatches seal off from the outside are the pod's sealed room, derived
 // from the occupancy (rebuild_sealed_rooms) and never saved. A pod of
 // another size in a save (an older build's) is replaced at load
-// (upgrade_resized_pods). The first pod's locker is the field world's
-// quest reward target (work item 0210, pod_locker).
+// (upgrade_resized_pods). A new world's pod rests leaning towards its
+// travel from the arrival's hit on (pod_rest_pose, 0270). The first
+// pod's locker is the field world's quest reward target (work item
+// 0210, pod_locker).
 
 // A quarter turn takes the model's front (+x) to the frame's forward (+z),
 // so the door faces the heading.
@@ -155,19 +157,33 @@ field_aimed_chair :: proc(entities: ^Entities, machines: Machine_Registry, targe
 	return machine.kind == .Pod && machine.seat.present && entry.frame == target.frame && pod_seat_contains_cell(entry.common, machine, target.cell)
 }
 
-// Puts the body in the first pod's chair: the eye on the seat's, the up
-// the eye's normalised, the feet the standing eye height below it (so
-// field_player_eye gives the seat's eye exactly), facing the seat, at
-// rest. False, and nothing changed, without a pod that has a seat. The
-// capsule then hangs 0.25 m below the cabin floor (eye 1.35 m, eye
-// height 1.6 m): it meets nothing, and its edge stays 1.2 m from the
-// inner hatch's cells, outside the airlock's reach.
+// Puts the body in the first pod's chair: the eye on the seat's
+// (place_body_in_seat), facing the seat. False, and nothing changed,
+// without a pod that has a seat. The capsule then hangs 0.25 m below the
+// cabin floor (eye 1.35 m, eye height 1.6 m): it meets nothing, and its
+// edge stays 1.2 m from the inner hatch's cells, outside the airlock's
+// reach.
 seat_field_player :: proc(entities: ^Entities, machines: Machine_Registry, tuning: Field_Player_Tuning, body: ^Field_Player, seat: Field_Seat) -> bool {
 	pod, frame, found := find_pod(entities, machines)
 	if !found || !machines.machines[pod.machine].seat.present {
 		return false
 	}
 	machine := machines.machines[pod.machine]
+	if !place_body_in_seat(frame, pod, machine, tuning, body) {
+		return false
+	}
+	body.forward = tangent_of(body.up, pod_seat_facing(frame, pod, machine))
+	body.yaw, body.pitch = 0, 0
+	body.seat = seat
+	return true
+}
+
+// The body at the seat of the pod on frame: the eye on the seat's, the
+// up the eye's normalised, the feet the standing eye height below it (so
+// field_player_eye gives the seat's eye exactly), at rest, not
+// crouching. The look and the seat are the caller's. False, and nothing
+// changed, for an eye at the planet's centre.
+place_body_in_seat :: proc(frame: Frame, pod: Entity_Common, machine: Machine, tuning: Field_Player_Tuning, body: ^Field_Player) -> bool {
 	eye := pod_seat_eye(frame, pod, machine)
 	up, ok := normalize_fixed(cast([3]i64)eye)
 	if !ok {
@@ -176,13 +192,45 @@ seat_field_player :: proc(entities: ^Entities, machines: Machine_Registry, tunin
 	body.up = up
 	body.position = eye - World_Position(fixed_scale(up, tuning.eye_height))
 	body.previous_position = body.position
-	body.forward = tangent_of(up, pod_seat_facing(frame, pod, machine))
-	body.yaw, body.pitch = 0, 0
 	body.velocity, body.motion_fraction = {}, {}
 	body.on_ground = true
 	body.crouching = false
-	body.seat = seat
 	return true
+}
+
+// The pod's rest (work item 0270, doc/content.md, The pod).
+
+// The pod's travel through the arrival: the chair's facing on the
+// tangent plane of the placed frame's up, so the chair's porthole looks
+// along the travel.
+pod_travel_heading :: proc(frame: Frame, pod: Entity_Common, machine: Machine) -> [3]i64 {
+	return tangent_of(frame.axes[FRAME_UP], pod_seat_facing(frame, pod, machine))
+}
+
+// The pod's base centre, the pivot of its rest: the model's origin.
+pod_base_centre :: proc(frame: Frame, pod: Entity_Common) -> World_Position {
+	return model_point_in_frame(frame, pod.origin, pod.size, pod.rotation, {})
+}
+
+// The frame's resting pose: every axis turned by tilt_degrees in the
+// plane of the up and the travel heading, the up towards the travel,
+// about the base centre. The door's axis (the model's +x) lies across
+// that plane (validate_pod_seat), so it keeps its direction and the
+// outer hatch stays level. Tilt 0 is the frame's own pose. Integer.
+pod_rest_pose :: proc(frame: Frame, pod: Entity_Common, machine: Machine, tilt_degrees: int) -> (origin: World_Position, axes: [3][3]i64) {
+	if tilt_degrees == 0 {
+		return frame.origin, frame.axes
+	}
+	angle := degrees_to_angle_units(tilt_degrees)
+	cosine, sine := fixed_cosine(angle), fixed_sine(angle)
+	up, heading := frame.axes[FRAME_UP], pod_travel_heading(frame, pod, machine)
+	for axis in 0 ..< 3 {
+		turned, ok := normalize_fixed(rotate_in_plane(frame.axes[axis], up, heading, cosine, sine))
+		axes[axis] = ok ? turned : frame.axes[axis]
+	}
+	base := pod_base_centre(frame, pod)
+	origin = base + World_Position(rotate_in_plane(cast([3]i64)(frame.origin - base), up, heading, cosine, sine))
+	return origin, axes
 }
 
 // Out of the chair onto the cabin's floor (field_pod_spawn) at rest; the

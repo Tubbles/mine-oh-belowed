@@ -231,6 +231,8 @@ Field_Content :: struct {
 	bare_ground: Bare_Ground_Tuning,
 	// The pod's airlock (0222, entity_pod_airlock.odin).
 	pod_airlock: Pod_Airlock_Tuning,
+	// The pod's rest at the arrival's hit (0270, rest_field_pod).
+	pod_rest: Pod_Rest_Tuning,
 	// The planet's tree species (0197, field_trees.odin), in allocator.
 	tree_species: []Field_Tree_Species,
 }

@@ -12,11 +12,12 @@ import "platform"
 // (simulation_arrival.odin), the tick and the interpolation alpha. The
 // descent moves the seated eye and the pod round it along the entry's
 // curve down to the resting place (arrival_descent_offset, 0223, 0269),
-// the flames burning on the portholes' glass at the heat, the buffeting
-// and the roar; at the hit the pod meets
-// the floor, the cabin shakes, the dust rises outside and the crash
-// plays. Nothing here
-// reaches the simulation, so the hash is the same with and without it.
+// the pod drawn base first along the curve's tangent and easing into
+// the pose it rests in (arrival_pod_transform, 0270), the flames
+// burning on the portholes' glass at the heat, the buffeting and the
+// roar; at the hit the pod meets the floor, the cabin shakes, the dust
+// rises outside and the crash plays. Nothing here reaches the
+// simulation, so the hash is the same with and without it.
 // The hatch sound (play_hatch_sounds) is the general hatch cue: it plays
 // for every toggle, the airlock's (0222, 0231).
 
@@ -50,7 +51,9 @@ Arrival_Phase :: enum u8 {
 // progress runs 0 to 1 over the descent (not eased), curve_progress the
 // curve's at it (arrival_curve_progress); heat 0 to 1 from the curve,
 // cooling 0 up to the heat's peak and 1 after it; seconds since the fall
-// began (the shader's time) and since the hit.
+// began (the shader's time) and since the hit; rest_share 0 to 1 over
+// the descent's last arrival_real_seconds, smoothed, the drawn
+// attitude's share of the resting pose (0270), 0 outside the descent.
 Arrival_View :: struct {
 	phase:             Arrival_Phase,
 	progress:          f32,
@@ -59,6 +62,7 @@ Arrival_View :: struct {
 	cooling:           f32,
 	seconds:           f32,
 	seconds_since_hit: f32,
+	rest_share:        f32,
 }
 
 // What the sounds keep between frames: the phase of the last frame (the
@@ -99,6 +103,8 @@ arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game
 		view.curve_progress = arrival_curve_progress(curve, view.progress, descent / tick_rate)
 		view.heat = arrival_curve_at(curve, view.curve_progress).heat
 		view.cooling = view.curve_progress > curve.peak_progress ? 1 : 0
+		real_ticks := max(f32(config.arrival_real_seconds) * tick_rate, 1)
+		view.rest_share = math.smoothstep(f32(0), 1, (elapsed - (descent - real_ticks)) / real_ticks)
 	case elapsed < descent + ARRIVAL_DUST_SECONDS * tick_rate:
 		view.phase = .Settled
 		view.seconds_since_hit = max(elapsed - descent, 0) / tick_rate
@@ -108,8 +114,9 @@ arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game
 
 // The pod's and the eye's offset from their resting place during the
 // descent (0223, 0269): the curve's altitude along the up and the range
-// left along the back, exactly zero at the hit, so the pod meets the
-// floor there; zero outside the descent.
+// left behind the travel heading (forward: the chair's facing since
+// 0270, pod_travel_heading), exactly zero at the hit, so the pod meets
+// the floor there; zero outside the descent.
 arrival_descent_offset :: proc(view: Arrival_View, up, forward: [3]f32, curve: ^Arrival_Curve) -> [3]f32 {
 	if view.phase != .Descent {
 		return {}
@@ -119,9 +126,56 @@ arrival_descent_offset :: proc(view: Arrival_View, up, forward: [3]f32, curve: ^
 }
 
 // The pod's travel at a sample of the curve, unit: its tangent laid on
-// the pod's up and forward (0269; 0270 turns the pod's base into it).
+// the pod's up and travel heading (0269; 0270 turns the pod's base into
+// it).
 arrival_travel_direction :: proc(sample: Arrival_Curve_Sample, up, forward: [3]f32) -> [3]f32 {
 	return linalg.normalize(forward * sample.velocity.x + up * sample.velocity.y)
+}
+
+// The rotation that takes each of the three from directions to the to
+// direction of the same index (both orthonormal bases).
+basis_turn :: proc(from, to: [3][3]f32) -> matrix[3, 3]f32 {
+	turn: matrix[3, 3]f32
+	for index in 0 ..< 3 {
+		turn += linalg.outer_product(to[index], from[index])
+	}
+	return turn
+}
+
+// The pod base first along the travel (0270): the up turned opposite the
+// travel, the travel heading onto the travel's normal in the motion's
+// plane, so the chair's facing stays on the travel's side and the door's
+// axis keeps its direction.
+arrival_tangent_rotation :: proc(up, heading, travel: [3]f32) -> matrix[3, 3]f32 {
+	normal := linalg.normalize(heading - travel * linalg.dot(heading, travel))
+	return basis_turn({heading, up, linalg.cross(heading, up)}, {normal, -travel, linalg.cross(normal, -travel)})
+}
+
+// The pod's attitude, its transform about the base centre and its travel
+// while it descends (0270): the tangent's rotation (arrival_tangent_rotation)
+// eased by slerp into the resting pose's (pod_rest_pose) by rest_share,
+// about the base centre moved by the path's offset (arrival_descent_offset
+// along the travel heading). Identity and no travel outside the descent.
+// The frame is the placed one, unrested until the hit.
+arrival_pod_transform :: proc(view: Arrival_View, frame: Frame, pod: Entity_Common, machine: Machine, rest_tilt_degrees: int, curve: ^Arrival_Curve) -> (transform: matrix[4, 4]f32, rotation: matrix[3, 3]f32, travel: [3]f32) {
+	if view.phase != .Descent {
+		return 1, 1, {}
+	}
+	up := unit_vector_to_f32(frame.axes[FRAME_UP])
+	heading := unit_vector_to_f32(pod_travel_heading(frame, pod, machine))
+	travel = arrival_travel_direction(arrival_curve_at(curve, view.curve_progress), up, heading)
+	_, rest_axes := pod_rest_pose(frame, pod, machine, rest_tilt_degrees)
+	placed_axes, rested_axes: [3][3]f32
+	for axis in 0 ..< 3 {
+		placed_axes[axis], rested_axes[axis] = unit_vector_to_f32(frame.axes[axis]), unit_vector_to_f32(rest_axes[axis])
+	}
+	tangent := linalg.quaternion_from_matrix3_f32(arrival_tangent_rotation(up, heading, travel))
+	rest := linalg.quaternion_from_matrix3_f32(basis_turn(placed_axes, rested_axes))
+	rotation = linalg.matrix3_from_quaternion_f32(linalg.normalize(linalg.quaternion_slerp_f32(tangent, rest, view.rest_share)))
+	base := world_position_to_metres(pod_base_centre(frame, pod))
+	offset := arrival_descent_offset(view, up, heading, curve)
+	transform = linalg.matrix4_translate_f32(base + offset) * linalg.matrix4_from_matrix3_f32(rotation) * linalg.matrix4_translate_f32(-base)
+	return transform, rotation, travel
 }
 
 // A window's quad, its corners for the texture coordinates (0, 0), (1, 0),
@@ -200,13 +254,15 @@ arrival_dust_puff :: proc(index: int, seconds_since_hit: f32, salt: u64) -> (rad
 	return
 }
 
-// Inside BeginMode3D, after the scene: the dust round the pod's frame,
-// translucent, without writing depth.
+// Inside BeginMode3D, after the scene: the dust round the pod's frame's
+// origin, about the planet's up there (not the frame's, which leans at
+// rest, 0270), translucent, without writing depth.
 draw_arrival_dust :: proc(frame: Frame, view: Arrival_View, salt: u64, color: rl.Color) {
 	origin := world_position_to_metres(frame.origin)
-	right := unit_vector_to_f32(frame.axes[FRAME_RIGHT])
-	up := unit_vector_to_f32(frame.axes[FRAME_UP])
-	forward := unit_vector_to_f32(frame.axes[FRAME_FORWARD])
+	up := linalg.normalize(origin)
+	axis := unit_vector_to_f32(frame.axes[FRAME_FORWARD])
+	forward := linalg.normalize(axis - up * linalg.dot(axis, up))
+	right := linalg.cross(up, forward)
 	rlgl.DrawRenderBatchActive()
 	rlgl.DisableDepthMask()
 	for index in 0 ..< ARRIVAL_DUST_PUFFS {

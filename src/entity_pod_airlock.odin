@@ -14,6 +14,14 @@ Pod_Airlock_Tuning :: struct {
 	reach: i64,
 }
 
+// The pod's rest at the arrival's hit (0270, simulation_arrival.odin,
+// rest_field_pod): the lean in degrees and the ticks from the hit to the
+// landing, from data/game.sjson's arrival_rest_tilt_degrees and
+// arrival_settle_ticks, so the tick reads them through the content.
+Pod_Rest_Tuning :: struct {
+	tilt_degrees, settle_ticks: int,
+}
+
 // From data/game.sjson's pod_airlock. Called by make_field_content and
 // the tests.
 make_pod_airlock_tuning :: proc(config: Pod_Airlock_Config) -> Pod_Airlock_Tuning {

@@ -1,6 +1,7 @@
 package game
 
 import "core:math/linalg"
+import "core:slice"
 import "core:testing"
 
 // The arrival (work item 0200): the hold, the landing, Skip in lockstep,
@@ -21,6 +22,7 @@ arrival_test_config :: proc() -> Game_Config {
 	config.arrival_terminal_speed_metres_per_second = shipped.arrival_terminal_speed_metres_per_second
 	config.arrival_heat_threshold_percent = shipped.arrival_heat_threshold_percent
 	config.arrival_real_seconds = shipped.arrival_real_seconds
+	config.arrival_rest_tilt_degrees = shipped.arrival_rest_tilt_degrees
 	config.atmosphere = shipped.atmosphere
 	return config
 }
@@ -143,7 +145,9 @@ test_the_fall_ignores_the_walk_and_the_tools_and_takes_the_look :: proc(t: ^test
 			testing.expectf(t, false, "tick %d: seat %v, the eye off the seat", tick, body.seat)
 			return
 		}
-		if body.crouching || body.yaw == yaw_before || body.yaw == still.simulation.players[0].field.yaw {
+		// The hit's rest turns the look into the forward, yaw 0 (0270).
+		resting := u64(tick) == field_arrival_hit_tick(state.field.arrival, restless_content.field.pod_rest.settle_ticks)
+		if body.crouching || (!resting && (body.yaw == yaw_before || body.yaw == still.simulation.players[0].field.yaw)) {
 			testing.expectf(t, false, "tick %d: crouching %v, yaw %d before %d", tick, body.crouching, body.yaw, yaw_before)
 			return
 		}
@@ -174,7 +178,7 @@ arrival_test_stacks_equal :: proc(first, second: []Item_Stack) -> bool {
 
 // Interact through the fall does nothing; the landing tells player 0
 // Touchdown_Confirmed on its tick alone; Interact on the tick after
-// stands the player at the cabin's spawn, and the walk then moves it.
+// stands the player in the cabin, and the walk then moves it.
 @(test)
 test_interact_before_touchdown_does_nothing_and_after_it_stands_the_player :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -198,9 +202,12 @@ test_interact_before_touchdown_does_nothing_and_after_it_stands_the_player :: pr
 	}
 	body := state.players[0].field
 	testing.expect_value(t, body.seat, Field_Seat.Standing)
-	spawn, found := field_pod_spawn(&state.world.entities, simulation_content.machines)
+	// In the cabin's cells: the tilted cabin's cells (the test content has
+	// no collision volumes) push the upright capsule off the spawn (0270).
+	pod, pod_frame, found := find_pod(&state.world.entities, simulation_content.machines)
 	testing.expect(t, found)
-	testing.expectf(t, vector_length(cast([3]i64)(body.position - spawn.position)) < millimetres_to_position_units(100), "the feet stand %d from the spawn", vector_length(cast([3]i64)(body.position - spawn.position)))
+	feet := frame_cell_of_feet(pod_frame, body)
+	testing.expectf(t, slice.contains(test_pod_box_cells(simulation_content.machines.machines[pod.machine], TEST_CABIN_BOX), feet), "the feet stand in cell %v, not the cabin's", feet)
 	for _ in 0 ..< 10 {
 		tick_field_test_simulation(state, simulation_content, Input_Frame{move = {0, 1}, pressed = {.Move}})
 	}
@@ -351,6 +358,7 @@ test_two_machines_hash_alike_through_a_fall_with_input :: proc(t: ^testing.T) {
 	restless := ARRIVAL_TEST_RESTLESS
 	restless.look_delta = ARRIVAL_TEST_LOOK.look_delta
 	checked := 0
+	placed: Frame
 	for first.simulation.tick < 700 {
 		tick := first.simulation.tick
 		input := tick < ARRIVAL_TEST_TICKS ? restless : Input_Frame{}
@@ -359,13 +367,25 @@ test_two_machines_hash_alike_through_a_fall_with_input :: proc(t: ^testing.T) {
 		}
 		step_arrival_lockstep_test(first, second, first_content, second_content, input)
 		testing.expect_value(t, first.simulation.tick, second.simulation.tick)
+		hit := field_arrival_hit_tick(first.simulation.field.arrival, first_content.field.pod_rest.settle_ticks)
+		if first.simulation.tick == hit - 1 {
+			_, placed, _ = find_pod(&first.simulation.world.entities, first_content.machines)
+		}
 		switch first.simulation.tick {
-		case 300, 600, 601, 650, 700:
+		case 300, 540, 600, 601, 650, 700:
 			checked += 1
 			testing.expectf(t, lockstep_state_hash(&first.simulation) == lockstep_state_hash(&second.simulation), "the hashes part at tick %d", first.simulation.tick)
 		}
+		if first.simulation.tick == hit {
+			for session in ([2]^Session{first, second}) {
+				pod, frame, _ := find_pod(&session.simulation.world.entities, first_content.machines)
+				origin, axes := pod_rest_pose(placed, pod, first_content.machines.machines[pod.machine], first_content.field.pod_rest.tilt_degrees)
+				testing.expect(t, frame.axes != placed.axes, "the pose changed at the hit")
+				testing.expect(t, frame.origin == origin && frame.axes == axes, "the pod rests in its rest pose at the hit")
+			}
+		}
 	}
-	testing.expect_value(t, checked, 5)
+	testing.expect_value(t, checked, 6)
 	testing.expect_value(t, first.simulation.players[0].field.seat, Field_Seat.Standing)
 	testing.expect_value(t, second.simulation.players[0].field.seat, Field_Seat.Standing)
 }
@@ -413,26 +433,36 @@ test_a_save_loaded_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	testing.expect_value(t, arrival_view(state.field.arrival, 1000, 0, config, &curve).phase, Arrival_Phase.None)
 }
 
-// A joiner at tick 1000 starts from the snapshot's files: a second player
-// spawns in the cabin and walks on the next tick.
+// A joiner at tick 1000 starts from the snapshot's files: the pod's frame
+// is the host's rested one, a second player spawns in the cabin and walks
+// on the next tick.
 @(test)
 test_a_joiner_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
 	session, simulation_content := run_arrival_test_world(config, content, 1000)
 	joined, joined_content := reload_arrival_test_world(config, content, session, simulation_content)
+	_, host_frame, _ := find_pod(&session.simulation.world.entities, simulation_content.machines)
 	end_session(session)
 	defer end_session(joined)
 	state := &joined.simulation
+	_, joined_frame, _ := find_pod(&state.world.entities, joined_content.machines)
+	testing.expect_value(t, joined_frame, host_frame)
 	queue_player_command(&state.player_commands, 1, Add_Player_Command{})
 	tick_arrival_test_session(joined, joined_content, {})
 	testing.expect_value(t, len(state.players), 2)
 	if len(state.players) < 2 {
 		return
 	}
-	spawn, found := field_pod_spawn(&state.world.entities, joined_content.machines)
+	_, found := field_pod_spawn(&state.world.entities, joined_content.machines)
 	testing.expect(t, found)
-	testing.expect(t, vector_length(cast([3]i64)(state.players[1].field.position - spawn.position)) < millimetres_to_position_units(100), "the joiner spawns in the cabin")
+	// The tilted cabin's cells (the test content has no collision
+	// volumes) push the upright capsule off the spawn on its first tick,
+	// so the feet are checked in the cabin's cells.
+	pod, _, _ := find_pod(&state.world.entities, joined_content.machines)
+	cabin := test_pod_box_cells(joined_content.machines.machines[pod.machine], TEST_CABIN_BOX)
+	feet := frame_cell_of_feet(joined_frame, state.players[1].field)
+	testing.expectf(t, slice.contains(cabin, feet), "the joiner's feet are in cell %v, not the cabin's", feet)
 	testing.expect_value(t, state.players[1].field.seat, Field_Seat.Standing)
 	before := state.players[1].field.position
 	heading := field_player_heading(state.players[1].field)
@@ -445,8 +475,9 @@ test_a_joiner_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	testing.expect_value(t, arrival_view(state.field.arrival, state.tick, 0, config, &curve).phase, Arrival_Phase.None)
 }
 
-// A save taken at tick 300 resumes the fall and lands at tick 600, not
-// before; one taken at tick 200 after a Skip at tick 101 loads landed.
+// A save taken at tick 300 resumes the fall, rests at the hit to the
+// unsaved run's pose and field and lands at tick 600, not before; one
+// taken at tick 200 after a Skip at tick 101 loads landed.
 @(test)
 test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -457,9 +488,16 @@ test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 	state := &loaded.simulation
 	testing.expect_value(t, state.tick, u64(300))
 	testing.expect_value(t, state.field.arrival.landed_tick, 0)
+	unsaved, unsaved_content := run_arrival_test_world(config, content, 300)
+	defer end_session(unsaved)
 	for state.tick < ARRIVAL_TEST_TICKS - 1 {
 		tick_field_test_simulation(state, loaded_content, {})
+		tick_field_test_simulation(&unsaved.simulation, unsaved_content, {})
 	}
+	_, loaded_frame, _ := find_pod(&state.world.entities, loaded_content.machines)
+	_, unsaved_frame, _ := find_pod(&unsaved.simulation.world.entities, unsaved_content.machines)
+	testing.expect_value(t, loaded_frame, unsaved_frame)
+	testing.expect_value(t, field_state_hash(&state.field, 0), field_state_hash(&unsaved.simulation.field, 0))
 	testing.expect(t, field_arrival_falling(state.field.arrival), "still falling at tick 599")
 	tick_field_test_simulation(state, loaded_content, {})
 	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
@@ -569,10 +607,11 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		view := arrival_view(state.field.arrival, state.tick, 0.5, config, &curve)
 		pod, frame, found := find_pod(&state.world.entities, watched_content.machines)
 		testing.expect(t, found)
-		up, forward := unit_vector_to_f32(frame.axes[FRAME_UP]), unit_vector_to_f32(frame.axes[FRAME_FORWARD])
+		machine := watched_content.machines.machines[pod.machine]
+		up, forward := unit_vector_to_f32(frame.axes[FRAME_UP]), unit_vector_to_f32(pod_travel_heading(frame, pod, machine))
 		arrival_descent_offset(view, up, forward, &curve)
 		travel := arrival_travel_direction(arrival_curve_at(&curve, view.curve_progress), up, forward)
-		machine := watched_content.machines.machines[pod.machine]
+		arrival_pod_transform(view, frame, pod, machine, config.arrival_rest_tilt_degrees, &curve)
 		testing.expect(t, machine.window_count > 0)
 		for index in 0 ..< machine.window_count {
 			window := machine.windows[index]
@@ -679,4 +718,105 @@ test_a_placement_from_the_chair_is_refused :: proc(t: ^testing.T) {
 	testing.expect(t, queue_machine_placement(state, simulation_content, 0, command), "standing")
 	testing.expect_value(t, len(state.field.placements), 1)
 	clear(&state.field.placements)
+}
+
+// Work item 0270: the pod's frame is the placed one up to the hit and
+// pod_rest_pose's exactly after it, unchanged through the landing and
+// after; the strapped player's eye is the rested seat's and its look the
+// look before the hit turned with the pod.
+@(test)
+test_the_pod_rests_at_the_hit :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	_, placed, _ := find_pod(&state.world.entities, simulation_content.machines)
+	hit := field_arrival_hit_tick(state.field.arrival, simulation_content.field.pod_rest.settle_ticks)
+	for state.tick < hit - 1 {
+		tick_field_test_simulation(state, simulation_content, ARRIVAL_TEST_LOOK)
+	}
+	pod, before, _ := find_pod(&state.world.entities, simulation_content.machines)
+	testing.expect_value(t, before, placed)
+	machine := simulation_content.machines.machines[pod.machine]
+	body := state.players[0].field
+	look := field_look_direction(body.forward, body.up, body.yaw, body.pitch)
+	cosine, sine := pod_rest_turn(simulation_content.field.pod_rest.tilt_degrees)
+	turned, _ := normalize_fixed(rotate_in_plane(look, placed.axes[FRAME_UP], pod_travel_heading(placed, pod, machine), cosine, sine))
+	tick_field_test_simulation(state, simulation_content, {})
+	origin, axes := pod_rest_pose(placed, pod, machine, simulation_content.field.pod_rest.tilt_degrees)
+	_, rested, _ := find_pod(&state.world.entities, simulation_content.machines)
+	testing.expect(t, rested.origin == origin && rested.axes == axes, "the frame is the rest pose after the hit")
+	body = state.players[0].field
+	testing.expect_value(t, body.seat, Field_Seat.Strapped)
+	eye := field_player_eye(body, simulation_content.field.tuning)
+	testing.expectf(t, vector_length(cast([3]i64)(eye - pod_seat_eye(rested, pod, machine))) <= millimetres_to_position_units(1), "the eye lies off the rested seat's")
+	drawn := field_look_direction(body.forward, body.up, body.yaw, body.pitch)
+	testing.expectf(t, vector_length(drawn - turned) <= UNIT_VECTOR_ONE / 1024, "the look %v is not the turned %v", drawn, turned)
+	for state.tick < ARRIVAL_TEST_TICKS + 60 {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
+	_, after, _ := find_pod(&state.world.entities, simulation_content.machines)
+	testing.expect_value(t, after, rested)
+}
+
+// Work item 0270: a Skip at tick 100 rests the pod at that tick to the
+// same pose and field as a run that rests at the hit; the landing changes
+// neither.
+@(test)
+test_skip_before_the_hit_rests_the_pod_once :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	skipped, skipped_content := run_arrival_test_world(config, content, 99)
+	defer end_session(skipped)
+	_, placed, _ := find_pod(&skipped.simulation.world.entities, skipped_content.machines)
+	queue_player_command(&skipped.simulation.player_commands, 0, Skip_Arrival_Command{})
+	tick_field_test_simulation(&skipped.simulation, skipped_content, {})
+	testing.expect_value(t, skipped.simulation.field.arrival.landed_tick, u64(100))
+	pod, skip_frame, _ := find_pod(&skipped.simulation.world.entities, skipped_content.machines)
+	origin, axes := pod_rest_pose(placed, pod, skipped_content.machines.machines[pod.machine], skipped_content.field.pod_rest.tilt_degrees)
+	testing.expect(t, skip_frame.origin == origin && skip_frame.axes == axes, "the Skip rests the pod")
+	skip_hash := field_state_hash(&skipped.simulation.field, 0)
+
+	hit := int(field_arrival_hit_tick(skipped.simulation.field.arrival, skipped_content.field.pod_rest.settle_ticks))
+	rested, rested_content := run_arrival_test_world(config, content, hit)
+	defer end_session(rested)
+	_, hit_frame, _ := find_pod(&rested.simulation.world.entities, rested_content.machines)
+	testing.expect_value(t, hit_frame, skip_frame)
+	testing.expect_value(t, field_state_hash(&rested.simulation.field, 0), skip_hash)
+
+	for rested.simulation.tick < ARRIVAL_TEST_TICKS + 1 {
+		tick_field_test_simulation(&rested.simulation, rested_content, {})
+		tick_field_test_simulation(&skipped.simulation, skipped_content, {})
+	}
+	testing.expect_value(t, rested.simulation.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
+	for session in ([2]^Session{skipped, rested}) {
+		_, frame, _ := find_pod(&session.simulation.world.entities, skipped_content.machines)
+		testing.expect_value(t, frame, skip_frame)
+		testing.expect_value(t, field_state_hash(&session.simulation.field, 0), skip_hash)
+	}
+}
+
+// Work item 0270: a world landed without the rest (its arrival set
+// landed directly, as a build before 0270 left it) saves and loads with
+// the frame as saved, still level after 120 ticks.
+@(test)
+test_a_world_landed_level_loads_level :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	session, simulation_content := run_arrival_test_world(config, content, 100)
+	session.simulation.field.arrival.landed_tick = session.simulation.tick
+	_, level, _ := find_pod(&session.simulation.world.entities, simulation_content.machines)
+	loaded, loaded_content := reload_arrival_test_world(config, content, session, simulation_content)
+	end_session(session)
+	defer end_session(loaded)
+	_, frame, _ := find_pod(&loaded.simulation.world.entities, loaded_content.machines)
+	testing.expect_value(t, frame, level)
+	for _ in 0 ..< 120 {
+		tick_field_test_simulation(&loaded.simulation, loaded_content, {})
+	}
+	_, frame, _ = find_pod(&loaded.simulation.world.entities, loaded_content.machines)
+	testing.expect_value(t, frame, level)
 }

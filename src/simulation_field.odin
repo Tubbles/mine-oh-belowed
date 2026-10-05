@@ -64,6 +64,7 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		starting_items = config.starting_items,
 		bare_ground = make_bare_ground_tuning(config),
 		pod_airlock = make_pod_airlock_tuning(config.pod_airlock),
+		pod_rest = Pod_Rest_Tuning{tilt_degrees = config.arrival_rest_tilt_degrees, settle_ticks = config.arrival_settle_ticks},
 		tree_species = make_field_tree_species(planet.trees, items, machines, config.tick_rate, allocator),
 	}
 }
@@ -457,6 +458,11 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 			counts := index < len(state.field.refused_foundation_counts) ? state.field.refused_foundation_counts[index] : {}
 			append(&state.events, Simulation_Event{player = index, kind = .Field_Refused, field_refusal = refusal, needed = counts[0], held = counts[1]})
 		}
+	}
+	// The hit: the pod rests as it hit (0270); a landing in the same tick
+	// rests it itself.
+	if field_arrival_rests_now(state.field.arrival, state.tick, content.field.pod_rest.settle_ticks) {
+		rest_field_pod(state, content)
 	}
 	// The fall's last tick: it lands, the hatches closed (0200, 0222).
 	if field_arrival_due(state.field.arrival, state.tick) {

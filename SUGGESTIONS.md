@@ -154,3 +154,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the arrival seen from the chair (0223, 2026-10-05)
 
 - From the chair the five portholes sit about 0.5 m above the seated eye and their sleeves tilt up, so during the fall they show sky, horizon and flames, not the crater coming up. If the ground should show, the pod needs one more porthole low and ahead of the chair (a modelling item on the accepted pod, `tools/models/machines/pod.py`) or a tilt along the path. Decide after the first playtest from the chair.
+
+## Suggestions from the pod's tilt (0270, 2026-10-05)
+
+- The horizon earlier in the fall: through the chair's porthole it shows only in the last half second, since its sight line lies 11 degrees above the base plane and base first on a steep path the portholes face the sky. Knobs: `arrival_rest_tilt_degrees` up to 25 drops the sight line 14 degrees below the base plane once the ease completes; the ease rides on `arrival_real_seconds` (6 s); a lower porthole ahead of the chair (the 0223 suggestion) would show it through the glow. A feel decision for the couch.
+- The seated camera's up: it stays the planet's during the fall and after the hit, so looking sideways the cabin rolls round a level view while the horizon stays level. The chair's up instead (the frame's up for the strapped and the seated player until they stand) would keep the cabin upright and tilt the world outside, as a strapped passenger sees it, moving the roll change to the unbuckle. One presentation item if wanted.

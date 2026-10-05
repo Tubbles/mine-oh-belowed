@@ -92,6 +92,13 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 	none := config
 	none.arrival_ticks = 0
 	testing.expect_value(t, arrival_problem(none), "")
+	tipped := config
+	tipped.arrival_rest_tilt_degrees = MAXIMUM_ARRIVAL_REST_TILT_DEGREES + 1
+	testing.expect(t, strings.contains(arrival_problem(tipped), "arrival_rest_tilt_degrees"), "a lean of 26 degrees is named")
+	tipped.arrival_rest_tilt_degrees = 0
+	testing.expect_value(t, arrival_problem(tipped), "")
+	tipped.arrival_rest_tilt_degrees = MAXIMUM_ARRIVAL_REST_TILT_DEGREES
+	testing.expect_value(t, arrival_problem(tipped), "")
 }
 
 // The direct placement limit (0215): the shipped one loads, each side

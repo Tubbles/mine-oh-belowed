@@ -1208,7 +1208,10 @@ pod_seat_eye_inside_cells :: proc(eye: [3]f64, cells: Cell_Box, footprint: Machi
 
 // A pod's seat (work item 0223): only a pod has one, its cells a box
 // inside the footprint overlapping no open_cells box and no fixture, the
-// eye inside the cells, the facing one of the four words. Runs after
+// eye inside the cells, the facing one of the four words and across the
+// door (+z or -z: the door is the model's +x, and the pod rests turned
+// about the door's axis towards the facing, 0270, so the door stays
+// level). Runs after
 // validate_open_cells and validate_pod_fixtures, so the boxes it reads
 // are sound.
 validate_pod_seat :: proc(definitions: []Machine_Definition, index: int) -> string {
@@ -1252,6 +1255,9 @@ validate_pod_seat :: proc(definitions: []Machine_Definition, index: int) -> stri
 	}
 	if _, found := pod_seat_facing_axis(seat.facing); !found {
 		return fmt.tprintf("pod %q seat facing %q is not +x, -x, +z or -z", definition.id, seat.facing)
+	}
+	if seat.facing != "+z" && seat.facing != "-z" {
+		return fmt.tprintf("pod %q seat facing %q is not across its door (+z or -z), so its rest would tip the door", definition.id, seat.facing)
 	}
 	return ""
 }

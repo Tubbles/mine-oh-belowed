@@ -45,11 +45,11 @@ Field_Scene :: struct {
 	viewer:       int,
 	viewer_body_shown: bool,
 	lockstep:     ^Lockstep,
-	// The arrival's descent (0200, 0223): the frames, the machines, the
-	// players and the ghosts are drawn moved by the pod's offset along the
-	// path (arrival_descent_offset), so the cabin travels with the seated
-	// eye; zero but in the descent.
-	pod_offset:   [3]f32,
+	// The arrival's descent (0200, 0223, 0270): the frames, the machines,
+	// the players and the ghosts are drawn moved by the pod's transform
+	// along the path (arrival_pod_transform), so the cabin travels and
+	// turns with the seated eye; nil, unmoved, but in the descent.
+	pod_transform: Maybe(matrix[4, 4]f32),
 	// The viewer's placement editor (0215): its outline or anchored ghost
 	// replaces Place's ghost; zero draws today's ghosts.
 	placement_editor: Placement_Editor,
@@ -185,8 +185,8 @@ field_sky_camera :: proc(camera: rl.Camera3D, up: [3]f32) -> rl.Camera3D {
 
 // The working arms' and machines' lights nearest the camera, before
 // draw_field, to the field shader and the model shader. They are moved by
-// the pod's offset with the models they light (moved_point_light), so the
-// cabin is lit through the fall.
+// the pod's transform with the models they light (moved_point_light), so
+// the cabin is lit through the fall.
 set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 	lights := make([dynamic]Point_Light, context.temp_allocator)
 	entities := &scene.state.world.entities
@@ -200,25 +200,43 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 		}
 	}
 	gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines, scene.models)
-	for &light in lights {
-		light = moved_point_light(light, scene.pod_offset)
+	if transform, moved := scene.pod_transform.?; moved {
+		for &light in lights {
+			light = moved_point_light(light, transform)
+		}
 	}
 	nearest, _ := nearest_point_lights(lights[:], camera.position)
 	set_field_point_lights(scene.renderer, nearest)
 	set_model_point_lights(scene.models, nearest)
 }
 
-// A light moved by offset, its clip box with it. raylib's DrawMesh sends
-// the model shader the mesh transform times the rlgl matrix stack's
-// (rmodels.c, raylib 6.0), so a model drawn inside the pod's translation
+// A light moved by transform, its clip box with it. raylib's DrawMesh
+// sends the model shader the mesh transform times the rlgl matrix stack's
+// (rmodels.c, raylib 6.0), so a model drawn inside the pod's transform
 // lights its fragments in the moved place, where the light must be too.
-moved_point_light :: proc(light: Point_Light, offset: [3]f32) -> Point_Light {
+moved_point_light :: proc(light: Point_Light, transform: matrix[4, 4]f32) -> Point_Light {
 	moved := light
-	moved.position += offset
+	moved.position = transform_point(transform, light.position)
 	if box, clipped := light.clip_box.?; clipped {
-		moved.clip_box = box * linalg.matrix4_translate_f32(-offset)
+		moved.clip_box = box * linalg.matrix4_inverse_f32(transform)
 	}
 	return moved
+}
+
+// Pushes the pod's transform onto the rlgl stack when there is one; the
+// caller pops it (pop_pod_transform).
+push_pod_transform :: proc(transform: Maybe(matrix[4, 4]f32)) {
+	if moved, present := transform.?; present {
+		flat := transmute([16]f32)moved
+		rlgl.PushMatrix()
+		rlgl.MultMatrixf(raw_data(flat[:]))
+	}
+}
+
+pop_pod_transform :: proc(transform: Maybe(matrix[4, 4]f32)) {
+	if _, present := transform.?; present {
+		rlgl.PopMatrix()
+	}
 }
 
 draw_field_torches :: proc(torches: []Field_Torch, spacing_millimetres: int) {
@@ -361,19 +379,17 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	set_field_scene_point_lights(scene, camera)
 	draw_field(scene.renderer, camera, selection)
 	world := &scene.state.world
-	rlgl.PushMatrix()
-	rlgl.Translatef(scene.pod_offset.x, scene.pod_offset.y, scene.pod_offset.z)
+	push_pod_transform(scene.pod_transform)
 	draw_frames(&world.entities, scene.content.machines)
 	draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
-	rlgl.PopMatrix()
+	pop_pod_transform(scene.pod_transform)
 	draw_field_trees(scene, camera)
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
-	rlgl.PushMatrix()
-	rlgl.Translatef(scene.pod_offset.x, scene.pod_offset.y, scene.pod_offset.z)
+	push_pod_transform(scene.pod_transform)
 	draw_field_players(scene)
 	draw_field_ghosts(scene)
-	rlgl.PopMatrix()
+	pop_pod_transform(scene.pod_transform)
 }
 
 // The sky about the camera's up, before the scene.
@@ -402,27 +418,43 @@ field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: 
 	return camera, viewer_body_shown(mode, camera.position, world_position_to_metres(view.eye))
 }
 
+// The pod as the arrival draws it (0270): its common, its frame and its
+// machine; found false without a pod.
+Arrival_Pod :: struct {
+	common:  Entity_Common,
+	frame:   Frame,
+	machine: Machine,
+	found:   bool,
+}
+
 // The viewport's camera during the arrival (0200, render_arrival.odin):
-// during the descent the seated camera moved by the path's offset
-// (arrival_descent_offset) along the pod's axes (the player's without a
-// pod), the look the player's, and the offset the scene draws the pod
-// moved by; the camera alone buffeted at the heat unless motion is
-// reduced (arrival_buffet_offset, 0269); the stored camera stays the
-// resting one, so the HUD's projections stay on the cabin. Shaken after
-// the hit unless motion is reduced, stored for the HUD as
-// field_viewport_camera stores it.
-arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Frame, pod_found: bool) -> (moved: rl.Camera3D, pod_offset: [3]f32) {
+// during the descent the seated camera's position and target moved by
+// the pod's transform (arrival_pod_transform, 0270; without a pod the
+// path's offset along the player's up and forward), its up the player's
+// (the planet's), and the transform the scene draws the pod moved by,
+// with the rotation and the travel for the windows; the camera alone
+// buffeted at the heat unless motion is reduced (arrival_buffet_offset,
+// 0269); the stored camera stays the resting one, so the HUD's
+// projections stay on the cabin. Shaken after the hit unless motion is
+// reduced, stored for the HUD as field_viewport_camera stores it.
+arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Arrival_Pod, rest_tilt_degrees: int) -> (moved: rl.Camera3D, pod_transform: Maybe(matrix[4, 4]f32), rotation: matrix[3, 3]f32, travel: [3]f32) {
 	moved = camera
+	rotation = 1
 	switch view.phase {
 	case .None:
 	case .Descent:
-		up, forward := unit_vector_to_f32(player.field.up), unit_vector_to_f32(player.field.forward)
-		if pod_found {
-			up, forward = unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
+		curve := &state.presentation.arrival.curve
+		transform: matrix[4, 4]f32
+		if pod.found {
+			transform, rotation, travel = arrival_pod_transform(view, pod.frame, pod.common, pod.machine, rest_tilt_degrees, curve)
+		} else {
+			up, forward := unit_vector_to_f32(player.field.up), unit_vector_to_f32(player.field.forward)
+			transform = linalg.matrix4_translate_f32(arrival_descent_offset(view, up, forward, curve))
+			travel = arrival_travel_direction(arrival_curve_at(curve, view.curve_progress), up, forward)
 		}
-		pod_offset = arrival_descent_offset(view, up, forward, &state.presentation.arrival.curve)
-		moved.position += pod_offset
-		moved.target += pod_offset
+		pod_transform = transform
+		moved.position = transform_point(transform, camera.position)
+		moved.target = transform_point(transform, camera.target)
 		if !state.settings.reduced_motion {
 			position, look := arrival_buffet_offset(view.seconds, view.heat, state.session.simulation.world.settings.seed)
 			moved.position += position
@@ -452,7 +484,9 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	view := arrival_view(session.simulation.field.arrival, session.simulation.tick, alpha, state.config, &state.presentation.arrival.curve)
 	pod_common, pod, pod_found := find_pod(&session.simulation.world.entities, content.machines)
 	pulled, body_shown := field_viewport_camera(state, viewport, player, alpha)
-	camera, pod_offset := arrival_viewport_camera(state, viewport, player, pulled, view, pod, pod_found)
+	machine := pod_found ? content.machines.machines[pod_common.machine] : Machine{}
+	arrival_pod := Arrival_Pod{common = pod_common, frame = pod, machine = machine, found = pod_found}
+	camera, pod_transform, pod_rotation, travel := arrival_viewport_camera(state, viewport, player, pulled, view, arrival_pod, content.field.pod_rest.tilt_degrees)
 	near, far := rlgl.GetCullDistanceNear(), rlgl.GetCullDistanceFar()
 	defer rlgl.SetClipPlanes(near, far)
 	altitude := linalg.length(camera.position) - f32(session.planet.radius_metres)
@@ -474,18 +508,17 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		viewer       = viewport.player,
 		viewer_body_shown = body_shown,
 		lockstep     = &session.lockstep,
-		pod_offset   = pod_offset,
+		pod_transform = pod_transform,
 		placement_editor = viewport.interaction.placement_editor,
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
 	if view.phase == .Descent && pod_found {
-		pod_up, pod_forward := unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
-		travel := arrival_travel_direction(arrival_curve_at(&state.presentation.arrival.curve, view.curve_progress), pod_up, pod_forward)
-		rlgl.PushMatrix()
-		rlgl.Translatef(pod_offset.x, pod_offset.y, pod_offset.z)
-		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, content.machines.machines[pod_common.machine], travel, session.simulation.world.settings.seed)
-		rlgl.PopMatrix()
+		// The windows draw in the frame's unmoved space, under the pod's
+		// transform, so the travel goes back through its rotation.
+		push_pod_transform(pod_transform)
+		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, linalg.transpose(pod_rotation) * travel, session.simulation.world.settings.seed)
+		pop_pod_transform(pod_transform)
 	}
 	if view.phase == .Settled && pod_found {
 		draw_arrival_dust(pod, view, session.simulation.world.settings.seed, rl.ColorBrightness(field_globe_color(session.planet.palette), 0.3))

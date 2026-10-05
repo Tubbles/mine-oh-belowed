@@ -149,18 +149,21 @@ salvage_percent = 80
 // arrival_start_metres (20 to 4096, at least 34 m above atmosphere's
 // top_metres) above the crater's floor at
 // arrival_entry_speed_metres_per_second (1 to 1000),
-// arrival_entry_angle_degrees (5 to 85) below the horizontal towards its
-// door; gravity and a drag of the air's density times the speed squared,
-// arrival_terminal_speed_metres_per_second (1 to 1000) the terminal
-// speed at density 1, bend the path towards vertical. The curve is
-// integrated once in its own seconds and stretched over the descent:
-// its last arrival_real_seconds (1 to 60, below the curve's seconds and
-// the descent's) play 1:1 at the end, the natural time before them is
-// stretched over the rest, so the seconds tune the tempo and the keys
-// the shape. The heating is the density times the speed cubed over its
-// peak; below arrival_heat_threshold_percent (0 to 90) of the peak
-// nothing glows, and the hit must lie below it. The start lies inside
-// 0.9 of field_view.level_distances_metres' last entry from the crater.
+// arrival_entry_angle_degrees (5 to 85) below the horizontal towards
+// its chair's facing. Gravity and a drag of the air's density times the
+// speed squared, arrival_terminal_speed_metres_per_second (1 to 1000)
+// the terminal speed at density 1, bend the path towards vertical. The
+// curve is integrated once in its own seconds and stretched over the
+// descent: its last arrival_real_seconds (1 to 60, below the curve's
+// seconds and the descent's) play 1:1 at the end, the natural time
+// before them is stretched over the rest, so the seconds tune the tempo
+// and the keys the shape. The pod rests leaning
+// arrival_rest_tilt_degrees (0 to 25) from the planet's up towards its
+// travel, about its door's axis. The heating is the density times the
+// speed cubed over its peak; below arrival_heat_threshold_percent (0 to
+// 90) of the peak nothing glows, and the hit must lie below it. The
+// start lies inside 0.9 of field_view.level_distances_metres' last
+// entry from the crater.
 // The atmosphere's density falls as exp(-altitude / scale_height_metres)
 // (1 to 4096) and is 0 above top_metres (64 to 4096); top_metres less two
 // scale heights stays at least 64 m: the sky is black with stars above
@@ -173,6 +176,7 @@ arrival_entry_speed_metres_per_second = 75
 arrival_terminal_speed_metres_per_second = 20
 arrival_heat_threshold_percent = 20
 arrival_real_seconds = 6
+arrival_rest_tilt_degrees = 15
 atmosphere = {
 	top_metres = 650
 	scale_height_metres = 145

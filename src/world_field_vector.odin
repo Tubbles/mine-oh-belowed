@@ -126,3 +126,14 @@ angle_of_sine :: proc(sine: i64) -> i32 {
 	}
 	return sine < 0 ? -low : low
 }
+
+// The vector turned in the plane of the orthonormal units first and
+// second, first towards second, by the angle of cosine and sine (in
+// UNIT_VECTOR_ONE); its part off the plane is kept. Not normalised, so
+// an offset keeps its length (the pod's rest, 0270).
+rotate_in_plane :: proc(vector, first, second: [3]i64, cosine, sine: i64) -> [3]i64 {
+	along_first, along_second := fixed_dot(vector, first), fixed_dot(vector, second)
+	in_plane := fixed_scale(first, along_first) + fixed_scale(second, along_second)
+	turned := fixed_scale(second, along_first) - fixed_scale(first, along_second)
+	return vector + fixed_scale(in_plane, cosine - UNIT_VECTOR_ONE) + fixed_scale(turned, sine)
+}

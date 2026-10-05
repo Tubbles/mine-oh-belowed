@@ -515,6 +515,8 @@ test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
 	nan_eye.eye.x = math.nan_f64()
 	upward := seat
 	upward.facing = "up"
+	along_door := seat
+	along_door.facing = "+x"
 	seat_refusals := []struct {
 		seat:  Pod_Seat_Definition,
 		words: string,
@@ -526,6 +528,7 @@ test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
 		{high_eye, "seat eye is not inside its cells"},
 		{nan_eye, "seat eye is not inside its cells"},
 		{upward, `seat facing "up" is not +x, -x, +z or -z`},
+		{along_door, "across its door"},
 	}
 	for refusal in seat_refusals {
 		problem := broken(file.machines, pod_index, with_seat(shipped, refusal.seat))

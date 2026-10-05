@@ -165,3 +165,79 @@ test_the_window_quad_leads_along_the_travel :: proc(t: ^testing.T) {
 	laid := linalg.normalize(fallback - normal * linalg.dot(fallback, normal))
 	testing.expect(t, linalg.length((head_on[2] + head_on[3]) / 2 - centre - laid * radius) < 0.0001, "a travel along the normal leads along the fallback")
 }
+
+// Work item 0270: rest_share stays 0 up to the descent's last real
+// seconds, never falls and reaches 1 at its end; at progress 0 the pod's
+// up runs against the travel, the travel heading onto the travel's
+// normal and the door's axis kept; at the descent's last moment the
+// transform takes the frame's axes to the rest pose's and the base
+// centre to itself; identity in Settled and None.
+@(test)
+test_the_drawn_attitude_follows_the_tangent_then_rests :: proc(t: ^testing.T) {
+	config := shipped_arrival_config()
+	curve := build_arrival_curve(config)
+	machines := make_test_machines()
+	entities: Entities
+	defer destroy_entities(&entities)
+	place_test_pod(&entities, machines)
+	pod, frame, _ := find_pod(&entities, machines)
+	machine := machines.machines[pod.machine]
+	tilt := 15
+	falling := Field_Arrival{start_tick = 0, fall_ticks = u64(config.arrival_ticks)}
+	descent := u64(config.arrival_ticks - config.arrival_settle_ticks)
+	easing := descent - u64(config.arrival_real_seconds * config.tick_rate)
+	before: f32 = 0
+	for tick in 0 ..< descent {
+		share := arrival_view(falling, tick, 0, config, &curve).rest_share
+		if tick <= easing {
+			testing.expectf(t, share == 0, "tick %d: the rest's share is %v before the last real seconds", tick, share)
+		}
+		testing.expectf(t, share >= before, "tick %d: the rest's share falls to %v", tick, share)
+		before = share
+	}
+	last := arrival_view(falling, descent - 1, 0.9999, config, &curve)
+	testing.expectf(t, last.rest_share > 0.9999, "the rest's share ends at %v", last.rest_share)
+
+	up := unit_vector_to_f32(frame.axes[FRAME_UP])
+	heading := unit_vector_to_f32(pod_travel_heading(frame, pod, machine))
+	forward := unit_vector_to_f32(frame.axes[FRAME_FORWARD])
+	start := arrival_view(falling, 0, 0, config, &curve)
+	_, rotation, travel := arrival_pod_transform(start, frame, pod, machine, tilt, &curve)
+	normal := linalg.normalize(heading - travel * linalg.dot(heading, travel))
+	testing.expectf(t, linalg.length(rotation * up + travel) < 1e-4, "the up turns to %v, not against the travel %v", rotation * up, travel)
+	testing.expectf(t, linalg.length(rotation * heading - normal) < 1e-4, "the travel heading turns to %v, not %v", rotation * heading, normal)
+	testing.expectf(t, linalg.length(rotation * forward - forward) < 1e-4, "the door's axis turns to %v", rotation * forward)
+
+	transform, _, _ := arrival_pod_transform(last, frame, pod, machine, tilt, &curve)
+	_, rest_axes := pod_rest_pose(frame, pod, machine, tilt)
+	turn := cast(matrix[3, 3]f32)transform
+	for axis in 0 ..< 3 {
+		turned := turn * unit_vector_to_f32(frame.axes[axis])
+		testing.expectf(t, linalg.length(turned - unit_vector_to_f32(rest_axes[axis])) < 1e-3, "axis %d turns to %v, not the rest's %v", axis, turned, unit_vector_to_f32(rest_axes[axis]))
+	}
+	base := world_position_to_metres(pod_base_centre(frame, pod))
+	testing.expectf(t, linalg.length(transform_point(transform, base) - base) < 0.001, "the base centre moves %v", transform_point(transform, base) - base)
+
+	identity := linalg.MATRIX4F32_IDENTITY
+	for view in ([2]Arrival_View{{phase = .Settled}, {}}) {
+		still, still_rotation, still_travel := arrival_pod_transform(view, frame, pod, machine, tilt, &curve)
+		testing.expect(t, still == identity && still_rotation == linalg.MATRIX3F32_IDENTITY && still_travel == {}, "not the identity outside the descent")
+	}
+}
+
+// Work item 0270: a light moved by a rotation and a translation moves its
+// position, and a point inside its old clip box, moved alike, lies inside
+// the new box as far as before.
+@(test)
+test_a_moved_light_keeps_its_clip_box :: proc(t: ^testing.T) {
+	box := linalg.matrix4_scale_f32({0.5, 0.25, 1}) * linalg.matrix4_translate_f32({-3, -40, 2})
+	light := Point_Light{position = {3, 41, -2}, color = {1, 1, 1}, radius = 4, clip_box = box}
+	transform := linalg.matrix4_translate_f32({10, -200, 7}) * linalg.matrix4_rotate_f32(0.4, linalg.normalize([3]f32{0.3, 1, -0.2}))
+	moved := moved_point_light(light, transform)
+	testing.expect(t, linalg.length(moved.position - transform_point(transform, light.position)) < 1e-4, "the light's position moves")
+	moved_box, clipped := moved.clip_box.?
+	testing.expect(t, clipped)
+	inside := [3]f32{3.8, 42.5, -2.6}
+	testing.expect(t, clip_box_reach(box, inside) <= 1, "the point lies in the old box")
+	testing.expectf(t, abs(clip_box_reach(moved_box, transform_point(transform, inside)) - clip_box_reach(box, inside)) < 1e-3, "the moved point reaches %v in the new box", clip_box_reach(moved_box, transform_point(transform, inside)))
+}

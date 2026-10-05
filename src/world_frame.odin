@@ -15,9 +15,11 @@ package game
 // handle the world never interprets (the simulation packs its entity
 // handle into it) and the flags the world reads (the raycast, the water).
 // It is derived from the entities and rebuilt on load, never saved; the
-// frame records are saved (save_state.odin). The bodies (work item
-// 0230, world_frame_body.odin) are the machines that collide by their
-// collision volumes, derived and rebuilt alike.
+// frame records are saved (save_state.odin). A frame keeps its pose but
+// the pod's, which set_frame_pose turns once at the arrival's hit
+// (0270). The bodies (work item 0230, world_frame_body.odin) are the
+// machines that collide by their collision volumes, derived and rebuilt
+// alike.
 //
 // Integer only: the axes are unit vectors in UNIT_VECTOR_ONE, positions
 // in 1/POSITION_UNITS_PER_METRE metre, so every machine of a lockstep
@@ -144,6 +146,23 @@ add_frame :: proc(table: ^Frame_Table, origin: World_Position, axes: [3][3]i64, 
 	id := Frame_Id(table.last_id)
 	append(&table.frames, Frame{id = id, origin = origin, axes = axes, pitch_millimetres = pitch_millimetres})
 	return id
+}
+
+// A new origin and axes for a frame (the pod's rest at the arrival's
+// hit, 0270): the record and the copy every body on it holds
+// (make_frame_body copies the frame and the collision reads the copy).
+// Nothing for an unknown id.
+set_frame_pose :: proc(table: ^Frame_Table, id: Frame_Id, origin: World_Position, axes: [3][3]i64) {
+	for &frame in table.frames {
+		if frame.id == id {
+			frame.origin, frame.axes = origin, axes
+		}
+	}
+	for &body in table.bodies {
+		if body.frame.id == id {
+			body.frame.origin, body.frame.axes = origin, axes
+		}
+	}
 }
 
 // A frame's record and its extent, once its cells are empty (the

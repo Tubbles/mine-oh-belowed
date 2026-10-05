@@ -1096,3 +1096,207 @@ test_the_pod_seat_eye_is_clear_of_the_chair :: proc(t: ^testing.T) {
 	up, _ := normalize_fixed(cast([3]i64)eye)
 	testing.expect(t, abs(fixed_dot(facing, up)) <= UNIT_VECTOR_ONE / 64, "the facing is a tangent")
 }
+
+// Work item 0270: for the homes of seeds 1 to 64, the pod placed as
+// enable_new_field_world places it, the rest pose at 0 is the frame's
+// own; at 15 and 25 degrees the axes stay orthonormal, the up leans the
+// tilt from the placed up towards the travel, the outer hatch's
+// direction stays level and the base centre stays where it was.
+@(test)
+test_the_rest_pose_leans_towards_the_travel_and_keeps_the_hatch_level :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	planet := default_planet(shipped_test_planets())
+	pitch := test_field_game_config().foundation_pitch_millimetres
+	for seed in 1 ..= 64 {
+		generation := make_planet_generation(u64(seed), planet, 1000)
+		site, heading := field_home_site(generation, planet)
+		entities: Entities
+		defer destroy_entities(&entities)
+		_, placed := place_pod(&entities, machines, site, heading, pitch)
+		testing.expect(t, placed)
+		pod, frame, found := find_pod(&entities, machines)
+		testing.expect(t, found)
+		machine := machines.machines[pod.machine]
+		up, travel := frame.axes[FRAME_UP], pod_travel_heading(frame, pod, machine)
+		for tilt in ([3]int{0, 15, 25}) {
+			origin, axes := pod_rest_pose(frame, pod, machine, tilt)
+			if tilt == 0 {
+				testing.expectf(t, origin == frame.origin && axes == frame.axes, "seed %d: tilt 0 moved the frame", seed)
+				continue
+			}
+			for axis in 0 ..< 3 {
+				testing.expectf(t, abs(vector_length(axes[axis]) - UNIT_VECTOR_ONE) <= 2, "seed %d tilt %d: axis %d of length %d", seed, tilt, axis, vector_length(axes[axis]))
+				for other in axis + 1 ..< 3 {
+					testing.expectf(t, abs(fixed_dot(axes[axis], axes[other])) <= 16, "seed %d tilt %d: axes %d and %d meet at %d", seed, tilt, axis, other, fixed_dot(axes[axis], axes[other]))
+				}
+			}
+			angle := degrees_to_angle_units(tilt)
+			testing.expectf(t, abs(fixed_dot(axes[FRAME_UP], up) - fixed_cosine(angle)) <= UNIT_VECTOR_ONE / 4096, "seed %d tilt %d: the up's cosine is %d", seed, tilt, fixed_dot(axes[FRAME_UP], up))
+			testing.expectf(t, abs(fixed_dot(axes[FRAME_UP], travel) - fixed_sine(angle)) <= UNIT_VECTOR_ONE / 4096, "seed %d tilt %d: the up's sine is %d", seed, tilt, fixed_dot(axes[FRAME_UP], travel))
+			rested := frame
+			rested.origin, rested.axes = origin, axes
+			hatch := frame_world_direction(rested, body_direction_to_frame(pod.rotation, {UNIT_VECTOR_ONE, 0, 0}))
+			testing.expectf(t, abs(fixed_dot(hatch, up)) <= UNIT_VECTOR_ONE / 4096, "seed %d tilt %d: the hatch leans %d", seed, tilt, fixed_dot(hatch, up))
+			moved := vector_length(cast([3]i64)(pod_base_centre(rested, pod) - pod_base_centre(frame, pod)))
+			testing.expectf(t, moved <= millimetres_to_position_units(1), "seed %d tilt %d: the base centre moved %d", seed, tilt, moved)
+		}
+	}
+}
+
+// The test pod with the shipped collision volumes placed on a flat
+// field, rested at tilt and bedded as rest_field_pod beds it; the rested
+// frame, the pod and its record, and the steps the bed dug.
+rest_test_pod :: proc(world: ^Field_World, entities: ^Entities, machines: ^Machine_Registry, spacing, tilt: int) -> (frame: Frame, pod: Entity_Common, machine: Machine, dug: i64) {
+	pod_id := find_machine_of_kind(machines^, .Pod)
+	volumes, problem := load_machine_collision(test_data_directory(), machines.machines[pod_id], context.temp_allocator)
+	assert(problem == "", problem)
+	machines.machines[pod_id].collision = volumes
+	place_test_pod(entities, machines^)
+	placed: Frame
+	pod, placed, _ = find_pod(entities, machines^)
+	machine = machines.machines[pod.machine]
+	origin, axes := pod_rest_pose(placed, pod, machine, tilt)
+	set_frame_pose(&entities.frames, placed.id, origin, axes)
+	frame, _ = find_frame(&entities.frames, placed.id)
+	centre := pod_base_centre(frame, pod)
+	material, tint, found := pod_bed_material(world, spacing, centre, frame.axes[FRAME_UP])
+	assert(found)
+	edits := pod_bed_edits(frame, pod, machine, material, tint, spacing)
+	for steps in apply_field_edit(world, spacing, edits[0]).steps {
+		dug += steps
+	}
+	apply_field_edit(world, spacing, edits[1])
+	return
+}
+
+// The feet's height over the rested frame's floor (cell row 0's base).
+rested_test_feet_height :: proc(frame: Frame, player: Field_Player) -> i64 {
+	return frame_local_position(frame, player.position).y
+}
+
+// Work item 0270: in the rested cabin (shipped volumes, a flat field at
+// every spacing, tilts 0, 15 and 25) the bed digs only when tilted; the
+// spawn settles on the floor, and a walk along each of the frame's
+// directions never leaves the ground for 4 ticks in a row, never sinks
+// through the floor plate and never rises over ground in the cabin.
+@(test)
+test_a_player_stands_and_walks_in_the_rested_cabin :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		for tilt in ([3]int{0, 15, 25}) {
+			machines := make_test_machines()
+			world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
+			defer destroy_field_world(&world)
+			entities: Entities
+			defer destroy_entities(&entities)
+			frame, _, _, dug := rest_test_pod(&world, &entities, &machines, spacing, tilt)
+			testing.expectf(t, (dug > 0) == (tilt > 0), "%d mm tilt %d: the bed dug %d steps", spacing, tilt, dug)
+			tuning := test_field_tuning(spacing)
+			spawn, found := field_pod_spawn(&entities, machines)
+			testing.expect(t, found)
+			run_field_player_with_frames(&world, &entities.frames, tuning, &spawn, {}, 60)
+			height := rested_test_feet_height(frame, spawn)
+			testing.expectf(t, spawn.on_ground, "%d mm tilt %d: the spawn is not on the ground", spacing, tilt)
+			testing.expectf(t, height >= 0 && height <= millimetres_to_position_units(60), "%d mm tilt %d: the feet stand %d over the floor", spacing, tilt, height)
+			directions := [4][3]i64{frame.axes[FRAME_RIGHT], -frame.axes[FRAME_RIGHT], frame.axes[FRAME_FORWARD], -frame.axes[FRAME_FORWARD]}
+			for direction, index in directions {
+				player := spawn
+				player.forward, player.yaw = tangent_of(player.up, direction), 0
+				off_ground, lowest, highest := 0, i64(max(i64)), i64(min(i64))
+				for _ in 0 ..< 90 {
+					tick_field_player(&world, &entities.frames, tuning, &player, FIELD_WALK_FORWARD)
+					off_ground = player.on_ground ? 0 : off_ground + 1
+					lowest = min(lowest, rested_test_feet_height(frame, player))
+					highest = max(highest, rested_test_feet_height(frame, player))
+					if off_ground >= 4 {
+						break
+					}
+				}
+				testing.expectf(t, off_ground < 4, "%d mm tilt %d direction %d: off the ground 4 ticks in a row", spacing, tilt, index)
+				testing.expectf(t, lowest >= -millimetres_to_position_units(10), "%d mm tilt %d direction %d: the feet sank to %d", spacing, tilt, index, lowest)
+				testing.expectf(t, highest <= millimetres_to_position_units(60), "%d mm tilt %d direction %d: the feet rose to %d over the floor", spacing, tilt, index, highest)
+			}
+		}
+	}
+}
+
+// Work item 0270: with both hatches open in the rested pod (tilts 15 and
+// 25, every spacing), a crouched player crawls from the bore out past
+// the pod's front onto the ground, and from outside crawls in past the
+// inner hatch's face into the cabin, not under the pod.
+@(test)
+test_a_player_crawls_out_of_and_into_the_rested_airlock :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		for tilt in ([2]int{15, 25}) {
+			machines := make_test_machines()
+			world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
+			defer destroy_field_world(&world)
+			entities: Entities
+			defer destroy_entities(&entities)
+			frame, _, machine, _ := rest_test_pod(&world, &entities, &machines, spacing, tilt)
+			testing.expect(t, toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, machine, TEST_OUTER_HATCH), 1, nil))
+			testing.expect(t, toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, machine, TEST_INNER_HATCH), 1, nil))
+			tuning := test_field_tuning(spacing)
+			origin := pod_origin(machine)
+			pitch := frame_pitch_units(frame)
+
+			player := make_field_player(pod_box_floor_centre(frame, origin, machine, POD_ROTATION, machine.open_cells[TEST_AIRLOCK_BOX]), frame.axes[FRAME_FORWARD])
+			player.crouching = true
+			run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_SNEAK_FORWARD, 150)
+			run_field_player_with_frames(&world, &entities.frames, tuning, &player, {}, 60)
+			front_face := i64(origin.z + machine.footprint.x) * pitch
+			out := frame_local_position(frame, player.position).z
+			testing.expectf(t, out > front_face, "%d mm tilt %d: the crawl out ended at %d, short of the front %d", spacing, tilt, out, front_face)
+			testing.expectf(t, player.on_ground, "%d mm tilt %d: not on the ground outside", spacing, tilt)
+
+			outside := test_pod_outside_floor_point(frame, machine)
+			player = make_field_player(outside + World_Position(fixed_scale(frame_planet_up(outside), POSITION_UNITS_PER_METRE)), -frame.axes[FRAME_FORWARD])
+			run_field_player_with_frames(&world, &entities.frames, tuning, &player, {}, 90)
+			player.forward, player.yaw = tangent_of(player.up, -frame.axes[FRAME_FORWARD]), 0
+			run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_SNEAK_FORWARD, 600)
+			inner_face := i64(origin.z + machine.fixture_boxes[TEST_INNER_HATCH].from.x) * pitch
+			local := frame_local_position(frame, player.position)
+			testing.expectf(t, local.z < inner_face, "%d mm tilt %d: the crawl in ended at %d, short of the inner hatch's face %d", spacing, tilt, local.z, inner_face)
+			testing.expectf(t, local.y >= -pitch / 4, "%d mm tilt %d: the feet lie %d under the floor", spacing, tilt, local.y)
+			testing.expectf(t, local.z > -metres_to_position_units(3), "%d mm tilt %d: the crawl in went to %d, past the pod's back", spacing, tilt, local.z)
+		}
+	}
+}
+
+// Work item 0270: the bed reaches the rested base plane. On a flat field
+// at every spacing, tilts 15 and 25, the field a quarter spacing above
+// the plane is air and a quarter spacing below it ground (the tolerance:
+// a quarter spacing either side), at points every quarter metre out to
+// 2.75 m (the hull's rim, 2.725 m along the travel), along the rested
+// frame's right and forward both ways: the low rim, the high rim and
+// across the door's axis.
+@(test)
+test_the_bed_reaches_the_base_plane :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		for tilt in ([2]int{15, 25}) {
+			machines := make_test_machines()
+			world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
+			defer destroy_field_world(&world)
+			entities: Entities
+			defer destroy_entities(&entities)
+			frame, pod, _, _ := rest_test_pod(&world, &entities, &machines, spacing, tilt)
+			base := pod_base_centre(frame, pod)
+			quarter := World_Position(fixed_scale(frame.axes[FRAME_UP], sample_axis_to_position(1, spacing) / 4))
+			directions := [4][3]i64{frame.axes[FRAME_RIGHT], -frame.axes[FRAME_RIGHT], frame.axes[FRAME_FORWARD], -frame.axes[FRAME_FORWARD]}
+			for direction, index in directions {
+				for step in i64(1) ..= 11 {
+					point := base + World_Position(fixed_scale(direction, step * POSITION_UNITS_PER_METRE / 4))
+					above := field_density_at(&world, spacing, point + quarter)
+					below := field_density_at(&world, spacing, point - quarter)
+					testing.expectf(t, above <= 0, "%d mm tilt %d direction %d at %d cm: the density above the plane is %d", spacing, tilt, index, step * 25, above)
+					testing.expectf(t, below > 0, "%d mm tilt %d direction %d at %d cm: the density below the plane is %d", spacing, tilt, index, step * 25, below)
+				}
+			}
+		}
+	}
+}
+
+// The planet's up at a position.
+frame_planet_up :: proc(position: World_Position) -> [3]i64 {
+	up, _ := normalize_fixed(cast([3]i64)position)
+	return up
+}
