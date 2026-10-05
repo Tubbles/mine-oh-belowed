@@ -1,6 +1,6 @@
 # 0223: The arrival seen from the chair
 
-Status: designed (2026-10-05)
+Status: implementing (2026-10-05)
 
 ## Goal
 
