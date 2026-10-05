@@ -153,6 +153,7 @@ Mechanism: [doc/ui.md](doc/ui.md) and [doc/hud.md](doc/hud.md).
 - Built in information: a rate on every machine panel, a bottleneck overlay, production statistics, a power overview, the launch screen's capacity line.
 - Text entry (world name) uses an on-screen keyboard driven by the trackpads. A physical keyboard or the phone's keyboard works too.
 - Tooltips are panels that open on a button, never hover only.
+- Techtonica's screens are the bar for polish and the model for the gamepad layers (user, 2026-10-05): one layer for every screen with the modifiers on the bumpers and the windows on the triggers, the crafting view with the inventory beside the schematics, toolbars as shortcuts into the inventory ([doc/inspiration.md](doc/inspiration.md), Techtonica's controls and screens; items 0276 to 0281).
 
 ## Editors
 
