@@ -1,6 +1,6 @@
 # 0183: The command socket on the field world
 
-Status: verified (2026-10-05, implementer agent a002497085825d1e8, verified the same day, one fix round (the bearing's rounding before the wrap, the look record's bounds without abs, the recipe's chest viewpoint; a frame cell's i32 bound left as the game's own rule), in `.claude/worktrees/0183` on `item/0183` from `main` at 9b486db, the specification approved the same day with the decisions below; M13 follow up, from the switch of 0179; whenever the assistant needs it)
+Status: landed (2026-10-05, "Drive a field session through the command socket (0183)", 2879c5f, installed the same day; implementer agent a002497085825d1e8, verified the same day, one fix round (the bearing's rounding before the wrap, the look record's bounds without abs, the recipe's chest viewpoint; a frame cell's i32 bound left as the game's own rule), in `.claude/worktrees/0183` on `item/0183` from `main` at 9b486db, the specification approved the same day with the decisions below; M13 follow up, from the switch of 0179; whenever the assistant needs it)
 
 ## Goal
 
