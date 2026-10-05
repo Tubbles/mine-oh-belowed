@@ -1,6 +1,6 @@
 # 0263: The arrival texts name the pod, not the capsule
 
-Status: todo (2026-10-05, found by the 0262 design: the lore note `the_capsule` (`data/notes.sjson`, strings `note_the_capsule_title` and `note_the_capsule_text`: "The drop capsule came down with you and stays on the pad. Rewards land in it...") and the capsule's item description describe the block world's landing, while a field world lands in the pod (0221) and its rewards go to the pod's locker (0210); after 0262)
+Status: todo (2026-10-05, from 0262)
 
 ## Goal
 

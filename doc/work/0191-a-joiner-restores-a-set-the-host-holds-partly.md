@@ -1,6 +1,6 @@
 # 0191: A joiner restores a set the host holds only partly
 
-Status: todo (review of 0185, 2026-10-03; needs a reproducing test first)
+Status: todo (2026-10-03, from the 0185 review; needs a reproducing test first)
 
 ## Goal
 

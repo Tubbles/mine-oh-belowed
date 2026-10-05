@@ -1,6 +1,6 @@
 # 0223: The arrival seen from the chair
 
-Status: todo (2026-10-04, from the user's pod notes of the art rounds ("the cutscene, showing pod interiors and flame up when hitting the atmosphere") and the 0221 design stage's question; after 0221 lands)
+Status: todo (2026-10-04, from the user's pod notes and 0221)
 
 ## Goal
 

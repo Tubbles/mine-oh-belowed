@@ -1,6 +1,6 @@
 # 0259: The step rule's remaining edges
 
-Status: todo (2026-10-04, from the 0232 design's questions 1 to 3, worked by hand from the code and not yet seen on the couch; after 0232)
+Status: todo (2026-10-04, from 0232; the couch first)
 
 ## Goal
 

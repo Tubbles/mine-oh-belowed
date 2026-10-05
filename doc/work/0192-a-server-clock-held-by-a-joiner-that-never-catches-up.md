@@ -1,6 +1,6 @@
 # 0192: A server's clock is held by a joiner that never catches up
 
-Status: todo (left open by 0190, 2026-10-03; small)
+Status: todo (2026-10-03, from 0190)
 
 ## Goal
 

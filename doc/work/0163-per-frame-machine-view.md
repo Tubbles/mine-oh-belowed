@@ -1,6 +1,6 @@
 # 0163: The per frame machine view
 
-Status: todo (after 0162)
+Status: todo (paused since 2026-10-01, after 0162)
 
 ## Goal
 

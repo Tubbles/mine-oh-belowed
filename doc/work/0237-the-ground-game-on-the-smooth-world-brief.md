@@ -1,6 +1,6 @@
 # 0237: The ground game on the smooth world (design brief)
 
-Status: designing (2026-10-04, from the trial verdict of the same day; draft one by the design agent, reviewed by the main agent and sent to the user the same day; the open questions await the user's answers, then M14's items are written from it)
+Status: designing (2026-10-04, draft one sent to the user, the open questions await their answers)
 
 Milestone: M14 The ground game on the smooth world ([PLAN.md](../../PLAN.md)); its verify is couch test 6. The decision this brief serves is `doc/log/2026-10-04.md`, The field trial is finished. This brief is the technical reading of M14 in the shape of [0167](0167-smooth-world-engine-brief.md): what stands, how each piece works, what it costs, what is open. Nothing here is implemented. Numbers are read off the tree and the logs unless marked "estimate" or "not verified"; recommendations are marked (mine).
 

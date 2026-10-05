@@ -1,6 +1,6 @@
 # 0261: The viewer's body hidden when the third person camera reaches the eye
 
-Status: todo (2026-10-05, found by the 0220 design: when the field's third person camera is pulled in to the eye (a wall nearer than the margin), the viewer's own body is still drawn round the camera, as the block world does today; after 0220)
+Status: todo (2026-10-05, from 0220)
 
 ## Goal
 

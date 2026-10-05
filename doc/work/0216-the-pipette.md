@@ -1,6 +1,6 @@
 # 0216: The pipette
 
-Status: todo (2026-10-04, found by the 0215 design: the Pipette action exists with its bindings (D-pad Up, R5, Q, the middle mouse button, the touch pipette) and its reference tests, and does nothing; after 0215)
+Status: todo (2026-10-04, from 0215)
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # 0181: Sounds and cues in a field session
 
-Status: todo (M13 follow up, from the switch of 0179; before or with the M14 items)
+Status: todo (2026-10-03, from 0179; folds into 0243 of the brief)
 
 ## Goal
 

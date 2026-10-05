@@ -1,6 +1,6 @@
 # 0167: The smooth world engine with multiplayer (design brief)
 
-Status: agreed (design; the user agreed to every section and to the recommendations on the open questions in the design session of 2026-10-02; M13's work items 0168 to 0179 are written from it)
+Status: agreed (2026-10-02, M13's items 0168 to 0179 written from it)
 
 Milestone: M13 The first slice ([PLAN.md](../../PLAN.md)). The decisions this brief rests on are in `doc/log/2026-10-02.md`; the design they produced is in `DESIGN.md`. This brief is the technical reading of them in the shape of 0146: what the engine side owns, how each piece works, what it costs, and what is still open. Nothing here is implemented.
 
