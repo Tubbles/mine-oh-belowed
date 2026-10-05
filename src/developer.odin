@@ -462,7 +462,7 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 	case .Set_Block:
 		return set_block_for_developer(&state.world, request.block, request.cell)
 	case .Insert_Items:
-		return insert_for_developer(&state.world, content, request.cell, request.grant)
+		return insert_for_developer(&state.world, content, request.cell, request.grant, request.frame)
 	case .Set_Recipe:
 		return set_recipe_for_developer(&state.world, content, player.inventory, request.cell, request.recipe)
 	case .Set_Filter:
@@ -627,9 +627,10 @@ set_block_for_developer :: proc(world: ^World, block: Block_Id, cell: World_Coor
 }
 
 // Stack by stack, as an inserter would put them in; what does not fit is
-// discarded.
-insert_for_developer :: proc(world: ^World, content: Simulation_Content, cell: World_Coordinate, grant: Developer_Grant) -> string {
-	handle := entity_at(&world.entities, cell)
+// discarded. The cell is the frame's (the block world's, or a field
+// frame's for the field's insert, 0274).
+insert_for_developer :: proc(world: ^World, content: Simulation_Content, cell: World_Coordinate, grant: Developer_Grant, frame := BLOCK_FRAME) -> string {
+	handle := entity_at(&world.entities, cell, frame)
 	if handle == NO_ENTITY {
 		return "no entity there"
 	}

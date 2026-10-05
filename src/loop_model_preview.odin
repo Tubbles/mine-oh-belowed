@@ -184,12 +184,14 @@ draw_model_preview_pad :: proc(footprint: [3]i32, ring: i32, pitch_metres: f32) 
 
 // Inside BeginMode3D: the machine (the draw_posed_model sequence without
 // the world) or the arm, lit by the field's open sky at full day, then
-// the pad and the capsule.
+// the pad and the capsule, then a working machine's flames (0274) at the
+// mean flicker, their flow at the phase.
 draw_model_preview_scene :: proc(renderer: Model_Renderer, machine: Machine, machine_id: Machine_Id, pose: Model_Preview_Pose, pitch_millimetres: int) {
 	pitch := f32(pitch_millimetres) / MILLIMETRES_PER_METRE
 	light := model_light_tint(with_light_level(0, .Sky, MAXIMUM_LIGHT), 1, {1, 1, 1})
 	glow := emissive_brightness(machine.motion.kind, pose.phase, pose.working, light)
 	ring := i32(MODEL_PREVIEW_PAD_RING_CELLS)
+	flames := make([dynamic]Flame_Draw, context.temp_allocator)
 	if arm, found := machine_arm_model(renderer, machine_id); found {
 		reach := model_check_arm_reach(machine, pitch_millimetres)
 		dimensions := arm_dimensions_on_frame(reach, pitch_millimetres)
@@ -203,6 +205,9 @@ draw_model_preview_scene :: proc(renderer: Model_Renderer, machine: Machine, mac
 		for transform in poses.transforms[:poses.count] {
 			draw_model_layers(renderer, model.part, body * transform, light, glow)
 		}
+		if pose.working {
+			machine_flame_draws(machine, body, 0, FLAME_FLICKER_MEAN, &flames)
+		}
 		if pose.collision && len(machine.collision) > 0 {
 			wires := transmute([16]f32)body
 			rlgl.PushMatrix()
@@ -213,6 +218,7 @@ draw_model_preview_scene :: proc(renderer: Model_Renderer, machine: Machine, mac
 	}
 	draw_model_preview_pad(machine.footprint, ring, pitch)
 	draw_field_player_capsule(model_preview_capsule_feet(pitch), {0, 1, 0}, MODEL_PREVIEW_CAPSULE_HEIGHT_METRES)
+	draw_flames(renderer.flame, flames[:], f64(pose.phase) * 8, false)
 }
 
 // Read from the back buffer before the swap and written through

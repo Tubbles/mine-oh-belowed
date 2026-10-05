@@ -694,7 +694,7 @@ test_the_machine_lights_leave_the_hash :: proc(t: ^testing.T) {
 		tick_field_test_simulation(&plain.simulation, plain_content, {})
 		state := &watched.simulation
 		lights := make([dynamic]Point_Light, context.temp_allocator)
-		gather_machine_lights(&lights, &state.world.entities, watched_content.machines, Model_Renderer{})
+		gather_machine_lights(&lights, &state.world.entities, watched_content.machines, Model_Renderer{}, Model_Frame{})
 		eye := world_position_to_metres(field_player_eye(state.players[0].field, watched_content.field.tuning))
 		nearest_point_lights(lights[:], eye)
 		if tick == 300 || tick == 540 || tick == 700 {

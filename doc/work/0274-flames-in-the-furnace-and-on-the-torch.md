@@ -1,6 +1,6 @@
 # 0274: Flames in the furnace and on the torch
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 
@@ -134,3 +134,5 @@ The second fire under the Fire rule, one shader for every burning fuel: the quad
 4. The ember pulse on the whole emissive layer, the console's lights with it: accepted as the limitation of one emissive layer per model, which the glow motion already had, and named in the log. A later item may split the heat emissive from the electric one.
 5. The `insert` frame form, premultiplied blending, the quads as record data and the lamp's `flicker` flag: accepted.
 6. The stream: its own, a worktree from `main`. If 0273 lands first and adds `set_shader_vector3`, the rebase keeps one.
+7. The shader's clock (implementer, 2026-10-05): `whole * speed` in a float still loses the flow's precision after days, so each octave's scroll is split in integers (`scroll_at`: the speeds as hundredths, the whole noise cells offset the integer cell hash, the rest small: under 12.9 cells at the bend's fastest 11.82 cells a second, under 4.7 at the flow's 3.61), exact for 194 days of the clock. The bend's drift of 0.93 is folded into its octaves' speeds (`BEND_HUNDREDTHS`). The field torches' flame code lives in `loop_field_session.odin` and `diagnostics.odin`'s `flame_count` is `torch_flame_count`, so `tools/code_graph.py --check` sees no new cluster edge.
+8. The draw (implementer, 2026-10-05, from the review): a frame's flames are one list (`draw_session_flames`, `draw_field_flames`), the field torches within `FLAME_DRAW_DISTANCE_METRES` and the block torches of the chunks in the frustum, sorted nearest first and cut to `MAXIMUM_FLAME_DRAWS` (`nearest_flame_draws`), drawn in one batch with each quad's flicker, seed and aspect in its vertex colour and the uniform locations cached at the load. Everything runs on the tick clock. Under reduced motion the flicker and the embers hold at their mean and the flow's slowest octave alone rises, the bend still.

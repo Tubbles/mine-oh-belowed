@@ -165,7 +165,9 @@ field_world_command :: proc(command_context: Command_Context, name: string, argu
 		return command_seat(command_context, arguments), true
 	case "place":
 		return command_field_place(command_context, arguments), true
-	case "vein", "remove", "block", "insert", "recipe", "filter", "blueprint":
+	case "insert":
+		return command_field_insert(command_context, arguments), true
+	case "vein", "remove", "block", "recipe", "filter", "blueprint":
 		return command_error(NO_BLOCK_WORLD_PROBLEM), true
 	case "query":
 		return field_query(command_context, arguments)
@@ -337,6 +339,43 @@ command_field_place :: proc(command_context: Command_Context, arguments: []strin
 		return command_error("%s", problem)
 	}
 	return command_ok("placed %s on frame %d at %d %d %d", arguments[0], frame, cell.x, cell.y, cell.z)
+}
+
+// insert <item> <count> <frame> <x> <y> <z> (0274): into the machine at a
+// frame's cell, as the block world's insert. The block world's five
+// words or frame 0 answer NO_BLOCK_WORLD_PROBLEM.
+command_field_insert :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	usage :: "insert <item> <count> <frame> <x> <y> <z>"
+	if len(arguments) == 5 {
+		return command_error(NO_BLOCK_WORLD_PROBLEM)
+	}
+	if len(arguments) != 6 {
+		return usage_error(usage)
+	}
+	if frame_word, is_number := parse_integer_word(arguments[2]); is_number && frame_word == 0 {
+		return command_error(NO_BLOCK_WORLD_PROBLEM)
+	}
+	count, count_ok := parse_integer_word(arguments[1])
+	if !count_ok {
+		return usage_error(usage)
+	}
+	grant, problem := resolve_developer_grant(arguments[0], int(count), command_context.content.items)
+	if problem != "" {
+		return command_error("%s", problem)
+	}
+	frame: int
+	if frame, problem = parse_ranged_word(arguments[2], 1, int(max(i32)), "the frame"); problem != "" {
+		return command_error("%s", problem)
+	}
+	cell, cell_ok := parse_coordinate_words(arguments[3:6])
+	if !cell_ok {
+		return usage_error(usage)
+	}
+	request := Developer_Request{action = .Insert_Items, grant = grant, frame = Frame_Id(frame), cell = cell}
+	if problem = serve_command_request(command_context, request); problem != "" {
+		return command_error("%s", problem)
+	}
+	return command_ok("frame %d at %d %d %d", frame, cell.x, cell.y, cell.z)
 }
 
 // Queries.

@@ -25,6 +25,9 @@ FIELD_FAR_RADII :: 4
 // A torch is drawn as a small glowing box at its sample.
 FIELD_TORCH_SIZE_METRES :: 0.2
 FIELD_TORCH_COLOR :: rl.Color{255, 196, 96, 255}
+// A field torch's flame is the block torch's scaled as its box is to the
+// block torch's post (0274).
+FIELD_TORCH_FLAME_SCALE :: FIELD_TORCH_SIZE_METRES / (2 * POST_HALF_WIDTH)
 // A player whose body model did not load is drawn as a capsule.
 FIELD_PLAYER_CAPSULE_COLOR :: rl.Color{70, 110, 180, 255}
 
@@ -202,7 +205,7 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 			append(&lights, light)
 		}
 	}
-	gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines, scene.models)
+	gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines, scene.models, scene.frame)
 	append(&lights, ..scene.window_lights)
 	if transform, moved := scene.pod_transform.?; moved {
 		for &light in lights {
@@ -243,11 +246,54 @@ pop_pod_transform :: proc(transform: Maybe(matrix[4, 4]f32)) {
 	}
 }
 
+// The torch's box; its flame draws after everything opaque
+// (draw_field_flames, 0274).
 draw_field_torches :: proc(torches: []Field_Torch, spacing_millimetres: int) {
 	for torch in torches {
 		centre := world_position_to_metres(sample_to_world_position(torch.sample, spacing_millimetres))
 		rl.DrawCubeV(centre, FIELD_TORCH_SIZE_METRES, FIELD_TORCH_COLOR)
 	}
+}
+
+// A field torch's flame on its box (draw_field_torches), the planet's up
+// at the torch its up, square to the eye.
+field_torch_flame_draw :: proc(torch: Field_Torch, spacing_millimetres: int, eye: [3]f32, seconds: f64, reduced_motion: bool) -> Flame_Draw {
+	centre := world_position_to_metres(sample_to_world_position(torch.sample, spacing_millimetres))
+	up := linalg.normalize(centre)
+	base := centre + up * (FIELD_TORCH_SIZE_METRES / 2 - FLAME_TORCH_SINK * FIELD_TORCH_FLAME_SCALE)
+	salt := flame_salt(World_Coordinate(torch.sample), BLOCK_FRAME)
+	width, height := f32(FLAME_SIZE * FIELD_TORCH_FLAME_SCALE), f32(FLAME_TORCH_HEIGHT * FIELD_TORCH_FLAME_SCALE)
+	corners := flame_quad_corners(base, flame_facing_across(base, eye, up), up, width, height)
+	return {corners = corners, seed = flame_seed(salt), flicker = flame_flicker(seconds, salt, reduced_motion), aspect = height / width}
+}
+
+// The flames of the field's torches within FLAME_DRAW_DISTANCE_METRES of
+// the eye, appended.
+append_field_torch_flames :: proc(draws: ^[dynamic]Flame_Draw, torches: []Field_Torch, spacing_millimetres: int, eye: [3]f32, seconds: f64, reduced_motion: bool) {
+	for torch in torches {
+		centre := world_position_to_metres(sample_to_world_position(torch.sample, spacing_millimetres))
+		if linalg.length2(centre - eye) <= FLAME_DRAW_DISTANCE_METRES * FLAME_DRAW_DISTANCE_METRES {
+			append(draws, field_torch_flame_draw(torch, spacing_millimetres, eye, seconds, reduced_motion))
+		}
+	}
+}
+
+// After the players, before the ghosts: the working furnaces' flames,
+// moved by the pod's transform as their models are, and the near
+// torches' flames, one list on the tick clock (nearest_flame_draws).
+draw_field_flames :: proc(scene: Field_Scene, camera: rl.Camera3D) {
+	seconds := model_frame_seconds(scene.frame)
+	draws := make([dynamic]Flame_Draw, context.temp_allocator)
+	append(&draws, ..gather_machine_flames(&scene.state.world.entities, scene.content.machines, scene.frame))
+	if transform, moved := scene.pod_transform.?; moved {
+		for &draw in draws {
+			for &corner in draw.corners {
+				corner = transform_point(transform, corner)
+			}
+		}
+	}
+	append_field_torch_flames(&draws, scene.state.field.torches[:], scene.state.field.spacing_millimetres, camera.position, seconds, scene.frame.reduced_motion)
+	draw_flames(scene.models.flame, nearest_flame_draws(draws[:], camera.position), seconds, scene.frame.reduced_motion)
 }
 
 // Standing at the feet, the model's front (+x) along the heading and its
@@ -392,6 +438,10 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
 	push_pod_transform(scene.pod_transform)
 	draw_field_players(scene)
+	pop_pod_transform(scene.pod_transform)
+	// Before the ghosts, so a ghost cube's depth does not hide them.
+	draw_field_flames(scene, camera)
+	push_pod_transform(scene.pod_transform)
 	draw_field_ghosts(scene)
 	pop_pod_transform(scene.pod_transform)
 }
@@ -519,7 +569,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		models       = state.presentation.model_renderer,
 		belts        = &state.presentation.belt_renderer,
 		player_model = state.presentation.player_model,
-		frame        = Model_Frame{world = &session.simulation.world, tick = session.simulation.tick, alpha = alpha, tick_rate = session.simulation.tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint), open_sky = true, reaching_arm = NO_ENTITY},
+		frame        = Model_Frame{world = &session.simulation.world, tick = session.simulation.tick, alpha = alpha, tick_rate = session.simulation.tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint), open_sky = true, reaching_arm = NO_ENTITY, reduced_motion = state.settings.reduced_motion},
 		viewer       = viewport.player,
 		viewer_body_shown = body_shown,
 		lockstep     = &session.lockstep,

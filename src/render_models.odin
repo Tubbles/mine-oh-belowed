@@ -41,6 +41,8 @@ Model_Renderer :: struct {
 	point_lights_ready:    bool,
 	// By Machine_Id; no vertices in the body for a machine drawn as a box.
 	models:                []Uploaded_Machine_Model,
+	// The furnaces' and the torches' flames (render_flames.odin, 0274).
+	flame:                 Flame_Shader,
 }
 
 // What every model drawn this frame shares: the world for the light, the
@@ -51,17 +53,25 @@ Model_Renderer :: struct {
 // working whatever its cycle (the planet preview's screenshot), NO_ENTITY
 // otherwise. interiors are the pods' boxes whose models and players take
 // the pod's interior light share (0225, gather_interior_lights); nil
-// outside a field scene, which leaves every share 1.
+// outside a field scene, which leaves every share 1. reduced_motion is
+// the setting: it stills the flames' flicker and the embers' pulse (0274).
 Model_Frame :: struct {
-	world:        ^World,
-	tick:         u64,
-	alpha:        f32,
-	tick_rate:    int,
-	day_factor:   f32,
-	sky_tint:     [3]f32,
-	open_sky:     bool,
-	reaching_arm: Entity_Handle,
-	interiors:    []Interior_Light,
+	world:          ^World,
+	tick:           u64,
+	alpha:          f32,
+	tick_rate:      int,
+	day_factor:     f32,
+	sky_tint:       [3]f32,
+	open_sky:       bool,
+	reaching_arm:   Entity_Handle,
+	interiors:      []Interior_Light,
+	reduced_motion: bool,
+}
+
+// The frame's time on the tick clock, so a paused game stills what reads
+// it (the flames, 0274) and a screenshot reproduces.
+model_frame_seconds :: proc(frame: Model_Frame) -> f64 {
+	return (f64(frame.tick) + f64(frame.alpha)) / f64(max(frame.tick_rate, 1))
 }
 
 // A pod's box of cells on its frame (inclusive, the rotated size from its
@@ -256,6 +266,7 @@ init_model_renderer :: proc(machines: Machine_Registry, data_directory: string) 
 	renderer.material = rl.LoadMaterialDefault()
 	renderer.emissive_material = rl.LoadMaterialDefault()
 	use_model_shader(&renderer, data_directory)
+	use_flame_shader(&renderer, data_directory)
 	use_machine_models(&renderer, machines, data_directory)
 	return renderer
 }
@@ -266,6 +277,10 @@ destroy_model_renderer :: proc(renderer: ^Model_Renderer) {
 	unload_model_meshes(renderer)
 	rl.UnloadMaterial(renderer.material)
 	rl.UnloadMaterial(renderer.emissive_material)
+	if renderer.flame.ready {
+		rl.UnloadShader(renderer.flame.shader)
+	}
+	renderer.flame = {}
 }
 
 // The material a layer draws with: the emissive layer never takes the
@@ -384,7 +399,8 @@ BROKEN_MODEL_TINT :: 0.35
 // emissive ones: the light of the cell model_light_cell names, at its
 // pod's interior light share inside a pod's box (0225), darkened while
 // broken. A working model's emissive layers keep their brightness, an
-// idle one's follow the tint.
+// idle one's follow the tint; a working machine with flames pulses its
+// whole emissive layer with the embers (flame_ember_glow, 0274).
 posed_model_light :: proc(frame: Model_Frame, common: Entity_Common, machine: Machine, pose: Model_Pose) -> (light_tint, glow: [3]f32) {
 	sky_light := model_light_tint(model_frame_light(frame, model_light_cell(common)), frame.day_factor, frame.sky_tint)
 	light_tint = interior_light_tint(sky_light, model_interior_light_share(frame.interiors, common.frame, common.origin))
@@ -392,6 +408,9 @@ posed_model_light :: proc(frame: Model_Frame, common: Entity_Common, machine: Ma
 		light_tint *= BROKEN_MODEL_TINT
 	}
 	glow = emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
+	if pose.working && machine.flame_count > 0 {
+		glow *= flame_ember_glow(model_frame_seconds(frame), flame_salt(common.origin, common.frame), frame.reduced_motion)
+	}
 	return light_tint, glow
 }
 

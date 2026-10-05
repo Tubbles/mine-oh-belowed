@@ -252,8 +252,9 @@ foundation_model_working :: proc(entities: ^Entities, foundation: Foundation, ma
 }
 
 // A working machine's lamps (0224) in the world, where its model is drawn,
-// clipped to the machine's box up to its model's top (0229).
-append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, common: Entity_Common, machine: Machine, working: bool, top_cells: f32) {
+// clipped to the machine's box up to its model's top (0229). A lamp that
+// flickers (0274) takes its colour times flicker, the machine's fire's.
+append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, common: Entity_Common, machine: Machine, working: bool, top_cells: f32, flicker: f32 = 1) {
 	if !working || machine.light_count == 0 {
 		return
 	}
@@ -261,17 +262,25 @@ append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 	pitch := entity_frame_pitch_millimetres(entities, common.frame)
 	clip_box := machine_light_clip_box(body, machine.footprint, top_cells)
 	for index in 0 ..< machine.light_count {
-		append(lights, machine_point_light(machine.lights[index], body, pitch, clip_box))
+		light := machine.lights[index]
+		if light.flicker {
+			light.color *= flicker
+		}
+		append(lights, machine_point_light(light, body, pitch, clip_box))
 	}
 }
 
 // The lamps of the machines draw_entities draws whose model works. Chests
 // and capsules never work; an inserter's light is its arm's lamp
 // (arm_point_light). The models give each box its top (machine_model_top).
-gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, machines: Machine_Registry, models: Model_Renderer) {
+// A furnace's lamps flicker with its flames (the salt and the clock of
+// gather_machine_flames, 0274).
+gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	seconds := model_frame_seconds(frame)
 	for furnace in entities.furnaces.entries {
 		if furnace.alive {
-			append_machine_lights(lights, entities, furnace.common, machines.machines[furnace.machine], furnace_model_working(furnace), machine_model_top(models, furnace.common))
+			flicker := flame_flicker(seconds, flame_salt(furnace.origin, furnace.frame), frame.reduced_motion)
+			append_machine_lights(lights, entities, furnace.common, machines.machines[furnace.machine], furnace_model_working(furnace), machine_model_top(models, furnace.common), flicker)
 		}
 	}
 	for crate in entities.schematic_crates.entries {

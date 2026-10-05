@@ -1077,7 +1077,7 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 		drawn_water_mesh_count = counts.water_meshes,
 		live_particle_count = live_particle_count(&state.viewports[0].presentation.particles),
 		weather_particle_count = counts.weather_particles,
-		flame_count = flame_count(state.presentation.renderer),
+		flame_count = torch_flame_count(state.presentation.renderer),
 		block_atlas_size = texture_size(chunk_atlas_texture(state.presentation.renderer)),
 		item_atlas_size = texture_size(state.presentation.item_atlas.texture),
 		ui_atlas_size = texture_size(state.presentation.ui_icon_atlas.texture),
@@ -1171,7 +1171,7 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 	rl.BeginMode3D(camera)
 	draw_sky(&state.presentation.renderer.sky, camera, sky, memory.particle_memory.satellite)
 	draw_chunks(&state.presentation.renderer, camera)
-	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
+	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint), reduced_motion = state.settings.reduced_motion}
 	// The block world takes no point lights; the model renderer lives for
 	// the process, so a field session's lights are cleared (0224).
 	set_model_point_lights(state.presentation.model_renderer, {})
@@ -1183,7 +1183,7 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 	draw_power_entities(world, content.machines, state.presentation.model_renderer, frame)
 	draw_belts(&state.presentation.belt_renderer, world, content.items, content.machines, state.presentation.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas})
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas})
-	draw_torch_flames(&state.presentation.renderer, camera, still_seconds)
+	draw_session_flames(&state.presentation.renderer, state.presentation.model_renderer, &world.entities, content.machines, camera, frame)
 	life := session_life_frame(session, camera, sky, weather, look, alpha, seconds)
 	draw_fish_shadows(&state.presentation.renderer, life)
 	draw_water_chunks(&state.presentation.renderer, camera, seconds)

@@ -395,7 +395,7 @@ def mouth_cutter():
 
 def mouth(parts, random):
     """The chamfered iron frame round the opening, the hearth ledge, the
-    glowing coal bed, the coals and the flames against the dark back."""
+    glowing coal bed and the coals."""
     front_x, back_x = 4.32, 3.3
     count = len(MOUTH_INNER)
     for index in range(count):
@@ -420,7 +420,7 @@ def mouth(parts, random):
     parts.box(IRON, (4.62, -2.75, 2.28), (4.8, 2.75, 2.58))
     for u in (-2.2, -0.75, 0.75, 2.2):
         rivet(parts, (4.8, u, 2.43), (1, 0, 0), 0.08)
-    # The coal bed glows; dark coals and flames on it.
+    # The coal bed glows; dark coals on it.
     parts.box(FIRE, (MOUTH_BACK + 0.02, -1.48, 2.72), (3.6, 1.48, 2.86))
     for index in range(6):
         x = random.uniform(2.2, 3.7)
@@ -428,23 +428,10 @@ def mouth(parts, random):
         size = random.uniform(0.16, 0.3)
         material_name = MORTAR if index % 3 else RUST
         rivet(parts, (x, u, 2.84), (random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3), 1), size, material_name)
-    # Flames: a jagged glowing sheet against the dark back wall, and
-    # three free tongues standing nearer the mouth.
-    outline = [(-1.45, 2.86)]
-    tongues = 7
-    for index in range(tongues):
-        low_u = -1.45 + 2.9 * index / tongues
-        tip_u = low_u + 2.9 / tongues * random.uniform(0.35, 0.65)
-        centre_weight = 1.0 - abs(tip_u) / 1.6
-        outline.append((low_u + 0.05, 3.3 + random.uniform(0.0, 0.5) * centre_weight))
-        outline.append((tip_u, 3.9 + random.uniform(0.6, 1.4) * centre_weight))
-    outline += [(1.4, 3.3), (1.45, 2.86)]
-    parts.decal(FIRE, [(MOUTH_BACK + 0.03, u, z) for u, z in outline], (1, 0, 0))
-    for u, height in ((-0.6, 1.3), (0.15, 1.8), (0.85, 1.1)):
-        x = MOUTH_BACK + 0.8 + random.uniform(-0.2, 0.2)
-        blade = [(x, u - 0.28, 2.85), (x, u + 0.25, 2.85), (x, u + 0.1, 2.85 + height * 0.55),
-                 (x, u + random.uniform(-0.2, 0.2), 2.85 + height), (x, u - 0.18, 2.85 + height * 0.45)]
-        parts.decal(FIRE, blade, (1, 0, 0))
+    # The flames are the game's flame shader (0274); these 27 draws keep the
+    # hood's numbers.
+    for _ in range(27):
+        random.random()
 
 
 # The console --------------------------------------------------------------

@@ -32,6 +32,10 @@ MODEL_FOOTPRINT_TOLERANCE_CELLS :: 0.02
 MAXIMUM_POD_WINDOWS :: 8
 MINIMUM_POD_WINDOW_RADIUS_CELLS :: 0.05
 MAXIMUM_POD_WINDOW_RADIUS_CELLS :: 2
+// A furnace's flames (work item 0274, Machine_Flame): at most this many
+// quads, each this wide and tall in cells at least.
+MAXIMUM_MACHINE_FLAMES :: 8
+MINIMUM_MACHINE_FLAME_SIZE_CELLS :: 0.1
 
 // Dense index into Machine_Registry.machines.
 Machine_Id :: distinct u16
@@ -220,11 +224,14 @@ Pod_Fixture_Definition :: struct {
 // A lamp as written in the file (work item 0224): position in cells of
 // the model's frame, color 0 to 255 per channel. clip false lets the lamp
 // shine outside the machine's box (work item 0229); absent is true.
+// flicker true makes its colour follow the machine's fire flicker (work
+// item 0274); absent is false.
 Machine_Light_Definition :: struct {
 	position:     [3]f32,
 	color:        [3]int,
 	radius_cells: f32,
 	clip:         Maybe(bool),
+	flicker:      Maybe(bool),
 }
 
 // A machine's lamp (work item 0224): the position in cells of the model's
@@ -239,6 +246,28 @@ Machine_Light :: struct {
 	color:        [3]f32,
 	radius_cells: f32,
 	clip:         bool,
+	flicker:      bool,
+}
+
+// A furnace's flame as written in the file (work item 0274): the base
+// centre of the tongue in cells of the model's frame, its width and
+// height in cells and its turn about the up in degrees.
+Machine_Flame_Definition :: struct {
+	position:    [3]f32,
+	width:       f32,
+	height:      f32,
+	yaw_degrees: f32,
+}
+
+// A furnace's flame (work item 0274): a quad standing on its base centre
+// (cells of the model's frame, as a lamp's position), spanning across
+// (unit, horizontal: yaw 0 spans z and faces the front, +x) by width and
+// rising height cells. render_flames.odin draws it while the model works.
+Machine_Flame :: struct {
+	position: [3]f32,
+	across:   [3]f32,
+	width:    f32,
+	height:   f32,
 }
 
 // A pod's chair as written in the file (work item 0223): its cells of the
@@ -326,6 +355,7 @@ Machine_Definition :: struct {
 	open_cells:                   []Machine_Cell_Box_Definition,
 	fixtures:                     []Pod_Fixture_Definition,
 	lights:                       []Machine_Light_Definition,
+	flames:                       []Machine_Flame_Definition,
 	interior_light_share:         Maybe(f32),
 	seat:                         Maybe(Pod_Seat_Definition),
 	windows:                      []Pod_Window_Definition,
@@ -448,6 +478,9 @@ Machine :: struct {
 	// reads them).
 	lights:                      [MAXIMUM_MACHINE_LIGHTS]Machine_Light,
 	light_count:                 int,
+	// A furnace's flames (work item 0274, presentation only).
+	flames:                      [MAXIMUM_MACHINE_FLAMES]Machine_Flame,
+	flame_count:                 int,
 	// The model's collision volumes (work item 0230, machine_collision.odin)
 	// in 1/COLLISION_UNITS_PER_CELL cell of the model's frame, nil without a
 	// collision file; the machine then collides by them on a frame
@@ -792,6 +825,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_machine_lights(definition); problem != "" {
 		return problem
 	}
+	if problem := validate_machine_flames(definition, kind); problem != "" {
+		return problem
+	}
 	if problem := validate_interior_light_share(definition, kind); problem != "" {
 		return problem
 	}
@@ -901,6 +937,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	recipe_maker, _ := parse_named_enum(recipe_maker_names, definition.recipe_maker)
 	recipe_choice, _ := parse_named_enum(recipe_choice_names, definition.recipe_choice)
 	lights, light_count := resolve_machine_lights(definition.lights)
+	flames, flame_count := resolve_machine_flames(definition.flames)
 	return Machine {
 		id = definition.id,
 		name_key = definition.name_key,
@@ -950,6 +987,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		open_cell_box_count = len(definition.open_cells),
 		lights = lights,
 		light_count = light_count,
+		flames = flames,
+		flame_count = flame_count,
 		interior_light_share = definition.interior_light_share.? or_else 1,
 		stands_on_ground = definition.stands_on_ground,
 		bare_ground_life_minutes = definition.bare_ground_life_minutes,
@@ -1014,6 +1053,9 @@ validate_machine_lights :: proc(definition: Machine_Definition) -> string {
 				return fmt.tprintf("machine %q light %d has a color channel outside 0 to 255", definition.id, index)
 			}
 		}
+		if (light.flicker.? or_else false) && len(definition.flames) == 0 {
+			return fmt.tprintf("machine %q light %d flickers, but the machine has no flames", definition.id, index)
+		}
 	}
 	return ""
 }
@@ -1022,10 +1064,61 @@ validate_machine_lights :: proc(definition: Machine_Definition) -> string {
 resolve_machine_lights :: proc(definitions: []Machine_Light_Definition) -> (lights: [MAXIMUM_MACHINE_LIGHTS]Machine_Light, count: int) {
 	for definition in definitions[:min(len(definitions), MAXIMUM_MACHINE_LIGHTS)] {
 		color := [3]f32{f32(definition.color[0]), f32(definition.color[1]), f32(definition.color[2])} / 255
-		lights[count] = {position = definition.position, color = color, radius_cells = definition.radius_cells, clip = definition.clip.? or_else true}
+		lights[count] = {position = definition.position, color = color, radius_cells = definition.radius_cells, clip = definition.clip.? or_else true, flicker = definition.flicker.? or_else false}
 		count += 1
 	}
 	return lights, count
+}
+
+// At most MAXIMUM_MACHINE_FLAMES flames, furnaces only (work item 0274):
+// each base inside the footprint with the lamps' slack, the width and
+// the height MINIMUM_MACHINE_FLAME_SIZE_CELLS to MAXIMUM_FOOTPRINT_SIZE,
+// the top no higher than the footprint with the slack, the yaw -180 to
+// 180 degrees. Every comparison fails on NaN.
+validate_machine_flames :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	if len(definition.flames) == 0 {
+		return ""
+	}
+	if kind != .Furnace {
+		return fmt.tprintf("machine %q has flames, which only a furnace may", definition.id)
+	}
+	if len(definition.flames) > MAXIMUM_MACHINE_FLAMES {
+		return fmt.tprintf("machine %q has more than %d flames", definition.id, MAXIMUM_MACHINE_FLAMES)
+	}
+	for flame, index in definition.flames {
+		if problem := validate_machine_flame(definition, flame, index); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+validate_machine_flame :: proc(definition: Machine_Definition, flame: Machine_Flame_Definition, index: int) -> string {
+	position := flame.position
+	top_limit := f32(definition.footprint.height) + MODEL_FOOTPRINT_TOLERANCE_CELLS
+	switch {
+	case !machine_light_inside_footprint(position, definition.footprint):
+		return fmt.tprintf("machine %q flame %d at [%.3f, %.3f, %.3f] is not inside the footprint", definition.id, index, position.x, position.y, position.z)
+	case !(flame.width >= MINIMUM_MACHINE_FLAME_SIZE_CELLS && flame.width <= MAXIMUM_FOOTPRINT_SIZE):
+		return fmt.tprintf("machine %q flame %d has width %.3f, not 0.1 to %d cells", definition.id, index, flame.width, MAXIMUM_FOOTPRINT_SIZE)
+	case !(flame.height >= MINIMUM_MACHINE_FLAME_SIZE_CELLS && flame.height <= MAXIMUM_FOOTPRINT_SIZE):
+		return fmt.tprintf("machine %q flame %d has height %.3f, not 0.1 to %d cells", definition.id, index, flame.height, MAXIMUM_FOOTPRINT_SIZE)
+	case !(position.y + flame.height <= top_limit):
+		return fmt.tprintf("machine %q flame %d rises above the footprint", definition.id, index)
+	case !(flame.yaw_degrees >= -180 && flame.yaw_degrees <= 180):
+		return fmt.tprintf("machine %q flame %d has yaw_degrees %.3f, not -180 to 180", definition.id, index, flame.yaw_degrees)
+	}
+	return ""
+}
+
+// Validated before (validate_machine_flames): the across from the yaw.
+resolve_machine_flames :: proc(definitions: []Machine_Flame_Definition) -> (flames: [MAXIMUM_MACHINE_FLAMES]Machine_Flame, count: int) {
+	for definition in definitions[:min(len(definitions), MAXIMUM_MACHINE_FLAMES)] {
+		yaw := definition.yaw_degrees * math.RAD_PER_DEG
+		flames[count] = {position = definition.position, across = {math.sin(yaw), 0, math.cos(yaw)}, width = definition.width, height = definition.height}
+		count += 1
+	}
+	return flames, count
 }
 
 // A pod's interior_light_share (work item 0225) is 0 to 1, and only a pod

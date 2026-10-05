@@ -266,7 +266,7 @@ belt_item_count :: proc(network: Belt_Network) -> int {
 	return count
 }
 
-flame_count :: proc(renderer: Chunk_Renderer) -> int {
+torch_flame_count :: proc(renderer: Chunk_Renderer) -> int {
 	count := 0
 	for _, chunk_render in renderer.chunk_meshes {
 		count += len(chunk_render.flames)

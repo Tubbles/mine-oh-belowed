@@ -98,7 +98,9 @@
 // only inside its machine's box (the footprint, up to the model's top
 // when it rises higher) and gives nothing to a face turned away from it,
 // so a lamp inside a hull leaves the hull's outside dark; with clip =
-// false it shines out of the machine (a street lamp).
+// false it shines out of the machine (a street lamp). A lamp may add
+// flicker = true (work item 0274) on a machine with flames: its colour
+// follows the fire's flicker, as the flames' reach and brightness do.
 // Each shines a point light in a field session while the machine's model
 // works (the same flag that lights its emissive materials; a pod always
 // works); the block world takes no point lights. Presentation only. A
@@ -129,6 +131,14 @@
 // slack, the normal into the cabin of length 0.5 to 2 (normalised at
 // load), the radius 0.05 to 2 cells. The entry's plasma streams on them.
 // Presentation only.
+// flames (optional, furnaces only, work item 0274, at most 8) lists
+// {position = [x, y, z], width, height, yaw_degrees}: a quad of the flame
+// shader standing on its base centre at position, in cells of the model's
+// frame like a lamp's and inside the footprint with the lamps' slack,
+// width and height 0.1 to 12 cells, its top no higher than the
+// footprint, turned yaw_degrees (-180 to 180) about the up from spanning
+// z and facing the front. The flames burn while the model works, and the
+// emissive materials pulse slowly with the embers. Presentation only.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -374,7 +384,6 @@ machines = [
 		name_key = "machine_stone_furnace"
 		description_key = "describe_machine_stone_furnace"
 		model = "stone_furnace"
-		motion = {kind = "glow", period_seconds = 2}
 		item = "stone_furnace"
 		kind = "furnace"
 		footprint = {width = 10, depth = 10, height = 12}
@@ -383,6 +392,20 @@ machines = [
 		output_slots = 2
 		speed = 1
 		fuel_power_kilowatts = 90
+		// The firebox's flames (0274) on the coal bed's top: a broad sheet
+		// before the back wall, two fanned tongues and a near side on one,
+		// inside the mouth's opening and under its arch.
+		flames = [
+			{position = [2.3, 2.84, 0.0], width = 2.7, height = 2.4, yaw_degrees = 0}
+			{position = [2.85, 2.84, 0.6], width = 1.4, height = 2.1, yaw_degrees = 35}
+			{position = [2.95, 2.84, -0.55], width = 1.4, height = 2.3, yaw_degrees = -35}
+			{position = [3.3, 2.84, 0.05], width = 1.2, height = 1.6, yaw_degrees = 80}
+		]
+		// The fire's light in front of the mouth, unclipped so the ground
+		// and the player take it, flickering with the flames.
+		lights = [
+			{position = [4.5, 3.4, 0.0], color = [255, 140, 52], radius_cells = 8.0, clip = false, flicker = true}
+		]
 	}
 	{
 		id = "steel_furnace"

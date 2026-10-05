@@ -169,3 +169,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 - The dust puffs along the rim are drawn as the arrival dust always was, a soft disc per puff; at 64 puffs of 1.2 to 4.7 m along a rim of a few metres they overlap into large round translucent discs with visible edges (the headless shots at 1.5 and 2 s), more a cluster of bubbles than a curtain. A noise cut edge on the disc, or fewer larger puffs with a softer falloff, would read as dust; the puff shader is the place, not the count.
 - The clods at rest read a shade darker than the ground round them (the rim shots at 4 and 9 s). A clod's face is lit `0.5 + 0.5·max(n·up, 0)` times the day factor on the tile's mean texel; the field takes its sun term over an ambient share of 0.45 and the vertex light on the triplanar texel. Which of the two differs is unmeasured: compare a clod's top against the field beside it in one shot before tuning either.
 - The flying clods are plain cubes; a hashed box with unequal edges (0.6 to 1.4 of the edge per axis) would break the cube read at no cost. A model would be the Techtonica way (DESIGN.md, the look), once a reference model exists.
+
+## Suggestions from the flames (0274, 2026-10-05)
+
+- The flames draw before the water as the old billboards did, so water in front of a flame covers it. A furnace at a shore is rare enough to leave; the fix is a second flame pass after the water, which costs a batch.
+- The model preview shows the mean flicker with the flow at `phase · 8` seconds; a preview that advances the clock would show the flow moving, which the user may want for judging a new fire.

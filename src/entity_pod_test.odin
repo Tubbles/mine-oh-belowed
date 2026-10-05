@@ -882,7 +882,7 @@ test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
 	lights := make([dynamic]Point_Light, context.temp_allocator)
-	gather_machine_lights(&lights, &entities, machines, Model_Renderer{})
+	gather_machine_lights(&lights, &entities, machines, Model_Renderer{}, Model_Frame{})
 	testing.expect_value(t, len(lights), 3)
 	radii := [3]f32{6 * 0.5, 2 * 0.5, 3 * 0.5}
 	for radius in radii {
@@ -900,7 +900,7 @@ test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 	toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), 1, nil)
 	toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), 2, nil)
 	clear(&lights)
-	gather_machine_lights(&lights, &entities, machines, Model_Renderer{})
+	gather_machine_lights(&lights, &entities, machines, Model_Renderer{}, Model_Frame{})
 	testing.expect_value(t, len(lights), 2)
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, frame.id), 500)
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, BLOCK_FRAME), 1000)
@@ -1004,7 +1004,7 @@ test_a_pods_lamp_lights_only_inside_its_box :: proc(t: ^testing.T) {
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
 	lights := make([dynamic]Point_Light, context.temp_allocator)
-	gather_machine_lights(&lights, &entities, machines, Model_Renderer{})
+	gather_machine_lights(&lights, &entities, machines, Model_Renderer{}, Model_Frame{})
 	testing.expect_value(t, len(lights), 1)
 	if len(lights) != 1 {
 		return

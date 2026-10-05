@@ -324,6 +324,72 @@ test_machine_lights_stay_on_the_footprint_with_a_bounded_radius :: proc(t: ^test
 	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].light_count, 2)
 }
 
+// Work item 0274: a furnace's flames stay on its footprint and under its
+// top, sized and turned within bounds, at most eight, furnaces only; a
+// flickering lamp needs flames. The shipped stone furnace burns four
+// flames and a flickering unclipped lamp, without a motion.
+@(test)
+test_machine_flames_are_validated :: proc(t: ^testing.T) {
+	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	shipped: Machine_Definition
+	for definition in file.machines {
+		if definition.id == "stone_furnace" {
+			shipped = definition
+		}
+	}
+	testing.expect_value(t, validate_machine_definition({shipped}, 0), "")
+	flame := Machine_Flame_Definition{position = {2, 3, 0}, width = 1, height = 2, yaw_degrees = 0}
+	nine := make([]Machine_Flame_Definition, MAXIMUM_MACHINE_FLAMES + 1, context.temp_allocator)
+	for &entry in nine {
+		entry = flame
+	}
+	nan := math.nan_f32()
+	refusals := []struct {
+		flames: []Machine_Flame_Definition,
+		words:  string,
+	} {
+		{nine, "machine \"stone_furnace\" has more than 8 flames"},
+		{{{position = {5.1, 3, 0}, width = 1, height = 2}}, "flame 0 at [5.100, 3.000, 0.000] is not inside the footprint"},
+		{{{position = {nan, 3, 0}, width = 1, height = 2}}, "flame 0 at "},
+		{{flame, {position = {0, 3, 0}, width = 0.05, height = 2}}, "flame 1 has width 0.050, not 0.1 to 12 cells"},
+		{{{position = {0, 3, 0}, width = 13, height = 2}}, "flame 0 has width 13.000"},
+		{{{position = {0, 3, 0}, width = nan, height = 2}}, "flame 0 has width NaN"},
+		{{{position = {0, 3, 0}, width = 1, height = 0.05}}, "flame 0 has height 0.050, not 0.1 to 12 cells"},
+		{{{position = {0, 3, 0}, width = 1, height = nan}}, "flame 0 has height NaN"},
+		{{{position = {0, 11, 0}, width = 1, height = 2}}, "flame 0 rises above the footprint"},
+		{{{position = {0, 3, 0}, width = 1, height = 2, yaw_degrees = 181}}, "flame 0 has yaw_degrees 181.000, not -180 to 180"},
+		{{{position = {0, 3, 0}, width = 1, height = 2, yaw_degrees = nan}}, "flame 0 has yaw_degrees NaN"},
+	}
+	for refusal in refusals {
+		changed := shipped
+		changed.flames = refusal.flames
+		problem := validate_machine_definition({changed}, 0)
+		testing.expectf(t, strings.contains(problem, refusal.words), "%q lacks %q", problem, refusal.words)
+	}
+	edge := shipped
+	edge.flames = {{position = {0, 10, 0}, width = 12, height = 2, yaw_degrees = -180}}
+	testing.expect_value(t, validate_machine_definition({edge}, 0), "")
+	unlit := shipped
+	unlit.flames = nil
+	testing.expect_value(t, validate_machine_definition({unlit}, 0), "machine \"stone_furnace\" light 0 flickers, but the machine has no flames")
+	chest := Machine_Definition{id = "chest", name_key = "machine_wooden_chest", kind = "chest", footprint = {width = 1, depth = 1, height = 1}, slots = 16, flames = {flame}}
+	chest.flames[0].position = {0, 0, 0}
+	chest.flames[0].height = 1
+	testing.expect_value(t, validate_machine_definition({chest}, 0), "machine \"chest\" has flames, which only a furnace may")
+
+	machines := make_test_machines()
+	furnace := machines.machines[test_machine(machines, "stone_furnace")]
+	testing.expect_value(t, furnace.flame_count, 4)
+	testing.expect_value(t, furnace.motion.kind, Motion_Kind.None)
+	testing.expect_value(t, furnace.light_count, 1)
+	testing.expect(t, furnace.lights[0].flicker && !furnace.lights[0].clip, "the firebox lamp flickers and is not clipped")
+	testing.expect_value(t, furnace.flames[0].across, [3]f32{0, 0, 1})
+	turned := furnace.flames[1].across
+	testing.expect(t, abs(turned.x - math.sin(f32(35) * math.RAD_PER_DEG)) < 1e-6 && turned.y == 0, "a yaw of 35 turns the across towards +x")
+	testing.expect_value(t, machines.machines[test_machine(machines, "steel_furnace")].flame_count, 0)
+}
+
 // Work item 0225: interior_light_share is a pod's only, 0 to 1, and 1
 // when absent.
 @(test)

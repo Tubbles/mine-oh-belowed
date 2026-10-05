@@ -992,6 +992,35 @@ test_field_place_on_a_frame_cell :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(listed, fmt.tprintf("entity wooden_chest frame %d cell %d 0 0 ", frame.id, x)), "%s", listed)
 }
 
+// Work item 0274: insert with a frame fills the machine at a frame's
+// cell; an empty cell and frame 0 are refused.
+@(test)
+test_field_insert_into_a_frame_machine :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	state := &test.session.simulation
+	move_test_players_out_of_the_pod(state, test.content.machines)
+	tick_field_command_test(test, 1)
+	_, frame, _ := find_test_pod(&state.world.entities, test.content.machines)
+	x := i32(8)
+	if field_placement_buries_a_player(state, test.session.field_content.tuning, frame, {8, 0, 0}) {
+		x = -7
+	}
+	expect_field_command_ok(t, test, fmt.tprintf("place wooden_foundation %d %d -1 0 0", frame.id, x))
+	expect_field_command_ok(t, test, fmt.tprintf("place wooden_chest %d %d 0 0 0", frame.id, x))
+	response := expect_field_command_ok(t, test, fmt.tprintf("insert coal 5 %d %d 0 0", frame.id, x))
+	testing.expect_value(t, response.text, fmt.tprintf("frame %d at %d 0 0", frame.id, x))
+	handle, _ := frame_occupant(&state.world.entities.frames, frame.id, {x, 0, 0})
+	chest := pool_get(&state.world.entities.chests, entity_from_occupant(handle.handle))
+	testing.expect(t, chest != nil, "the chest stands there")
+	if chest != nil {
+		testing.expect_value(t, chest.slots[0], Item_Stack{test_item(test.content.items, "coal"), 5})
+	}
+	expect_field_command_error(t, test, fmt.tprintf("insert coal 5 %d %d 1 0", frame.id, x), "no entity there")
+	expect_field_command_error(t, test, fmt.tprintf("insert coal 5 0 %d 0 0", x), NO_BLOCK_WORLD_PROBLEM)
+	expect_field_command_error(t, test, fmt.tprintf("insert coal 0 %d %d 0 0", frame.id, x), "needs a count from 1")
+}
+
 @(test)
 test_field_refuses_the_block_world_commands :: proc(t: ^testing.T) {
 	test := make_field_command_test()

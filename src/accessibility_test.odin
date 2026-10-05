@@ -130,9 +130,10 @@ test_reduced_motion_stills_each_motion :: proc(t: ^testing.T) {
 	testing.expect(t, !weather_motion_enabled(settings))
 	look := weather_look(Weather{kind = .Rain, intensity = 1}, weather_motion_enabled(settings), 1)
 	testing.expect_value(t, look, Weather_Look{fog_scale = 1})
-	// Torch flames and the block light's flicker stand still.
+	// The block light's flicker and the flames' flicker stand still.
 	testing.expect_value(t, flicker_seconds(12.5, true), flicker_seconds(99, true))
-	testing.expect_value(t, flame_flicker({3, 4, 5}, flicker_seconds(12.5, true)), flame_flicker({3, 4, 5}, flicker_seconds(99, true)))
+	testing.expect_value(t, flame_flicker(12.5, 7, true), flame_flicker(99, 7, true))
+	testing.expect_value(t, flame_flicker(12.5, 7, true), FLAME_FLICKER_MEAN)
 	testing.expect_value(t, still_focus_pulse(0.25, true), 1)
 
 	// Each off on its own stays off with reduced motion off.
