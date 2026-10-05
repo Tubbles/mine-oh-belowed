@@ -1,6 +1,6 @@
 # 0268: A seated pose for the player model
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, c4eb36e)
 
 ## Goal
 
