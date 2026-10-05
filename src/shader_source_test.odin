@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 import "core:testing"
 import "platform"
@@ -242,4 +243,45 @@ test_the_flame_shaders_read_the_fire_flicker_bounds :: proc(t: ^testing.T) {
 	mean := fmt.tprintf("const float fire_flicker_mean = %v;", FIRE_FLICKER_MEAN)
 	testing.expectf(t, strings.contains(vertex, highest), "flame.vs does not hold %s", highest)
 	testing.expectf(t, strings.contains(fragment, mean), "flame.fs does not hold %s", mean)
+}
+
+// A shader's float constant: the text after `const float <name> = ` up
+// to the `;`; found false without it or when it does not parse.
+shader_float_constant :: proc(source, name: string) -> (value: f32, found: bool) {
+	prefix := fmt.tprintf("const float %s = ", name)
+	start := strings.index(source, prefix)
+	if start < 0 {
+		return 0, false
+	}
+	rest := source[start + len(prefix):]
+	end := strings.index_byte(rest, ';')
+	if end < 0 {
+		return 0, false
+	}
+	return strconv.parse_f32(rest[:end])
+}
+
+// Work item 0288: at the peak the flow and both spark grids cross the
+// glass (two radii) in 2 to 4 ticks at 60 Hz, at least the footage's 15
+// window widths a second and at most one radius a tick; the onset's
+// layer lies between 6 and the peak's; under reduced motion the flow
+// keeps 0286's calm pace; the shader takes the layer and the sheath's
+// scale.
+@(test)
+test_the_plasma_crosses_the_glass_as_fast_as_the_footage :: proc(t: ^testing.T) {
+	source := #load("../data/shaders/arrival.fs", string)
+	fast, fast_found := shader_float_constant(source, "FAST_FLOW")
+	testing.expect(t, fast_found, "arrival.fs lacks FAST_FLOW")
+	for name in ([3]string{"FAST_FLOW", "SPARK_FLOW", "SPARK_FAST_FLOW"}) {
+		value, found := shader_float_constant(source, name)
+		testing.expectf(t, found, "arrival.fs lacks %s", name)
+		crossing := 2 * 60 / value
+		testing.expectf(t, crossing >= 2 && crossing <= 4, "%s crosses the glass in %v ticks", name, crossing)
+	}
+	slow, slow_found := shader_float_constant(source, "SLOW_FLOW")
+	testing.expectf(t, slow_found && slow >= 6 && slow <= fast, "SLOW_FLOW is %v", slow)
+	calm, calm_found := shader_float_constant(source, "CALM_FLOW")
+	testing.expectf(t, calm_found && abs(calm - 0.56) < 1e-6, "CALM_FLOW is %v", calm)
+	testing.expect(t, strings.contains(source, "\nuniform float layer;\n"), "arrival.fs does not declare layer")
+	testing.expect(t, strings.contains(source, "\nuniform float sheath_scale;\n"), "arrival.fs does not declare sheath_scale")
 }

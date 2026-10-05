@@ -14,8 +14,9 @@ import "platform"
 // curve down to the resting place (arrival_descent_offset, 0223, 0269),
 // the pod drawn base first along the curve's tangent and easing into
 // the pose it rests in (arrival_pod_transform, 0270), the plasma
-// streaming across the portholes' glass at the heat and lighting the
-// cabin (0273), flickering through fire_flicker (0286), the buffeting
+// sheath streaming outside the hull past the portholes at the heat
+// (0288) and lighting the cabin (0273), flickering through fire_flicker
+// (0286), the soot on the portholes' outer panes, the buffeting
 // and the roar; at the hit the pod meets the floor, the cabin shakes,
 // the dust rises along the crater's rim, the debris flies (0272,
 // render_arrival_debris.odin) and the crash and the bang play. Nothing
@@ -41,11 +42,12 @@ ARRIVAL_BUFFET_METRES :: 0.05
 ARRIVAL_BUFFET_HERTZ :: 7.3
 // Each porthole's light (0273): the ablator's share of its colour, its
 // brightness at heat 1 and flicker 1, its reach and how far into the
-// cabin it sits from the glass, in cells.
+// cabin it sits from the outer pane, in cells (0.35 from the lining,
+// where 0273 put it, 0288).
 ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE :: 0.3
 ARRIVAL_WINDOW_LIGHT_GAIN :: 0.7
 ARRIVAL_WINDOW_LIGHT_RADIUS_CELLS :: 5.0
-ARRIVAL_WINDOW_LIGHT_INSET_CELLS :: 0.35
+ARRIVAL_WINDOW_LIGHT_INSET_CELLS :: 0.73
 // The white a flare whitens the window light towards: arrival.fs's
 // WHITE_CORE.
 ARRIVAL_WINDOW_WHITE_LIGHT :: [3]f32{1.0, 0.97, 0.92}
@@ -297,7 +299,7 @@ arrival_plasma_color :: proc(color: [3]int) -> [3]f32 {
 
 // Each porthole a point light in the plasma's colour while the pod
 // descends (0273): ARRIVAL_WINDOW_LIGHT_INSET_CELLS into the cabin from
-// the glass's centre, its colour the haze mixed with the ablator's
+// the outer pane's centre, its colour the haze mixed with the ablator's
 // share and whitened by a flare (arrival_window_light_color, 0286)
 // times the heat, the window's flicker and the gain, clipped to the
 // pod's box (clip_box), so the cabin is lit and the hull's outside and
@@ -431,14 +433,41 @@ destroy_arrival_presentation :: proc(presentation: ^Arrival_Presentation) {
 	presentation.shader_ready = false
 }
 
+// A window's sheath quad's centre in the model's frame (0288):
+// sheath_depth cells out along the normal from the outer pane, outside
+// the hull.
+arrival_sheath_centre :: proc(window: Pod_Window) -> [3]f32 {
+	return window.centre - window.normal * window.sheath_depth
+}
+
+// One quad of the window shader with the texture coordinates (0, 0),
+// (1, 0), (1, 1) and (0, 1) at the corners, its own batch.
+draw_arrival_quad :: proc(corners: [4][3]f32, texture: u32) {
+	coordinates := [4][2]f32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	rlgl.SetTexture(texture)
+	rlgl.Begin(rlgl.QUADS)
+	rlgl.Color4ub(255, 255, 255, 255)
+	for corner, corner_index in corners {
+		rlgl.TexCoord2f(coordinates[corner_index].x, coordinates[corner_index].y)
+		rlgl.Vertex3f(corner.x, corner.y, corner.z)
+	}
+	rlgl.End()
+	rlgl.SetTexture(0)
+	rlgl.DrawRenderBatchActive()
+}
+
 // Inside BeginMode3D under the pod's transform (nil outside the
-// descent): the plasma and the soot on each of the pod's windows (0223,
-// 0273), the travel the pod's way along the path in the frame's unmoved
-// space. The quad is laid from the glass's axis alone
-// (arrival_glass_axis: the pod's up, its forward for a porthole facing
-// along the up), so it never turns and the soot holds still; the flow
-// turns inside it by travel_on_glass.
-// Each window is its own batch, since its uniforms are its own; depth
+// descent): each of the pod's windows (0223, 0273, 0288) in two passes,
+// the travel the pod's way along the path in the frame's unmoved space.
+// First, while the heat lasts, the sheath (layer 1): a square quad
+// outside the hull (arrival_sheath_centre, sheath_radius in half side),
+// seen only through the porthole's bore, which crops it. Then, while
+// there is soot, the soot (layer 0) on the outer pane at the window's
+// centre, in front of the sheath. Each quad is laid from the glass's
+// axis alone (arrival_glass_axis: the pod's up, its forward for a
+// porthole facing along the up), so it never turns and the soot holds
+// still; the flow turns inside it by travel_on_glass.
+// Each quad is its own batch, since its uniforms are its own; depth
 // tested, without writing depth or culling. Nothing while both the heat
 // and the soot are 0. Under reduced motion calm is 1 (arrival.fs).
 draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32, salt: u64, reduced_motion: bool) {
@@ -457,33 +486,31 @@ draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_
 	rlgl.DisableBackfaceCulling()
 	rl.BeginShaderMode(shader)
 	haze, ablator := arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color)
-	for index in 0 ..< min(machine.window_count, MAXIMUM_POD_WINDOWS) {
-		window := machine.windows[index]
-		centre := transform_point(body, window.centre)
-		normal := linalg.normalize(linear * window.normal)
-		fallback := arrival_glass_axis(normal, up, forward)
-		corners := arrival_window_corners(centre, normal, fallback, fallback, window.radius * pitch_metres)
-		set_shader_float(shader, "heat", view.heat)
-		set_shader_float(shader, "soot", view.soot)
-		set_shader_float(shader, "soot_opacity", f32(plasma.soot_percent) / 100)
-		set_shader_float(shader, "seconds", view.seconds)
-		set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000 + f32(index) * 0.618)
-		set_shader_float(shader, "flicker", flickers[index])
-		set_shader_float(shader, "calm", reduced_motion ? 1 : 0)
-		set_shader_vector2(shader, "travel_on_glass", arrival_travel_on_glass(normal, travel, fallback))
-		set_shader_vector3(shader, "haze_color", haze)
-		set_shader_vector3(shader, "ablator_color", ablator)
-		coordinates := [4][2]f32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-		rlgl.SetTexture(texture)
-		rlgl.Begin(rlgl.QUADS)
-		rlgl.Color4ub(255, 255, 255, 255)
-		for corner, corner_index in corners {
-			rlgl.TexCoord2f(coordinates[corner_index].x, coordinates[corner_index].y)
-			rlgl.Vertex3f(corner.x, corner.y, corner.z)
+	for pass in 0 ..< 2 {
+		sheath := pass == 0
+		if (sheath && view.heat <= 0) || (!sheath && view.soot <= 0) {
+			continue
 		}
-		rlgl.End()
-		rlgl.SetTexture(0)
-		rlgl.DrawRenderBatchActive()
+		for index in 0 ..< min(machine.window_count, MAXIMUM_POD_WINDOWS) {
+			window := machine.windows[index]
+			normal := linalg.normalize(linear * window.normal)
+			fallback := arrival_glass_axis(normal, up, forward)
+			centre := transform_point(body, sheath ? arrival_sheath_centre(window) : window.centre)
+			radius := sheath ? window.sheath_radius : window.radius
+			set_shader_float(shader, "layer", sheath ? 1 : 0)
+			set_shader_float(shader, "sheath_scale", window.sheath_radius / window.radius)
+			set_shader_float(shader, "heat", view.heat)
+			set_shader_float(shader, "soot", view.soot)
+			set_shader_float(shader, "soot_opacity", f32(plasma.soot_percent) / 100)
+			set_shader_float(shader, "seconds", view.seconds)
+			set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000 + f32(index) * 0.618)
+			set_shader_float(shader, "flicker", flickers[index])
+			set_shader_float(shader, "calm", reduced_motion ? 1 : 0)
+			set_shader_vector2(shader, "travel_on_glass", arrival_travel_on_glass(normal, travel, fallback))
+			set_shader_vector3(shader, "haze_color", haze)
+			set_shader_vector3(shader, "ablator_color", ablator)
+			draw_arrival_quad(arrival_window_corners(centre, normal, fallback, fallback, radius * pitch_metres), texture)
+		}
 	}
 	rl.EndShaderMode()
 	rlgl.EnableBackfaceCulling()

@@ -32,6 +32,11 @@ MODEL_FOOTPRINT_TOLERANCE_CELLS :: 0.02
 MAXIMUM_POD_WINDOWS :: 8
 MINIMUM_POD_WINDOW_RADIUS_CELLS :: 0.05
 MAXIMUM_POD_WINDOW_RADIUS_CELLS :: 2
+// A window's sheath (work item 0288): its plane at most this far out
+// along the normal from the pane, its quad's half side at most this, in
+// cells.
+MAXIMUM_POD_SHEATH_DEPTH_CELLS :: 2
+MAXIMUM_POD_SHEATH_RADIUS_CELLS :: 4
 // A furnace's flames (work item 0274, Machine_Flame): at most this many
 // quads, each this wide and tall in cells at least.
 MAXIMUM_MACHINE_FLAMES :: 8
@@ -279,17 +284,21 @@ Pod_Seat_Definition :: struct {
 	facing: string,
 }
 
-// A pod's porthole glass (work item 0223): the centre in cells of the
-// model's frame, the normal into the cabin and the radius in cells. As
+// A pod's porthole (work item 0223): the outer pane's centre in cells
+// of the model's frame, the normal into the cabin and the radius in
+// cells; the sheath's plane sheath_depth cells out along the normal from
+// the centre, its quad sheath_radius cells in half side (0288). As
 // written in the file and, the normal normalised, resolved.
 Pod_Window_Definition :: struct {
-	centre, normal: [3]f32,
-	radius:         f32,
+	centre, normal:              [3]f32,
+	radius:                      f32,
+	sheath_depth, sheath_radius: f32,
 }
 
 Pod_Window :: struct {
-	centre, normal: [3]f32,
-	radius:         f32,
+	centre, normal:              [3]f32,
+	radius:                      f32,
+	sheath_depth, sheath_radius: f32,
 }
 
 // A resolved chair (work item 0223): the cells of the unrotated
@@ -1357,9 +1366,11 @@ validate_pod_seat :: proc(definitions: []Machine_Definition, index: int) -> stri
 
 // A pod's windows (work item 0223): only a pod has them, at most
 // MAXIMUM_POD_WINDOWS, each centred inside the footprint
-// (machine_light_inside_footprint), its normal 0.5 to 2 long and its
+// (machine_light_inside_footprint), its normal 0.5 to 2 long, its
 // radius MINIMUM_POD_WINDOW_RADIUS_CELLS to
-// MAXIMUM_POD_WINDOW_RADIUS_CELLS; every comparison fails on NaN.
+// MAXIMUM_POD_WINDOW_RADIUS_CELLS, its sheath_depth 0 to
+// MAXIMUM_POD_SHEATH_DEPTH_CELLS and its sheath_radius its radius to
+// MAXIMUM_POD_SHEATH_RADIUS_CELLS (0288); every comparison fails on NaN.
 validate_pod_windows :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
 	if len(definition.windows) == 0 {
 		return ""
@@ -1380,6 +1391,12 @@ validate_pod_windows :: proc(definition: Machine_Definition, kind: Machine_Kind)
 		}
 		if !(window.radius >= MINIMUM_POD_WINDOW_RADIUS_CELLS && window.radius <= MAXIMUM_POD_WINDOW_RADIUS_CELLS) {
 			return fmt.tprintf("pod %q window %d has radius %.3f, not 0.05 to 2", definition.id, index, window.radius)
+		}
+		if !(window.sheath_depth >= 0 && window.sheath_depth <= MAXIMUM_POD_SHEATH_DEPTH_CELLS) {
+			return fmt.tprintf("pod %q window %d has sheath_depth %.3f, not 0 to 2", definition.id, index, window.sheath_depth)
+		}
+		if !(window.sheath_radius >= window.radius && window.sheath_radius <= MAXIMUM_POD_SHEATH_RADIUS_CELLS) {
+			return fmt.tprintf("pod %q window %d has sheath_radius %.3f, not its radius to 4", definition.id, index, window.sheath_radius)
 		}
 	}
 	return ""
@@ -1405,7 +1422,13 @@ resolve_pod_seat :: proc(definition: Machine_Definition) -> Pod_Seat {
 resolve_pod_windows :: proc(definitions: []Pod_Window_Definition) -> (windows: [MAXIMUM_POD_WINDOWS]Pod_Window, count: int) {
 	for definition in definitions[:min(len(definitions), MAXIMUM_POD_WINDOWS)] {
 		length := math.sqrt(definition.normal.x * definition.normal.x + definition.normal.y * definition.normal.y + definition.normal.z * definition.normal.z)
-		windows[count] = {centre = definition.centre, normal = definition.normal / length, radius = definition.radius}
+		windows[count] = {
+			centre        = definition.centre,
+			normal        = definition.normal / length,
+			radius        = definition.radius,
+			sheath_depth  = definition.sheath_depth,
+			sheath_radius = definition.sheath_radius,
+		}
 		count += 1
 	}
 	return windows, count

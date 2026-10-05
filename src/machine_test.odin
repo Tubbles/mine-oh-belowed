@@ -537,9 +537,9 @@ test_the_pod_fixtures_are_checked :: proc(t: ^testing.T) {
 	testing.expect_value(t, machines.machines[pod.fixtures[0].machine].kind, Machine_Kind.Hatch)
 }
 
-// Work item 0223: validate_pod_seat and validate_pod_windows refuse each
-// broken copy of the shipped pod; the shipped record passes and resolves
-// its seat and five windows.
+// Work items 0223 and 0288 (the sheath's keys): validate_pod_seat and
+// validate_pod_windows refuse each broken copy of the shipped pod; the
+// shipped record passes and resolves its seat and five windows.
 @(test)
 test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
 	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
@@ -611,6 +611,10 @@ test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
 	flat.normal = {}
 	wide := window
 	wide.radius = 3
+	deep := window
+	deep.sheath_depth = 3
+	narrow := window
+	narrow.sheath_radius = 0.2
 	window_refusals := []struct {
 		windows: []Pod_Window_Definition,
 		words:   string,
@@ -619,6 +623,8 @@ test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
 		{{outside}, "window 0 is not inside the footprint"},
 		{{flat}, "window 0 has a normal of length 0.000"},
 		{{wide}, "window 0 has radius 3.000"},
+		{{deep}, "window 0 has sheath_depth 3.000"},
+		{{narrow}, "window 0 has sheath_radius 0.200"},
 	}
 	for refusal in window_refusals {
 		changed := shipped

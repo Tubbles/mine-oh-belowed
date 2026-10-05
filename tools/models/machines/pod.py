@@ -461,7 +461,7 @@ def porthole_frames(b):
         b.lathe(centre, frame.w, ((0.8, -0.06), (0.8, 0.0), (0.77, 0.03), (0.62, 0.03)), 8, DARK, phase=math.pi / 8)
         rim = ((0.66, 0.015), (0.66, 0.075), (0.635, 0.1), (0.56, 0.1), (0.55, 0.15), (0.48, 0.15), (0.42, 0.12))
         b.lathe(centre, frame.w, rim, 12, METAL, phase=math.pi / 12)
-        b.lathe(centre, frame.w, ((0.4, 0.125), (0.4, -0.22)), 12, BLACK, phase=math.pi / 12)
+        b.lathe(centre, frame.w, ((0.4, 0.125), (0.4, -0.25)), 12, BLACK, phase=math.pi / 12)
         for bolt_index in range(8):
             angle = 2 * math.pi * (bolt_index + 0.5) / 8
             b.rivet(centre + frame.w * 0.1 + (frame.u * math.cos(angle) + frame.v * math.sin(angle)) * 0.6, frame.w, 0.026, METAL, height=0.022)
@@ -607,13 +607,14 @@ def upper_walls(b):
     screen(b, lean(45, 2.5), 0.0, 0.42, 0.8, 0.6, WHITE, lines=3)
     cabinet(b, lean(60, 2.5), -0.58, 0.58, 0.05, 1.2, 0.35, doors=2, style=0)
     keypad(b, lean(45, 3.6), 0.0, 0.2, 3, 4, lit={(0, 0), (2, 3)})
-    # Mounting plates in a patchwork behind the instruments.
+    # Mounting plates in a patchwork behind the instruments; no plate
+    # reaches into a porthole's bore (0288).
     for index, (theta, z, v1) in enumerate((
-        (90, 2.45, 2.2), (105, 2.45, 2.6), (120, 2.45, 1.3), (135, 2.45, 2.2), (150, 2.45, 2.0), (165, 3.6, 1.1),
+        (90, 2.45, 2.2), (105, 2.45, 2.6), (120, 2.45, 1.0), (135, 2.45, 2.2), (150, 2.45, 2.0), (165, 3.6, 1.1),
         (180, 2.45, 2.3), (210, 2.45, 2.4), (225, 2.45, 2.0), (285, 2.45, 2.2), (345, 2.45, 1.6), (45, 2.45, 2.0), (15, 2.45, 2.2),
     )):
         frame = lean(theta, z)
-        low, high = {15: (-0.1, 0.85), 345: (-0.85, 0.1)}.get(theta, (-0.6, 0.6))
+        low, high = {15: (-0.1, 0.55), 345: (-0.85, 0.1)}.get(theta, (-0.6, 0.6))
         slab(b, frame, low, high, 0.04, v1, -0.06, 0.035, DARK if index % 2 else BLACK, chamfer=0.02)
         bolts_row(b, frame, low + 0.08, high - 0.08, v1 - 0.08, 0.035, 2 + index % 2, size=0.022)
         for dot in range(3):
@@ -1183,10 +1184,12 @@ def exterior(b):
         b.box(frame, (-0.06, 0.06), (0.0, length), (-0.05, 0.05), DARK)
         for step in range(int(length / 2.2)):
             b.rivet(geometry.at(frame, 0, 0.8 + step * 2.2, 0.05), frame.w, 0.045, METAL)
+    # Each outer rim from just inside the skin (0.249 out from the lining
+    # at a facet's centre) to 0.415 out, so no gap shows under it (0288).
     for theta, z in PORTHOLES:
         inner = wall(theta, z)
-        outer_point = inner.origin - inner.w * 0.4 * FACET / math.sqrt(1 + SLOPE * SLOPE)
-        b.washer(outer_point, -inner.w, PORTHOLE_RADIUS - 0.03, 0.58, 0.07, 6, METAL, phase=0.0)
+        outer_point = inner.origin - inner.w * 0.24
+        b.washer(outer_point, -inner.w, PORTHOLE_RADIUS - 0.03, 0.58, 0.175, 6, METAL, phase=0.0)
     random = kit.model_random(type("Model", (), {"model": "pod"})(), "scorch")
     for index in range(20):
         theta = index * 18.0 + 4.0 + random.uniform(-5, 5)

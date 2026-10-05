@@ -647,6 +647,7 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		for index in 0 ..< machine.window_count {
 			window := machine.windows[index]
 			arrival_window_corners(window.centre, window.normal, up, up, window.radius)
+			arrival_window_corners(arrival_sheath_centre(window), window.normal, up, up, window.sheath_radius)
 			arrival_travel_on_glass(window.normal, travel, up)
 		}
 		flickers := arrival_window_flickers(view.seconds, machine.window_count, salt, false)

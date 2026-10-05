@@ -1,6 +1,6 @@
 # 0288: The entry's plasma blows past the portholes from the heat shield
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 
@@ -142,3 +142,9 @@ None of the lines apply: no memory freed, no file written, no number parsed at r
 2. The flicker stays 0286's. The footage's steadier brightness (1 to 3 percent a frame, flares over half a second to a second) goes into the log, and the couch decides whether to calm it once the speed and the place are right.
 3. The model's gaps are closed in the same `pod.py` pass where each is one number: the outer washer's standoff (`outer_point` assuming a 0.4 deep wall where the skin is 0.25 out) and the sleeve's outer end short of the skin. A gap that takes more than a number stays and is named in the report.
 4. The rest's easing: a test asserts the shipped heat is 0 through the last `arrival_real_seconds`, so the laid travel's turn at the rest never shows with the sheath. If it is not, nothing changes, since a sheath that turns with the pod is right.
+
+### Deviations (implement, 2026-10-05)
+
+- The outer rim (`pod.py`, `exterior`) now runs from 0.24 out from the lining, just inside the skin, to 0.415 as before, its offset and its depth changed together, so the pane at 0.38 stays inside its bore. The sleeve runs to 0.25. `test_nothing_of_the_pod_crosses_a_porthole` therefore stops at 0.15 out from the lining (`centre + normal * 0.15`), short of the rim.
+- `test_the_soot_lies_on_the_outer_pane` finds the rim's flats with radial segments on the pane's plane: a segment along the normal inside the rim's solid crosses no face.
+- Decision 4's test is not kept: the heat is 0.85 when the easing starts (tick 1440) and reaches 0 only at tick 1687, so the sheath turns with the pod through the easing, which the decision accepts.

@@ -406,3 +406,232 @@ test_a_porthole_facing_up_lays_along_the_forward :: proc(t: ^testing.T) {
 	flow := arrival_travel_on_glass(up, linalg.normalize([3]f32{1, -1, 0}), axis)
 	testing.expectf(t, !math.is_nan(flow.x) && !math.is_nan(flow.y) && abs(linalg.length(flow) - 1) < 1e-5, "the flow is %v", flow)
 }
+
+// The shipped pod's record and its body's triangles in the model's frame,
+// in cells.
+shipped_pod_body :: proc(allocator := context.temp_allocator) -> (pod: Machine, triangles: [dynamic]Check_Triangle) {
+	machines := make_test_machines()
+	pod = machines.machines[find_machine_of_kind(machines, .Pod)]
+	mesh, problem := load_machine_model_mesh(test_data_directory(), pod)
+	assert(problem == "", problem)
+	defer destroy_machine_model_mesh(mesh)
+	return pod, model_layers_check_triangles(mesh.body, 1, allocator)
+}
+
+// A porthole's axes on its glass, unit: up the pod's up laid on it
+// (arrival_glass_axis), across the normal crossed with it.
+porthole_axes :: proc(window: Pod_Window) -> (up, across: [3]f32) {
+	up = arrival_glass_axis(window.normal, {0, 1, 0}, {0, 0, 1})
+	return up, linalg.cross(window.normal, up)
+}
+
+// The point at radius r and angle on a porthole's glass from point.
+porthole_point :: proc(window: Pod_Window, point: [3]f32, radius, angle: f32) -> [3]f32 {
+	up, across := porthole_axes(window)
+	return point + (up * math.cos(angle) + across * math.sin(angle)) * radius
+}
+
+// True when the segment passes through any of the triangles' interiors
+// (segment_crosses_triangle), the boxes compared first.
+segment_crosses_any_triangle :: proc(start, end: [3]f32, triangles: []Check_Triangle) -> bool {
+	minimum, maximum := linalg.min(start, end), linalg.max(start, end)
+	for triangle in triangles {
+		if check_boxes_overlap(minimum, maximum, triangle.minimum, triangle.maximum) && segment_crosses_triangle(start, end, triangle.corners) {
+			return true
+		}
+	}
+	return false
+}
+
+// The eyes the cabin is seen from, in cells of the model's frame: the
+// seated eye, then a standing eye over the centre of every floor cell
+// of the first two open cells boxes (the floor before the chair and the
+// lane).
+cabin_eyes :: proc(pod: Machine, allocator := context.temp_allocator) -> [dynamic][3]f32 {
+	eyes := make([dynamic][3]f32, allocator)
+	append(&eyes, [3]f32{f32(pod.seat.eye.x), f32(pod.seat.eye.y), f32(pod.seat.eye.z)} / COLLISION_UNITS_PER_CELL)
+	for box_index in 0 ..< 2 {
+		box := pod.open_cells[box_index]
+		for x in box.from.x ..= box.to.x {
+			for z in box.from.z ..= box.to.z {
+				floor := footprint_point_to_model({f32(x) + 0.5, f32(box.from.y), f32(z) + 0.5}, pod.footprint)
+				append(&eyes, floor + {0, PLAYER_EYE_HEIGHT / 0.5, 0})
+			}
+		}
+	}
+	return eyes
+}
+
+// Work item 0288: every shipped window's sheath lies sheath_depth out
+// along the normal from the outer pane; the hull stands between the
+// sheath's plane and the lining beside the bore, and the view through
+// the bore to the plane is open.
+@(test)
+test_the_sheath_lies_outside_the_hull :: proc(t: ^testing.T) {
+	pod, triangles := shipped_pod_body()
+	testing.expect_value(t, pod.window_count, 5)
+	for index in 0 ..< pod.window_count {
+		window := pod.windows[index]
+		plane := arrival_sheath_centre(window)
+		testing.expectf(t, window.sheath_depth > 0, "window %d's sheath lies on the pane", index)
+		testing.expectf(t, linalg.length(plane - (window.centre - window.normal * window.sheath_depth)) < 1e-6, "window %d's sheath lies at %v", index, plane)
+		for direction in 0 ..< 16 {
+			angle := f32(direction) * math.TAU / 16
+			start := porthole_point(window, plane, 0.7, angle)
+			testing.expectf(t, segment_crosses_any_triangle(start, start + window.normal * (window.sheath_depth + 0.38), triangles[:]), "window %d: nothing of the hull lies beside the bore at angle %d", index, direction)
+			for radius in ([4]f32{0, 0.1, 0.2, 0.3}) {
+				inside := porthole_point(window, window.centre + window.normal * 0.405, radius, angle)
+				outside := porthole_point(window, plane + window.normal * 0.01, radius, angle)
+				testing.expectf(t, !segment_crosses_any_triangle(inside, outside, triangles[:]), "window %d: the bore is shut at r %v, angle %d", index, radius, direction)
+			}
+		}
+	}
+}
+
+// Work item 0288: from the seated eye and every standing eye of the
+// cabin's floor no point of a sheath quad's border is seen (32 points, 8
+// a side).
+@(test)
+test_the_sheaths_edge_is_never_seen_from_the_cabin :: proc(t: ^testing.T) {
+	pod, triangles := shipped_pod_body()
+	eyes := cabin_eyes(pod)
+	testing.expect_value(t, len(eyes), 13)
+	for index in 0 ..< pod.window_count {
+		window := pod.windows[index]
+		up, _ := porthole_axes(window)
+		corners := arrival_window_corners(arrival_sheath_centre(window), window.normal, up, up, window.sheath_radius)
+		for eye, eye_index in eyes {
+			for side in 0 ..< 4 {
+				for step in 0 ..< 8 {
+					point := corners[side] + (corners[(side + 1) % 4] - corners[side]) * (f32(step) / 8)
+					testing.expectf(t, segment_crosses_any_triangle(eye, point, triangles[:]), "window %d: eye %d (%v) sees the sheath's edge at %v", index, eye_index, eye, point)
+				}
+			}
+		}
+	}
+}
+
+// Work item 0288: at the fall's start and at the heat's peak the flow
+// enters every window from the side of the pod's base, as
+// draw_arrival_windows lays it (the leading edge along travel_on_glass
+// is where the flow enters).
+@(test)
+test_the_flow_enters_from_the_heat_shield :: proc(t: ^testing.T) {
+	config := shipped_arrival_config()
+	curve := build_arrival_curve(config)
+	machines := make_test_machines()
+	entities: Entities
+	defer destroy_entities(&entities)
+	place_test_pod(&entities, machines)
+	pod, frame, _ := find_pod(&entities, machines)
+	machine := machines.machines[pod.machine]
+	falling := Field_Arrival{start_tick = 0, fall_ticks = u64(config.arrival_ticks)}
+	descent := u64(config.arrival_ticks - config.arrival_settle_ticks)
+	peak_tick: u64 = 0
+	peak_heat: f32 = 0
+	for tick in 0 ..< descent {
+		if heat := arrival_view(falling, tick, 0, config, &curve).heat; heat > peak_heat {
+			peak_tick, peak_heat = tick, heat
+		}
+	}
+	body := entity_body_matrix(&entities, pod)
+	linear := cast(matrix[3, 3]f32)body
+	up := linalg.normalize(linear * [3]f32{0, 1, 0})
+	forward := linalg.normalize(linear * [3]f32{0, 0, 1})
+	pitch_metres := f32(f64(entity_frame_pitch_millimetres(&entities, pod.frame)) / MILLIMETRES_PER_METRE)
+	for tick in ([2]u64{0, peak_tick}) {
+		view := arrival_view(falling, tick, 0, config, &curve)
+		_, rotation, travel := arrival_pod_transform(view, frame, pod, machine, config.arrival_rest_tilt_degrees, &curve)
+		local := linalg.transpose(rotation) * travel
+		for index in 0 ..< machine.window_count {
+			window := machine.windows[index]
+			normal := linalg.normalize(linear * window.normal)
+			fallback := arrival_glass_axis(normal, up, forward)
+			flow := arrival_travel_on_glass(normal, local, fallback)
+			centre := transform_point(body, window.centre)
+			radius := window.radius * pitch_metres
+			reach := (linalg.cross(normal, fallback) * flow.x + fallback * flow.y) * radius
+			entry, exit := centre + reach, centre - reach
+			testing.expectf(t, linalg.dot(entry - exit, up) < -0.5 * radius, "tick %d, window %d: the flow enters %v above its exit", tick, index, linalg.dot(entry - exit, up))
+		}
+	}
+}
+
+// Work item 0288: each window's light lies where 0273 put it, 0.35 into
+// the cabin from the lining (the old centres, before the centre moved
+// to the outer pane), in the record and as arrival_window_lights places
+// it.
+@(test)
+test_the_window_light_stays_where_0273_put_it :: proc(t: ^testing.T) {
+	pod, _ := shipped_pod_body()
+	linings := [5][3]f32{{3.322, 3.700, -1.918}, {0.986, 3.750, -3.678}, {-1.918, 3.700, -3.322}, {-3.705, 3.700, 0.993}, {-1.904, 3.750, 3.298}}
+	testing.expect_value(t, pod.window_count, len(linings))
+	flickers: [MAXIMUM_POD_WINDOWS]f32
+	for &flicker in flickers {
+		flicker = FIRE_FLICKER_MEAN
+	}
+	lights, count := arrival_window_lights({phase = .Descent, heat = 1}, 1, 1000, pod, 1, shipped_arrival_config().arrival_plasma, flickers)
+	testing.expect_value(t, count, len(linings))
+	for lining, index in linings {
+		window := pod.windows[index]
+		where_0273 := lining + window.normal * 0.35
+		inset := window.centre + window.normal * ARRIVAL_WINDOW_LIGHT_INSET_CELLS
+		testing.expectf(t, linalg.length(inset - where_0273) < 0.003, "window %d's light lies at %v, not %v", index, inset, where_0273)
+		testing.expectf(t, linalg.length(lights[index].position - where_0273) < 0.003, "window %d's light is placed at %v, not %v", index, lights[index].position, where_0273)
+	}
+}
+
+// Work item 0288: the soot's pane lies inside the outer rim's bore:
+// open round the centre to r 0.3 just in front of and behind it, and on
+// the pane's plane the rim's flats (six directions 60 degrees apart, at
+// some phase of 15 degrees) stand within r 0.36 of the centre; the
+// radius reaches the bore's corners (0.39).
+@(test)
+test_the_soot_lies_on_the_outer_pane :: proc(t: ^testing.T) {
+	pod, triangles := shipped_pod_body()
+	for index in 0 ..< pod.window_count {
+		window := pod.windows[index]
+		testing.expectf(t, window.radius >= 0.39, "window %d's pane has radius %v", index, window.radius)
+		front, back := window.centre + window.normal * 0.02, window.centre - window.normal * 0.02
+		for direction in 0 ..< 16 {
+			angle := f32(direction) * math.TAU / 16
+			for radius in ([3]f32{0, 0.2, 0.3}) {
+				testing.expectf(t, !segment_crosses_any_triangle(porthole_point(window, front, radius, angle), porthole_point(window, back, radius, angle), triangles[:]), "window %d: something crosses the pane at r %v, angle %d", index, radius, direction)
+			}
+		}
+		crossing: [24]bool
+		count := 0
+		for direction in 0 ..< 24 {
+			angle := f32(direction) * math.TAU / 24
+			crossing[direction] = segment_crosses_any_triangle(window.centre, porthole_point(window, window.centre, 0.36, angle), triangles[:])
+			count += crossing[direction] ? 1 : 0
+		}
+		flats_found := false
+		for phase in 0 ..< 4 {
+			all_flats := true
+			for flat in 0 ..< 6 {
+				all_flats = all_flats && crossing[phase + 4 * flat]
+			}
+			flats_found = flats_found || all_flats
+		}
+		testing.expectf(t, flats_found && count >= 12, "window %d: the rim stands within r 0.36 in %d of 24 directions, %v", index, count, crossing)
+	}
+}
+
+// Work items 0287 and 0288: nothing of the pod reaches into a porthole's
+// bore from just inside the lining to short of the outer rim, which
+// starts 0.24 out from the lining (pod.py, exterior).
+@(test)
+test_nothing_of_the_pod_crosses_a_porthole :: proc(t: ^testing.T) {
+	pod, triangles := shipped_pod_body()
+	for index in 0 ..< pod.window_count {
+		window := pod.windows[index]
+		inside, outside := window.centre + window.normal * 0.405, window.centre + window.normal * 0.15
+		for direction in 0 ..< 16 {
+			angle := f32(direction) * math.TAU / 16
+			for radius in ([5]f32{0, 0.1, 0.2, 0.3, 0.35}) {
+				testing.expectf(t, !segment_crosses_any_triangle(porthole_point(window, inside, radius, angle), porthole_point(window, outside, radius, angle), triangles[:]), "window %d: something crosses the bore at r %v, angle %d", index, radius, direction)
+			}
+		}
+	}
+}
