@@ -1,6 +1,6 @@
 # 0273: The entry's plasma on the portholes
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, ae2b0dc)
 
 ## Goal
 
