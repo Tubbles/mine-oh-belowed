@@ -1,6 +1,6 @@
 # 0271: The impact digs the crater
 
-Status: designed (2026-10-05)
+Status: implementing (2026-10-05)
 
 ## Goal
 
