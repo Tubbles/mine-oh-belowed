@@ -1,6 +1,6 @@
 # 0286: The entry's plasma dances like fire
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, 8185733)
 
 ## Goal
 
