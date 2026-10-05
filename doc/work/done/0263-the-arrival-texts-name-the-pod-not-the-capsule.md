@@ -1,6 +1,6 @@
 # 0263: The arrival texts name the pod, not the capsule
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, 9bec015)
 
 ## Goal
 
