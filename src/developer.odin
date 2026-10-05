@@ -87,6 +87,8 @@ Developer_Action :: enum u8 {
 	Set_Camera_Mode,
 	Hold_Field_Crouch,
 	Place_On_Frame,
+	// The pod's chair (0223): stand up from it or sit in it.
+	Set_Field_Seat,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -109,8 +111,9 @@ Time_Of_Day :: enum u8 {
 // The field's (0183): field_position is the feet of Teleport_Field and the
 // target of Look_At_Field, look_angles the bearing and pitch of
 // Set_Field_Look in ANGLE_UNITS_PER_TURN, camera_mode Set_Camera_Mode's,
-// crouch_held Hold_Field_Crouch's, and frame with machine, cell (the
-// minimum corner) and rotation Place_On_Frame's.
+// crouch_held Hold_Field_Crouch's, frame with machine, cell (the
+// minimum corner) and rotation Place_On_Frame's, and seat Set_Field_Seat's
+// (0223).
 Developer_Request :: struct {
 	action:      Developer_Action,
 	chapter:     int,
@@ -131,6 +134,7 @@ Developer_Request :: struct {
 	camera_mode: Camera_Mode,
 	crouch_held: bool,
 	frame:       Frame_Id,
+	seat:        Field_Seat,
 }
 
 // Kits file.
@@ -387,6 +391,7 @@ teleport_field_player :: proc(body: ^Field_Player, feet: World_Position) {
 	body.motion_fraction = {}
 	body.on_ground = false
 	body.target, body.frame_target, body.tree_target = {}, {}, {}
+	body.seat = .Standing
 	if up, ok := normalize_fixed(cast([3]i64)(feet)); ok {
 		body.up = up
 	}
@@ -406,7 +411,7 @@ landing_pad_standing_position :: proc(site: Landing_Pad_Site) -> [3]f32 {
 serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request, player_index := 0) -> (problem: string) {
 	player := &state.players[player_index]
 	#partial switch request.action {
-	case .Teleport_Field, .Set_Field_Look, .Look_At_Field, .Hold_Field_Crouch, .Place_On_Frame:
+	case .Teleport_Field, .Set_Field_Look, .Look_At_Field, .Hold_Field_Crouch, .Place_On_Frame, .Set_Field_Seat:
 		if !state.field.enabled {
 			// NO_FIELD_WORLD_PROBLEM's text: a record from a malformed
 			// source changes nothing on a block world.
@@ -480,6 +485,25 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		player.field.crouch_held = request.crouch_held
 	case .Place_On_Frame:
 		return place_on_frame_for_developer(state, content, request.machine, request.frame, request.cell, request.rotation)
+	case .Set_Field_Seat:
+		return set_field_seat_for_developer(state, content, player, request.seat)
+	}
+	return ""
+}
+
+// The chair (0223) for the command socket's seat: refused while the world
+// falls; Standing stands up, Seated (or Strapped) sits in the first pod's
+// chair, refused without one.
+set_field_seat_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, seat: Field_Seat) -> string {
+	if field_arrival_falling(state.field.arrival) {
+		return "the world is falling"
+	}
+	if seat == .Standing {
+		stand_field_player_from_seat(&state.world.entities, content.machines, &player.field)
+		return ""
+	}
+	if !seat_field_player(&state.world.entities, content.machines, content.field.tuning, &player.field, seat) {
+		return "there is no seat"
 	}
 	return ""
 }

@@ -4,11 +4,13 @@ import "platform"
 
 // The arrival (work item 0200, doc/architecture.md, The field session,
 // The arrival): a new world's first ticks are the pod's fall. While it
-// falls every player's input frame is empty (arrival_input), in the tick
-// and in the prediction; at the end of its last tick, or when the pause
-// menu's Skip applies (Skip_Arrival_Command), it lands
-// (land_field_arrival) with the pod's hatches closed: the airlock opens
-// the inner one as a player comes to it (entity_pod_airlock.odin, 0222).
+// falls every player is strapped into the pod's chair (0223) and its
+// input frame is cut to the look (arrival_input), in the tick and in the
+// prediction; at the end of its last tick, or when the pause menu's Skip
+// applies (Skip_Arrival_Command), it lands (land_field_arrival) with the
+// pod's hatches closed, telling each strapped player Touchdown_Confirmed:
+// the airlock opens the inner one as a player comes to it
+// (entity_pod_airlock.odin, 0222).
 // Its table follows the felled trees in entities.bin, so it is hashed,
 // travels in the join snapshot, and a world loaded or joined past the
 // fall never falls again. The presentation (render_arrival.odin) reads it
@@ -44,17 +46,35 @@ field_arrival_due :: proc(arrival: Field_Arrival, tick: u64) -> bool {
 	return field_arrival_falling(arrival) && tick >= arrival.start_tick + arrival.fall_ticks
 }
 
-// The frame a player's tick reads: nothing while the world falls.
+// The frame a player's tick reads: the look alone while the world falls,
+// no walk and no action (0223).
 arrival_input :: proc(arrival: Field_Arrival, frame: Input_Frame) -> Input_Frame {
 	if field_arrival_falling(arrival) {
-		return Input_Frame{}
+		held := frame
+		held.move = {}
+		held.pressed, held.just_pressed = {}, {}
+		return held
 	}
 	return frame
 }
 
-// Lands the fall at the state's tick. The hatches stay closed (0222).
+// Every player into the pod's chair for the fall (0223), from
+// start_field_world: the players present before it began.
+strap_players_for_the_fall :: proc(state: ^Simulation_State, machines: Machine_Registry, tuning: Field_Player_Tuning) {
+	for &player in state.players {
+		seat_field_player(&state.world.entities, machines, tuning, &player.field, .Strapped)
+	}
+}
+
+// Lands the fall at the state's tick. The hatches stay closed (0222);
+// every strapped player is told touchdown (0223), a Skip's landing too.
 land_field_arrival :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	state.field.arrival.landed_tick = state.tick
+	for player, index in state.players {
+		if player.field.seat == .Strapped {
+			append(&state.events, Simulation_Event{player = index, kind = .Touchdown_Confirmed})
+		}
+	}
 }
 
 // The save table.

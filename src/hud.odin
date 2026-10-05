@@ -692,7 +692,8 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, inte
 		append(&list, Glyph_Hint{.Inventory, text("hint_open")})
 	}
 	player := screen_context.player
-	if hud.field_session && !stack_is_empty(selected_hotbar_stack(player^)) {
+	// A seated player holds nothing to use (0223).
+	if hud.field_session && !stack_is_empty(selected_hotbar_stack(player^)) && hud_field_player(screen_context, hud).seat == .Standing {
 		append(&list, ..held_glyph_hints(hud_field_player(screen_context, hud).tool))
 	}
 	kept = len(list)
@@ -706,10 +707,16 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, inte
 	return list[:], kept
 }
 
-// What the aimed thing takes, the first group that applies: the schematic
-// crate or a usable item, a trunk's Fell, a field cell's pick up (with a
-// switch's Turn), a power switch's Turn. In the temp allocator.
+// What the aimed thing takes, the first group that applies: the pod's
+// chair (0223), the schematic crate or a usable item, a trunk's Fell, a
+// field cell's pick up (with a switch's Turn), a power switch's Turn. In
+// the temp allocator.
 aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> []Glyph_Hint {
+	if key := field_chair_hint_key(screen_context, hud); key != "" {
+		hints := make([]Glyph_Hint, 1, context.temp_allocator)
+		hints[0] = Glyph_Hint{.Interact, text(key)}
+		return hints
+	}
 	player := screen_context.player
 	if hints := schematic_glyph_hints(screen_context.world, player^, screen_context.items); len(hints) > 0 {
 		return hints
@@ -852,10 +859,33 @@ inventory_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> 
 	return aimed ? "hint_open" : "hint_inventory"
 }
 
-// The aimed thing takes Interact (a switch, a crate), as the frame's
-// routing reads it.
+// The aimed thing takes Interact (a switch, a crate, the pod's chair), as
+// the frame's routing reads it.
 hud_target_takes_interact :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
-	return entity_takes_interact(&screen_context.world.entities, screen_context.machines, aimed_entity(screen_context.player.target.entity, hud_field_player(screen_context, hud).frame_target))
+	entities := &screen_context.world.entities
+	body := hud_field_player(screen_context, hud)
+	return entity_takes_interact(entities, screen_context.machines, aimed_entity(screen_context.player.target.entity, body.frame_target)) || field_chair_takes_interact(entities, screen_context.machines, body, screen_context.arrival_falling)
+}
+
+// What Interact on the pod's chair says (0223): nothing outside a field
+// session or while the world falls; Unbuckle strapped in, Stand seated,
+// Sit standing aimed at the chair.
+field_chair_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> string {
+	if !hud.field_session || screen_context.arrival_falling || screen_context.world == nil {
+		return ""
+	}
+	body := hud_field_player(screen_context, hud)
+	switch body.seat {
+	case .Strapped:
+		return "hint_unbuckle"
+	case .Seated:
+		return "hint_stand"
+	case .Standing:
+		if field_aimed_chair(&screen_context.world.entities, screen_context.machines, body.frame_target) {
+			return "hint_sit"
+		}
+	}
+	return ""
 }
 
 // The aimed frame cell holds a power switch, which Interact turns (0194).

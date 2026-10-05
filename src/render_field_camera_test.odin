@@ -212,3 +212,32 @@ test_the_field_third_person_camera_stops_short_of_a_trunk :: proc(t: ^testing.T)
 	tolerance := f32(FIELD_TREE_AIM_STEP_MILLIMETRES + 2) / MILLIMETRES_PER_METRE
 	testing.expectf(t, abs(distance - (2 - 0.3 - THIRD_PERSON_WALL_MARGIN)) <= tolerance, "the camera %v m from the eye", distance)
 }
+
+// Work item 0223: in the chair the camera is first person whatever the
+// stored mode, which standing up returns to.
+@(test)
+test_a_seated_player_sees_in_first_person :: proc(t: ^testing.T) {
+	body := Field_Player{camera_mode = .Third_Person, seat = .Seated}
+	testing.expect_value(t, field_view_camera_mode(body), Camera_Mode.First_Person)
+	body.seat = .Strapped
+	testing.expect_value(t, field_view_camera_mode(body), Camera_Mode.First_Person)
+	body.seat = .Standing
+	testing.expect_value(t, field_view_camera_mode(body), Camera_Mode.Third_Person)
+}
+
+// Work item 0223: the viewer's ghosts are not drawn while it is strapped
+// in or seated, and are standing; a free camera has none.
+@(test)
+test_a_seated_viewer_draws_no_ghost :: proc(t: ^testing.T) {
+	state: Simulation_State
+	defer delete(state.players)
+	append(&state.players, Player{})
+	scene := Field_Scene{state = &state, viewer = 0}
+	testing.expect(t, field_viewer_ghosts_drawn(scene), "standing")
+	state.players[0].field.seat = .Seated
+	testing.expect(t, !field_viewer_ghosts_drawn(scene), "seated")
+	state.players[0].field.seat = .Strapped
+	testing.expect(t, !field_viewer_ghosts_drawn(scene), "strapped")
+	scene.viewer = NO_PLAYER
+	testing.expect(t, !field_viewer_ghosts_drawn(scene), "a free camera")
+}

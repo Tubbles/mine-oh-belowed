@@ -47,16 +47,16 @@ test_the_arrival_view_follows_the_timeline :: proc(t: ^testing.T) {
 @(test)
 test_the_fall_ends_at_the_eye_and_its_last_second_is_fastest :: proc(t: ^testing.T) {
 	config := shipped_arrival_config()
-	eye := [3]f32{100, 2000, -50}
 	up := linalg.normalize([3]f32{0.2, 1, 0.1})
 	forward := linalg.normalize(linalg.cross(up, [3]f32{1, 0, 0}))
 	angle := f32(config.arrival_angle_degrees) * math.RAD_PER_DEG
-	first := arrival_descent_camera(eye, {phase = .Descent, progress = 0}, up, forward, config, 70)
-	offset := first.position - eye
+	offset := arrival_descent_offset({phase = .Descent, progress = 0}, up, forward, config)
 	testing.expect(t, abs(linalg.length(offset) - f32(config.arrival_start_metres) / math.cos(angle)) < 0.01, "the start lies the path's length from the eye")
 	testing.expect(t, abs(linalg.dot(offset, up) - f32(config.arrival_start_metres)) < 0.01, "the start lies start metres above the eye")
-	last := arrival_descent_camera(eye, {phase = .Descent, progress = 1}, up, forward, config, 70)
-	testing.expect(t, linalg.length(last.position - eye) < 0.01, "the fall ends on the eye")
+	last := arrival_descent_offset({phase = .Descent, progress = 1}, up, forward, config)
+	testing.expect(t, linalg.length(last) < 0.01, "the fall ends on the eye")
+	testing.expect_value(t, arrival_descent_offset({phase = .Settled}, up, forward, config), [3]f32{})
+	testing.expect_value(t, arrival_descent_offset({}, up, forward, config), [3]f32{})
 	descent := f32(config.arrival_ticks - config.arrival_settle_ticks)
 	before: f32 = 0
 	for second in 1 ..= 9 {
@@ -93,25 +93,26 @@ test_the_shake_fades_and_never_repeats :: proc(t: ^testing.T) {
 	}
 }
 
-// The window's look: along the path at pitch 0, pitched up by the
-// shipped angle from it otherwise, unit, its up perpendicular to it.
+// A window's quad (0223): its corners in the glass's plane, each the
+// radius times the root of two from the centre, the texture's y edge (the
+// midpoint of corners 2 and 3) along the travel laid on the plane, and a
+// travel along the normal using the fallback.
 @(test)
-test_the_window_looks_up_from_the_path :: proc(t: ^testing.T) {
-	config := shipped_arrival_config()
-	testing.expect_value(t, config.arrival_window_pitch_degrees, 20)
-	eye := [3]f32{100, 2000, -50}
-	up := linalg.normalize([3]f32{0.2, 1, 0.1})
-	forward := linalg.normalize(linalg.cross(up, [3]f32{1, 0, 0}))
-	direction := arrival_path_direction(up, forward, config.arrival_angle_degrees)
-	level := config
-	level.arrival_window_pitch_degrees = 0
-	flat := arrival_descent_camera(eye, {phase = .Descent, progress = 0.3}, up, forward, level, 70)
-	testing.expect(t, linalg.length((flat.target - flat.position) + direction) < 0.0001, "pitch 0 looks along the path")
-	pitched := arrival_descent_camera(eye, {phase = .Descent, progress = 0.3}, up, forward, config, 70)
-	look := pitched.target - pitched.position
-	testing.expect(t, abs(linalg.length(look) - 1) < 0.0001, "the look is unit")
-	angle := math.acos(clamp(linalg.dot(look, -direction), -1, 1)) * math.DEG_PER_RAD
-	testing.expect(t, abs(angle - 20) < 0.01, "the look is 20 degrees from the path")
-	testing.expect(t, abs(linalg.dot(look, pitched.up)) < 0.0001, "the up is perpendicular to the look")
-	testing.expect(t, linalg.dot(look, up) > linalg.dot(-direction, up), "the look is pitched up, towards the horizon")
+test_the_window_quad_leads_along_the_travel :: proc(t: ^testing.T) {
+	centre := [3]f32{3, 4, -2}
+	normal := linalg.normalize([3]f32{-0.755, -0.490, 0.436})
+	travel := linalg.normalize([3]f32{0.1, -1, 0.3})
+	radius: f32 = 0.2
+	corners := arrival_window_corners(centre, normal, travel, {0, 1, 0}, radius)
+	for corner, index in corners {
+		testing.expectf(t, abs(linalg.dot(corner - centre, normal)) < 0.0001, "corner %d leaves the plane", index)
+		testing.expectf(t, abs(linalg.length(corner - centre) - radius * math.SQRT_TWO) < 0.0001, "corner %d is %v from the centre", index, linalg.length(corner - centre))
+	}
+	along := linalg.normalize(travel - normal * linalg.dot(travel, normal))
+	leading := (corners[2] + corners[3]) / 2 - centre
+	testing.expect(t, linalg.length(leading - along * radius) < 0.0001, "the leading edge lies along the travel")
+	fallback := [3]f32{0, 1, 0}
+	head_on := arrival_window_corners(centre, normal, normal, fallback, radius)
+	laid := linalg.normalize(fallback - normal * linalg.dot(fallback, normal))
+	testing.expect(t, linalg.length((head_on[2] + head_on[3]) / 2 - centre - laid * radius) < 0.0001, "a travel along the normal leads along the fallback")
 }

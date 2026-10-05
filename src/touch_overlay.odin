@@ -1836,8 +1836,8 @@ touch_interaction_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_I
 	simulation := &touch_context.session.simulation
 	selected := simulation.players[touch_context.local_player].selected_hotbar_slot
 	block_target := simulation.players[touch_context.local_player].target.entity
-	field_target := lockstep_view_player(&touch_context.session.lockstep, simulation, touch_context.local_player).field.frame_target
-	takes_interaction, has_panel := aimed_target_calls_for(&simulation.world.entities, touch_context.content.machines, block_target, field_target)
+	body := lockstep_view_player(&touch_context.session.lockstep, simulation, touch_context.local_player).field
+	takes_interaction, has_panel := aimed_target_calls_for(&simulation.world.entities, touch_context.content.machines, block_target, body, field_arrival_falling(simulation.field.arrival))
 	return Touch_Interaction_Frame {
 		interaction = touch_context.settings.touch_interaction,
 		frame_seconds = touch_context.frame_seconds,

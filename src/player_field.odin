@@ -90,6 +90,15 @@ Field_Held_Tool :: enum u8 {
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]
 
+// Where the player is in the pod's chair (work item 0223): standing (not
+// in it), strapped in by the fall (Interact says Unbuckle) or seated
+// later (Interact says Stand).
+Field_Seat :: enum u8 {
+	Standing,
+	Strapped,
+	Seated,
+}
+
 // One tick's input, quantised from the input frame before the tick
 // (field_tick_input, simulation_field.odin), so the tick reads
 // integers only.
@@ -194,6 +203,9 @@ Field_Player :: struct {
 	// A run tool's first endpoint, chosen by the first Place (0176).
 	run_started:       bool,
 	run_start:         Belt_Run_Candidate,
+	// In the pod's chair (0223, seat_field_player): the look turns, the
+	// body stays. A save from before 0223 loads Standing.
+	seat:              Field_Seat,
 }
 
 Field_Ground :: struct {
@@ -1057,8 +1069,23 @@ field_ground_loaded :: proc(world: ^Field_World, tuning: Field_Player_Tuning, pl
 	return sample_to_field_chunk_coordinate(world_position_to_sample(below, tuning.spacing_millimetres)) in world.chunks
 }
 
+// A body in the chair (0223): the look turns and the aim follows it, the
+// body stays where the seat put it, with no toggle, jump, crouch or move.
+tick_seated_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
+	turn_field_player(player, input.turn)
+	player.velocity = {}
+	player.motion_fraction = {}
+	player.crouching = false
+	look := field_look_direction(player.forward, player.up, player.yaw, player.pitch)
+	player.target = raycast_field(world, tuning.spacing_millimetres, field_player_eye(player^, tuning), look, tuning.reach)
+}
+
 tick_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
 	player.previous_position = player.position
+	if player.seat != .Standing {
+		tick_seated_field_player(world, tuning, player, input)
+		return
+	}
 	apply_field_player_toggles(player, input.just_pressed)
 	update_field_jump_double_tap(player, input)
 	orient_field_player(player)

@@ -10,9 +10,11 @@ import "platform"
 // The arrival's presentation (work item 0200, doc/presentation.md, The
 // field session, The arrival): render only, read from Field_Arrival
 // (simulation_arrival.odin), the tick and the interpolation alpha. The
-// descent puts the camera on the tilted path down to the resting eye with
-// the window overlay and its flames over it, and the roar; the hit cuts
-// to the cabin with a shake, the dust outside and the crash. Nothing here
+// descent moves the seated eye and the pod round it along the tilted path
+// down to the resting place (arrival_descent_offset, 0223), the flames
+// burning on the portholes' glass, and the roar; at the hit the pod meets
+// the floor, the cabin shakes, the dust rises outside and the crash
+// plays. Nothing here
 // reaches the simulation, so the hash is the same with and without it.
 // The hatch sound (play_hatch_sounds) is the general hatch cue: it plays
 // for every toggle, the airlock's (0222, 0231).
@@ -33,7 +35,6 @@ ARRIVAL_CRASH_SOUND :: "arrival_crash"
 HATCH_SLIDE_SOUND :: "hatch_slide"
 // Each sound's pitch varies by up to this share either way.
 ARRIVAL_PITCH_SHARE :: 0.06
-ARRIVAL_WALL_COLOR :: [3]f32{0.10, 0.10, 0.11}
 
 Arrival_Phase :: enum u8 {
 	None,
@@ -61,7 +62,7 @@ Arrival_Sound_Memory :: struct {
 }
 
 // The window shader, loaded with the field renderer; shader_ready false
-// when it did not load, and the fall then draws without its window.
+// when it did not load, and the fall then draws without its flames.
 Arrival_Presentation :: struct {
 	shader:       rl.Shader,
 	shader_ready: bool,
@@ -115,30 +116,30 @@ arrival_start_offset :: proc(direction: [3]f32, start_metres, angle_degrees: int
 	return direction * f32(start_metres) / math.cos(angle)
 }
 
-// The look down the path (-direction, at the crater) pitched up by
-// pitch_degrees about the camera's right axis, and the camera's up turned
-// with it, so it stays perpendicular to the look and the horizon level.
-// path_up is the up perpendicular to the path.
-arrival_window_look :: proc(direction, path_up: [3]f32, pitch_degrees: int) -> (look, up: [3]f32) {
-	pitch := f32(pitch_degrees) * math.RAD_PER_DEG
-	along := -direction
-	look = along * math.cos(pitch) + path_up * math.sin(pitch)
-	up = path_up * math.cos(pitch) - along * math.sin(pitch)
-	return
+// The pod's and the eye's offset from their resting place during the
+// descent (0223): on the tilted path, the share covered eased, zero at
+// the hit, so the pod meets the floor exactly there; zero outside the
+// descent.
+arrival_descent_offset :: proc(view: Arrival_View, up, forward: [3]f32, config: Game_Config) -> [3]f32 {
+	if view.phase != .Descent {
+		return {}
+	}
+	direction := arrival_path_direction(up, forward, config.arrival_angle_degrees)
+	return arrival_start_offset(direction, config.arrival_start_metres, config.arrival_angle_degrees) * (1 - arrival_eased_share(view.progress))
 }
 
-// The window's camera on the path to the eye, its look pitched up from
-// the path by arrival_window_pitch_degrees (arrival_window_look), so the
-// horizon shows in the window's upper part and the crater, at a fixed
-// place below the centre, grows as the pod comes down.
-arrival_descent_camera :: proc(eye: [3]f32, view: Arrival_View, up, forward: [3]f32, config: Game_Config, field_of_view: f32) -> rl.Camera3D {
-	angle := f32(config.arrival_angle_degrees) * math.RAD_PER_DEG
-	direction := arrival_path_direction(up, forward, config.arrival_angle_degrees)
-	offset := arrival_start_offset(direction, config.arrival_start_metres, config.arrival_angle_degrees)
-	position := eye + offset * (1 - arrival_eased_share(view.progress))
-	path_up := forward * math.cos(angle) + up * math.sin(angle)
-	look, camera_up := arrival_window_look(direction, path_up, config.arrival_window_pitch_degrees)
-	return rl.Camera3D{position = position, target = position + look, up = camera_up, fovy = field_of_view, projection = .PERSPECTIVE}
+// A window's quad, its corners for the texture coordinates (0, 0), (1, 0),
+// (1, 1) and (0, 1): texture y grows along the travel laid on the glass's
+// plane (the fallback laid on it where the travel runs along the normal),
+// so the shader's flames lead on that edge.
+arrival_window_corners :: proc(centre, normal, travel, fallback: [3]f32, radius: f32) -> [4][3]f32 {
+	along := travel - normal * linalg.dot(travel, normal)
+	if linalg.length(along) < 0.1 {
+		along = fallback - normal * linalg.dot(fallback, normal)
+	}
+	along_travel := linalg.normalize(along) * radius
+	across := linalg.cross(normal, linalg.normalize(along)) * radius
+	return {centre - across - along_travel, centre + across - along_travel, centre + across + along_travel, centre - across + along_travel}
 }
 
 // A hashed value from -1 to 1 for each whole step of the noise.
@@ -226,29 +227,47 @@ destroy_arrival_presentation :: proc(presentation: ^Arrival_Presentation) {
 	presentation.shader_ready = false
 }
 
-// In pixel drawing after the 3D pass, during the descent: the window and
-// its flames over the viewport's size, drawn from the origin.
-draw_arrival_window :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, size: [2]f32, salt: u64) {
-	if view.phase != .Descent || !presentation.shader_ready || size.y <= 0 {
+// Inside BeginMode3D during the descent, moved with the pod: the
+// flames on each of the pod's windows (0223), the travel the pod's way
+// along the path. Each window is its own batch, since its seed is its
+// own; depth tested, without writing depth or culling.
+draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, salt: u64) {
+	if view.phase != .Descent || !presentation.shader_ready || machine.window_count == 0 {
 		return
 	}
 	shader := presentation.shader
-	white := rl.Texture2D {
-		id      = rlgl.GetTextureIdDefault(),
-		width   = 1,
-		height  = 1,
-		mipmaps = 1,
-		format  = .UNCOMPRESSED_R8G8B8A8,
-	}
+	body := entity_body_matrix(entities, pod)
+	linear := cast(matrix[3, 3]f32)body
+	fallback := linalg.normalize(linear * [3]f32{0, 1, 0})
+	pitch_metres := f32(f64(entity_frame_pitch_millimetres(entities, pod.frame)) / MILLIMETRES_PER_METRE)
+	texture := rlgl.GetTextureIdDefault()
+	rlgl.DrawRenderBatchActive()
+	rlgl.DisableDepthMask()
+	rlgl.DisableBackfaceCulling()
 	rl.BeginShaderMode(shader)
-	set_shader_float(shader, "flame_strength", view.flame_strength)
-	set_shader_float(shader, "seconds", view.seconds)
-	set_shader_float(shader, "aspect", size.x / size.y)
-	set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000)
-	wall := ARRIVAL_WALL_COLOR
-	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "wall_color"), &wall, .VEC3)
-	rl.DrawTexturePro(white, {0, 0, 1, 1}, {0, 0, size.x, size.y}, {0, 0}, 0, rl.WHITE)
+	for index in 0 ..< machine.window_count {
+		window := machine.windows[index]
+		centre := transform_point(body, window.centre)
+		normal := linalg.normalize(linear * window.normal)
+		corners := arrival_window_corners(centre, normal, travel, fallback, window.radius * pitch_metres)
+		set_shader_float(shader, "flame_strength", view.flame_strength)
+		set_shader_float(shader, "seconds", view.seconds)
+		set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000 + f32(index) * 0.618)
+		coordinates := [4][2]f32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+		rlgl.SetTexture(texture)
+		rlgl.Begin(rlgl.QUADS)
+		rlgl.Color4ub(255, 255, 255, 255)
+		for corner, corner_index in corners {
+			rlgl.TexCoord2f(coordinates[corner_index].x, coordinates[corner_index].y)
+			rlgl.Vertex3f(corner.x, corner.y, corner.z)
+		}
+		rlgl.End()
+		rlgl.SetTexture(0)
+		rlgl.DrawRenderBatchActive()
+	}
 	rl.EndShaderMode()
+	rlgl.EnableBackfaceCulling()
+	rlgl.EnableDepthMask()
 }
 
 // The pitch of one of the arrival's sounds, varied per world.

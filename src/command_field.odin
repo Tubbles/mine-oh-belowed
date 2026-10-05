@@ -161,6 +161,8 @@ field_world_command :: proc(command_context: Command_Context, name: string, argu
 		return command_look(command_context, arguments), true
 	case "crouch":
 		return command_crouch(command_context, arguments), true
+	case "seat":
+		return command_seat(command_context, arguments), true
 	case "place":
 		return command_field_place(command_context, arguments), true
 	case "vein", "remove", "block", "insert", "recipe", "filter", "blueprint":
@@ -280,6 +282,30 @@ command_crouch :: proc(command_context: Command_Context, arguments: []string) ->
 	return command_ok("crouch %s", arguments[0])
 }
 
+// What query player and the seat command say of the chair (0223).
+field_seat_words := [Field_Seat]string {
+	.Standing = "standing",
+	.Strapped = "strapped",
+	.Seated   = "seated",
+}
+
+// seat <stand|sit>: out of the pod's chair or into it (0223).
+command_seat :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	seat: Field_Seat
+	switch len(arguments) == 1 ? arguments[0] : "" {
+	case "stand":
+		seat = .Standing
+	case "sit":
+		seat = .Seated
+	case:
+		return usage_error("seat <stand|sit>")
+	}
+	if problem := serve_command_request(command_context, Developer_Request{action = .Set_Field_Seat, seat = seat}); problem != "" {
+		return command_error("%s", problem)
+	}
+	return command_ok("seat %s", field_seat_words[command_context.simulation.players[command_context.player].field.seat])
+}
+
 // place <machine> <frame> <x> <y> <z> <rotation>: frame 0 is the block
 // world's; place_on_frame_for_developer refuses by the frame's rules.
 command_field_place :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
@@ -323,7 +349,7 @@ query_field_player :: proc(command_context: Command_Context) -> Command_Response
 	latitude, longitude, _ := field_feet_coordinates(body.position)
 	builder := strings.builder_make(context.temp_allocator)
 	fmt.sbprintf(&builder, "player\nposition %s\nlatitude %.4f\nlongitude %.4f\nheight %.2f", metres_text(body.position), latitude, longitude, field_height_metres(simulation.world.planet, body.position))
-	fmt.sbprintf(&builder, "\nyaw %.1f\npitch %.1f\ncamera %s", field_player_bearing_degrees(body), angle_units_to_degrees(body.pitch), camera_mode_words[body.camera_mode])
+	fmt.sbprintf(&builder, "\nyaw %.1f\npitch %.1f\ncamera %s\nseat %s", field_player_bearing_degrees(body), angle_units_to_degrees(body.pitch), camera_mode_words[body.camera_mode], field_seat_words[body.seat])
 	fmt.sbprintf(&builder, "\ncrouching %v\ncrouch_held %v\nflying %v\nno_clip %v\non_ground %v\ncheat_speed %v", body.crouching, body.crouch_held, body.flying, body.no_clip, body.on_ground, simulation.cheat_speed)
 	held := selected_hotbar_stack(player)
 	held_text := stack_is_empty(held) || int(held.item) >= len(items.items) ? "none" : items.items[held.item].id

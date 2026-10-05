@@ -475,7 +475,12 @@ predict_local_player :: proc(simulation: ^Simulation_State, content: Simulation_
 predict_field_player_motion :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Input_Frame) {
 	frames := &simulation.world.entities.frames
 	// Without interact_on_field: the switch it would turn and the panel it
-	// would open are the tick's.
+	// would open are the tick's. Without the chair's Interact too
+	// (interact_on_field_chair): the stand lands a window late, a snap.
+	frame := frame
+	if player.field.seat != .Standing {
+		frame = seated_field_frame(frame)
+	}
 	player.sneaking = update_sneaking(player.sneaking, frame)
 	resolved := with_sneaking(frame, player.sneaking)
 	input := field_tick_input(resolved, simulation.tick_rate)

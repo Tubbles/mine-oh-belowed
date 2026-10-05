@@ -98,14 +98,12 @@ Game_Config :: struct {
 	// The arrival (work item 0200, simulation_arrival.odin,
 	// render_arrival.odin): a new world's fall in ticks (0 for none), the
 	// ticks between the hit and the landing, the flames' ticks before the
-	// hit, and the fall's start above the crater's floor and its tilt; the
-	// window's look pitched up from the path, so the horizon shows.
+	// hit, and the fall's start above the crater's floor and its tilt.
 	arrival_ticks:                    int,
 	arrival_settle_ticks:             int,
 	arrival_flame_ticks:              int,
 	arrival_start_metres:             int,
 	arrival_angle_degrees:            int,
-	arrival_window_pitch_degrees:     int,
 	// The pod's airlock (work items 0222, 0231, entity_pod_airlock.odin):
 	// how near a player's capsule keeps a hatch open (0231).
 	pod_airlock:                      Pod_Airlock_Config,
@@ -757,7 +755,6 @@ MAXIMUM_ARRIVAL_FLAME_TICKS :: 1200
 MINIMUM_ARRIVAL_START_METRES :: 20
 MAXIMUM_ARRIVAL_START_METRES :: 4096
 MAXIMUM_ARRIVAL_ANGLE_DEGREES :: 60
-MAXIMUM_ARRIVAL_WINDOW_PITCH_DEGREES :: 60
 
 // Every arrival value inside its bound; arrival_ticks 0 is no fall, else
 // it holds the hit and the flames and one tick of descent. Last the
@@ -775,7 +772,6 @@ arrival_problem :: proc(config: Game_Config) -> string {
 		{"arrival_flame_ticks", config.arrival_flame_ticks, 0, MAXIMUM_ARRIVAL_FLAME_TICKS},
 		{"arrival_start_metres", config.arrival_start_metres, MINIMUM_ARRIVAL_START_METRES, MAXIMUM_ARRIVAL_START_METRES},
 		{"arrival_angle_degrees", config.arrival_angle_degrees, 0, MAXIMUM_ARRIVAL_ANGLE_DEGREES},
-		{"arrival_window_pitch_degrees", config.arrival_window_pitch_degrees, 0, MAXIMUM_ARRIVAL_WINDOW_PITCH_DEGREES},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {

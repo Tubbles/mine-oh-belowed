@@ -1067,3 +1067,32 @@ test_a_machine_with_volumes_registers_its_body_and_marks_its_cells_shaped :: pro
 	testing.expect(t, remove_entity(&entities, machines, pod_handle))
 	testing.expect_value(t, len(entities.frames.bodies), 0)
 }
+
+// Work item 0223: on the shipped pod with its collision volumes the
+// seated eye lies clear of the chair by more than the camera's near plane
+// (0.1 m), and the seated facing is a unit tangent along the frame's
+// right, where POD_ROTATION turns the model's -z.
+@(test)
+test_the_pod_seat_eye_is_clear_of_the_chair :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pod_id := find_machine_of_kind(machines, .Pod)
+	volumes, problem := load_machine_collision(test_data_directory(), machines.machines[pod_id], context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	machines.machines[pod_id].collision = volumes
+	entities: Entities
+	defer destroy_entities(&entities)
+	place_test_pod(&entities, machines)
+	pod, frame, found := find_pod(&entities, machines)
+	testing.expect(t, found)
+	machine := machines.machines[pod.machine]
+	testing.expect(t, machine.seat.present)
+	testing.expect(t, len(entities.frames.bodies) > 0, "the pod registered no body")
+	eye := pod_seat_eye(frame, pod, machine)
+	probe := frame_body_probe(&entities.frames, eye, millimetres_to_position_units(100))
+	testing.expectf(t, !probe.found, "the eye lies %d from the chair", probe.distance)
+	facing := pod_seat_facing(frame, pod, machine)
+	testing.expect(t, abs(vector_length(facing) - UNIT_VECTOR_ONE) <= UNIT_VECTOR_ONE / 64, "the facing is a unit vector")
+	testing.expectf(t, vector_length(facing - frame.axes[FRAME_RIGHT]) <= UNIT_VECTOR_ONE / 64, "the facing %v is off the frame's right %v", facing, frame.axes[FRAME_RIGHT])
+	up, _ := normalize_fixed(cast([3]i64)eye)
+	testing.expect(t, abs(fixed_dot(facing, up)) <= UNIT_VECTOR_ONE / 64, "the facing is a tangent")
+}

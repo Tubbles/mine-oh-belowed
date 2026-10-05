@@ -86,6 +86,8 @@ Ui_Audit_Problem :: enum u8 {
 	Button_Label_Cut,
 	// A glyph or label of the HUD's glyph bar over a hotbar slot (0219).
 	Glyph_Bar_Over_Hotbar,
+	// The HUD's glyph bar dropped the hint the case keeps (0223).
+	Glyph_Hint_Dropped,
 }
 
 // One screen stack to audit at every size.
@@ -136,6 +138,9 @@ Ui_Audit_Case :: struct {
 	// A field session: the HUD's field player holds the tool of the
 	// selected hotbar stack, so the glyph bar shows the held hints (0219).
 	field_session:     bool,
+	// The HUD's field player in the pod's chair (0223): strapped in, the
+	// bar keeps Unbuckle at every size.
+	seat:              Field_Seat,
 }
 
 // Owns everything a Screen_Context points into.
@@ -373,6 +378,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	}
 	if audit_case.field_session {
 		audit_field_session_hud(audit, &hud)
+		hud.field_view.seat = audit_case.seat
 	}
 	if audit_case.hud {
 		draw_hud(state, screen_context, hud)
@@ -394,6 +400,11 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	}
 	if audit_case.touch {
 		audit_touch_labels_whole(audit, state, case_text, frame_name)
+	}
+	if audit_case.seat == .Strapped && !audit_case.touch {
+		if _, found := glyph_beside_label(state.draw_list[:], text("hint_unbuckle")); !found {
+			audit_report(audit, case_text, frame_name, .Glyph_Hint_Dropped, .Text, {}, text("hint_unbuckle"))
+		}
 	}
 }
 
@@ -1091,6 +1102,9 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "hud field furnace held", hud = true, field_session = true})
 	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = EMPTY_STACK
 	audit_case(audit, {name = "hud field nothing held", hud = true, field_session = true})
+	// Strapped into the pod's chair after the landing (0223): Unbuckle on
+	// the bar.
+	audit_case(audit, {name = "hud field strapped", hud = true, field_session = true, seat = .Strapped})
 	// The configure pop-up of a foundation over the inventory (0202),
 	// checked at every size down to the smallest, and the inventory's
 	// touch row with Configure in Sort's place.

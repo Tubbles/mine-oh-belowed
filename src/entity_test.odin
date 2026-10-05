@@ -227,7 +227,7 @@ test_x_turns_a_switch_and_opens_a_furnace_and_a_jumps_at_a_switch :: proc(t: ^te
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	players[0].pitch, players[0].yaw = -30, 90
 	routed := proc(t: ^testing.T, world: ^World, content: Simulation_Content, player: Player, button: sdl.GamepadButton) -> Input_Frame {
-		takes_interact, has_panel := aimed_target_calls_for(&world.entities, content.machines, player.target.entity, {})
+		takes_interact, has_panel := aimed_target_calls_for(&world.entities, content.machines, player.target.entity, {}, false)
 		return route_open_inventory_press(shipped_gamepad_press(t, button), false, has_panel, takes_interact)
 	}
 	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)

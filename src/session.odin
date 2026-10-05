@@ -106,6 +106,9 @@ start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Co
 	if !plan.loading {
 		enable_new_field_world(simulation, config, content.machines, session.field_content, session.planet, spacing)
 		begin_field_arrival(field, simulation.tick, config.arrival_ticks)
+		if field_arrival_falling(field.arrival) {
+			strap_players_for_the_fall(simulation, content.machines, session.field_content.tuning)
+		}
 	}
 	field.world.water_planet = make_field_water_planet(seed, session.planet, field.spacing_millimetres)
 	field.chunk_set.restoring = plan.loading && len(field.chunk_set.chunks) > 0

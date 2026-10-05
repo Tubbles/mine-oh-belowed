@@ -1,7 +1,7 @@
 #version 330
 
-// The arrival's window overlay (work item 0200, render_arrival.odin): a
-// quad over the viewport, its texture coordinate passed on. Attribute and
+// The arrival's window flames (work item 0200, render_arrival.odin): a
+// porthole's glass, its texture coordinate passed on. Attribute and
 // matrix names are the raylib defaults.
 
 in vec3 vertexPosition;

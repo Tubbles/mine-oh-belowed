@@ -27,6 +27,11 @@ MAXIMUM_MACHINE_LIGHT_RADIUS_CELLS :: 64
 // bottom, in cells: the exporter writes six decimals, and a bevel's
 // computed corner can land just outside. A lamp may sit as far outside.
 MODEL_FOOTPRINT_TOLERANCE_CELLS :: 0.02
+// A pod's portholes (work item 0223, Pod_Window): at most this many, each
+// a disc of this radius in cells.
+MAXIMUM_POD_WINDOWS :: 8
+MINIMUM_POD_WINDOW_RADIUS_CELLS :: 0.05
+MAXIMUM_POD_WINDOW_RADIUS_CELLS :: 2
 
 // Dense index into Machine_Registry.machines.
 Machine_Id :: distinct u16
@@ -236,6 +241,39 @@ Machine_Light :: struct {
 	clip:         bool,
 }
 
+// A pod's chair as written in the file (work item 0223): its cells of the
+// unrotated footprint, the seated eye in cells of the model's frame and
+// the facing word ("+x", "-x", "+z" or "-z") of the look at yaw 0.
+Pod_Seat_Definition :: struct {
+	cells:  Machine_Cell_Box_Definition,
+	eye:    [3]f64,
+	facing: string,
+}
+
+// A pod's porthole glass (work item 0223): the centre in cells of the
+// model's frame, the normal into the cabin and the radius in cells. As
+// written in the file and, the normal normalised, resolved.
+Pod_Window_Definition :: struct {
+	centre, normal: [3]f32,
+	radius:         f32,
+}
+
+Pod_Window :: struct {
+	centre, normal: [3]f32,
+	radius:         f32,
+}
+
+// A resolved chair (work item 0223): the cells of the unrotated
+// footprint, the seated eye in 1/COLLISION_UNITS_PER_CELL cell of the
+// model's frame and the facing, a model axis times UNIT_VECTOR_ONE.
+// present is false for a machine without a seat.
+Pod_Seat :: struct {
+	present: bool,
+	cells:   Cell_Box,
+	eye:     [3]i64,
+	facing:  [3]i64,
+}
+
 // As written in the file, before references are resolved.
 Machine_Definition :: struct {
 	id:                           string,
@@ -289,6 +327,8 @@ Machine_Definition :: struct {
 	fixtures:                     []Pod_Fixture_Definition,
 	lights:                       []Machine_Light_Definition,
 	interior_light_share:         Maybe(f32),
+	seat:                         Maybe(Pod_Seat_Definition),
+	windows:                      []Pod_Window_Definition,
 	stands_on_ground:             bool,
 	bare_ground_life_minutes:     int,
 	color:                        [3]int,
@@ -419,6 +459,13 @@ Machine :: struct {
 	// item 0225, presentation only: the simulation never reads it); 1 for
 	// every other machine. A hand built Machine{} holds 0.
 	interior_light_share:        f32,
+	// A pod's chair, where a new world's players sit strapped in through
+	// the fall and any player may sit later (work item 0223), and its
+	// portholes' glass, where the arrival's flames burn (presentation
+	// only).
+	seat:                        Pod_Seat,
+	windows:                     [MAXIMUM_POD_WINDOWS]Pod_Window,
+	window_count:                int,
 	// Machines on bare ground (0201, machine_wear.odin): never refused for
 	// slope and never worn (poles, pipes, belts, the pod); the minutes of
 	// operation on bare ground before a breakdown, 0 for game.sjson's.
@@ -752,6 +799,12 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 		return problem
 	}
 	if problem := validate_pod_fixtures(definitions, index); problem != "" {
+		return problem
+	}
+	if problem := validate_pod_seat(definitions, index); problem != "" {
+		return problem
+	}
+	if problem := validate_pod_windows(definition, kind); problem != "" {
 		return problem
 	}
 	if problem := validate_pump_head(definition, kind); problem != "" {
@@ -1122,6 +1175,143 @@ resolve_pod_fixtures :: proc(definitions: []Machine_Definition, definition: Mach
 	return fixtures, boxes, len(definition.fixtures)
 }
 
+// The model axis of a seat's facing word, times UNIT_VECTOR_ONE.
+pod_seat_facing_axis :: proc(word: string) -> (axis: [3]i64, found: bool) {
+	switch word {
+	case "+x":
+		return {UNIT_VECTOR_ONE, 0, 0}, true
+	case "-x":
+		return {-UNIT_VECTOR_ONE, 0, 0}, true
+	case "+z":
+		return {0, 0, UNIT_VECTOR_ONE}, true
+	case "-z":
+		return {0, 0, -UNIT_VECTOR_ONE}, true
+	}
+	return {}, false
+}
+
+// The seated eye in the model's frame (x and z centred on the unrotated
+// footprint, y from its bottom) lies inside the span of the cells, with
+// MODEL_FOOTPRINT_TOLERANCE_CELLS of slack; false for NaN.
+pod_seat_eye_inside_cells :: proc(eye: [3]f64, cells: Cell_Box, footprint: Machine_Footprint_Definition) -> bool {
+	tolerance := f64(MODEL_FOOTPRINT_TOLERANCE_CELLS)
+	centre := [3]f64{f64(footprint.width) / 2, 0, f64(footprint.depth) / 2}
+	for axis in 0 ..< 3 {
+		low := f64(cells.from[axis]) - centre[axis] - tolerance
+		high := f64(cells.to[axis] + 1) - centre[axis] + tolerance
+		if !(eye[axis] >= low && eye[axis] <= high) {
+			return false
+		}
+	}
+	return true
+}
+
+// A pod's seat (work item 0223): only a pod has one, its cells a box
+// inside the footprint overlapping no open_cells box and no fixture, the
+// eye inside the cells, the facing one of the four words. Runs after
+// validate_open_cells and validate_pod_fixtures, so the boxes it reads
+// are sound.
+validate_pod_seat :: proc(definitions: []Machine_Definition, index: int) -> string {
+	definition := definitions[index]
+	seat, present := definition.seat.?
+	if !present {
+		return ""
+	}
+	if definition.kind != machine_kind_names[.Pod] {
+		return fmt.tprintf("machine %q has a seat, which only a pod may", definition.id)
+	}
+	from_cell, has_from := seat.cells.from.?
+	to_cell, has_to := seat.cells.to.?
+	// Checked as ints before the cast, as validate_open_cells does, so an
+	// oversized value cannot wrap into the footprint.
+	from := [3]int{from_cell.x, from_cell.y, from_cell.z}
+	to := [3]int{to_cell.x, to_cell.y, to_cell.z}
+	size := [3]int{definition.footprint.width, definition.footprint.height, definition.footprint.depth}
+	inside := has_from && has_to
+	for axis in 0 ..< 3 {
+		inside = inside && from[axis] >= 0 && from[axis] <= to[axis] && to[axis] < size[axis]
+	}
+	if !inside {
+		return fmt.tprintf("pod %q seat cells are not a box inside the footprint", definition.id)
+	}
+	cells := Cell_Box{from = {i32(from.x), i32(from.y), i32(from.z)}, to = {i32(to.x), i32(to.y), i32(to.z)}}
+	open_cells := resolve_open_cells(definition.open_cells)
+	for open_box, open_index in open_cells[:len(definition.open_cells)] {
+		if cell_boxes_overlap(cells, open_box) {
+			return fmt.tprintf("pod %q seat cells overlap open_cells box %d", definition.id, open_index)
+		}
+	}
+	for fixture, fixture_index in definition.fixtures {
+		machine_index := find_definition_index(definitions, fixture.machine)
+		if cell_boxes_overlap(cells, pod_fixture_box(fixture.cell, fixture.rotation, definitions[machine_index].footprint)) {
+			return fmt.tprintf("pod %q seat cells overlap fixture %d", definition.id, fixture_index)
+		}
+	}
+	if !pod_seat_eye_inside_cells(seat.eye, cells, definition.footprint) {
+		return fmt.tprintf("pod %q seat eye is not inside its cells", definition.id)
+	}
+	if _, found := pod_seat_facing_axis(seat.facing); !found {
+		return fmt.tprintf("pod %q seat facing %q is not +x, -x, +z or -z", definition.id, seat.facing)
+	}
+	return ""
+}
+
+// A pod's windows (work item 0223): only a pod has them, at most
+// MAXIMUM_POD_WINDOWS, each centred inside the footprint
+// (machine_light_inside_footprint), its normal 0.5 to 2 long and its
+// radius MINIMUM_POD_WINDOW_RADIUS_CELLS to
+// MAXIMUM_POD_WINDOW_RADIUS_CELLS; every comparison fails on NaN.
+validate_pod_windows :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	if len(definition.windows) == 0 {
+		return ""
+	}
+	if kind != .Pod {
+		return fmt.tprintf("machine %q has windows, which only a pod may", definition.id)
+	}
+	if len(definition.windows) > MAXIMUM_POD_WINDOWS {
+		return fmt.tprintf("pod %q has more than %d windows", definition.id, MAXIMUM_POD_WINDOWS)
+	}
+	for window, index in definition.windows {
+		if !machine_light_inside_footprint(window.centre, definition.footprint) {
+			return fmt.tprintf("pod %q window %d is not inside the footprint", definition.id, index)
+		}
+		length := math.sqrt(window.normal.x * window.normal.x + window.normal.y * window.normal.y + window.normal.z * window.normal.z)
+		if !(length >= 0.5 && length <= 2) {
+			return fmt.tprintf("pod %q window %d has a normal of length %.3f, not 0.5 to 2", definition.id, index, length)
+		}
+		if !(window.radius >= MINIMUM_POD_WINDOW_RADIUS_CELLS && window.radius <= MAXIMUM_POD_WINDOW_RADIUS_CELLS) {
+			return fmt.tprintf("pod %q window %d has radius %.3f, not 0.05 to 2", definition.id, index, window.radius)
+		}
+	}
+	return ""
+}
+
+// Validated before (validate_pod_seat): the eye in collision units.
+resolve_pod_seat :: proc(definition: Machine_Definition) -> Pod_Seat {
+	seat, present := definition.seat.?
+	if !present {
+		return {}
+	}
+	from, to := seat.cells.from.? or_else {}, seat.cells.to.? or_else {}
+	facing, _ := pod_seat_facing_axis(seat.facing)
+	return Pod_Seat {
+		present = true,
+		cells = {from = {i32(from.x), i32(from.y), i32(from.z)}, to = {i32(to.x), i32(to.y), i32(to.z)}},
+		eye = collision_point_units(seat.eye),
+		facing = facing,
+	}
+}
+
+// Validated before (validate_pod_windows): the normals normalised.
+resolve_pod_windows :: proc(definitions: []Pod_Window_Definition) -> (windows: [MAXIMUM_POD_WINDOWS]Pod_Window, count: int) {
+	for definition in definitions[:min(len(definitions), MAXIMUM_POD_WINDOWS)] {
+		length := math.sqrt(definition.normal.x * definition.normal.x + definition.normal.y * definition.normal.y + definition.normal.z * definition.normal.z)
+		windows[count] = {centre = definition.centre, normal = definition.normal / length, radius = definition.radius}
+		count += 1
+	}
+	return windows, count
+}
+
 // Validated before (validate_open_cells).
 resolve_open_cells :: proc(boxes: []Machine_Cell_Box_Definition) -> (resolved: [MAXIMUM_OPEN_CELL_BOXES]Cell_Box) {
 	for box, index in boxes {
@@ -1153,6 +1343,8 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 		if problem == "" {
 			machine = resolve_machine(definition, item)
 			machine.fixtures, machine.fixture_boxes, machine.fixture_count = resolve_pod_fixtures(file.machines, definition)
+			machine.seat = resolve_pod_seat(definition)
+			machine.windows, machine.window_count = resolve_pod_windows(definition.windows)
 			problem = resolve_fluid_ports(&machine, definition, fluids)
 		}
 		if problem == "" {

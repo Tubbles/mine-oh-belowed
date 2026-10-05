@@ -831,3 +831,24 @@ test_the_field_player_saves_its_crouch :: proc(t: ^testing.T) {
 	testing.expect_value(t, read.yaw, 7)
 	testing.expect(t, !read.crouching, "an old save loads standing")
 }
+
+// Work item 0223: the seat round trips through the save; a player written
+// before it loads Standing.
+@(test)
+test_the_field_player_saves_its_seat :: proc(t: ^testing.T) {
+	player := make_field_player(FAR_FEET, {UNIT_VECTOR_ONE, 0, 0})
+	player.seat = .Seated
+	bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&bytes, &player)
+	read: Field_Player
+	reader := Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read.seat, Field_Seat.Seated)
+	old := Field_Player_Before_Crouch{yaw = 7}
+	clear(&bytes)
+	write_value_of(&bytes, &old)
+	read = {}
+	reader = Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read.seat, Field_Seat.Standing)
+}

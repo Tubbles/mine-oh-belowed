@@ -1,5 +1,6 @@
 package game
 
+import "core:math"
 import "core:strings"
 import "core:testing"
 import rl "shared:raylib"
@@ -468,6 +469,107 @@ test_the_pod_fixtures_are_checked :: proc(t: ^testing.T) {
 	testing.expect_value(t, pod.fixture_boxes[0], Cell_Box{from = {10, 0, 5}, to = {10, 1, 6}})
 	testing.expect_value(t, pod.fixture_boxes[2], Cell_Box{from = {5, 0, 8}, to = {6, 3, 8}})
 	testing.expect_value(t, machines.machines[pod.fixtures[0].machine].kind, Machine_Kind.Hatch)
+}
+
+// Work item 0223: validate_pod_seat and validate_pod_windows refuse each
+// broken copy of the shipped pod; the shipped record passes and resolves
+// its seat and five windows.
+@(test)
+test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
+	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
+	testing.expect(t, error == nil)
+	pod_index := find_definition_index(file.machines, "pod")
+	locker_index := find_definition_index(file.machines, "pod_locker")
+	testing.expect(t, pod_index >= 0 && locker_index >= 0)
+	testing.expect_value(t, validate_machine_definition(file.machines, pod_index), "")
+	shipped := file.machines[pod_index]
+	seat := shipped.seat.? or_else {}
+	broken :: proc(definitions: []Machine_Definition, index: int, changed: Machine_Definition) -> string {
+		changed_definitions := make([]Machine_Definition, len(definitions), context.temp_allocator)
+		for definition, position in definitions {
+			changed_definitions[position] = definition
+		}
+		changed_definitions[index] = changed
+		return validate_machine_definition(changed_definitions, index)
+	}
+	with_seat :: proc(pod: Machine_Definition, seat: Pod_Seat_Definition) -> Machine_Definition {
+		changed := pod
+		changed.seat = seat
+		return changed
+	}
+	locker := file.machines[locker_index]
+	locker.seat = seat
+	testing.expect(t, strings.contains(broken(file.machines, locker_index, locker), "has a seat, which only a pod may"))
+	past := seat
+	past.cells.to = Machine_Cell_Definition{12, 3, 7}
+	// Above max(i32): a cast before the check would wrap it to x 4.
+	wrapping := seat
+	wrapping.cells.to = Machine_Cell_Definition{1 << 32 + 4, 3, 7}
+	open_box := seat
+	open_box.cells = {from = Machine_Cell_Definition{3, 0, 4}, to = Machine_Cell_Definition{4, 3, 5}}
+	on_locker := seat
+	on_locker.cells = {from = Machine_Cell_Definition{5, 0, 8}, to = Machine_Cell_Definition{5, 0, 8}}
+	high_eye := seat
+	high_eye.eye.y = 5
+	nan_eye := seat
+	nan_eye.eye.x = math.nan_f64()
+	upward := seat
+	upward.facing = "up"
+	seat_refusals := []struct {
+		seat:  Pod_Seat_Definition,
+		words: string,
+	} {
+		{past, "seat cells are not a box inside the footprint"},
+		{wrapping, "seat cells are not a box inside the footprint"},
+		{open_box, "seat cells overlap open_cells box 0"},
+		{on_locker, "seat cells overlap fixture 2"},
+		{high_eye, "seat eye is not inside its cells"},
+		{nan_eye, "seat eye is not inside its cells"},
+		{upward, `seat facing "up" is not +x, -x, +z or -z`},
+	}
+	for refusal in seat_refusals {
+		problem := broken(file.machines, pod_index, with_seat(shipped, refusal.seat))
+		testing.expectf(t, strings.contains(problem, refusal.words), "%q lacks %q", problem, refusal.words)
+	}
+	window := shipped.windows[0]
+	nine := make([]Pod_Window_Definition, MAXIMUM_POD_WINDOWS + 1, context.temp_allocator)
+	for &entry in nine {
+		entry = window
+	}
+	outside := window
+	outside.centre.x = 7
+	flat := window
+	flat.normal = {}
+	wide := window
+	wide.radius = 3
+	window_refusals := []struct {
+		windows: []Pod_Window_Definition,
+		words:   string,
+	} {
+		{nine, "has more than 8 windows"},
+		{{outside}, "window 0 is not inside the footprint"},
+		{{flat}, "window 0 has a normal of length 0.000"},
+		{{wide}, "window 0 has radius 3.000"},
+	}
+	for refusal in window_refusals {
+		changed := shipped
+		changed.windows = refusal.windows
+		problem := broken(file.machines, pod_index, changed)
+		testing.expectf(t, strings.contains(problem, refusal.words), "%q lacks %q", problem, refusal.words)
+	}
+	windowed_locker := file.machines[locker_index]
+	windowed_locker.windows = {window}
+	testing.expect(t, strings.contains(broken(file.machines, locker_index, windowed_locker), "has windows, which only a pod may"))
+
+	machines := make_test_machines()
+	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
+	testing.expect(t, pod.seat.present)
+	testing.expect_value(t, pod.seat.cells, Cell_Box{from = {3, 0, 6}, to = {4, 3, 7}})
+	testing.expect_value(t, pod.seat.eye, [3]i64{-2 * COLLISION_UNITS_PER_CELL, 11059, COLLISION_UNITS_PER_CELL})
+	testing.expect_value(t, pod.seat.facing, [3]i64{0, 0, -UNIT_VECTOR_ONE})
+	testing.expect_value(t, pod.window_count, 5)
+	length := math.sqrt(pod.windows[0].normal.x * pod.windows[0].normal.x + pod.windows[0].normal.y * pod.windows[0].normal.y + pod.windows[0].normal.z * pod.windows[0].normal.z)
+	testing.expect(t, abs(length - 1) < 1e-5, "the normals are normalised")
 }
 
 // Work item 0198: the kinds placed in the pod refuse an item and the

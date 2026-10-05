@@ -212,3 +212,47 @@ test_x_shows_one_hint_on_a_switch_and_a_crate :: proc(t: ^testing.T) {
 	hints, _ = world_glyph_hints(crate_context, {}, true)
 	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Pause}), "Inventory, Pause")
 }
+
+// Work item 0223: the chair's Interact hint is Unbuckle strapped in,
+// Stand seated and Sit standing aimed at the chair, none otherwise, none
+// while the world falls; strapped in, the bar shows no held hints and,
+// with Interact on the Inventory's control, neither Open nor Inventory.
+@(test)
+test_the_chair_hints_unbuckle_stand_and_sit :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	world: World
+	defer destroy_world(&world)
+	machines := make_test_machines()
+	items := make_test_items()
+	place_test_pod(&world.entities, machines)
+	pod, frame, _ := find_pod(&world.entities, machines)
+	machine := machines.machines[pod.machine]
+	corner := rotate_footprint_cell({machine.seat.cells.from.x, machine.seat.cells.from.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
+	chair := Frame_Raycast_Hit{hit = true, frame = frame.id, cell = pod.origin + {corner.x, 1, corner.y}, occupant = {handle = entity_occupant_handle(pod.handle)}}
+	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
+	inventory_hotbar(player.inventory)[0] = Item_Stack{test_item(items, "stone_furnace"), 1}
+	screen_context := Screen_Context{world = &world, player = &player, items = items, machines = machines}
+	hud := Hud_Context{field_view_set = true, field_session = true}
+	hud.field_view.tool = .Machine
+	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "")
+	hud.field_view.frame_target = chair
+	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "hint_sit")
+	hud.field_view.frame_target = {}
+	hud.field_view.seat = .Seated
+	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "hint_stand")
+	hud.field_view.seat = .Strapped
+	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "hint_unbuckle")
+	hints, kept := world_glyph_hints(screen_context, hud, true)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Pause}), "Unbuckle, Pause")
+	testing.expect_value(t, hints[0].label, "Unbuckle")
+	testing.expect_value(t, kept, 1)
+	falling := screen_context
+	falling.arrival_falling = true
+	testing.expect_value(t, field_chair_hint_key(falling, hud), "")
+	hints, _ = world_glyph_hints(falling, hud)
+	testing.expect(t, !slice.contains(hint_buttons(hints), Glyph_Button.Interact), "no Interact while falling")
+	testing.expect(t, !slice.contains(hint_buttons(hints), Glyph_Button.Use_Item), "no held hints strapped in")
+	hud.field_session = false
+	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "")
+}

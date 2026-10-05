@@ -92,16 +92,112 @@ pod_locker :: proc(entities: ^Entities, machines: Machine_Registry) -> (locker: 
 	return NO_ENTITY, false
 }
 
-// The frame of the first alive pod in the foundations' pool order (the
-// one field_pod_spawn spawns in), for the arrival's presentation (0200).
-// found is false without a pod.
-find_pod_frame :: proc(entities: ^Entities, machines: Machine_Registry) -> (frame: Frame, found: bool) {
+// The first alive pod in the foundations' pool order (the one
+// field_pod_spawn spawns in) and its frame. found is false without a pod
+// or its frame.
+find_pod :: proc(entities: ^Entities, machines: Machine_Registry) -> (pod: Entity_Common, frame: Frame, found: bool) {
 	for foundation in entities.foundations.entries {
 		if foundation.alive && int(foundation.machine) < len(machines.machines) && machines.machines[foundation.machine].kind == .Pod {
-			return find_frame(&entities.frames, foundation.frame)
+			frame, found = find_frame(&entities.frames, foundation.frame)
+			return foundation.common, frame, found
 		}
 	}
-	return {}, false
+	return {}, {}, false
+}
+
+// The frame of the first alive pod, for the arrival's presentation
+// (0200). found is false without a pod.
+find_pod_frame :: proc(entities: ^Entities, machines: Machine_Registry) -> (frame: Frame, found: bool) {
+	_, frame, found = find_pod(entities, machines)
+	return
+}
+
+// The chair (work item 0223).
+
+// The pod's seated eye in the world, from the record through the model's
+// frame, integer.
+pod_seat_eye :: proc(frame: Frame, pod: Entity_Common, machine: Machine) -> World_Position {
+	return model_point_in_frame(frame, pod.origin, pod.size, pod.rotation, machine.seat.eye)
+}
+
+// The seated look at yaw 0 in the world, a unit vector.
+pod_seat_facing :: proc(frame: Frame, pod: Entity_Common, machine: Machine) -> [3]i64 {
+	return frame_world_direction(frame, body_direction_to_frame(pod.rotation, machine.seat.facing))
+}
+
+// Whether the frame cell lies in the seat's cells, turned and placed as
+// pod_fixture_placement turns a fixture's box.
+pod_seat_contains_cell :: proc(pod: Entity_Common, machine: Machine, cell: World_Coordinate) -> bool {
+	box := machine.seat.cells
+	first := rotate_footprint_cell({box.from.x, box.from.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
+	last := rotate_footprint_cell({box.to.x, box.to.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
+	low := cast([3]i32)pod.origin + {min(first.x, last.x), box.from.y, min(first.y, last.y)}
+	high := cast([3]i32)pod.origin + {max(first.x, last.x), box.to.y, max(first.y, last.y)}
+	return cell_box_contains(Cell_Box{from = low, to = high}, cast([3]i32)cell)
+}
+
+// The target hits an alive pod with a seat, on its frame, in a seat cell:
+// the ray meets the chair's collision boxes, and frame_body_hit puts the
+// hit's cell a quarter pitch inside the surface, in the chair's cells.
+field_aimed_chair :: proc(entities: ^Entities, machines: Machine_Registry, target: Frame_Raycast_Hit) -> bool {
+	if !target.hit {
+		return false
+	}
+	handle := entity_from_occupant(target.occupant.handle)
+	if handle.kind != .Foundation {
+		return false
+	}
+	entry := pool_get(&entities.foundations, handle)
+	if entry == nil || !entry.alive || int(entry.machine) >= len(machines.machines) {
+		return false
+	}
+	machine := machines.machines[entry.machine]
+	return machine.kind == .Pod && machine.seat.present && entry.frame == target.frame && pod_seat_contains_cell(entry.common, machine, target.cell)
+}
+
+// Puts the body in the first pod's chair: the eye on the seat's, the up
+// the eye's normalised, the feet the standing eye height below it (so
+// field_player_eye gives the seat's eye exactly), facing the seat, at
+// rest. False, and nothing changed, without a pod that has a seat. The
+// capsule then hangs 0.25 m below the cabin floor (eye 1.35 m, eye
+// height 1.6 m): it meets nothing, and its edge stays 1.2 m from the
+// inner hatch's cells, outside the airlock's reach.
+seat_field_player :: proc(entities: ^Entities, machines: Machine_Registry, tuning: Field_Player_Tuning, body: ^Field_Player, seat: Field_Seat) -> bool {
+	pod, frame, found := find_pod(entities, machines)
+	if !found || !machines.machines[pod.machine].seat.present {
+		return false
+	}
+	machine := machines.machines[pod.machine]
+	eye := pod_seat_eye(frame, pod, machine)
+	up, ok := normalize_fixed(cast([3]i64)eye)
+	if !ok {
+		return false
+	}
+	body.up = up
+	body.position = eye - World_Position(fixed_scale(up, tuning.eye_height))
+	body.previous_position = body.position
+	body.forward = tangent_of(up, pod_seat_facing(frame, pod, machine))
+	body.yaw, body.pitch = 0, 0
+	body.velocity, body.motion_fraction = {}, {}
+	body.on_ground = true
+	body.crouching = false
+	body.seat = seat
+	return true
+}
+
+// Out of the chair onto the cabin's floor (field_pod_spawn) at rest; the
+// forward, the yaw and the pitch kept, so the look does not jump.
+stand_field_player_from_seat :: proc(entities: ^Entities, machines: Machine_Registry, body: ^Field_Player) {
+	body.seat = .Standing
+	spawn, found := field_pod_spawn(entities, machines)
+	if !found {
+		return
+	}
+	body.position = spawn.position
+	body.previous_position = spawn.position
+	body.up = spawn.up
+	body.velocity, body.motion_fraction = {}, {}
+	body.on_ground = false
 }
 
 // The hatches.
@@ -557,4 +653,5 @@ move_field_player_body :: proc(body: ^Field_Player, spawn: Field_Player) {
 	body.velocity = {}
 	body.motion_fraction = {}
 	body.on_ground = false
+	body.seat = .Standing
 }

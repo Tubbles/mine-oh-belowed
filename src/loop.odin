@@ -447,7 +447,7 @@ viewport_aimed_target :: proc(state: ^Frame_State, viewport: Viewport) -> (takes
 		return false, false
 	}
 	view := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
-	takes_interact, has_panel = aimed_target_calls_for(&session.simulation.world.entities, state.content.machines, session.simulation.players[viewport.player].target.entity, view.field.frame_target)
+	takes_interact, has_panel = aimed_target_calls_for(&session.simulation.world.entities, state.content.machines, session.simulation.players[viewport.player].target.entity, view.field, field_arrival_falling(session.simulation.field.arrival))
 	return takes_interact && !viewport.interaction.placement_editor.anchored, has_panel
 }
 
@@ -482,6 +482,11 @@ update_viewport_placement_editor :: proc(state: ^Frame_State, viewport: ^Viewpor
 		return
 	}
 	view := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
+	// No anchor in the pod's chair (0223): nothing is placed from it.
+	if view.field.seat != .Standing {
+		editor.anchored = false
+		return
+	}
 	guard := viewport.interaction.world_action_guard
 	input := Placement_Editor_Input {
 		just_pressed = viewport.interaction.input.just_pressed - guard,
@@ -827,9 +832,8 @@ draw_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: S
 		return
 	}
 	if session.simulation.field.enabled {
-		view := draw_field_viewport_world(state, viewport, content, sky)
+		draw_field_viewport_world(state, viewport, content, sky)
 		begin_render_pixel_drawing()
-		draw_arrival_window(&state.presentation.arrival, view, {f32(viewport.rectangle.width), f32(viewport.rectangle.height)}, session.simulation.world.settings.seed)
 		return
 	}
 	memory := &viewport.presentation.cue_memory
@@ -1489,6 +1493,9 @@ show_simulation_events :: proc(state: ^Ui_State, events: []Simulation_Event, loc
 				line := replace_message_mark(text(key), "{needed}", fmt.tprint(event.needed))
 				ui_toast(state, replace_message_mark(line, "{held}", fmt.tprint(event.held)))
 			}
+		case .Touchdown_Confirmed:
+			// A Mission Control line, outside the journal (0223).
+			ui_mission_control_line(state, text("mc_touchdown_confirmed"))
 		}
 	}
 }

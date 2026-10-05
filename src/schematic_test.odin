@@ -262,7 +262,7 @@ test_use_item_resolution :: proc(t: ^testing.T) {
 	// Interact on a crate takes its schematic in one press; A jumps there.
 	// X routed at the full crate is Interact's alone, so the inventory
 	// stays shut (0233).
-	takes_interact, has_panel := aimed_target_calls_for(&world.entities, content.machines, crate, {})
+	takes_interact, has_panel := aimed_target_calls_for(&world.entities, content.machines, crate, {}, false)
 	testing.expect(t, takes_interact && !has_panel)
 	x := route_open_inventory_press(shipped_gamepad_press(t, .WEST), false, has_panel, takes_interact)
 	testing.expect_value(t, x.just_pressed & {.Interact, .Open_Inventory, .Open_Aimed}, Action_Set{.Interact})
@@ -282,7 +282,7 @@ test_use_item_resolution :: proc(t: ^testing.T) {
 	input, used = resolve_use_item(&player, &world.entities, content.items, press({.Jump, .Interact}))
 	testing.expect_value(t, used, NO_ITEM)
 	testing.expect_value(t, input.pressed, Action_Set{.Jump, .Interact})
-	takes_interact, has_panel = aimed_target_calls_for(&world.entities, content.machines, crate, {})
+	takes_interact, has_panel = aimed_target_calls_for(&world.entities, content.machines, crate, {}, false)
 	testing.expect(t, !takes_interact && !has_panel)
 	x = route_open_inventory_press(shipped_gamepad_press(t, .WEST), false, has_panel, takes_interact)
 	testing.expect(t, .Open_Inventory in x.just_pressed)

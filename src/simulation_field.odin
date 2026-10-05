@@ -25,7 +25,8 @@ import "core:math"
 // at the planet's home (data/planets.sjson, work item 0199) with its door
 // towards the first spring; every new player, the first and a joining
 // one, stands in the pod's cabin facing the door, with the starter kit
-// (field_pod_spawn, make_field_session_player). A new world's home is the
+// (field_pod_spawn, make_field_session_player), or sits strapped into its
+// chair while the world falls (0223). A new world's home is the
 // nearest dry point to the record's (new_world_home, 0180), and a place
 // that would raise ground into the spawn's capsule is refused with a
 // refusal of its own (Would_Bury_Spawn, field_place_buries_a_player).
@@ -341,10 +342,59 @@ interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content,
 	return {}
 }
 
-// One field player's part of the tick, before the drain: the hotbar, the
-// tool, the move and the queued edits and placements, the hand crafting.
+// The chair (0223).
+
+// What a seated player's frame keeps of the actions: the inventory
+// binding at the bench opens its panel from the chair, as the HUD's Open
+// promises.
+SEATED_FIELD_ACTIONS :: Action_Set{.Open_Aimed}
+
+// A seated player's frame: no walk and no action but
+// SEATED_FIELD_ACTIONS; the look, the pointer delta and the flags stay.
+seated_field_frame :: proc(frame: Input_Frame) -> Input_Frame {
+	seated := frame
+	seated.move = {}
+	seated.pressed &= SEATED_FIELD_ACTIONS
+	seated.just_pressed &= SEATED_FIELD_ACTIONS
+	return seated
+}
+
+// Interact on the chair, never while the world falls: a strapped or
+// seated player stands whatever the aim (the chair is under them), a
+// standing one aimed at the chair sits. True when it acted.
+interact_on_field_chair :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> bool {
+	if field_arrival_falling(state.field.arrival) || .Interact not_in frame.just_pressed {
+		return false
+	}
+	player := &state.players[index]
+	entities := &state.world.entities
+	switch player.field.seat {
+	case .Strapped, .Seated:
+		stand_field_player_from_seat(entities, content.machines, &player.field)
+		return true
+	case .Standing:
+		if field_aimed_chair(entities, content.machines, player.field.frame_target) && seat_field_player(entities, content.machines, content.field.tuning, &player.field, .Seated) {
+			player.sneaking = false
+			return true
+		}
+	}
+	return false
+}
+
+// One field player's part of the tick, before the drain: the chair, the
+// hotbar, the tool, the move and the queued edits and placements, the
+// hand crafting. A seated player keeps the look and Open_Aimed alone
+// (seated_field_frame); the hand crafting runs on.
 tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
+	frame := frame
+	if interact_on_field_chair(state, content, index, frame) {
+		frame.just_pressed -= {.Interact}
+		frame.pressed -= {.Interact}
+	}
+	if player.field.seat != .Standing {
+		frame = seated_field_frame(frame)
+	}
 	// The hold or toggle setting applies on the field as in the block
 	// world (0218).
 	player.sneaking = update_sneaking(player.sneaking, frame)
@@ -386,7 +436,7 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 	previous := make([]Field_Edit_Refusal, len(state.players), context.temp_allocator)
 	pressed := make([]bool, len(state.players), context.temp_allocator)
 	for index in 0 ..< len(state.players) {
-		// Nothing moves a player while the world falls (0200).
+		// Only the look turns a player while the world falls (0200, 0223).
 		frame := arrival_input(state.field.arrival, index < len(inputs) ? inputs[index] : Input_Frame{})
 		previous[index] = state.players[index].field_refusal
 		pressed[index] = frame.just_pressed & {.Mine, .Place} != {}
@@ -519,12 +569,17 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 	field.felled_trees_recorded = true
 }
 
-// The spawn of a field session's new player: the pod's cabin, the starter
-// kit (data/game.sjson, starting_items). The first player of a new world
+// The spawn of a field session's new player: the pod's cabin, or its
+// chair strapped in while the world falls (0223), the starter kit
+// (data/game.sjson, starting_items). The first player of a new world
 // and every joining one come through here.
 make_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, start: Player_Start) -> Player {
 	player := make_player(start)
 	player.field = field_spawn_player(&state.world.entities, content.machines, state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	// The first player of a new world joins inside the fall (0223).
+	if field_arrival_falling(state.field.arrival) {
+		seat_field_player(&state.world.entities, content.machines, content.field.tuning, &player.field, .Strapped)
+	}
 	give_starting_items(&player, content.items, content.field.starting_items)
 	return player
 }

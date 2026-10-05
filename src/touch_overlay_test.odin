@@ -1984,7 +1984,7 @@ touch_tap_into_tick :: proc(t: ^testing.T, world: ^World, content: Simulation_Co
 	state: Touch_Overlay_State
 	inputs := interaction == .Tap ? TAP_TOUCH : CROSSHAIR_TOUCH
 	target := players[0].target.entity
-	inputs.target_takes_interaction, inputs.target_has_panel = aimed_target_calls_for(&world.entities, content.machines, target, {})
+	inputs.target_takes_interaction, inputs.target_has_panel = aimed_target_calls_for(&world.entities, content.machines, target, {}, false)
 	tap_at(&state, layout, 0, TAP_POINT, inputs)
 	output := touch_frame(&state, layout, {}, inputs = inputs)
 	tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
@@ -2062,9 +2062,8 @@ test_a_tap_on_the_field_turns_a_switch_and_opens_a_furnace :: proc(t: ^testing.T
 	for target in ([2]Entity_Handle{power_switch, furnace}) {
 		simulation.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame, occupant = {handle = entity_occupant_handle(target)}}
 		block_target := simulation.players[0].target.entity
-		field_target := simulation.players[0].field.frame_target
 		inputs := TAP_TOUCH
-		inputs.target_takes_interaction, inputs.target_has_panel = aimed_target_calls_for(entities, simulation_content.machines, block_target, field_target)
+		inputs.target_takes_interaction, inputs.target_has_panel = aimed_target_calls_for(entities, simulation_content.machines, block_target, simulation.players[0].field, false)
 		state: Touch_Overlay_State
 		tap_at(&state, layout, 0, TAP_POINT, inputs)
 		output := touch_frame(&state, layout, {}, inputs = inputs)

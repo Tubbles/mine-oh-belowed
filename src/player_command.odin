@@ -331,7 +331,8 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 // the placements the players' ticks queue (0215); the drain refuses or
 // applies it as any placement. False outside a field session.
 queue_machine_placement :: proc(state: ^Simulation_State, content: Simulation_Content, player: int, command: Machine_Placement_Command) -> bool {
-	if !state.field.enabled {
+	// Nothing is placed from the pod's chair or during the fall (0223).
+	if !state.field.enabled || field_arrival_falling(state.field.arrival) || state.players[player].field.seat != .Standing {
 		return false
 	}
 	append(&state.field.placements, Queued_Field_Placement{player, field_placement_of_command(command, state.players[player].field, content)})
@@ -572,6 +573,8 @@ developer_request_valid :: proc(request: Developer_Request, content: Simulation_
 		return bearing >= -ANGLE_UNITS_PER_TURN && bearing <= ANGLE_UNITS_PER_TURN && pitch >= -FIELD_PITCH_LIMIT && pitch <= FIELD_PITCH_LIMIT
 	case .Set_Camera_Mode:
 		return enum_in_range(request.camera_mode)
+	case .Set_Field_Seat:
+		return enum_in_range(request.seat)
 	case .Place_On_Frame:
 		return index_in_range(int(request.machine), len(content.machines.machines)) && machine_takes_placement_command(content.machines.machines[request.machine]) && request.rotation < 4
 	case .Hold_Field_Crouch, .Toggle_Fly_Mode, .Toggle_No_Clip, .Unlock_All, .Teleport, .Toggle_Cheat_Speed, .Toggle_Free_Crafting, .Add_Vein, .Remove_At, .Finish_Active_Quest:

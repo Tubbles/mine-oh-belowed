@@ -120,6 +120,9 @@ Player_Event :: enum u8 {
 	// A field edit or placement was refused (0179); the event's
 	// field_refusal says why (field_refusal_is_news).
 	Field_Refused,
+	// The fall landed with the player strapped into the pod's chair
+	// (0223): Mission Control confirms touchdown.
+	Touchdown_Confirmed,
 }
 
 Player_Events :: bit_set[Player_Event]
@@ -502,13 +505,29 @@ aims_at_panel :: proc(entities: ^Entities, machines: Machine_Registry, block_tar
 	return entity_has_panel(entities, machines, aimed_entity(block_target, field_target))
 }
 
+// The pod's chair takes Interact like a switch (0223): never while the
+// world falls; always for a strapped or seated body (the chair is under
+// it); for a standing one when it aims at the chair.
+field_chair_takes_interact :: proc(entities: ^Entities, machines: Machine_Registry, body: Field_Player, falling: bool) -> bool {
+	if falling {
+		return false
+	}
+	if body.seat != .Standing {
+		return true
+	}
+	return field_aimed_chair(entities, machines, body.frame_target)
+}
+
 // What the aimed thing calls for, read as the HUD shows the target
-// (aimed_entity): Interact (entity_takes_interact) and a panel the
-// inventory binding opens (aims_at_panel, 0194). The frame's routing of
-// the inventory binding (route_open_inventory_press) and the touch tap
-// (tap_control) read it.
-aimed_target_calls_for :: proc(entities: ^Entities, machines: Machine_Registry, block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> (takes_interact, has_panel: bool) {
-	return entity_takes_interact(entities, machines, aimed_entity(block_target, field_target)), aims_at_panel(entities, machines, block_target, field_target)
+// (aimed_entity): Interact (entity_takes_interact, or the pod's chair,
+// field_chair_takes_interact) and a panel the inventory binding opens
+// (aims_at_panel, 0194). body is the field player as the HUD shows it
+// (its frame_target, its seat). The frame's routing of the inventory
+// binding (route_open_inventory_press) and the touch tap (tap_control)
+// read it.
+aimed_target_calls_for :: proc(entities: ^Entities, machines: Machine_Registry, block_target: Entity_Handle, body: Field_Player, falling: bool) -> (takes_interact, has_panel: bool) {
+	takes_interact = entity_takes_interact(entities, machines, aimed_entity(block_target, body.frame_target)) || field_chair_takes_interact(entities, machines, body, falling)
+	return takes_interact, aims_at_panel(entities, machines, block_target, body.frame_target)
 }
 
 // Open_Aimed (an Open_Inventory press the presentation routed, 0194)

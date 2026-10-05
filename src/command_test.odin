@@ -1016,3 +1016,25 @@ test_block_world_refuses_the_field_commands :: proc(t: ^testing.T) {
 	text := expect_command_ok(t, test, "query player").text
 	testing.expectf(t, strings.contains(text, "\nblock "), "%s", text)
 }
+
+// Work item 0223: seat sit puts the body in the pod's chair, its eye on
+// the seat's, and query player says so; seat stand stands it; both are
+// refused while the world falls.
+@(test)
+test_the_seat_command_sits_and_stands :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	testing.expectf(t, strings.contains(expect_field_command_ok(t, test, "query player").text, "\nseat standing"), "standing at the start")
+	testing.expect_value(t, expect_field_command_ok(t, test, "seat sit").text, "seat seated")
+	testing.expectf(t, strings.contains(expect_field_command_ok(t, test, "query player").text, "\nseat seated"), "seated after seat sit")
+	pod, frame, found := find_pod(&test.session.simulation.world.entities, test.content.machines)
+	testing.expect(t, found)
+	body := field_command_body(test)
+	testing.expect_value(t, field_player_eye(body^, test.content.field.tuning), pod_seat_eye(frame, pod, test.content.machines.machines[pod.machine]))
+	testing.expect_value(t, expect_field_command_ok(t, test, "seat stand").text, "seat standing")
+	testing.expect_value(t, body.seat, Field_Seat.Standing)
+	expect_field_command_error(t, test, "seat lie", "usage: seat <stand|sit>")
+	test.session.simulation.field.arrival = {start_tick = test.session.simulation.tick, fall_ticks = 600}
+	expect_field_command_error(t, test, "seat sit", "the world is falling")
+	testing.expect_value(t, body.seat, Field_Seat.Standing)
+}

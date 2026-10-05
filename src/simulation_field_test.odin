@@ -1495,7 +1495,7 @@ test_the_field_turns_a_switch_on_x_and_jumps_on_a :: proc(t: ^testing.T) {
 	testing.expect_value(t, state.players[0].open_machine, NO_ENTITY)
 
 	aim(state, frame, power_switch)
-	takes_interact, has_panel := aimed_target_calls_for(entities, simulation_content.machines, NO_ENTITY, state.players[0].field.frame_target)
+	takes_interact, has_panel := aimed_target_calls_for(entities, simulation_content.machines, NO_ENTITY, state.players[0].field, false)
 	x := route_open_inventory_press(shipped_gamepad_press(t, .WEST), false, has_panel, takes_interact)
 	testing.expect_value(t, x.just_pressed & {.Open_Inventory, .Open_Aimed}, Action_Set{})
 	was_on := pool_get(&entities.poles, power_switch).on

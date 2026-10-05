@@ -106,6 +106,7 @@ command_usages := [?]Command_Usage {
 	{"look <yaw> <pitch> | look at <x> <y> <z>", "the field player's look: bearing from north and pitch in degrees, or towards a point"},
 	{"camera <first|third>", "first or third person camera"},
 	{"crouch <on|off>", "hold the field player's crouch"},
+	{"seat <stand|sit>", "stand up from the pod's chair or sit in it"},
 	{"time <dawn|noon|dusk|midnight>", "set the time of day"},
 	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
 	{"fly <on|off>", "fly mode, swept against blocks"},
@@ -257,7 +258,7 @@ execute_command_line :: proc(command_context: Command_Context, line: string) -> 
 // (the loop's lockstep driver).
 command_writes_simulation :: proc(name: string) -> bool {
 	switch name {
-	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint", "look", "camera", "crouch":
+	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint", "look", "camera", "crouch", "seat":
 		return true
 	}
 	return false
@@ -308,7 +309,7 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		}
 	}
 	switch name {
-	case "look", "crouch":
+	case "look", "crouch", "seat":
 		return command_error(NO_FIELD_WORLD_PROBLEM)
 	case "camera":
 		return command_camera(command_context, arguments)

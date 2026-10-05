@@ -45,10 +45,11 @@ Field_Scene :: struct {
 	viewer:       int,
 	viewer_body_shown: bool,
 	lockstep:     ^Lockstep,
-	// The arrival's descent (0200): every viewer is inside the pod, whose
-	// hull would hide the window's view, so the frames, the machines, the
-	// players and the ghosts are not drawn.
-	hide_frames:  bool,
+	// The arrival's descent (0200, 0223): the frames, the machines, the
+	// players and the ghosts are drawn moved by the pod's offset along the
+	// path (arrival_descent_offset), so the cabin travels with the seated
+	// eye; zero but in the descent.
+	pod_offset:   [3]f32,
 	// The viewer's placement editor (0215): its outline or anchored ghost
 	// replaces Place's ghost; zero draws today's ghosts.
 	placement_editor: Placement_Editor,
@@ -183,8 +184,9 @@ field_sky_camera :: proc(camera: rl.Camera3D, up: [3]f32) -> rl.Camera3D {
 }
 
 // The working arms' and machines' lights nearest the camera, before
-// draw_field, to the field shader and the model shader. During the fall
-// the machines are not drawn, so their lights do not shine.
+// draw_field, to the field shader and the model shader. They are moved by
+// the pod's offset with the models they light (moved_point_light), so the
+// cabin is lit through the fall.
 set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 	lights := make([dynamic]Point_Light, context.temp_allocator)
 	entities := &scene.state.world.entities
@@ -197,12 +199,26 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 			append(&lights, light)
 		}
 	}
-	if !scene.hide_frames {
-		gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines, scene.models)
+	gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines, scene.models)
+	for &light in lights {
+		light = moved_point_light(light, scene.pod_offset)
 	}
 	nearest, _ := nearest_point_lights(lights[:], camera.position)
 	set_field_point_lights(scene.renderer, nearest)
 	set_model_point_lights(scene.models, nearest)
+}
+
+// A light moved by offset, its clip box with it. raylib's DrawMesh sends
+// the model shader the mesh transform times the rlgl matrix stack's
+// (rmodels.c, raylib 6.0), so a model drawn inside the pod's translation
+// lights its fragments in the moved place, where the light must be too.
+moved_point_light :: proc(light: Point_Light, offset: [3]f32) -> Point_Light {
+	moved := light
+	moved.position += offset
+	if box, clipped := light.clip_box.?; clipped {
+		moved.clip_box = box * linalg.matrix4_translate_f32(-offset)
+	}
+	return moved
 }
 
 draw_field_torches :: proc(torches: []Field_Torch, spacing_millimetres: int) {
@@ -262,13 +278,23 @@ field_player_body_drawn :: proc(scene: Field_Scene, index: int) -> bool {
 	return index != scene.viewer || scene.viewer_body_shown
 }
 
+// A body in the pod's chair is not drawn: there is no seated pose (0223).
 draw_field_players :: proc(scene: Field_Scene) {
 	for index in 0 ..< len(scene.state.players) {
 		player := field_scene_player(scene, index)
-		if field_player_body_drawn(scene, index) {
+		if field_player_body_drawn(scene, index) && player.field.seat == .Standing {
 			draw_field_player_body(scene, player.field, field_crouch_progress_of(scene.renderer.crouch_progress[:], index))
 		}
 	}
+}
+
+// The viewer's ghosts are drawn for a viewer standing: nothing is placed
+// from the pod's chair (0223).
+field_viewer_ghosts_drawn :: proc(scene: Field_Scene) -> bool {
+	if scene.viewer < 0 || scene.viewer >= len(scene.state.players) {
+		return false
+	}
+	return field_scene_player(scene, scene.viewer).field.seat == .Standing
 }
 
 // Where the viewer's Place would put a run, a foundation's whole block
@@ -277,7 +303,7 @@ draw_field_players :: proc(scene: Field_Scene) {
 // it (field_placement_refusal: a drill off every vein, a taken cell, a
 // buried player, too few foundations, ground too steep).
 draw_field_ghosts :: proc(scene: Field_Scene) {
-	if scene.viewer < 0 || scene.viewer >= len(scene.state.players) {
+	if !field_viewer_ghosts_drawn(scene) {
 		return
 	}
 	player := field_scene_player(scene, scene.viewer)
@@ -335,17 +361,19 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	set_field_scene_point_lights(scene, camera)
 	draw_field(scene.renderer, camera, selection)
 	world := &scene.state.world
-	if !scene.hide_frames {
-		draw_frames(&world.entities, scene.content.machines)
-		draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
-	}
+	rlgl.PushMatrix()
+	rlgl.Translatef(scene.pod_offset.x, scene.pod_offset.y, scene.pod_offset.z)
+	draw_frames(&world.entities, scene.content.machines)
+	draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
+	rlgl.PopMatrix()
 	draw_field_trees(scene, camera)
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
-	if !scene.hide_frames {
-		draw_field_players(scene)
-		draw_field_ghosts(scene)
-	}
+	rlgl.PushMatrix()
+	rlgl.Translatef(scene.pod_offset.x, scene.pod_offset.y, scene.pod_offset.z)
+	draw_field_players(scene)
+	draw_field_ghosts(scene)
+	rlgl.PopMatrix()
 }
 
 // The sky about the camera's up, before the scene.
@@ -355,58 +383,69 @@ draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sk
 	rl.EndMode3D()
 }
 
+// The camera mode a body is seen in: first person in the pod's chair
+// (0223), the stored mode otherwise, which standing up returns to.
+field_view_camera_mode :: proc(body: Field_Player) -> Camera_Mode {
+	if body.seat != .Standing {
+		return .First_Person
+	}
+	return body.camera_mode
+}
+
 // The viewport's field camera, kept for the HUD's projections, and
 // whether it shows the viewer's body (viewer_body_shown).
 field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, alpha: f32) -> (camera: rl.Camera3D, body_shown: bool) {
 	view := field_player_view(player.field, state.session.field_content.tuning, alpha, field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player))
-	camera = pulled_in_field_camera(&state.session.simulation, state.session.field_content, view, player.field.camera_mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
+	mode := field_view_camera_mode(player.field)
+	camera = pulled_in_field_camera(&state.session.simulation, state.session.field_content, view, mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
 	viewport.presentation.camera = camera
-	return camera, viewer_body_shown(player.field.camera_mode, camera.position, world_position_to_metres(view.eye))
+	return camera, viewer_body_shown(mode, camera.position, world_position_to_metres(view.eye))
 }
 
 // The viewport's camera during the arrival (0200, render_arrival.odin):
-// on the tilted path to the resting eye during the descent, along the
-// pod's axes (the player's without a pod); shaken after the hit unless
-// motion is reduced. Stored for the HUD's projections as
-// field_viewport_camera stores it.
-arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Frame, pod_found: bool, alpha: f32) -> rl.Camera3D {
-	camera := camera
+// during the descent the seated camera moved by the path's offset
+// (arrival_descent_offset) along the pod's axes (the player's without a
+// pod), the look the player's, and the offset the scene draws the pod
+// moved by; the stored camera stays the resting one, so the HUD's
+// projections stay on the cabin. Shaken after the hit unless motion is
+// reduced, stored for the HUD as field_viewport_camera stores it.
+arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Frame, pod_found: bool) -> (moved: rl.Camera3D, pod_offset: [3]f32) {
+	moved = camera
 	switch view.phase {
 	case .None:
-		return camera
 	case .Descent:
 		up, forward := unit_vector_to_f32(player.field.up), unit_vector_to_f32(player.field.forward)
 		if pod_found {
 			up, forward = unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
 		}
-		eye := world_position_to_metres(field_player_view(player.field, state.session.field_content.tuning, alpha, field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player)).eye)
-		camera = arrival_descent_camera(eye, view, up, forward, state.config, state.settings.field_of_view)
+		pod_offset = arrival_descent_offset(view, up, forward, state.config)
+		moved.position += pod_offset
+		moved.target += pod_offset
 	case .Settled:
 		if state.settings.reduced_motion {
-			return camera
+			return
 		}
 		position, look := arrival_shake_offset(view.seconds_since_hit, state.session.simulation.world.settings.seed)
-		camera.position += position
-		camera.target += position + look
+		moved.position += position
+		moved.target += position + look
+		viewport.presentation.camera = moved
 	}
-	viewport.presentation.camera = camera
-	return camera
+	return
 }
 
 // One viewport of a field session, with the field camera's clip planes
-// (the block world's are restored after). Returns the arrival's view for
-// the window overlay drawn after the 3D pass (draw_arrival_window).
-draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Simulation_Content, sky: Day_Sky) -> Arrival_View {
+// (the block world's are restored after).
+draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Simulation_Content, sky: Day_Sky) {
 	session := state.session
 	if !state.presentation.field_renderer_ready {
-		return {}
+		return
 	}
 	alpha := f32(interpolation_alpha(session.accumulator))
 	player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
 	view := arrival_view(session.simulation.field.arrival, session.simulation.tick, alpha, state.config)
-	pod, pod_found := find_pod_frame(&session.simulation.world.entities, content.machines)
+	pod_common, pod, pod_found := find_pod(&session.simulation.world.entities, content.machines)
 	pulled, body_shown := field_viewport_camera(state, viewport, player, alpha)
-	camera := arrival_viewport_camera(state, viewport, player, pulled, view, pod, pod_found, alpha)
+	camera, pod_offset := arrival_viewport_camera(state, viewport, player, pulled, view, pod, pod_found)
 	near, far := rlgl.GetCullDistanceNear(), rlgl.GetCullDistanceFar()
 	defer rlgl.SetClipPlanes(near, far)
 	draw_field_sky(&state.presentation.renderer.sky, camera, sky, viewport.presentation.particle_memory.satellite)
@@ -422,16 +461,23 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		viewer       = viewport.player,
 		viewer_body_shown = body_shown,
 		lockstep     = &session.lockstep,
-		hide_frames  = view.phase == .Descent,
+		pod_offset   = pod_offset,
 		placement_editor = viewport.interaction.placement_editor,
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
+	if view.phase == .Descent && pod_found {
+		pod_up, pod_forward := unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
+		travel := -arrival_path_direction(pod_up, pod_forward, state.config.arrival_angle_degrees)
+		rlgl.PushMatrix()
+		rlgl.Translatef(pod_offset.x, pod_offset.y, pod_offset.z)
+		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, content.machines.machines[pod_common.machine], travel, session.simulation.world.settings.seed)
+		rlgl.PopMatrix()
+	}
 	if view.phase == .Settled && pod_found {
 		draw_arrival_dust(pod, view, session.simulation.world.settings.seed, rl.ColorBrightness(field_globe_color(session.planet.palette), 0.3))
 	}
 	rl.EndMode3D()
-	return view
 }
 
 // Before the viewports draw: the finished meshes up, the trees round the

@@ -141,24 +141,22 @@ bare_ground_life_minutes = 60
 salvage_percent = 80
 // The arrival (work item 0200, doc/content.md, The arrival): a new world's
 // first arrival_ticks (0 for no fall, else up to 3600 and more than the
-// settle and flame ticks together) are the pod's fall, the players held
-// in its cabin; at the last one it lands, the hatches closed (the airlock
-// opens them as a player comes, pod_airlock). The hit comes
+// settle and flame ticks together) are the pod's fall, the players
+// strapped into the pod's chair, the look free; at the last one it
+// lands, the hatches closed (the airlock opens them as a player comes,
+// pod_airlock). The hit comes
 // arrival_settle_ticks (0 to 300) before that, the flames rise over the
 // arrival_flame_ticks (0 to 1200) before the hit. The fall starts
 // arrival_start_metres (20 to 4096) above the crater's floor on a path
 // tilted arrival_angle_degrees (0 to 60) from the crater's up; the path,
 // arrival_start_metres over the angle's cosine, stays inside 0.6 of
 // field_view.level_distances_metres' last entry, where the far terrain's
-// fog starts. The window's view looks along the path pitched up by
-// arrival_window_pitch_degrees (0 to 60), so the horizon shows in the
-// window's upper part and the crater below its centre.
+// fog starts.
 arrival_ticks = 600
 arrival_settle_ticks = 60
 arrival_flame_ticks = 240
 arrival_start_metres = 400
 arrival_angle_degrees = 45
-arrival_window_pitch_degrees = 20
 // The pod's airlock (work items 0222, 0231, doc/content.md, Hatches): a
 // hatch of the pod is open exactly while some player's capsule, standing
 // or crouched, comes within reach_millimetres (50 to 300) of its cells.

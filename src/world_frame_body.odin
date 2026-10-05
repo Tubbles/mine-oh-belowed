@@ -111,6 +111,22 @@ scale_collision_volume :: proc(volume: Collision_Volume, pitch_units: i64) -> Co
 	return scaled
 }
 
+// The model frame's origin in the frame's axes, position units: the
+// rotated footprint's centre on x and z, its bottom on y, as
+// model_transform draws the model.
+frame_body_centre :: proc(origin: World_Coordinate, size: [3]i32, pitch: i64) -> [3]i64 {
+	return {(2 * i64(origin.x) + i64(size.x)) * pitch / 2, i64(origin.y) * pitch, (2 * i64(origin.z) + i64(size.z)) * pitch / 2}
+}
+
+// A point of a placed model's frame (point in 1/COLLISION_UNITS_PER_CELL
+// cell, x and z centred, y from the bottom) in the world (work item
+// 0223: the pod's seated eye). size is the entity's rotated size.
+model_point_in_frame :: proc(frame: Frame, origin: World_Coordinate, size: [3]i32, rotation: u8, point: [3]i64) -> World_Position {
+	pitch := frame_pitch_units(frame)
+	local := frame_body_centre(origin, size, pitch) + body_direction_to_frame(rotation, scale_collision_point(point, pitch))
+	return frame.origin + World_Position(frame_world_direction(frame, local))
+}
+
 // size is the entity's rotated size: the model centred on the rotated
 // footprint as model_transform draws it.
 make_frame_body :: proc(frame: Frame, occupant: Occupant, origin: World_Coordinate, size: [3]i32, rotation: u8, volumes: []Collision_Volume) -> Frame_Body {
@@ -118,7 +134,7 @@ make_frame_body :: proc(frame: Frame, occupant: Occupant, origin: World_Coordina
 	body := Frame_Body {
 		occupant = occupant,
 		frame    = frame,
-		centre   = {(2 * i64(origin.x) + i64(size.x)) * pitch / 2, i64(origin.y) * pitch, (2 * i64(origin.z) + i64(size.z)) * pitch / 2},
+		centre   = frame_body_centre(origin, size, pitch),
 		rotation = rotation,
 	}
 	body.volume_count = min(len(volumes), COLLISION_VOLUME_LIMIT)

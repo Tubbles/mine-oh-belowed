@@ -231,7 +231,10 @@ move_and_aim_field_player :: proc(field: ^Field_Simulation, frames: ^Frame_Table
 	tuning := content.tuning
 	trees := field_trees_near(field, player.position, tuning.reach + millimetres_to_position_units(FIELD_TREE_QUERY_MARGIN_MILLIMETRES))
 	tick_field_player(&field.world, frames, tuning, player, input)
-	push_field_player_out_of_trunks(player, field_posture_tuning(tuning, player.crouching), field_tree_trunks(trees, content))
+	// A seated body stays in the chair (0223).
+	if player.seat == .Standing {
+		push_field_player_out_of_trunks(player, field_posture_tuning(tuning, player.crouching), field_tree_trunks(trees, content))
+	}
 	aim_field_player_at_frames(player, frames, tuning)
 	aim_field_player_at_trees(player, trees, content)
 }

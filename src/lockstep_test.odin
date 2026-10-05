@@ -666,6 +666,31 @@ test_the_field_prediction_matches_the_confirmed_walk :: proc(t: ^testing.T) {
 	testing.expect_value(t, lockstep_state_hash(&unpredicted.simulation), lockstep_state_hash(state))
 }
 
+// Work item 0223: the prediction of a seated player with the walk, the
+// tools and the look keeps the body in the chair and turns the look.
+@(test)
+test_the_prediction_holds_a_seated_player :: proc(t: ^testing.T) {
+	content := make_field_test_game_content()
+	session, simulation_content := start_field_lockstep_test_session(content, 0)
+	defer end_session(session)
+	state := &session.simulation
+	player := state.players[0]
+	testing.expect(t, seat_field_player(&state.world.entities, simulation_content.machines, simulation_content.field.tuning, &player.field, .Seated))
+	before := player.field
+	frame := Input_Frame {
+		move         = {0, 1},
+		look_delta   = {40, 0},
+		pressed      = {.Move, .Jump, .Sneak, .Mine, .Place},
+		just_pressed = {.Jump, .Mine, .Place},
+	}
+	for _ in 0 ..< 10 {
+		predict_field_player_motion(state, simulation_content, &player, frame)
+	}
+	testing.expect_value(t, player.field.position, before.position)
+	testing.expect_value(t, player.field.seat, Field_Seat.Seated)
+	testing.expect(t, player.field.yaw != before.yaw, "the look turns")
+}
+
 // A wall of stone raised in front of the player after the prediction
 // walked (another player's place, which the prediction does not know):
 // the confirmed walk stops short of the predicted feet. Mid window, with
