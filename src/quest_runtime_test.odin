@@ -510,10 +510,30 @@ test_quest_texts_name_the_reward_target :: proc(t: ^testing.T) {
 	test, locker := make_locker_quest_test()
 	defer destroy_quest_test(&test)
 	message := Quest_Message{text_key = "Deliver to {target}."}
-	in_locker := quest_message_text(message, nil, test.items, locker)
+	in_locker := quest_message_text(message, nil, test.items, locker, false)
 	testing.expect(t, strings.contains(in_locker, text(REWARD_TARGET_LOCKER_KEY)), in_locker)
 	testing.expect(t, !strings.contains(in_locker, MESSAGE_TARGET_MARK), in_locker)
-	in_capsule := quest_message_text(message, nil, test.items, test.state.capsule)
+	in_capsule := quest_message_text(message, nil, test.items, test.state.capsule, false)
 	testing.expect(t, strings.contains(in_capsule, text(REWARD_TARGET_CAPSULE_KEY)), in_capsule)
 	testing.expect_value(t, reward_target_text("{target}", NO_ENTITY), text(REWARD_TARGET_CAPSULE_KEY))
+}
+
+// Work item 0263: the catalogue order on a field session names no
+// capsule (an orbital survey lands nowhere), the block world's text does.
+@(test)
+test_the_catalogue_order_names_no_capsule_on_a_field_session :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	test, locker := make_locker_quest_test()
+	defer destroy_quest_test(&test)
+	name_key := test.items.items[test_item(test.items, "coal")].name_key
+	message := Quest_Message{text_key = CATALOGUE_ORDERED_KEY, argument_key = name_key, value = 3}
+	on_field := quest_message_text(message, nil, test.items, locker, true)
+	testing.expect(t, strings.contains(on_field, text(name_key)), on_field)
+	testing.expect(t, strings.contains(on_field, "3 credit"), on_field)
+	testing.expect(t, !strings.contains(strings.to_lower(on_field, context.temp_allocator), "capsule"), on_field)
+	in_blocks := quest_message_text(message, nil, test.items, test.state.capsule, false)
+	testing.expect(t, strings.contains(in_blocks, text(name_key)), in_blocks)
+	testing.expect(t, strings.contains(in_blocks, "3 credit"), in_blocks)
+	testing.expect(t, strings.contains(in_blocks, "The capsule leaves"), in_blocks)
 }

@@ -131,7 +131,7 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	if ui_button(state, column_rectangle(last_row, 3, 0, UI_GAP), text("developer_unlock_all")) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Unlock_All})
 	}
-	if ui_button(state, column_rectangle(last_row, 3, 1, UI_GAP), text("developer_teleport")) {
+	if ui_button(state, column_rectangle(last_row, 3, 1, UI_GAP), screen_context.field_session ? text("developer_teleport_field") : text("developer_teleport")) {
 		queue_developer_request(state, screen_context, developer_teleport_request(screen_context))
 	}
 	// Like the screenshot command: the frame loop writes the PNG to the

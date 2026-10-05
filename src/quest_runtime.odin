@@ -397,8 +397,8 @@ log_research_complete :: proc(state: ^Quest_State, tick: u64, technology_name_ke
 
 // The shipments and items fill in a shipment's cargo, the reward target
 // its phrase.
-quest_message_text :: proc(message: Quest_Message, shipments: []Shipment, items: Item_Registry, reward_target: Entity_Handle) -> string {
-	result := text(message.text_key)
+quest_message_text :: proc(message: Quest_Message, shipments: []Shipment, items: Item_Registry, reward_target: Entity_Handle, field: bool) -> string {
+	result := text(field_variant_key(message.text_key, field))
 	if message.argument_key != "" {
 		result = format_message_text(result, text(message.argument_key))
 	}

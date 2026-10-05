@@ -1,6 +1,6 @@
 # 0263: The arrival texts name the pod, not the capsule
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 
@@ -35,7 +35,7 @@ Found by `grep -n -i "capsule\|landing\|pad" data/strings/en.sjson` and the call
 | `note_the_contractor_text` | journal Notes (quest bearings) | "...The venture supplies the landing, the capsule and the invoices. Clause 9 describes the capsule as a loan." | "Contractor agreement, clause 4: the contractor supplies labour, judgement and presence on the asset. The venture supplies the landing, the pod and the invoices. Clause 9 describes the pod as a loan." |
 | `note_the_capsule_title` | journal Notes list and heading (quest stock) | "The drop capsule" | "The pod" |
 | `note_the_capsule_text` | journal Notes (quest stock) | "The drop capsule came down with you and stays on the pad. ..." | "The pod came down with you and stays where it hit, in the crater. Rewards land in its locker and deliveries leave from it, and the two hatches of its airlock are the only way out. The venture's word for this arrangement is logistics." |
-| `catalogue_ordered` | toast and journal Messages (launch pad Catalogue) | "Ordered: {name}, {value} credit. The capsule leaves with the next drop." | "Ordered: {name}, {value} credit. It lands in {target} with the next drop." (`{target}` reads "the locker in the pod" through `reward_target_text`) |
+| `catalogue_ordered` | toast and journal Messages (launch pad Catalogue) | "Ordered: {name}, {value} credit. The capsule leaves with the next drop." | "Ordered: {name}, {value} credit. The venture sends it with the next drop." (no `{target}`: an orbital survey lands nowhere, fix round) |
 | `developer_teleport` | developer page button | "Teleport to the landing pad" | "Teleport into the pod" (the button already teleports into the cabin on the field, 0183) |
 
 Stay as they are, with the reason:
@@ -66,7 +66,7 @@ Stay as they are, with the reason:
 1. `test_field_variant_key_picks_the_field_text` (`src/data_strings_test.odin`). A `String_Table` parsed from `a = "A"`, `a_field = "B"`, `c = "C"`, set as `thread_string_table` (reset in a `defer`). Asserts `field_variant_key("a", false) == "a"`, `field_variant_key("a", true) == "a_field"`, `field_variant_key("c", true) == "c"`, `field_variant_key("missing", true) == "missing"`, and that the missing key is not reported (`reported_missing` empty).
 2. `test_shipped_field_variants_have_a_base_and_name_the_pod` (`src/data_strings_test.odin`), on the shipped `en.sjson`: every key ending in `FIELD_VARIANT_SUFFIX` has its base key in the table, the six keys of the table above exist, and no variant's text, lowercased, contains "landing pad", and its count of "capsule" equals its count of "cargo capsule".
 3. `test_a_field_session_shows_no_drop_capsule_in_the_journal` (`src/notes_test.odin`): `use_shipped_strings()`, quests and notes as `test_shipped_notes_resolve` builds them. For every note (title, text) and every quest (title, text, message, complete, every hint's text), plus `CATALOGUE_ORDERED_KEY`, `text(field_variant_key(key, true))` lowercased holds no "landing pad" and as many "capsule" as "cargo capsule", and `field_variant_key(key, false) == key` for each (the block world reads the base keys). The `the_capsule` note's field text contains "pod" and "locker".
-4. `test_the_catalogue_order_names_the_locker_on_a_field_session` (`src/quest_runtime_test.odin`, after `test_quest_texts_name_the_reward_target`, from `make_locker_quest_test`): `use_shipped_strings()` (reset in a `defer`), `quest_message_text(Quest_Message{text_key = CATALOGUE_ORDERED_KEY, argument_key = <an item's name key>, value = 3}, nil, test.items, locker, true)` contains `text(REWARD_TARGET_LOCKER_KEY)` and no "capsule". With `field = false` and the capsule handle it equals the block text with the name and value filled (contains "The capsule leaves").
+4. `test_the_catalogue_order_names_no_capsule_on_a_field_session` (fix round: the field text holds the name, the value and no "capsule") (`src/quest_runtime_test.odin`, after `test_quest_texts_name_the_reward_target`, from `make_locker_quest_test`): `use_shipped_strings()` (reset in a `defer`), `quest_message_text(Quest_Message{text_key = CATALOGUE_ORDERED_KEY, argument_key = <an item's name key>, value = 3}, nil, test.items, locker, true)` contains no "capsule". With `field = false` and the capsule handle it equals the block text with the name and value filled (contains "The capsule leaves").
 5. UI audit (`src/ui_audit_test.odin`): `audit_frame` sets `screen_context.field_session = audit_case.field_session` after `audit_screen_context`, and `audit_every_note` runs a second case `{name = "journal notes, every note, field", screens = {.Journal}, tab_next = <as the first>, walk_focus = true, field_session = true}`, so every note's field text is drawn and fitted at every audit size. The existing `hud field *` cases now draw the active quest's field text. No other screen reads the flag but the developer page.
 6. Unchanged and passing: `test_shipped_notes_resolve`, `test_shipped_strings_cover_the_ui` (now finds `developer_teleport_field`).
 

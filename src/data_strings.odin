@@ -128,3 +128,20 @@ active_string_table :: proc() -> ^String_Table {
 text :: proc(key: string) -> string {
 	return lookup_text(active_string_table(), key)
 }
+
+FIELD_VARIANT_SUFFIX :: "_field"
+
+// The field world's text of a key (0263), for the note titles and texts,
+// the quest texts and the message texts: the key with FIELD_VARIANT_SUFFIX
+// when field is set and the table has it, else the key itself. Reports
+// nothing missing. It goes when the block world goes (0237).
+field_variant_key :: proc(key: string, field: bool) -> string {
+	if !field {
+		return key
+	}
+	variant := strings.concatenate({key, FIELD_VARIANT_SUFFIX}, context.temp_allocator)
+	if variant in active_string_table().entries {
+		return variant
+	}
+	return key
+}

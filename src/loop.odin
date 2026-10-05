@@ -1384,7 +1384,7 @@ build_viewport_ui :: proc(state: ^Frame_State, index: int) {
 	screen_context := make_screen_context(state, index)
 	if session := state.session; viewport_player_ready(session, viewport^) {
 		show_simulation_events(ui, session.simulation.events[:], viewport.player)
-		show_quest_notices(ui, session.simulation.quests.notices[:], session.simulation.records.shipments[:], state.content.items, session.simulation.quests.reward_target)
+		show_quest_notices(ui, session.simulation.quests.notices[:], session.simulation.records.shipments[:], state.content.items, session.simulation.quests.reward_target, session.simulation.field.enabled)
 		draw_hud(ui, screen_context, make_hud_context(state, index))
 	}
 	run_screens(ui, screen_context)
@@ -1509,15 +1509,15 @@ show_simulation_events :: proc(state: ^Ui_State, events: []Simulation_Event, loc
 // rest (finished research, the capsule landing, the venture's notes) as
 // toasts (work item 0069), on every viewport: research and the venture
 // are everyone's. The frame takes them after the UI pass.
-show_quest_notices :: proc(state: ^Ui_State, notices: []Quest_Message, shipments: []Shipment, items: Item_Registry, reward_target: Entity_Handle) {
+show_quest_notices :: proc(state: ^Ui_State, notices: []Quest_Message, shipments: []Shipment, items: Item_Registry, reward_target: Entity_Handle, field: bool) {
 	for notice in notices {
 		switch notice_presentation(notice.text_key) {
 		case .Mission_Control:
-			ui_mission_control_line(state, quest_message_text(notice, shipments, items, reward_target))
+			ui_mission_control_line(state, quest_message_text(notice, shipments, items, reward_target, field))
 		case .Discovery_Card:
 			ui_discovery_card(state, notice.item, text(notice.argument_key))
 		case .Toast:
-			ui_toast(state, quest_message_text(notice, shipments, items, reward_target))
+			ui_toast(state, quest_message_text(notice, shipments, items, reward_target, field))
 		}
 	}
 }

@@ -124,3 +124,48 @@ test_description_key_is_optional_but_must_resolve :: proc(t: ^testing.T) {
 	testing.expect_value(t, description_key_problem(table.entries, "item", "log", "describe_item_log"), "")
 	testing.expect_value(t, description_key_problem(table.entries, "item", "log", "describe_item_nothing"), `item "log": description_key "describe_item_nothing" is not in the string table`)
 }
+
+// Work item 0263: a variant is read only on a field session and only
+// when the table has it, and a missing variant is not reported.
+@(test)
+test_field_variant_key_picks_the_field_text :: proc(t: ^testing.T) {
+	table, error := parse_string_table(transmute([]byte)string(`a = "A"
+a_field = "B"
+c = "C"`))
+	testing.expect_value(t, error, nil)
+	thread_string_table = &table
+	defer thread_string_table = nil
+	defer destroy_string_table(&table)
+	testing.expect_value(t, field_variant_key("a", false), "a")
+	testing.expect_value(t, field_variant_key("a", true), "a_field")
+	testing.expect_value(t, field_variant_key("c", true), "c")
+	testing.expect_value(t, field_variant_key("missing", true), "missing")
+	testing.expect_value(t, len(table.reported_missing), 0)
+}
+
+// Whether a text names neither the block world's landing pad nor its
+// drop capsule (the cargo capsule is built in both worlds).
+names_no_drop_capsule :: proc(value: string) -> bool {
+	lower := strings.to_lower(value, context.temp_allocator)
+	return !strings.contains(lower, "landing pad") && strings.count(lower, "capsule") == strings.count(lower, "cargo capsule")
+}
+
+FIELD_VARIANT_BASE_KEYS :: [?]string{"quest_arrival_text", "note_the_contractor_text", "note_the_capsule_title", "note_the_capsule_text", "catalogue_ordered", "developer_teleport"}
+
+@(test)
+test_shipped_field_variants_have_a_base_and_name_the_pod :: proc(t: ^testing.T) {
+	table, error := parse_string_table(#load("../data/strings/en.sjson"))
+	defer destroy_string_table(&table)
+	testing.expect_value(t, error, nil)
+	for key, value in table.entries {
+		if !strings.has_suffix(key, FIELD_VARIANT_SUFFIX) {
+			continue
+		}
+		testing.expectf(t, strings.trim_suffix(key, FIELD_VARIANT_SUFFIX) in table.entries, "variant %q has no base key", key)
+		testing.expectf(t, names_no_drop_capsule(value), "variant %q names the capsule or the pad: %q", key, value)
+	}
+	for key in FIELD_VARIANT_BASE_KEYS {
+		variant := strings.concatenate({key, FIELD_VARIANT_SUFFIX}, context.temp_allocator)
+		testing.expectf(t, variant in table.entries, "missing %q", variant)
+	}
+}

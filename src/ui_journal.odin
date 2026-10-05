@@ -154,7 +154,7 @@ draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	area := hud_objective_area(state)
 	width := area.width
 	draw_text_fitted(state, cut_top(&area, UI_ROW_HEIGHT), text(quest.title_key), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR, emphasis = true)
-	for line in wrap_text(state, reward_target_text(text(quest.text_key), quest_state.reward_target), UI_BODY_TEXT_SIZE, width) {
+	for line in wrap_text(state, reward_target_text(text(field_variant_key(quest.text_key, screen_context.field_session)), quest_state.reward_target), UI_BODY_TEXT_SIZE, width) {
 		draw_text(state, cut_top(&area, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Right)
 	}
 	for _, index in quest.objectives {
@@ -228,8 +228,8 @@ journal_notes_section :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_conte
 		focused = shown[0]
 	}
 	note := screen_context.notes.notes[focused]
-	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text(note.title_key), UI_HEADING_TEXT_SIZE, .Left)
-	draw_wrapped(state, &content, text(note.text_key))
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text(field_variant_key(note.title_key, screen_context.field_session)), UI_HEADING_TEXT_SIZE, .Left)
+	draw_wrapped(state, &content, text(field_variant_key(note.text_key, screen_context.field_session)))
 }
 
 // "12 more to find", or that every note was found.
@@ -253,7 +253,7 @@ journal_note_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: 
 			focused = note_index
 		}
 		widget_background(state, row, id, interaction)
-		draw_text_fitted(state, inset(row, UI_PADDING), text(screen_context.notes.notes[note_index].title_key), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, inset(row, UI_PADDING), text(field_variant_key(screen_context.notes.notes[note_index].title_key, screen_context.field_session)), UI_BODY_TEXT_SIZE, .Left)
 	}
 	scroll_list_end(state, &list)
 	return focused
@@ -292,7 +292,7 @@ journal_quest_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 			ui_label(state, row, text("journal_main_quest"), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
 		}
 	}
-	draw_wrapped(state, &content, reward_target_text(text(quest.text_key), screen_context.quest_state.reward_target))
+	draw_wrapped(state, &content, reward_target_text(text(field_variant_key(quest.text_key, screen_context.field_session)), screen_context.quest_state.reward_target))
 	cut_top(&content, UI_GAP)
 	for _, index in quest.objectives {
 		label, progress_text, done := objective_line(quest, index, progress, screen_context)
@@ -320,7 +320,7 @@ journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_messages"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	messages := screen_context.quest_state.messages[:]
 	#reverse for message in messages {
-		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.records.shipments[:], screen_context.items, screen_context.quest_state.reward_target))
+		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.records.shipments[:], screen_context.items, screen_context.quest_state.reward_target, screen_context.field_session))
 		if !is_mission_control_key(message.text_key) {
 			wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
 			if f32(len(wrapped)) * UI_LINE_HEIGHT > content.height {

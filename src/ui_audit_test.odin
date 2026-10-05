@@ -364,6 +364,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	ui_begin(state, frame_input, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
 	state.focus_pulse = device == .Gamepad ? 1 : 0
 	screen_context := audit_screen_context(audit)
+	screen_context.field_session = audit_case.field_session
 	hud := audit_hud_context(audit)
 	// On touch the HUD's touch buttons (0134), rotate included, and the
 	// placement editor's grid while it is anchored (0215).
@@ -785,6 +786,7 @@ audit_every_note :: proc(audit: ^Ui_Audit) {
 	slice.fill(unlocks.obtained, true)
 	slice.fill(unlocks.researched, true)
 	audit_case(audit, {name = "journal notes, every note", screens = {.Journal}, tab_next = len(audit.content.quests.chapters) + 1, walk_focus = true})
+	audit_case(audit, {name = "journal notes, every note, field", screens = {.Journal}, tab_next = len(audit.content.quests.chapters) + 1, walk_focus = true, field_session = true})
 	copy(unlocks.obtained, obtained)
 	copy(unlocks.researched, researched)
 }

@@ -246,7 +246,7 @@ Content turns files under `data/` and the configuration into typed tables once, 
 - Files in reading order:
   - `data_load.odin`: `Game_Config`, the data directory, the data edits overlay, `read_data_file`, `find_definition_index`.
   - `data_reload.odin`: `Game_Data`, the load order (`load_content_registries`), `reload_simulation`, `Log_Capture`.
-  - `data_strings.odin`: `String_Table`, `text`.
+  - `data_strings.odin`: `String_Table`, `text`, `field_variant_key`.
   - `data_watch.odin`: `Data_Watch`, file categories, the settle.
   - `item.odin`, `recipe.odin`, `technology.odin`: `Item_Registry`; `Recipe_Registry` and graph queries; `Technology_Registry`.
   - `quest.odin`, `contract.odin`, `notes.odin`, `discovery.odin`: `Quest_Registry` and chapter files; `Contract_Registry`; `Note_Registry`; discoverable ores and `log_discoveries`.

@@ -309,7 +309,7 @@ How models are loaded, lit and moved: [presentation.md](presentation.md), Machin
 - A game fact in a description copies a value in the data: changing the value means changing the text.
 - A machine's item and the machine have two texts: what it is for (the recipe browser) and how it runs (the machine panel).
 - Temperatures read "degrees Celsius": not every selectable font has a degree sign.
-- Notes (`data/notes.sjson`, `notes.odin`) are the journal's world building, one unlock each, in the order their milestones come in play. Geology in a note is real geology (Mississippi Valley type lead and zinc, magmatic nickel with copper, lateritic bauxite), the rest is the venture.
+- Notes (`data/notes.sjson`, `notes.odin`) are the journal's world building, one unlock each, in the order their milestones come in play. Geology in a note is real geology (Mississippi Valley type lead and zinc, magmatic nickel with copper, lateritic bauxite), the rest is the venture. A note whose title or text names the block world's capsule or pad has a field variant, `<key>_field` ([quests.md](quests.md), Runtime).
 
 ## Tick cost baseline
 

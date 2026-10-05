@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 
 // The shipped notes resolved against the shipped content and strings.
@@ -120,4 +121,35 @@ test_unlocked_notes_are_newest_first :: proc(t: ^testing.T) {
 	shown := unlocked_notes(registry, world.quests, quest_state, unlocks)
 	testing.expect_value(t, shown[0], 2)
 	testing.expect_value(t, shown[1], 0)
+}
+
+// Work item 0263: every note and quest text a field session reads names
+// the pod, and the block world reads the base keys.
+@(test)
+test_a_field_session_shows_no_drop_capsule_in_the_journal :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	quests := make_test_quests(make_test_quest_references())
+	notes := make_test_notes(quests)
+	keys := make([dynamic]string, context.temp_allocator)
+	append(&keys, CATALOGUE_ORDERED_KEY)
+	for note in notes.notes {
+		append(&keys, note.title_key, note.text_key)
+	}
+	for quest in quests.quests {
+		append(&keys, quest.title_key, quest.text_key, quest.message_key, quest.complete_key)
+		for hint in quest.hints {
+			append(&keys, hint.text_key)
+		}
+	}
+	for key in keys {
+		if key == "" {
+			continue
+		}
+		field_text := text(field_variant_key(key, true))
+		testing.expectf(t, names_no_drop_capsule(field_text), "%q on the field names the capsule or the pad: %q", key, field_text)
+		testing.expect_value(t, field_variant_key(key, false), key)
+	}
+	pod_text := text(field_variant_key("note_the_capsule_text", true))
+	testing.expect(t, strings.contains(pod_text, "pod") && strings.contains(pod_text, "locker"), pod_text)
 }
