@@ -1,6 +1,6 @@
 # 0275: Reference models set the look, the budgets become caps
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, ab40e5a)
 
 ## Goal
 
