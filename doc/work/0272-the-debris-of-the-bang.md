@@ -1,6 +1,6 @@
 # 0272: The debris of the bang
 
-Status: designed (2026-10-05)
+Status: implementing (2026-10-05)
 
 ## Goal
 
