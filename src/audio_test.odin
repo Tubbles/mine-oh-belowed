@@ -31,7 +31,7 @@ shipped_biome_definitions :: proc(t: ^testing.T) -> []Biome {
 @(test)
 test_shipped_sound_table_loads_with_every_file :: proc(t: ^testing.T) {
 	table := shipped_sound_table(t)
-	testing.expect_value(t, len(table.entries), 35)
+	testing.expect_value(t, len(table.entries), 39)
 	testing.expect_value(t, missing_sound_file(table, test_data_directory()), "")
 	index, found := find_sound(table, "rain")
 	testing.expect(t, found)
@@ -48,6 +48,19 @@ test_shipped_sound_table_loads_with_every_file :: proc(t: ^testing.T) {
 	fixed := [?]string{BLOCK_BREAK_SOUND, BLOCK_PLACE_SOUND, RAIN_SOUND, ROCKET_LAUNCH_SOUND, CAPSULE_LANDING_SOUND, DISCOVERY_SOUND, footstep_sound_id(DEFAULT_SOUND_MATERIAL)}
 	for id in fixed {
 		testing.expectf(t, sound_listed(table, id), "%s is listed", id)
+	}
+}
+
+// Work item 0272: the shipped table lists the bang and the three patters
+// as effects.
+@(test)
+test_the_arrival_sounds_are_effects :: proc(t: ^testing.T) {
+	table := shipped_sound_table(t)
+	ids := [4]string{ARRIVAL_BANG_SOUND, ARRIVAL_PATTER_SOUNDS[0], ARRIVAL_PATTER_SOUNDS[1], ARRIVAL_PATTER_SOUNDS[2]}
+	for id in ids {
+		index, found := find_sound(table, id)
+		testing.expectf(t, found, "%s is listed", id)
+		testing.expectf(t, found && table.entries[index].kind == .Effect, "%s is an effect", id)
 	}
 }
 

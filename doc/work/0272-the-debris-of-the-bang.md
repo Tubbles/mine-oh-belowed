@@ -1,6 +1,6 @@
 # 0272: The debris of the bang
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 
@@ -66,6 +66,7 @@ Designed against the approved specifications and decisions of 0270 (`pod_base_ce
 - `render_arrival_debris_test.odin`, the shipped planet (`shipped_test_planets`, `default_planet`) at 500 mm, the pod placed at `field_home_site` of the baked generation (`place_pod`, as 0270's tests), the shipped config:
   - `test_every_clod_lands_within_five_radii_and_half_near_the_rim`: seeds 1 to 16: every piece's landing within `5·radius` plus 1 mm of the home along the tangent plane and at least `radius` from it, at least half within `2·radius`, the pose at `launch + T` equal to the landing within 1 mm, the inner half's mean reach above the outer half's.
   - `test_no_clod_rests_on_the_pod`: seeds 1 to 16, crater radii 4, 12 and 18 (rim 1, floor 2), the pod rested by `pod_rest_pose` at 15 and 25 degrees: at every 0.1 s of every arc and at rest, `world_to_frame_cell` of the centre in the rested frame lies outside the pod's cells (`origin` to `origin + size`) grown by one cell.
+  - (implementer, 2026-10-05) The radius 4 crater has no rim (`{4, 1, 2, 0}`), since a rim of 1 m over its 2 m of bowl fails `crater_problem`. The landing's distance is measured where its radial meets the home's tangent plane, since the surface point lies along the radial, off the tangent distance by its share of the relief over the planet's radius; the arc's end is checked through `arrival_debris_flight_point`, since a pose at `launch + T` may round past the flight into the rest.
   - `test_the_clods_fly_within_their_bound`: crater radius 18, depth 8, rim 1, angles 30, 45 and 60: every `launch_seconds + flight_seconds` below `ARRIVAL_DEBRIS_FLIGHT_SECONDS`, and the pose hidden past `arrival_settled_seconds`.
   - `test_the_patter_has_no_period`: seed 1: the sounding pieces' landing seconds sorted span at least 2 s and their gaps' coefficient of variation is above 0.5.
 - `test_the_arrivals_presentation_leaves_the_hash` (simulation_arrival_test.odin) calls `field_arrival_debris_site`, every piece, its pose and its patter, and the dust's puffs on the site each tick.

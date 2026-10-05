@@ -520,10 +520,28 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, linalg.transpose(pod_rotation) * travel, session.simulation.world.settings.seed)
 		pop_pod_transform(pod_transform)
 	}
-	if view.phase == .Settled && pod_found {
-		draw_arrival_dust(pod, view, session.simulation.world.settings.seed, rl.ColorBrightness(field_globe_color(session.planet.palette), 0.3))
+	if view.phase == .Settled {
+		if site, site_found := field_arrival_debris_site(&session.simulation, content, state.config); site_found {
+			seed := session.simulation.world.settings.seed
+			colors := arrival_debris_colors(&state.presentation.field_renderer, session.planet.palette, site)
+			draw_arrival_debris(site, view, seed, colors, day_factor(sky.blend))
+			draw_arrival_dust(site, view, seed, rl.ColorBrightness(colors[0], 0.3))
+		}
 	}
 	rl.EndMode3D()
+}
+
+// The debris' site of a field session (0272): the field world's
+// generation, the pod's base centre and reach (no pod: the crater's home
+// and reach 0).
+field_arrival_debris_site :: proc(simulation: ^Simulation_State, content: Simulation_Content, config: Game_Config) -> (site: Arrival_Debris_Site, found: bool) {
+	generation := field_tree_generation(&simulation.field)^
+	pod_base, reach := world_position_to_metres(World_Position(generation.crater.home)), f32(0)
+	if pod, frame, pod_found := find_pod(&simulation.world.entities, content.machines); pod_found {
+		pod_base = world_position_to_metres(pod_base_centre(frame, pod))
+		reach = arrival_pod_reach_metres(content.machines.machines[pod.machine], frame)
+	}
+	return arrival_debris_site(generation, config, pod_base, reach)
 }
 
 // Before the viewports draw: the finished meshes up, the trees round the

@@ -20,7 +20,9 @@
 // (a Mission Control line starting on the HUD, work item 0069);
 // arrival_roar (a loop, the drag as a new world's pod falls),
 // arrival_crash (its hit) and hatch_slide (any hatch opening or closing,
-// work item 0200).
+// work item 0200); arrival_bang (layered on the crash) and
+// arrival_patter_1 to _3 (a clod of the hit's debris landing, work item
+// 0272).
 // The placeholder files are written by tools/make_placeholder_sounds.py.
 sounds = [
 	{id = "footstep_stone", file = "footstep_stone.wav", volume = 0.5, kind = "effect"}
@@ -55,6 +57,10 @@ sounds = [
 	{id = "capsule_landing", file = "capsule_landing.wav", volume = 0.8, kind = "effect"}
 	{id = "arrival_roar", file = "arrival_roar.wav", volume = 0.7, kind = "loop"}
 	{id = "arrival_crash", file = "arrival_crash.wav", volume = 1.0, kind = "effect"}
+	{id = "arrival_bang", file = "arrival_bang.wav", volume = 1.0, kind = "effect"}
+	{id = "arrival_patter_1", file = "arrival_patter_1.wav", volume = 0.5, kind = "effect"}
+	{id = "arrival_patter_2", file = "arrival_patter_2.wav", volume = 0.5, kind = "effect"}
+	{id = "arrival_patter_3", file = "arrival_patter_3.wav", volume = 0.5, kind = "effect"}
 	{id = "hatch_slide", file = "hatch_slide.wav", volume = 0.6, kind = "effect"}
 	{id = "discovery_chime", file = "discovery_chime.wav", volume = 0.5, kind = "effect"}
 	{id = "mission_control_chime", file = "mission_control_chime.wav", volume = 0.45, kind = "effect"}

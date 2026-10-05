@@ -99,6 +99,21 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 	testing.expect_value(t, arrival_problem(tipped), "")
 	tipped.arrival_rest_tilt_degrees = MAXIMUM_ARRIVAL_REST_TILT_DEGREES
 	testing.expect_value(t, arrival_problem(tipped), "")
+	// Work item 0272: the debris' keys one past each bound are named.
+	debris := [?]struct {
+		change: proc(config: ^Game_Config),
+		key:    string,
+	} {
+		{proc(config: ^Game_Config) {config.arrival_debris_pieces = MAXIMUM_ARRIVAL_DEBRIS_PIECES + 1}, "arrival_debris_pieces"},
+		{proc(config: ^Game_Config) {config.arrival_debris_rest_seconds = MAXIMUM_ARRIVAL_DEBRIS_REST_SECONDS + 1}, "arrival_debris_rest_seconds"},
+		{proc(config: ^Game_Config) {config.arrival_debris_angle_degrees = MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES - 1}, "arrival_debris_angle_degrees"},
+		{proc(config: ^Game_Config) {config.arrival_debris_angle_degrees = MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES + 1}, "arrival_debris_angle_degrees"},
+	}
+	for entry in debris {
+		changed := config
+		entry.change(&changed)
+		testing.expectf(t, strings.contains(arrival_problem(changed), entry.key), "%s past its bound is named", entry.key)
+	}
 }
 
 // The direct placement limit (0215): the shipped one loads, each side

@@ -163,3 +163,9 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the crater at the hit (0271, 2026-10-05)
 
 - The hit's apply at 333 mm: 61k samples through `field_world_set_sample`, 121 ms in the debug build on the couch machine, unmeasured in release and on the phone. If the phone hitches at the bang, spread the apply over the settle's ticks (the pod's chunk first, the rest by coordinate), deterministic since every machine applies the same chunks in the same tick. Measure on the phone first.
+
+## Suggestions from the debris (0272, 2026-10-05)
+
+- The dust puffs along the rim are drawn as the arrival dust always was, a soft disc per puff; at 64 puffs of 1.2 to 4.7 m along a rim of a few metres they overlap into large round translucent discs with visible edges (the headless shots at 1.5 and 2 s), more a cluster of bubbles than a curtain. A noise cut edge on the disc, or fewer larger puffs with a softer falloff, would read as dust; the puff shader is the place, not the count.
+- The clods at rest read a shade darker than the ground round them (the rim shots at 4 and 9 s). A clod's face is lit `0.5 + 0.5·max(n·up, 0)` times the day factor on the tile's mean texel; the field takes its sun term over an ambient share of 0.45 and the vertex light on the triplanar texel. Which of the two differs is unmeasured: compare a clod's top against the field beside it in one shot before tuning either.
+- The flying clods are plain cubes; a hashed box with unequal edges (0.6 to 1.4 of the edge per axis) would break the cube read at no cost. A model would be the Techtonica way (DESIGN.md, the look), once a reference model exists.

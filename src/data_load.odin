@@ -101,7 +101,9 @@ Game_Config :: struct {
 	// fall's start above the crater's floor, the entry's angle and speed,
 	// the terminal speed at the planet's radius, the share of the peak
 	// heating below which nothing glows, the curve's last seconds played
-	// 1:1, the pod's lean at rest (0270) and the atmosphere.
+	// 1:1, the pod's lean at rest (0270), the hit's debris (0272,
+	// render_arrival_debris.odin: the clods, their rest and their launch
+	// angle, presentation only) and the atmosphere.
 	arrival_ticks:                    int,
 	arrival_settle_ticks:             int,
 	arrival_start_metres:             int,
@@ -110,6 +112,9 @@ Game_Config :: struct {
 	arrival_terminal_speed_metres_per_second: int,
 	arrival_heat_threshold_percent:   int,
 	arrival_real_seconds:             int,
+	arrival_debris_pieces:            int,
+	arrival_debris_rest_seconds:      int,
+	arrival_debris_angle_degrees:     int,
 	arrival_rest_tilt_degrees:        int,
 	atmosphere:                       Atmosphere_Config,
 	// The pod's airlock (work items 0222, 0231, entity_pod_airlock.odin):
@@ -774,6 +779,10 @@ MAXIMUM_ARRIVAL_SPEED_METRES_PER_SECOND :: 1000
 MAXIMUM_ARRIVAL_HEAT_THRESHOLD_PERCENT :: 90
 MAXIMUM_ARRIVAL_REAL_SECONDS :: 60
 MAXIMUM_ARRIVAL_REST_TILT_DEGREES :: 25
+MAXIMUM_ARRIVAL_DEBRIS_PIECES :: 400
+MAXIMUM_ARRIVAL_DEBRIS_REST_SECONDS :: 900
+MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 30
+MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 60
 MINIMUM_ATMOSPHERE_TOP_METRES :: 64
 MAXIMUM_ATMOSPHERE_METRES :: 4096
 
@@ -797,6 +806,9 @@ arrival_problem :: proc(config: Game_Config) -> string {
 		{"arrival_terminal_speed_metres_per_second", config.arrival_terminal_speed_metres_per_second, 1, MAXIMUM_ARRIVAL_SPEED_METRES_PER_SECOND},
 		{"arrival_heat_threshold_percent", config.arrival_heat_threshold_percent, 0, MAXIMUM_ARRIVAL_HEAT_THRESHOLD_PERCENT},
 		{"arrival_real_seconds", config.arrival_real_seconds, 1, MAXIMUM_ARRIVAL_REAL_SECONDS},
+		{"arrival_debris_pieces", config.arrival_debris_pieces, 0, MAXIMUM_ARRIVAL_DEBRIS_PIECES},
+		{"arrival_debris_rest_seconds", config.arrival_debris_rest_seconds, 0, MAXIMUM_ARRIVAL_DEBRIS_REST_SECONDS},
+		{"arrival_debris_angle_degrees", config.arrival_debris_angle_degrees, MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES, MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES},
 		{"arrival_rest_tilt_degrees", config.arrival_rest_tilt_degrees, 0, MAXIMUM_ARRIVAL_REST_TILT_DEGREES},
 		{"atmosphere.top_metres", config.atmosphere.top_metres, MINIMUM_ATMOSPHERE_TOP_METRES, MAXIMUM_ATMOSPHERE_METRES},
 		{"atmosphere.scale_height_metres", config.atmosphere.scale_height_metres, 1, MAXIMUM_ATMOSPHERE_METRES},

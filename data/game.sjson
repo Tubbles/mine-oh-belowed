@@ -163,7 +163,12 @@ salvage_percent = 80
 // speed cubed over its peak; below arrival_heat_threshold_percent (0 to
 // 90) of the peak nothing glows, and the hit must lie below it. The
 // start lies inside 0.9 of field_view.level_distances_metres' last
-// entry from the crater.
+// entry from the crater. At the hit arrival_debris_pieces (0 to 400)
+// clods fly out of the crater on arcs leaving at
+// arrival_debris_angle_degrees (30 to 60) above the horizontal, the inner
+// ones fastest and farthest, none beyond five crater radii; they rest
+// for up to arrival_debris_rest_seconds (0 to 900) and sink away
+// (presentation only).
 // The atmosphere's density falls as exp(-altitude / scale_height_metres)
 // (1 to 4096) and is 0 above top_metres (64 to 4096); top_metres less two
 // scale heights stays at least 64 m: the sky is black with stars above
@@ -176,6 +181,9 @@ arrival_entry_speed_metres_per_second = 75
 arrival_terminal_speed_metres_per_second = 20
 arrival_heat_threshold_percent = 20
 arrival_real_seconds = 6
+arrival_debris_pieces = 160
+arrival_debris_rest_seconds = 150
+arrival_debris_angle_degrees = 45
 arrival_rest_tilt_degrees = 15
 atmosphere = {
 	top_metres = 650

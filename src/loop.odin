@@ -925,7 +925,7 @@ render_frame :: proc(state: ^Frame_State) {
 		play_frame_sounds(&state.presentation.audio, &state.presentation.sound_memory, session_sound_frame(state, content, weather, cues))
 	}
 	if viewport_player_ready(session, state.viewports[0]) && field {
-		play_field_session_sounds(state, session)
+		play_field_session_sounds(state, session, content)
 	}
 	switch state.developer.diagnostics_page {
 	case .Off:
@@ -952,15 +952,20 @@ render_frame :: proc(state: ^Frame_State) {
 }
 
 // A field session's sounds once a frame (0200): the arrival's, read at
-// the first viewport's frame (the roar fades while the ticks stand), and
-// every hatch's slide.
-play_field_session_sounds :: proc(state: ^Frame_State, session: ^Session) {
+// the first viewport's frame (the roar fades while the ticks stand; the
+// debris' site built while Settled, 0272), and every hatch's slide.
+play_field_session_sounds :: proc(state: ^Frame_State, session: ^Session, content: Simulation_Content) {
 	arrival := session.simulation.field.arrival
 	view := arrival_view(arrival, session.simulation.tick, f32(interpolation_alpha(session.accumulator)), state.config, &state.presentation.arrival.curve)
 	paused := session_ticks_held(state)
 	seed := session.simulation.world.settings.seed
 	memory := &state.presentation.arrival.sound_memory
-	play_arrival_sounds(&state.presentation.audio, memory, view, arrival, paused, seed)
+	site: Arrival_Debris_Site
+	site_found := false
+	if view.phase == .Settled {
+		site, site_found = field_arrival_debris_site(&session.simulation, content, state.config)
+	}
+	play_arrival_sounds(&state.presentation.audio, memory, view, arrival, paused, seed, site, site_found)
 	play_hatch_sounds(&state.presentation.audio, memory, &session.simulation.world.entities, session.simulation.tick, seed)
 }
 

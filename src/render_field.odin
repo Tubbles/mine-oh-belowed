@@ -81,6 +81,18 @@ Field_Renderer :: struct {
 	// Each player's eased crouch by player index, advanced in
 	// prepare_field_frame (0218).
 	crouch_progress:          [dynamic]f32,
+	// Each material tile's mean texel, 0 to 1 (the debris' colours, 0272).
+	material_colors:          [FIELD_MATERIAL_TILE_COUNT][3]f32,
+}
+
+// A tile's mean texel, 0 to 1.
+tile_mean_color :: proc(tile: Tile_Pixels) -> [3]f32 {
+	sum: [3]f64
+	for texel in tile {
+		sum += {f64(texel.r), f64(texel.g), f64(texel.b)}
+	}
+	mean := sum / (f64(len(tile)) * 255)
+	return {f32(mean.r), f32(mean.g), f32(mean.b)}
 }
 
 // Bilinear with mipmaps and repeating, so the tile wraps and stays calm at
@@ -134,6 +146,7 @@ init_field_renderer :: proc(data_directory: string, tiles: Field_Material_Tiles,
 	use_field_shader(&renderer, shader, fog_end)
 	for tile, slot in tiles {
 		rl.SetMaterialTexture(&renderer.material, rl.MaterialMapIndex(slot), upload_field_material_tile(tile))
+		renderer.material_colors[slot] = tile_mean_color(tile)
 	}
 	renderer.globe = rl.GenMeshSphere(field_globe_radius_metres(planet), FIELD_GLOBE_RINGS, FIELD_GLOBE_SLICES)
 	renderer.globe_material = rl.LoadMaterialDefault()

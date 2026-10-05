@@ -35,6 +35,8 @@ loop. This script only writes the files, one per id below:
   and the thump of its hit (work item 0200).
 - hatch_slide: a hatch sliding open or shut, a hiss over a low rumble
   (work item 0200).
+- arrival_bang, arrival_patter_1 to _3: the bang of the hit over the
+  crash and the patter of a clod landing (work item 0272).
 
 A loop ends where it starts: its tail is crossfaded into its head, and
 its tones have a whole number of cycles over the loop. The whole set is a
@@ -253,6 +255,21 @@ def arrival_crash() -> list:
     return normalised(mix((thump, 1.0), (debris, 0.6)), 0.85)
 
 
+def arrival_bang() -> list:
+    # A sharp crack over a falling boom and a long low rumble (work item 0272).
+    crack = shaped(band_noise("arrival_bang", 0.4, 300.0, 7000.0), 0.001, 0.06)
+    boom = shaped(sweep(60.0, 22.0, 2.0), 0.002, 0.8)
+    rumble = shaped(band_noise("arrival_bang_rumble", 2.5, 30.0, 200.0), 0.01, 0.9)
+    return normalised(mix((crack, 0.8), (boom, 1.0), (rumble, 0.7)), 0.95)
+
+
+def arrival_patter(variant: int) -> list:
+    # A clod landing: a short thud under a gritty tick (work item 0272).
+    thud = shaped(sweep(140.0 - 20.0 * variant, 70.0, 0.15), 0.002, 0.04)
+    grit = shaped(band_noise(f"arrival_patter_{variant}", 0.18, 200.0, 1200.0 + 400.0 * variant), 0.001, 0.035)
+    return normalised(mix((thud, 1.0), (grit, 0.6)), 0.5)
+
+
 def hatch_slide() -> list:
     # A hiss of air over the low rumble of the sliding door (work item 0200).
     hiss = shaped(band_noise("hatch_slide", 0.9, 1500.0, 6000.0), 0.02, 0.4)
@@ -360,6 +377,8 @@ def sound_set() -> dict:
     sounds["arrival_roar"] = arrival_roar()
     sounds["arrival_crash"] = arrival_crash()
     sounds["hatch_slide"] = hatch_slide()
+    sounds["arrival_bang"] = arrival_bang()
+    sounds.update({f"arrival_patter_{variant}": arrival_patter(variant) for variant in range(1, 4)})
     return sounds
 
 

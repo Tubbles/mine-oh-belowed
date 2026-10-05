@@ -45,7 +45,10 @@ test_the_arrival_view_follows_the_timeline :: proc(t: ^testing.T) {
 	testing.expect_value(t, hit.phase, Arrival_Phase.Settled)
 	testing.expect_value(t, hit.seconds_since_hit, 0)
 	testing.expect_value(t, arrival_view(landed, u64(config.arrival_ticks), 0, config, &curve).phase, Arrival_Phase.Settled)
-	testing.expect_value(t, arrival_view(landed, descent + 240, 0, config, &curve).phase, Arrival_Phase.None)
+	testing.expect_value(t, arrival_view(landed, descent + 240, 0, config, &curve).phase, Arrival_Phase.Settled)
+	settled_ticks := u64(arrival_settled_seconds(config) * f32(config.tick_rate))
+	testing.expect_value(t, arrival_view(landed, descent + settled_ticks - 1, 0, config, &curve).phase, Arrival_Phase.Settled)
+	testing.expect_value(t, arrival_view(landed, descent + settled_ticks, 0, config, &curve).phase, Arrival_Phase.None)
 	skipped := falling
 	skipped.landed_tick = 101
 	testing.expect_value(t, arrival_view(skipped, 101, 0, config, &curve).phase, Arrival_Phase.None)

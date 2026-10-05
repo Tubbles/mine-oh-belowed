@@ -16,21 +16,23 @@ import "platform"
 // the pose it rests in (arrival_pod_transform, 0270), the flames
 // burning on the portholes' glass at the heat, the buffeting and the
 // roar; at the hit the pod meets the floor, the cabin shakes, the dust
-// rises outside and the crash plays. Nothing here reaches the
-// simulation, so the hash is the same with and without it.
+// rises along the crater's rim, the debris flies (0272,
+// render_arrival_debris.odin) and the crash and the bang play. Nothing
+// here reaches the simulation, so the hash is the same with and without
+// it.
 // The hatch sound (play_hatch_sounds) is the general hatch cue: it plays
 // for every toggle, the airlock's (0222, 0231).
 
 ARRIVAL_VERTEX_SHADER_PATH :: "shaders/arrival.vs"
 ARRIVAL_FRAGMENT_SHADER_PATH :: "shaders/arrival.fs"
-// The dust outside the pod after the hit: how long it lasts and how many
-// puffs it has.
+// The dust curtain along the crater's rim after the hit (0272): how long
+// it lasts and how many puffs it has.
 ARRIVAL_DUST_SECONDS :: 4.0
-ARRIVAL_DUST_PUFFS :: 36
+ARRIVAL_DUST_PUFFS :: 64
 // The hit's shake: how long it decays, its largest offset and the rate of
 // its noise.
-ARRIVAL_SHAKE_SECONDS :: 1.0
-ARRIVAL_SHAKE_METRES :: 0.15
+ARRIVAL_SHAKE_SECONDS :: 1.5
+ARRIVAL_SHAKE_METRES :: 0.3
 ARRIVAL_SHAKE_HERTZ :: 17.3
 // The buffeting at the drag's peak (0269): its largest offset at heat 1
 // and the rate of its noise.
@@ -66,12 +68,14 @@ Arrival_View :: struct {
 }
 
 // What the sounds keep between frames: the phase of the last frame (the
-// crash plays on the cut to Settled) and the tick up to which the
-// hatches' toggles have sounded, set to the session's tick when it is
+// crash plays on the cut to Settled), its seconds since the hit (the
+// patter plays the landings after them, 0272) and the tick up to which
+// the hatches' toggles have sounded, set to the session's tick when it is
 // entered, so a loaded or joined world never replays old toggles.
 Arrival_Sound_Memory :: struct {
-	last_phase:      Arrival_Phase,
-	last_hatch_tick: u64,
+	last_phase:             Arrival_Phase,
+	last_seconds_since_hit: f32,
+	last_hatch_tick:        u64,
 }
 
 // The window shader, loaded with the field renderer; shader_ready false
@@ -86,7 +90,8 @@ Arrival_Presentation :: struct {
 
 // The phase at tick plus alpha. None without a fall or after a Skip (a
 // landing before the planned end); Descent until arrival_settle_ticks
-// before the planned end; Settled from the hit for ARRIVAL_DUST_SECONDS.
+// before the planned end; Settled from the hit for
+// arrival_settled_seconds.
 arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game_Config, curve: ^Arrival_Curve) -> Arrival_View {
 	planned_end := arrival.start_tick + arrival.fall_ticks
 	if arrival.fall_ticks == 0 || (arrival.landed_tick != 0 && arrival.landed_tick < planned_end) {
@@ -105,11 +110,17 @@ arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game
 		view.cooling = view.curve_progress > curve.peak_progress ? 1 : 0
 		real_ticks := max(f32(config.arrival_real_seconds) * tick_rate, 1)
 		view.rest_share = math.smoothstep(f32(0), 1, (elapsed - (descent - real_ticks)) / real_ticks)
-	case elapsed < descent + ARRIVAL_DUST_SECONDS * tick_rate:
+	case elapsed < descent + arrival_settled_seconds(config) * tick_rate:
 		view.phase = .Settled
 		view.seconds_since_hit = max(elapsed - descent, 0) / tick_rate
 	}
 	return view
+}
+
+// The seconds the Settled phase lasts (0272): until the dust has
+// settled and the last piece of debris has flown, rested and sunk.
+arrival_settled_seconds :: proc(config: Game_Config) -> f32 {
+	return max(ARRIVAL_DUST_SECONDS, ARRIVAL_DEBRIS_FLIGHT_SECONDS + f32(config.arrival_debris_rest_seconds) + ARRIVAL_DEBRIS_FADE_SECONDS)
 }
 
 // The pod's and the eye's offset from their resting place during the
@@ -239,35 +250,38 @@ arrival_puff_fraction :: proc(hash: u64, key: u64) -> f32 {
 	return f32(generation_seed.hash_to_unit(generation_seed.hash_combine(hash, key)))
 }
 
-// Puff index of the dust at seconds after the hit: its distance from the
-// pod's centre, its height, its size, its alpha and its angle about the
-// up. Every value is hashed per index, so no ring or rhythm shows.
-arrival_dust_puff :: proc(index: int, seconds_since_hit: f32, salt: u64) -> (radius_metres, height_metres, size_metres, alpha: f32, angle: f32) {
+// Puff index of the dust curtain at seconds after the hit (0272): its
+// azimuth about the crater's home, its base's distance from the home
+// near the rim, its drift outward, its height above the ground, its size
+// and its alpha. Every value is hashed per index, so no ring or rhythm
+// shows.
+arrival_dust_puff :: proc(index: int, seconds_since_hit: f32, salt: u64, rim_metres: f32) -> (azimuth, base_metres, drift_metres, height_metres, size_metres, alpha: f32) {
 	hash := generation_seed.hash_combine(salt, u64(index))
 	seconds := max(seconds_since_hit, 0)
-	angle = arrival_puff_fraction(hash, 0) * math.TAU
+	azimuth = arrival_puff_fraction(hash, 0) * math.TAU
+	base_metres = rim_metres * (0.9 + 0.2 * arrival_puff_fraction(hash, 1))
 	speed := 2 + 3 * arrival_puff_fraction(hash, 2)
-	radius_metres = 3.5 + 1.5 * arrival_puff_fraction(hash, 1) + speed * 0.8 * (1 - math.exp(-seconds / 0.8))
-	height_metres = 0.3 + 1.8 * arrival_puff_fraction(hash, 3) * (1 - math.exp(-seconds / 1.2))
-	size_metres = 0.8 + 2.5 * seconds / ARRIVAL_DUST_SECONDS
+	drift_metres = speed * 0.8 * (1 - math.exp(-seconds / 0.8))
+	height_metres = 0.3 + 3.5 * arrival_puff_fraction(hash, 3) * (1 - math.exp(-seconds / 1.2))
+	size_metres = 1.2 + 3.5 * seconds / ARRIVAL_DUST_SECONDS
 	alpha = 0.55 * math.pow(max(1 - seconds / ARRIVAL_DUST_SECONDS, 0), 1.5)
 	return
 }
 
-// Inside BeginMode3D, after the scene: the dust round the pod's frame's
-// origin, about the planet's up there (not the frame's, which leans at
-// rest, 0270), translucent, without writing depth.
-draw_arrival_dust :: proc(frame: Frame, view: Arrival_View, salt: u64, color: rl.Color) {
-	origin := world_position_to_metres(frame.origin)
-	up := linalg.normalize(origin)
-	axis := unit_vector_to_f32(frame.axes[FRAME_FORWARD])
-	forward := linalg.normalize(axis - up * linalg.dot(axis, up))
-	right := linalg.cross(up, forward)
+// Inside BeginMode3D, after the scene: the dust curtain along the
+// crater's rim, each puff on the ground there moved out by its drift and
+// up by its height about the site's up, translucent, without writing
+// depth. Nothing at or past ARRIVAL_DUST_SECONDS.
+draw_arrival_dust :: proc(site: Arrival_Debris_Site, view: Arrival_View, salt: u64, color: rl.Color) {
+	if view.phase != .Settled || view.seconds_since_hit >= ARRIVAL_DUST_SECONDS {
+		return
+	}
 	rlgl.DrawRenderBatchActive()
 	rlgl.DisableDepthMask()
 	for index in 0 ..< ARRIVAL_DUST_PUFFS {
-		radius, height, size, alpha, angle := arrival_dust_puff(index, view.seconds_since_hit, salt)
-		centre := origin + (right * math.cos(angle) + forward * math.sin(angle)) * radius + up * height
+		azimuth, base, drift, height, size, alpha := arrival_dust_puff(index, view.seconds_since_hit, salt, site.radius_metres)
+		outward := site.east * math.cos(azimuth) + site.north * math.sin(azimuth)
+		centre := arrival_debris_ground(site, azimuth, base) + outward * drift + site.up * height
 		rl.DrawSphereEx(centre, size * 0.5, 6, 8, rl.Fade(color, alpha))
 	}
 	rlgl.DrawRenderBatchActive()
@@ -347,15 +361,24 @@ arrival_sound_pitch :: proc(arrival: Field_Arrival, salt: u64, sound: u64) -> f3
 
 // Once a frame: the roar at the heat while the pod descends
 // (fading out under the pause menu, which stops an offline world's tick),
-// the crash on the cut from the descent to the settled cabin.
-play_arrival_sounds :: proc(mixer: ^Audio_Mixer, memory: ^Arrival_Sound_Memory, view: Arrival_View, arrival: Field_Arrival, paused: bool, salt: u64) {
+// the crash and the bang on the cut from the descent to the settled
+// cabin, then the patter of the debris landing since the last frame
+// (0272). A joiner's or a loaded world's first frame follows None and
+// plays nothing, so no backlog sounds.
+play_arrival_sounds :: proc(mixer: ^Audio_Mixer, memory: ^Arrival_Sound_Memory, view: Arrival_View, arrival: Field_Arrival, paused: bool, salt: u64, site: Arrival_Debris_Site, site_found: bool) {
 	if view.phase == .Descent && !paused {
 		set_loop_target(mixer, ARRIVAL_ROAR_SOUND, view.heat)
 	}
 	if memory.last_phase == .Descent && view.phase == .Settled {
 		play_effect(mixer, ARRIVAL_CRASH_SOUND, 1, arrival_sound_pitch(arrival, salt, 1))
+		play_effect(mixer, ARRIVAL_BANG_SOUND, 1, arrival_sound_pitch(arrival, salt, 2))
+	}
+	if view.phase == .Settled && site_found && (memory.last_phase == .Descent || memory.last_phase == .Settled) {
+		from := memory.last_phase == .Descent ? 0 : memory.last_seconds_since_hit
+		play_arrival_patter(mixer, site, from, view.seconds_since_hit, salt)
 	}
 	memory.last_phase = view.phase
+	memory.last_seconds_since_hit = view.seconds_since_hit
 }
 
 // Once a frame, the general hatch cue: hatch_slide once for every alive

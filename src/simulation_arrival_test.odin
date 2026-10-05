@@ -1,6 +1,7 @@
 package game
 
 import "core:log"
+import "core:math"
 import "core:math/linalg"
 import "core:slice"
 import "core:strings"
@@ -25,6 +26,9 @@ arrival_test_config :: proc() -> Game_Config {
 	config.arrival_terminal_speed_metres_per_second = shipped.arrival_terminal_speed_metres_per_second
 	config.arrival_heat_threshold_percent = shipped.arrival_heat_threshold_percent
 	config.arrival_real_seconds = shipped.arrival_real_seconds
+	config.arrival_debris_pieces = shipped.arrival_debris_pieces
+	config.arrival_debris_rest_seconds = shipped.arrival_debris_rest_seconds
+	config.arrival_debris_angle_degrees = shipped.arrival_debris_angle_degrees
 	config.arrival_rest_tilt_degrees = shipped.arrival_rest_tilt_degrees
 	config.atmosphere = shipped.atmosphere
 	return config
@@ -416,7 +420,8 @@ reload_arrival_test_world :: proc(config: Game_Config, content: Game_Content, se
 }
 
 // A save loaded at tick 1000 has no fall: landed, the hatches closed, the
-// walk moving the player at once, nothing to present.
+// walk moving the player at once; only the hit's debris is presented,
+// until the Settled phase ends (0272).
 @(test)
 test_a_save_loaded_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -436,7 +441,15 @@ test_a_save_loaded_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	tick_field_test_simulation(state, loaded_content, FIELD_PREDICTION_TEST_WALK)
 	testing.expect(t, state.players[0].field.position != start, "the walk moves the player")
 	curve := build_arrival_curve(config)
-	testing.expect_value(t, arrival_view(state.field.arrival, 1000, 0, config, &curve).phase, Arrival_Phase.None)
+	testing.expect_value(t, arrival_view(state.field.arrival, 1000, 0, config, &curve).phase, Arrival_Phase.Settled)
+	testing.expect_value(t, arrival_view(state.field.arrival, arrival_test_settled_end(config), 0, config, &curve).phase, Arrival_Phase.None)
+}
+
+// The first tick of the test fall's None after the hit: the descent's
+// end plus arrival_settled_seconds (0272).
+arrival_test_settled_end :: proc(config: Game_Config) -> u64 {
+	descent := u64(config.arrival_ticks - config.arrival_settle_ticks)
+	return descent + u64(math.ceil(arrival_settled_seconds(config) * f32(config.tick_rate)))
 }
 
 // A joiner at tick 1000 starts from the snapshot's files: the pod's frame
@@ -483,7 +496,8 @@ test_a_joiner_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	testing.expect(t, step.x * heading.x + step.y * heading.y + step.z * heading.z > 0, "the joiner walks ahead on the next tick")
 	testing.expect(t, !field_arrival_falling(state.field.arrival))
 	curve := build_arrival_curve(config)
-	testing.expect_value(t, arrival_view(state.field.arrival, state.tick, 0, config, &curve).phase, Arrival_Phase.None)
+	testing.expect_value(t, arrival_view(state.field.arrival, state.tick, 0, config, &curve).phase, Arrival_Phase.Settled)
+	testing.expect_value(t, arrival_view(state.field.arrival, arrival_test_settled_end(config), 0, config, &curve).phase, Arrival_Phase.None)
 }
 
 // A save taken at tick 300 resumes the fall, rests at the hit to the
@@ -602,7 +616,8 @@ test_a_save_from_before_the_arrival_loads_landed :: proc(t: ^testing.T) {
 }
 
 // Every presentation procedure called on one session each tick leaves its
-// hash equal to an untouched session's.
+// hash equal to an untouched session's (the debris' site, pieces, poses
+// and patter and the dust's puffs on the site since 0272).
 @(test)
 test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -633,8 +648,18 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		arrival_shake_offset(view.seconds_since_hit, salt)
 		arrival_buffet_offset(view.seconds, view.heat, salt)
 		atmosphere_sky_share(linalg.dot(arrival_descent_offset(view, up, forward, &curve), up), config.atmosphere)
-		for index in 0 ..< ARRIVAL_DUST_PUFFS {
-			arrival_dust_puff(index, view.seconds_since_hit, salt)
+		if site, site_found := field_arrival_debris_site(state, watched_content, config); site_found {
+			for index in 0 ..< site.pieces {
+				piece := arrival_debris_piece(site, index, salt)
+				arrival_debris_pose(piece, view.seconds_since_hit)
+				arrival_patter(site, index, salt)
+			}
+			for index in 0 ..< ARRIVAL_DUST_PUFFS {
+				azimuth, base, _, _, _, _ := arrival_dust_puff(index, view.seconds_since_hit, salt, site.radius_metres)
+				arrival_debris_ground(site, azimuth, base)
+			}
+		} else if tick == 1 {
+			testing.expect(t, false, "the test world has a debris site")
 		}
 		if tick == 300 || tick == 540 || tick == 600 || tick == 700 {
 			testing.expectf(t, lockstep_state_hash(state) == lockstep_state_hash(&plain.simulation), "the hashes part at tick %d", tick)
