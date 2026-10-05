@@ -159,3 +159,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - The horizon earlier in the fall: through the chair's porthole it shows only in the last half second, since its sight line lies 11 degrees above the base plane and base first on a steep path the portholes face the sky. Knobs: `arrival_rest_tilt_degrees` up to 25 drops the sight line 14 degrees below the base plane once the ease completes; the ease rides on `arrival_real_seconds` (6 s); a lower porthole ahead of the chair (the 0223 suggestion) would show it through the glow. A feel decision for the couch.
 - The seated camera's up: it stays the planet's during the fall and after the hit, so looking sideways the cabin rolls round a level view while the horizon stays level. The chair's up instead (the frame's up for the strapped and the seated player until they stand) would keep the cabin upright and tilt the world outside, as a strapped passenger sees it, moving the roll change to the unbuckle. One presentation item if wanted.
+
+## Suggestions from the crater at the hit (0271, 2026-10-05)
+
+- The hit's apply at 333 mm: 61k samples through `field_world_set_sample`, 121 ms in the debug build on the couch machine, unmeasured in release and on the phone. If the phone hitches at the bang, spread the apply over the settle's ticks (the pod's chunk first, the rest by coordinate), deterministic since every machine applies the same chunks in the same tick. Measure on the phone first.

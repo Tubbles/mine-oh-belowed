@@ -209,18 +209,22 @@ Planet :: struct {
 	relief_shape:                                   Relief_Shape,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
+	// The arrival's hit digs the crater (0271): set only by
+	// make_recorded_planet from the world's record, never by the data.
+	crater_at_impact:                               bool `json:"-"`,
 }
 
 Planets_File :: struct {
 	planets: []Planet,
 }
 
-// The first of type's keys that object lacks, but the optional one.
+// The first of type's keys that object lacks, but the optional one and a
+// field tagged json:"-", which no file sets.
 missing_struct_key :: proc(type: typeid, object: json.Object, optional := "") -> (key: string, missing: bool) {
 	for index in 0 ..< reflect.struct_field_count(type) {
 		field := reflect.struct_field_at(type, index)
 		key = configuration_key(field.name, field.tag)
-		if key not_in object && key != optional {
+		if key not_in object && key != optional && key != "-" {
 			return key, true
 		}
 	}

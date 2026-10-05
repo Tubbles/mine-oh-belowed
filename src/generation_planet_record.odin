@@ -36,6 +36,9 @@ Planet_Generation_Record :: struct {
 	// (resolve_world_planet).
 	crater:                                         Planet_Crater,
 	crater_recorded:                                bool,
+	// The arrival's hit digs the crater (0271); false in a file written
+	// before it, whose generation bakes the crater as before.
+	crater_at_impact:                               bool,
 	// The trees' placement and species count (0197); trees_recorded is
 	// false in a file written before them, which takes the data's
 	// (resolve_world_planet).
@@ -59,6 +62,7 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		home_recorded = true,
 		crater = planet.crater,
 		crater_recorded = true,
+		crater_at_impact = planet.crater_at_impact,
 		trees = planet_tree_placement(planet.trees),
 		trees_recorded = true,
 	}
@@ -91,6 +95,7 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	if record.crater_recorded {
 		result.crater = record.crater
 	}
+	result.crater_at_impact = record.crater_at_impact
 	result.palette = make([][3]int, record.palette_length, allocator)
 	for &color, index in result.palette {
 		color = planet.palette[index % len(planet.palette)]
@@ -335,6 +340,9 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 		}
 		record = planet_generation_record(planet)
 		record.radius_metres = planet_preset_radius(planet, settings.planet_radius_metres)
+		// A new world's hit digs its crater (0271); a file from before
+		// the record bakes it.
+		record.crater_at_impact = !loading
 	}
 	resolved.planet_radius_metres = record.radius_metres
 	return

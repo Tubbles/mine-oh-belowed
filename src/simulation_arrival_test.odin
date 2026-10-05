@@ -1,8 +1,11 @@
 package game
 
+import "core:log"
 import "core:math/linalg"
 import "core:slice"
+import "core:strings"
 import "core:testing"
+import "core:time"
 
 // The arrival (work item 0200): the hold, the landing, Skip in lockstep,
 // the save and the join, and the presentation's distance from the hash.
@@ -359,6 +362,7 @@ test_two_machines_hash_alike_through_a_fall_with_input :: proc(t: ^testing.T) {
 	restless.look_delta = ARRIVAL_TEST_LOOK.look_delta
 	checked := 0
 	placed: Frame
+	before_hit: [2]u64
 	for first.simulation.tick < 700 {
 		tick := first.simulation.tick
 		input := tick < ARRIVAL_TEST_TICKS ? restless : Input_Frame{}
@@ -370,6 +374,7 @@ test_two_machines_hash_alike_through_a_fall_with_input :: proc(t: ^testing.T) {
 		hit := field_arrival_hit_tick(first.simulation.field.arrival, first_content.field.pod_rest.settle_ticks)
 		if first.simulation.tick == hit - 1 {
 			_, placed, _ = find_pod(&first.simulation.world.entities, first_content.machines)
+			before_hit = {field_state_hash(&first.simulation.field, 0), field_state_hash(&second.simulation.field, 0)}
 		}
 		switch first.simulation.tick {
 		case 300, 540, 600, 601, 650, 700:
@@ -377,7 +382,8 @@ test_two_machines_hash_alike_through_a_fall_with_input :: proc(t: ^testing.T) {
 			testing.expectf(t, lockstep_state_hash(&first.simulation) == lockstep_state_hash(&second.simulation), "the hashes part at tick %d", first.simulation.tick)
 		}
 		if first.simulation.tick == hit {
-			for session in ([2]^Session{first, second}) {
+			for session, index in ([2]^Session{first, second}) {
+				testing.expect(t, field_state_hash(&session.simulation.field, 0) != before_hit[index], "the field changes at the hit (0271)")
 				pod, frame, _ := find_pod(&session.simulation.world.entities, first_content.machines)
 				origin, axes := pod_rest_pose(placed, pod, first_content.machines.machines[pod.machine], first_content.field.pod_rest.tilt_degrees)
 				testing.expect(t, frame.axes != placed.axes, "the pose changed at the hit")
@@ -443,11 +449,16 @@ test_a_joiner_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	session, simulation_content := run_arrival_test_world(config, content, 1000)
 	joined, joined_content := reload_arrival_test_world(config, content, session, simulation_content)
 	_, host_frame, _ := find_pod(&session.simulation.world.entities, simulation_content.machines)
+	host_field := field_state_hash(&session.simulation.field, 0)
 	end_session(session)
 	defer end_session(joined)
 	state := &joined.simulation
 	_, joined_frame, _ := find_pod(&state.world.entities, joined_content.machines)
 	testing.expect_value(t, joined_frame, host_frame)
+	// The crater travels in the snapshot (0271).
+	testing.expect_value(t, field_state_hash(&state.field, 0), host_field)
+	centre, radius := arrival_test_bed(state, joined_content.machines)
+	expect_field_holds_the_crater(t, state, centre, radius)
 	queue_player_command(&state.player_commands, 1, Add_Player_Command{})
 	tick_arrival_test_session(joined, joined_content, {})
 	testing.expect_value(t, len(state.players), 2)
@@ -498,6 +509,8 @@ test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 	_, unsaved_frame, _ := find_pod(&unsaved.simulation.world.entities, unsaved_content.machines)
 	testing.expect_value(t, loaded_frame, unsaved_frame)
 	testing.expect_value(t, field_state_hash(&state.field, 0), field_state_hash(&unsaved.simulation.field, 0))
+	centre, radius := arrival_test_bed(state, loaded_content.machines)
+	expect_field_holds_the_crater(t, state, centre, radius)
 	testing.expect(t, field_arrival_falling(state.field.arrival), "still falling at tick 599")
 	tick_field_test_simulation(state, loaded_content, {})
 	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
@@ -819,4 +832,227 @@ test_a_world_landed_level_loads_level :: proc(t: ^testing.T) {
 	}
 	_, frame, _ = find_pod(&loaded.simulation.world.entities, loaded_content.machines)
 	testing.expect_value(t, frame, level)
+}
+
+// The impact's crater (work item 0271).
+
+// A new world of the arrival at the spacing.
+start_arrival_test_session_at :: proc(config: Game_Config, content: Game_Content, spacing_millimetres: int) -> ^Session {
+	settings := default_world_file_settings(config)
+	settings.sample_spacing_millimetres = spacing_millimetres
+	session, problem := start_session(Session_Plan{seed = DEFAULT_WORLD_SEED, settings = settings}, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	assert(problem == "", problem)
+	return session
+}
+
+// The rested pod's bed: its base centre and the bed's radius plus two
+// spacings (pod_bed_edits), the samples the crater's check leaves out.
+arrival_test_bed :: proc(state: ^Simulation_State, machines: Machine_Registry) -> (centre: World_Position, radius: i64) {
+	pod, frame, _ := find_pod(&state.world.entities, machines)
+	machine := machines.machines[pod.machine]
+	radius = i64(max(machine.footprint.x, machine.footprint.z)) * frame_pitch_units(frame) / 2
+	return pod_base_centre(frame, pod), radius + 2 * sample_axis_to_position(1, state.field.spacing_millimetres)
+}
+
+// Every loaded sample farther than except_radius from except_centre
+// holds the baked generation's density, material and tint; the first
+// that does not is named.
+expect_field_holds_the_crater :: proc(t: ^testing.T, state: ^Simulation_State, except_centre: World_Position, except_radius: i64, location := #caller_location) {
+	world := &state.field.world
+	baked := baked_planet_generation(world.water_planet.generation)
+	spacing := state.field.spacing_millimetres
+	testing.expect(t, len(world.chunks) > 0, "chunks are loaded", loc = location)
+	for coordinate in sorted_field_chunk_coordinates(world.chunks) {
+		chunk := world.chunks[coordinate]
+		origin := field_chunk_origin(coordinate)
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			sample := origin + Sample_Coordinate(field_index_to_local(index))
+			position := sample_to_world_position(sample, spacing)
+			if except_radius >= 0 && vector_length(cast([3]i64)(position - except_centre)) <= except_radius {
+				continue
+			}
+			if expected := planet_sample(baked, position); field_chunk_get_sample(chunk, index) != expected {
+				testing.expectf(t, false, "the sample %v is %v, not the crater's %v", sample, field_chunk_get_sample(chunk, index), expected, loc = location)
+				return
+			}
+		}
+	}
+}
+
+// The terrain of every loaded chunk, for a comparison after an edit.
+Arrival_Test_Terrain :: struct {
+	density:  [FIELD_CHUNK_SAMPLE_COUNT]i8,
+	material: [FIELD_CHUNK_SAMPLE_COUNT]Field_Material,
+	tint:     [FIELD_CHUNK_SAMPLE_COUNT]u8,
+}
+
+copy_arrival_test_terrain :: proc(world: ^Field_World) -> map[Field_Chunk_Coordinate]^Arrival_Test_Terrain {
+	terrain := make(map[Field_Chunk_Coordinate]^Arrival_Test_Terrain)
+	for coordinate, chunk in world.chunks {
+		copied := new(Arrival_Test_Terrain)
+		copied^ = {chunk.density, chunk.material, chunk.tint}
+		terrain[coordinate] = copied
+	}
+	return terrain
+}
+
+delete_arrival_test_terrain :: proc(terrain: ^map[Field_Chunk_Coordinate]^Arrival_Test_Terrain) {
+	for _, copied in terrain {
+		free(copied)
+	}
+	delete(terrain^)
+}
+
+// Work item 0271: up to the hit every loaded sample is the whole
+// generation's; the dig writes the baked sample where impact_crater_sample
+// marks a change and leaves every other sample, its wall time logged
+// (the main agent's decision 3); a world ticked through the hit holds the
+// crater outside the pod's bed, the ground at the placed frame's base
+// centre.
+@(test)
+test_the_hit_digs_the_crater_and_nothing_else :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	for spacing in ([3]int{1000, 500, 333}) {
+		session := start_arrival_test_session_at(config, content, spacing)
+		defer end_session(session)
+		simulation_content := field_test_content(session, content)
+		state := &session.simulation
+		testing.expect(t, state.world.planet.crater_at_impact, "a new world digs its crater at the hit")
+		hit := field_arrival_hit_tick(state.field.arrival, simulation_content.field.pod_rest.settle_ticks)
+		for state.tick < hit - 1 {
+			tick_field_test_simulation(state, simulation_content, {})
+		}
+		world := &state.field.world
+		generation := world.water_planet.generation
+		expect_field_world_is_generation(t, world, generation, "before the hit")
+		before := copy_arrival_test_terrain(world)
+		defer delete_arrival_test_terrain(&before)
+		entries := 0
+		for _, chunk in world.chunks {
+			entries += len(chunk.crater_overlay)
+		}
+		start := time.tick_now()
+		chunks, applied := dig_impact_crater(state)
+		log.infof("0271: the apply at %d mm over %d loaded chunks took %v: %d chunks with an overlay, %d samples applied, the overlays held %d samples (%d bytes)", spacing, len(world.chunks), time.tick_since(start), chunks, applied, entries, entries * size_of(Field_Crater_Sample))
+		changed_count := 0
+		mismatch: for coordinate in sorted_field_chunk_coordinates(world.chunks) {
+			chunk := world.chunks[coordinate]
+			copied := before[coordinate]
+			origin := field_chunk_origin(coordinate)
+			for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+				sample := origin + Sample_Coordinate(field_index_to_local(index))
+				baked, changed := impact_crater_sample(generation, sample_to_world_position(sample, spacing))
+				expected := changed ? baked : Field_Sample{copied.density[index], copied.material[index], copied.tint[index]}
+				changed_count += changed ? 1 : 0
+				if field_chunk_get_sample(chunk, index) != expected {
+					testing.expectf(t, false, "%d mm: the sample %v (changed %v) is %v, not %v", spacing, sample, changed, field_chunk_get_sample(chunk, index), expected)
+					break mismatch
+				}
+			}
+		}
+		testing.expectf(t, changed_count > 0, "%d mm: the dig changes samples", spacing)
+
+		through := start_arrival_test_session_at(config, content, spacing)
+		defer end_session(through)
+		through_content := field_test_content(through, content)
+		pod, placed, _ := find_pod(&through.simulation.world.entities, through_content.machines)
+		for through.simulation.tick < hit {
+			tick_field_test_simulation(&through.simulation, through_content, {})
+		}
+		centre, radius := arrival_test_bed(&through.simulation, through_content.machines)
+		expect_field_holds_the_crater(t, &through.simulation, centre, radius)
+		base := pod_base_centre(placed, pod)
+		up := placed.axes[FRAME_UP]
+		metre := i64(POSITION_UNITS_PER_METRE)
+		ground := raycast_field(&through.simulation.field.world, spacing, base + World_Position(fixed_scale(up, metre)), -up, 3 * metre)
+		testing.expectf(t, ground.hit && vector_length(cast([3]i64)(ground.position - base)) <= sample_axis_to_position(1, spacing), "%d mm: the ground lies %v off the base centre", spacing, ground.position - base)
+	}
+}
+
+// Work item 0271: a new world saved at tick 0 whose world.sjson is set
+// back to a baked crater, as a build before 0271 wrote it, generates the
+// crater and holds it before the hit and after the landing.
+@(test)
+test_a_world_from_before_the_impact_keeps_its_baked_crater :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	session, simulation_content := run_arrival_test_world(config, content, 0)
+	files := encode_save_files(&session.simulation, simulation_content, "before the impact", 0)
+	end_session(session)
+	text := string(files.world)
+	testing.expect(t, strings.contains(text, "crater_at_impact: true"), "a new world records its impact")
+	old, _ := strings.replace(text, "crater_at_impact: true", "crater_at_impact: false", 1, context.temp_allocator)
+	files.world = transmute([]byte)old
+	loaded := load_test_field_save(config, content, &files)
+	defer end_session(loaded)
+	loaded_content := field_test_content(loaded, content)
+	state := &loaded.simulation
+	testing.expect(t, !state.world.planet.crater_at_impact)
+	hit := field_arrival_hit_tick(state.field.arrival, loaded_content.field.pod_rest.settle_ticks)
+	for state.tick < hit - 1 {
+		tick_field_test_simulation(state, loaded_content, {})
+	}
+	expect_field_holds_the_crater(t, state, {}, -1)
+	for state.tick < ARRIVAL_TEST_TICKS + 1 {
+		tick_field_test_simulation(state, loaded_content, {})
+	}
+	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
+	centre, radius := arrival_test_bed(state, loaded_content.machines)
+	expect_field_holds_the_crater(t, state, centre, radius)
+}
+
+// Work item 0271: a world without a fall digs every chunk as it enters
+// the set; nothing rests the pod, so no sample is left out.
+@(test)
+test_a_world_without_a_fall_digs_its_crater_as_it_enters :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session, _ := run_arrival_test_world(config, content, 2)
+	defer end_session(session)
+	testing.expect(t, !field_arrival_falling(session.simulation.field.arrival))
+	testing.expect(t, session.simulation.world.planet.crater_at_impact)
+	expect_field_holds_the_crater(t, &session.simulation, {}, -1)
+}
+
+// Work item 0271: a world saved after the hit's tick less one restores
+// its set inside the hit's own tick (the tick is counted before the
+// chunks) and still digs there: past the landing it holds the crater
+// outside the bed and hashes as the run that never saved. The join case
+// restores the snapshot's set before its first tick (as the joiner tests
+// do) and hashes as the host's.
+@(test)
+test_a_save_at_the_tick_before_the_hit_digs_at_the_hit :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	host, host_content := run_arrival_test_world(config, content, 1)
+	defer end_session(host)
+	hit := field_arrival_hit_tick(host.simulation.field.arrival, host_content.field.pod_rest.settle_ticks)
+	for host.simulation.tick < hit - 1 {
+		tick_field_test_simulation(&host.simulation, host_content, {})
+	}
+	files := encode_save_files(&host.simulation, host_content, "before the hit", 0)
+	saved := load_test_field_save(config, content, &files)
+	defer end_session(saved)
+	saved_content := field_test_content(saved, content)
+	testing.expect(t, saved.simulation.field.chunk_set.restoring, "the saved world restores its set in its first tick")
+	joined, joined_content := reload_arrival_test_world(config, content, host, host_content)
+	defer end_session(joined)
+	sessions := [2]^Session{saved, joined}
+	contents := [2]Simulation_Content{saved_content, joined_content}
+	for host.simulation.tick < ARRIVAL_TEST_TICKS + 1 {
+		tick_field_test_simulation(&host.simulation, host_content, {})
+		for session, index in sessions {
+			tick_field_test_simulation(&session.simulation, contents[index], {})
+		}
+	}
+	host_hash := field_state_hash(&host.simulation.field, 0)
+	for session, index in sessions {
+		state := &session.simulation
+		testing.expect_value(t, state.tick, host.simulation.tick)
+		testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
+		centre, radius := arrival_test_bed(state, contents[index].machines)
+		expect_field_holds_the_crater(t, state, centre, radius)
+		testing.expectf(t, field_state_hash(&state.field, 0) == host_hash, "the %s world parts from the unsaved run", index == 0 ? "saved" : "joined")
+	}
 }

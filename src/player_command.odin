@@ -205,7 +205,7 @@ destroy_player_command :: proc(command: Player_Command) {
 		free_job_result(ready.result)
 	}
 	if ready, is_chunk := command.(Field_Chunk_Ready_Command); is_chunk {
-		free(ready.chunk)
+		destroy_field_chunk(ready.chunk)
 	}
 }
 

@@ -17,7 +17,10 @@ import "platform"
 // most MAXIMUM_RELIEF_METRES in all (data_planet.odin). The crater at the
 // home (0199, crater_relief) is the relief's last term: its floor is
 // clamped to at least -MAXIMUM_RELIEF_METRES and its result to at most
-// +MAXIMUM_RELIEF_METRES, so the bound holds with it.
+// +MAXIMUM_RELIEF_METRES, so the bound holds with it. A world whose
+// arrival digs the crater (0271, Planet.crater_at_impact) generates
+// without the term (crater_baked false); the hit writes the baked
+// generation into the field (dig_impact_crater).
 
 TOPSOIL_DEPTH_METRES :: 2
 DEEP_STONE_DEPTH_METRES :: 40
@@ -64,6 +67,9 @@ Planet_Generation :: struct {
 	veins:               Planet_Veins,
 	// The crater at the home (0199, make_crater_term).
 	crater:              Crater_Term,
+	// Whether the relief holds the crater: false for a world whose
+	// arrival's hit digs it (0271, baked_planet_generation).
+	crater_baked:        bool,
 	// The trees on the sphere (0197, generation_planet_trees.odin).
 	trees:               Planet_Tree_Term,
 }
@@ -85,10 +91,19 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		relief_octaves = planet.relief_octaves,
 		relief_shape = planet.relief_shape,
 		veins = plan_planet_veins(seed, planet_home_direction(planet.home), radius),
+		crater_baked = !planet.crater_at_impact,
 	}
 	generation.crater = make_crater_term(generation, planet.crater, planet_home_direction(planet.home))
 	generation.trees = make_planet_tree_term(seed, planet.trees, planet.home, radius)
 	return generation
+}
+
+// The generation with its crater: the ground as it stands once the hit
+// has dug it (0271).
+baked_planet_generation :: proc(generation: Planet_Generation) -> Planet_Generation {
+	baked := generation
+	baked.crater_baked = true
+	return baked
 }
 
 // The crater's term at the home direction, its floor read off the
@@ -169,9 +184,14 @@ value_noise :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
 }
 
 // The local surface's height above the radius at a point on the sphere:
-// the shaped relief with the crater at the home (0199).
+// the shaped relief with the crater at the home (0199) when the
+// generation bakes it (crater_baked, 0271).
 surface_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
-	return crater_relief(generation.crater, crater_distance(generation.crater, point), uncratered_relief(generation, point))
+	relief := uncratered_relief(generation, point)
+	if !generation.crater_baked {
+		return relief
+	}
+	return crater_relief(generation.crater, crater_distance(generation.crater, point), relief)
 }
 
 // The relief without the crater: the octaves, the first shaped by the
@@ -335,27 +355,41 @@ planet_tint :: proc(generation: Planet_Generation, position: World_Position) -> 
 	return u8(hash_lattice(generation.tint_seed, cell) % u64(generation.palette_length))
 }
 
+planet_sample :: proc(generation: Planet_Generation, position: World_Position) -> Field_Sample {
+	sample, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+	if !needs_relief {
+		return sample
+	}
+	return planet_sample_at_relief(generation, position, distance, on_sphere, surface_relief(generation, on_sphere))
+}
+
 // Far outside and deep inside skip the noise: the local surface lies
 // within MAXIMUM_RELIEF_METRES of the radius, and a density saturates one
-// spacing from it.
-planet_sample :: proc(generation: Planet_Generation, position: World_Position) -> Field_Sample {
+// spacing from it. Otherwise needs_relief, with the distance from the
+// centre and the position projected onto the sphere.
+planet_sample_shortcut :: proc(generation: Planet_Generation, position: World_Position) -> (sample: Field_Sample, distance: i64, on_sphere: [3]i64, needs_relief: bool) {
 	for axis in 0 ..< 3 {
 		if abs(position[axis]) >= metres_to_position_units(FAR_LIMIT_METRES) {
-			return FIELD_AIR_SAMPLE
+			return FIELD_AIR_SAMPLE, 0, {}, false
 		}
 	}
 	squared := position.x * position.x + position.y * position.y + position.z * position.z
-	distance := i64(integer_square_root(u64(squared)))
+	distance = i64(integer_square_root(u64(squared)))
 	relief_reach := metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
 	if distance >= generation.radius + relief_reach {
-		return FIELD_AIR_SAMPLE
+		return FIELD_AIR_SAMPLE, distance, {}, false
 	}
 	if distance < generation.radius - relief_reach - metres_to_position_units(DEEP_STONE_DEPTH_METRES) {
 		material := distance <= generation.bedrock_radius ? Field_Material.Bedrock : Field_Material.Deep_Stone
-		return {MAXIMUM_DENSITY, material, planet_tint(generation, position)}
+		return {MAXIMUM_DENSITY, material, planet_tint(generation, position)}, distance, {}, false
 	}
-	on_sphere := project_onto_sphere(position, distance, generation.radius)
-	surface := generation.radius + surface_relief(generation, on_sphere)
+	return {}, distance, project_onto_sphere(position, distance, generation.radius), true
+}
+
+// The sample at the position whose surface stands relief above the
+// radius: the density, the stratum and the outcrop, the tint.
+planet_sample_at_relief :: proc(generation: Planet_Generation, position: World_Position, distance: i64, on_sphere: [3]i64, relief: i64) -> Field_Sample {
+	surface := generation.radius + relief
 	depth := surface - distance
 	density := depth_to_density(depth, generation.spacing_millimetres)
 	if density <= 0 {
@@ -363,6 +397,31 @@ planet_sample :: proc(generation: Planet_Generation, position: World_Position) -
 	}
 	material := planet_outcrop_material(generation.veins, planet_stratum(depth, distance, generation.bedrock_radius), depth, on_sphere)
 	return {density, material, planet_tint(generation, position)}
+}
+
+// The baked generation's sample beside a whole one computed from the
+// relief without the crater (0271) and whether the two differ: false at
+// or past the crater's reach. No second projection or relief.
+impact_crater_baked_sample :: proc(generation: Planet_Generation, position: World_Position, distance: i64, on_sphere: [3]i64, relief: i64, whole: Field_Sample) -> (baked: Field_Sample, changed: bool) {
+	term := generation.crater
+	from_home := crater_distance(term, on_sphere)
+	if term.reach == 0 || from_home >= term.reach {
+		return whole, false
+	}
+	baked = planet_sample_at_relief(generation, position, distance, on_sphere, crater_relief(term, from_home, relief))
+	return baked, baked != whole
+}
+
+// The baked generation's sample at the position and whether it differs
+// from the whole one (impact_crater_baked_sample); false past the
+// shortcut. The tests name the changed samples with it.
+impact_crater_sample :: proc(generation: Planet_Generation, position: World_Position) -> (baked: Field_Sample, changed: bool) {
+	whole, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+	if !needs_relief {
+		return whole, false
+	}
+	relief := uncratered_relief(generation, on_sphere)
+	return impact_crater_baked_sample(generation, position, distance, on_sphere, relief, planet_sample_at_relief(generation, position, distance, on_sphere, relief))
 }
 
 // Whether any sample of the chunk can hold sea: the nearest sample to
@@ -449,13 +508,29 @@ mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, 
 // world does that when it takes the chunk (field_world_insert_chunk). The
 // water: the sea below the planet's sea level and the springs (0172); the
 // light: full sky in every air sample (0173, light_generated_field_chunk).
-generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int, coordinate: Field_Chunk_Coordinate, chunk: ^Field_Chunk) {
+// With crater_overlay, a chunk of the simulated set (the workers', the
+// staged set's) of a world whose hit digs the crater, its box meeting the
+// crater's cylinder (impact_crater_reaches_box), also records the baked
+// sample wherever it differs from the whole one (0271,
+// Field_Chunk.crater_overlay), from the same projection and relief.
+generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int, coordinate: Field_Chunk_Coordinate, chunk: ^Field_Chunk, crater_overlay := false) {
 	generation := make_planet_generation(seed, planet, spacing_millimetres)
 	origin := field_chunk_origin(coordinate)
 	chunk.coordinate = coordinate
+	overlay := crater_overlay && planet.crater_at_impact && impact_crater_reaches_box(generation, field_node_box(field_chunk_node(coordinate), spacing_millimetres))
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		sample := origin + Sample_Coordinate(field_index_to_local(index))
-		value := planet_sample(generation, sample_to_world_position(sample, spacing_millimetres))
+		position := sample_to_world_position(sample, spacing_millimetres)
+		value, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+		if needs_relief {
+			relief := surface_relief(generation, on_sphere)
+			value = planet_sample_at_relief(generation, position, distance, on_sphere, relief)
+			if overlay {
+				if baked, changed := impact_crater_baked_sample(generation, position, distance, on_sphere, relief, value); changed {
+					append(&chunk.crater_overlay, Field_Crater_Sample{index = i32(index), sample = baked})
+				}
+			}
+		}
 		chunk.density[index] = value.density
 		chunk.material[index] = value.material
 		chunk.tint[index] = value.tint

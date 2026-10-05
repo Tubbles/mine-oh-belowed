@@ -196,6 +196,8 @@ decode_field_chunk_delta :: proc(data: []byte, chunk: ^Field_Chunk) -> (problem:
 			return fmt.tprintf("field chunk: unknown material %d", u8(material))
 		}
 	}
+	// The crater overlay is the generation's, not the save's (0271).
+	decoded.crater_overlay = chunk.crater_overlay
 	chunk^ = decoded^
 	chunk.dirty = true
 	return ""

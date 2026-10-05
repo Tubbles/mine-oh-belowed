@@ -93,6 +93,25 @@ Field_Chunk :: struct {
 	modified:     bool,
 	hash_current: bool,
 	state_hash:   u64,
+	// The impact's crater not yet dug into the chunk (0271): the baked
+	// sample wherever it differs from the generated one, in index order;
+	// nil outside the crater's cylinder and once applied or dropped
+	// (apply_field_crater_overlay). Never saved or hashed.
+	crater_overlay: [dynamic]Field_Crater_Sample,
+}
+
+Field_Crater_Sample :: struct {
+	index:  i32,
+	sample: Field_Sample,
+}
+
+// Frees a chunk with its crater overlay; nothing for nil.
+destroy_field_chunk :: proc(chunk: ^Field_Chunk) {
+	if chunk == nil {
+		return
+	}
+	delete(chunk.crater_overlay)
+	free(chunk)
 }
 
 // Chunks are heap allocated, as the block world's are, so growing the map
@@ -279,7 +298,7 @@ field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 
 destroy_field_world :: proc(world: ^Field_World) {
 	for _, chunk in world.chunks {
-		free(chunk)
+		destroy_field_chunk(chunk)
 	}
 	delete(world.chunks)
 	delete(world.edited_chunks)

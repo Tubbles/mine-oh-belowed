@@ -329,3 +329,41 @@ test_a_world_file_without_trees_takes_the_datas :: proc(t: ^testing.T) {
 	none.trees.species_count = MAXIMUM_TREE_SPECIES + 1
 	testing.expect(t, strings.contains(planet_generation_record_problem(none), "trees.species_count"), "a recorded species count out of bounds is refused")
 }
+
+// Work item 0271: a new world records crater_at_impact; a world file
+// without the key, and one written before the record, bake the crater;
+// make_recorded_planet carries the flag to the planet.
+@(test)
+test_a_world_file_without_the_impact_key_bakes_its_crater :: proc(t: ^testing.T) {
+	planets := shipped_test_planets()
+	planet := default_planet(planets)
+	settings := World_File_Settings{planet_id = planet.id}
+	_, _, fresh := resolve_world_planet(settings, {}, planets, false)
+	testing.expect(t, fresh.crater_at_impact, "a new world's hit digs its crater")
+	testing.expect(t, make_recorded_planet(planet, fresh, context.temp_allocator).crater_at_impact)
+	_, _, before_record := resolve_world_planet(settings, {}, planets, true)
+	testing.expect(t, !before_record.crater_at_impact, "a file from before the record bakes its crater")
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = planet.id},
+		planet_generation = fresh,
+	}
+	text := string(encode_world_file(file, context.temp_allocator))
+	testing.expect(t, strings.contains(text, "crater_at_impact"), "the world file writes the key")
+	lines := strings.split_lines(text, context.temp_allocator)
+	kept_lines := make([dynamic]string, context.temp_allocator)
+	for line in lines {
+		if !strings.contains(line, "crater_at_impact") {
+			append(&kept_lines, line)
+		}
+	}
+	without := strings.join(kept_lines[:], "\n", context.temp_allocator)
+	parsed, problem := parse_world_file(transmute([]byte)without, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	_, _, loaded := resolve_world_planet(parsed.settings, parsed.planet_generation, planets, true)
+	testing.expect(t, !loaded.crater_at_impact, "a recorded world without the key bakes its crater")
+	testing.expect(t, !make_recorded_planet(planet, loaded, context.temp_allocator).crater_at_impact)
+	kept, _ := parse_world_file(transmute([]byte)text, context.temp_allocator)
+	_, _, reloaded := resolve_world_planet(kept.settings, kept.planet_generation, planets, true)
+	testing.expect(t, reloaded.crater_at_impact, "a loaded new world keeps its flag")
+}

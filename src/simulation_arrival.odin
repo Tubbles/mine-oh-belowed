@@ -74,12 +74,12 @@ strap_players_for_the_fall :: proc(state: ^Simulation_State, machines: Machine_R
 
 // Lands the fall at the state's tick. The hatches stay closed (0222);
 // every strapped player is told touchdown (0223), a Skip's landing too.
-// A landing at or before the hit's tick rests the pod first (a Skip, or
-// arrival_settle_ticks 0), since the hit's own rest
-// (tick_field_session_players) then never comes.
+// A landing at or before the hit's tick hits first (a Skip, or
+// arrival_settle_ticks 0), since the hit's own (tick_field_session_players)
+// then never comes.
 land_field_arrival :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	if field_arrival_falling(state.field.arrival) && state.tick <= field_arrival_hit_tick(state.field.arrival, content.field.pod_rest.settle_ticks) {
-		rest_field_pod(state, content)
+		hit_field_arrival(state, content)
 	}
 	state.field.arrival.landed_tick = state.tick
 	for player, index in state.players {
@@ -87,6 +87,40 @@ land_field_arrival :: proc(state: ^Simulation_State, content: Simulation_Content
 			append(&state.events, Simulation_Event{player = index, kind = .Touchdown_Confirmed})
 		}
 	}
+}
+
+// The hit (work items 0270, 0271): the crater dug, then the pod rested.
+hit_field_arrival :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	dig_impact_crater(state)
+	update_field_sky_after_edits(&state.field.world)
+	rest_field_pod(state, content)
+}
+
+// The impact's crater (work item 0271, doc/architecture.md, The arrival):
+// a world whose record says crater_at_impact generates whole and its hit
+// writes the baked generation into the field.
+
+// Whether the crater stands dug at the tick: from the hit's tick on,
+// after a Skip, and from the start of a world without a fall.
+impact_crater_dug :: proc(planet: Planet, arrival: Field_Arrival, tick: u64, settle_ticks: int) -> bool {
+	return planet.crater_at_impact && !field_arrival_skippable(arrival, tick, settle_ticks)
+}
+
+// Every loaded chunk's crater overlay applied in coordinate order
+// (apply_field_crater_overlay, the generation computed it); a chunk
+// without one costs nothing. The caller updates the sky. Returns how
+// many chunks had one and how many samples it wrote.
+dig_impact_crater :: proc(state: ^Simulation_State) -> (chunks, applied: int) {
+	world := &state.field.world
+	for coordinate in sorted_field_chunk_coordinates(world.chunks) {
+		chunk := world.chunks[coordinate]
+		if chunk.crater_overlay == nil {
+			continue
+		}
+		chunks += 1
+		applied += apply_field_crater_overlay(world, chunk)
+	}
+	return
 }
 
 // The pod's rest at the hit (work item 0270, doc/architecture.md, The

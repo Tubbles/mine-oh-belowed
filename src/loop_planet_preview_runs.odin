@@ -29,7 +29,7 @@ planet_preview_run_direction :: proc(frame: Frame) -> [3]i64 {
 // cell (0, 0, 0) bottom.
 planet_preview_ground_along :: proc(preview: ^Planet_Preview, frame: Frame, millimetres: int) -> World_Position {
 	simulation := planet_preview_simulation(preview)
-	generation := make_planet_generation(simulation.world.settings.seed, preview.session.planet, simulation.field.spacing_millimetres)
+	generation := baked_planet_generation(make_planet_generation(simulation.world.settings.seed, preview.session.planet, simulation.field.spacing_millimetres))
 	along := frame_cell_bottom(frame, {}) + World_Position(fixed_scale(planet_preview_run_direction(frame), millimetres_to_position_units(millimetres)))
 	return field_surface_under(generation, along, 0)
 }

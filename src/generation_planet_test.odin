@@ -632,3 +632,143 @@ test_no_dry_ground_keeps_the_records_home :: proc(t: ^testing.T) {
 	testing.expect(t, !found, "nothing is dry under a sea above every relief")
 	testing.expect_value(t, new_world_home(DEFAULT_WORLD_SEED, planet), planet.home)
 }
+
+// The chunk three chunks past the crater's reach beside the site, along
+// a tangent at the home (0271).
+test_chunk_beside_the_crater :: proc(generation: Planet_Generation, site: World_Position, spacing_millimetres: int) -> Field_Chunk_Coordinate {
+	up, _ := normalize_fixed(cast([3]i64)site)
+	aside := tangent_of(up, {UNIT_VECTOR_ONE, 0, 0})
+	distance := generation.crater.reach + sample_axis_to_position(3 * FIELD_CHUNK_SIZE, spacing_millimetres)
+	return sample_to_field_chunk_coordinate(world_position_to_sample(site + World_Position(fixed_scale(aside, distance)), spacing_millimetres))
+}
+
+// The shipped home whose arrival's hit digs the crater (0271).
+shipped_test_impact_home :: proc() -> Planet {
+	planet := default_planet(shipped_test_planets())
+	planet.crater_at_impact = true
+	return planet
+}
+
+// The chunks whose box meets the ball of radius round the centre, in
+// coordinate order, in the temp allocator.
+test_chunks_round :: proc(centre: World_Position, radius: i64, spacing_millimetres: int) -> []Field_Chunk_Coordinate {
+	chunks := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
+	home := sample_to_field_chunk_coordinate(world_position_to_sample(centre, spacing_millimetres))
+	reach := i32(radius / sample_axis_to_position(FIELD_CHUNK_SIZE, spacing_millimetres)) + 1
+	for z in -reach ..= reach {
+		for y in -reach ..= reach {
+			for x in -reach ..= reach {
+				coordinate := home + {x, y, z}
+				if box_distance_squared(field_node_box(field_chunk_node(coordinate), spacing_millimetres), centre) <= radius * radius {
+					append(&chunks, coordinate)
+				}
+			}
+		}
+	}
+	return chunks[:]
+}
+
+// Every sample of the world's chunks is the generation's on density,
+// material and tint; the first that is not is named.
+expect_field_world_is_generation :: proc(t: ^testing.T, world: ^Field_World, generation: Planet_Generation, label: string, location := #caller_location) {
+	for coordinate in sorted_field_chunk_coordinates(world.chunks) {
+		chunk := world.chunks[coordinate]
+		origin := field_chunk_origin(coordinate)
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			sample := origin + Sample_Coordinate(field_index_to_local(index))
+			expected := planet_sample(generation, sample_to_world_position(sample, generation.spacing_millimetres))
+			if field_chunk_get_sample(chunk, index) != expected {
+				testing.expectf(t, false, "%s: the sample %v is %v, not %v", label, sample, field_chunk_get_sample(chunk, index), expected, loc = location)
+				return
+			}
+		}
+	}
+}
+
+// Work item 0271: a field of the simulated set generated round the home
+// holds the whole generation and the uncratered surface at the home, the
+// home's chunk with a crater overlay and the chunk beside the crater
+// without; applying the overlays turns the field into the baked
+// generation, sample for sample, with the floor where
+// test_the_crater_floor_is_flat_in_the_generated_field finds it, and
+// leaves them nil. A plain generation computes none.
+@(test)
+test_the_impact_dig_makes_the_baked_crater :: proc(t: ^testing.T) {
+	planet := shipped_test_impact_home()
+	for spacing in ([3]int{333, 500, 1000}) {
+		generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, spacing)
+		baked := baked_planet_generation(generation)
+		testing.expect(t, !generation.crater_baked && baked.crater_baked)
+		site, _ := field_home_site(generation, planet)
+		world: Field_World
+		defer destroy_field_world(&world)
+		world.water_planet = make_field_water_planet(DEFAULT_WORLD_SEED, planet, spacing)
+		chunks := test_chunks_round(site, metres_to_position_units(20), spacing)
+		for coordinate in chunks {
+			chunk := new(Field_Chunk)
+			generate_field_chunk(DEFAULT_WORLD_SEED, planet, spacing, coordinate, chunk, crater_overlay = true)
+			field_world_insert_chunk(&world, chunk)
+		}
+		home := world.chunks[sample_to_field_chunk_coordinate(world_position_to_sample(site, spacing))]
+		testing.expectf(t, home != nil && len(home.crater_overlay) > 0, "%d mm: the home's chunk has no overlay", spacing)
+		far := test_chunk_beside_the_crater(generation, site, spacing)
+		far_chunk := new(Field_Chunk)
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, spacing, far, far_chunk, crater_overlay = true)
+		testing.expectf(t, far_chunk.crater_overlay == nil, "%d mm: the chunk beside the crater has an overlay", spacing)
+		field_world_insert_chunk(&world, far_chunk)
+		plain := new(Field_Chunk, context.temp_allocator)
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, spacing, home.coordinate, plain)
+		testing.expect(t, plain.crater_overlay == nil, "a plain generation computes no overlay")
+		expect_field_world_is_generation(t, &world, generation, "before the dig")
+		term := generation.crater
+		whole := generation.radius + uncratered_relief(generation, term.home)
+		surface, found := test_field_surface_distance(&world, spacing, term.home, whole)
+		testing.expectf(t, found && abs(surface - whole) <= generation.spacing / 8, "%d mm: the whole surface lies %d units off the relief", spacing, surface - whole)
+		applied := 0
+		for coordinate in sorted_field_chunk_coordinates(world.chunks) {
+			applied += apply_field_crater_overlay(&world, world.chunks[coordinate])
+			testing.expect(t, world.chunks[coordinate].crater_overlay == nil, "the overlay is freed once applied")
+		}
+		testing.expect(t, applied > 0, "the dig writes")
+		expect_field_world_is_generation(t, &world, baked, "after the dig")
+		floor := generation.radius + term.floor_height
+		surface, found = test_field_surface_distance(&world, spacing, term.home, floor)
+		testing.expectf(t, found && abs(surface - floor) <= generation.spacing / 8, "%d mm: the dug floor lies %d units off its height", spacing, surface - floor)
+	}
+}
+
+// Work item 0271: the home's chunk of a world whose hit digs the crater
+// generates without it, an old world's with it as the data's planet
+// does; a chunk past the crater's bound is the same in both.
+@(test)
+test_an_impact_world_generates_whole_and_an_old_one_baked :: proc(t: ^testing.T) {
+	data := default_planet(shipped_test_planets())
+	impact := shipped_test_impact_home()
+	spacing := 1000
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, impact, spacing)
+	site, _ := field_home_site(generation, impact)
+	home := sample_to_field_chunk_coordinate(world_position_to_sample(site, spacing))
+	far := test_chunk_beside_the_crater(generation, site, spacing)
+	terrain :: proc(planet: Planet, spacing: int, coordinate: Field_Chunk_Coordinate) -> ^Field_Chunk {
+		chunk := new(Field_Chunk, context.temp_allocator)
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, spacing, coordinate, chunk)
+		return chunk
+	}
+	same :: proc(first, second: ^Field_Chunk) -> bool {
+		return first.density == second.density && first.material == second.material && first.tint == second.tint
+	}
+	old := data
+	testing.expect(t, !old.crater_at_impact, "the data's planet is an old world's")
+	testing.expect(t, !same(terrain(impact, spacing, home), terrain(old, spacing, home)), "the home's chunk differs")
+	testing.expect(t, same(terrain(impact, spacing, far), terrain(old, spacing, far)), "the chunk past the bound is the same")
+	// The old world's ground at the home is the crater's floor, the new
+	// world's the uncratered relief.
+	old_generation := make_planet_generation(DEFAULT_WORLD_SEED, old, spacing)
+	relief := generation.radius + uncratered_relief(generation, generation.crater.home)
+	floor := relief - metres_to_position_units(i64(data.crater.depth_metres))
+	old_surface := vector_length(cast([3]i64)field_surface_under(old_generation, site, 0))
+	new_surface := vector_length(cast([3]i64)field_surface_under(generation, site, 0))
+	testing.expectf(t, abs(old_surface - floor) <= generation.spacing, "the old world's ground lies %d units off the floor", old_surface - floor)
+	testing.expectf(t, abs(new_surface - relief) <= generation.spacing, "the new world's ground lies %d units off the relief", new_surface - relief)
+	testing.expect(t, make_planet_generation(DEFAULT_WORLD_SEED, data, spacing).crater_baked, "the data's planet bakes its crater")
+}

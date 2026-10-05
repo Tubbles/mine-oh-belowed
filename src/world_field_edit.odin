@@ -265,3 +265,64 @@ field_ground_sample_at :: proc(world: ^Field_World, spacing_millimetres: int, po
 	}
 	return best
 }
+
+// The impact's dig (work item 0271, doc/architecture.md, The arrival).
+
+// The crater changes only samples whose projection onto the sphere lies
+// within its reach of the home, so within the reach, scaled out to the
+// relief band's top (reach * (radius + relief) / radius) and a spacing
+// for the grid, of the home's axis (the line from the centre through the
+// home), at every depth. The unit vector along the axis and that
+// distance.
+impact_crater_axis :: proc(generation: Planet_Generation) -> (axis: [3]i64, reach: i64) {
+	term := generation.crater
+	axis, _ = normalize_fixed(term.home)
+	relief_reach := metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
+	return axis, term.reach + term.reach * relief_reach / max(generation.radius, 1) + generation.spacing
+}
+
+// Whether any sample of the box can change: its centre within the axis's
+// reach plus a spacing and its half diagonal of the axis, on the home's
+// side of the centre, the box meeting the relief band down to the stone
+// face below it. Squared lengths in i64, no root but the centre's
+// distance.
+impact_crater_reaches_box :: proc(generation: Planet_Generation, box: Field_Box) -> bool {
+	if generation.crater.reach == 0 {
+		return false
+	}
+	axis, reach := impact_crater_axis(generation)
+	centre := cast([3]i64)(box.minimum + (box.maximum - box.minimum) / 2)
+	half := vector_length(cast([3]i64)(box.maximum - box.minimum)) / 2 + 1
+	ahead := fixed_dot(centre, axis)
+	offset := centre - fixed_scale(axis, ahead)
+	near := reach + generation.spacing + half
+	if ahead <= -half || offset.x * offset.x + offset.y * offset.y + offset.z * offset.z > near * near {
+		return false
+	}
+	relief_reach := metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
+	distance := vector_length(centre)
+	return distance - half < generation.radius + relief_reach && distance + half >= generation.radius - relief_reach - metres_to_position_units(DEEP_STONE_DEPTH_METRES)
+}
+
+// Writes the chunk's crater overlay (generate_field_chunk) into the
+// world, in index order, through field_world_set_sample, so the water,
+// the light and the save follow, then frees it. A sample already holding
+// the baked value is left. The chunk is the world's. Returns how many
+// samples it wrote.
+apply_field_crater_overlay :: proc(world: ^Field_World, chunk: ^Field_Chunk) -> (applied: int) {
+	origin := field_chunk_origin(chunk.coordinate)
+	for entry in chunk.crater_overlay {
+		if field_chunk_get_sample(chunk, int(entry.index)) == entry.sample {
+			continue
+		}
+		field_world_set_sample(world, origin + Sample_Coordinate(field_index_to_local(int(entry.index))), entry.sample)
+		applied += 1
+	}
+	drop_field_crater_overlay(chunk)
+	return
+}
+
+drop_field_crater_overlay :: proc(chunk: ^Field_Chunk) {
+	delete(chunk.crater_overlay)
+	chunk.crater_overlay = nil
+}

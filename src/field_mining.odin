@@ -251,7 +251,7 @@ destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
 	delete(simulation.torches)
 	destroy_field_chunk_set(&simulation.chunk_set)
 	for _, chunk in simulation.arrived_chunks {
-		free(chunk)
+		destroy_field_chunk(chunk)
 	}
 	delete(simulation.arrived_chunks)
 	for _, saved in simulation.saved_chunks {

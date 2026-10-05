@@ -142,7 +142,7 @@ simulated_chunks_ready :: proc(state: ^Simulation_State) -> bool {
 // arrived stays missing (the driver checks simulated_chunks_ready first).
 // The field's set first (update_simulated_field_chunks, 0179).
 update_simulated_chunks :: proc(state: ^Simulation_State, content: Simulation_Content) {
-	update_simulated_field_chunks(state)
+	update_simulated_field_chunks(state, content)
 	set := &state.chunk_set
 	centres := player_chunk_centres(state.players[:])
 	if !set.enabled || simulated_set_settled(state, centres) {

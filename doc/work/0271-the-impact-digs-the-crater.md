@@ -1,6 +1,6 @@
 # 0271: The impact digs the crater
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 
@@ -121,3 +121,4 @@ A shared helper `expect_field_holds_the_crater(t, state, except_centre, except_r
 3. The cost: the implementer wraps the first `dig_impact_crater` of `test_the_hit_digs_the_crater_and_nothing_else` in `time.tick_now` at each spacing it runs (add 333 mm there) and logs the wall time (`log.infof`, not asserted), and reports the three numbers. Whether the pass is spread over the settle ticks is decided on them, as a new item; not a benchmark, so it runs at any hour.
 4. One seam for the hit: `hit_field_arrival :: proc(state: ^Simulation_State, content: Simulation_Content)` in `simulation_arrival.odin` calls `dig_impact_crater`, then `update_field_sky_after_edits` once, then 0270's `rest_field_pod`, and replaces its two call sites (the hit tick and the Skip before it); `rest_field_pod` stays as 0270 wrote it. 0272 hooks the presentation, not this.
 5. If 0270's `test_skip_before_the_hit_rests_the_pod_once` parts on the field hash as the design warns, the terrain comparison it names is the fix, reported.
+6. (fix round) The dig is a by-product of the generation, not a pass of its own. Where `generate_field_chunk` makes a chunk of the simulated set for a world with `crater_at_impact`, and the chunk's box meets the crater's cylinder (the axis bound of the fix round), it computes beside each whole sample the baked one from the same relief (`planet_sample_at_relief` twice from one projection and one `uncratered_relief`, never a second projection or relief) and records every sample that differs in the chunk's `crater_overlay` (a dynamic array of `{index, sample}`, nil for a chunk outside the cylinder, for a restored chunk and for a baked world; freed with the chunk). `dig_impact_crater` applies every loaded chunk's overlay through `field_world_set_sample` in chunk coordinate order and frees it; `insert_field_chunk_arrival` applies the overlay of a chunk entering after the hit; a chunk with no overlay costs nothing at the hit. The overlay is computed on whatever thread generates the chunk and travels with it. The generation tests assert the home chunk's overlay is not empty and the chunk beside the crater's is nil, and the timing line reports the apply alone, with the count of applied samples.

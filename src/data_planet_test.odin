@@ -110,6 +110,8 @@ test_planet_records_refuse_unknown_keys_wrong_types_and_ranges :: proc(t: ^testi
 		return replaced
 	}
 	expect_planets_problem(t, replace(record, "id = ", "colour = 1 id = "), "unknown key planets[0].colour")
+	// The world records it (0271), the data cannot set it.
+	expect_planets_problem(t, replace(record, "id = ", "crater_at_impact = true id = "), "unknown key planets[0].crater_at_impact")
 	expect_planets_problem(t, replace(record, "radius_metres = 8000", `radius_metres = "far"`), "planets[0].radius_metres must be a whole number")
 	expect_planets_problem(t, replace(record, "radius_metres = 8000", "radius_metres = 8000.5"), "planets[0].radius_metres must be a whole number")
 	expect_planets_problem(t, replace(record, "radius_metres = 8000", "radius_metres = 9999999999"), "radius_metres 9999999999 is outside")

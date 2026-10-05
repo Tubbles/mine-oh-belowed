@@ -142,7 +142,7 @@ take_field_results :: proc(shared: ^Field_Worker_Shared, kind: Field_Job_Kind, m
 }
 
 free_field_job_result :: proc(result: Field_Job_Result) {
-	free(result.chunk)
+	destroy_field_chunk(result.chunk)
 	destroy_field_mesh_data(result.mesh)
 	destroy_field_mesh_data(result.water_mesh)
 }
@@ -156,7 +156,7 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 	switch job.kind {
 	case .Generate:
 		result.chunk = new(Field_Chunk)
-		generate_field_chunk(shared.seed, shared.planet, shared.generation.spacing_millimetres, field_node_chunk(job.node), result.chunk)
+		generate_field_chunk(shared.seed, shared.planet, shared.generation.spacing_millimetres, field_node_chunk(job.node), result.chunk, crater_overlay = true)
 	case .Mesh:
 		grid := job.grid
 		if grid == nil {

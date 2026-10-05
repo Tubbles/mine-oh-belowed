@@ -152,7 +152,7 @@ needed_field_chunks :: proc(state: ^Simulation_State, prefetch: i32 = 0) -> []Fi
 // coordinate replaces the first.
 stage_field_chunk_arrival :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
 	if previous := field.arrived_chunks[chunk.coordinate] or_else nil; previous != nil {
-		free(previous)
+		destroy_field_chunk(previous)
 	}
 	field.arrived_chunks[chunk.coordinate] = chunk
 }
@@ -197,26 +197,62 @@ apply_saved_field_chunk :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
 
 // A chunk entering the set: its saved bytes over the generated chunk when
 // a tick changed it before (apply_saved_field_chunk), then into the world
-// with the arrival's wake and light seeding.
-insert_field_chunk_arrival :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
+// with the arrival's wake and light seeding. With dig (the crater stands
+// dug), its crater overlay (0271) is applied when it had no saved bytes
+// and dropped when it had, since those were written after the dig;
+// before the hit the overlay waits for it (dig_impact_crater). Returns
+// whether the overlay wrote a sample.
+insert_field_chunk_arrival :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk, dig: bool) -> bool {
+	saved := chunk.coordinate in field.saved_chunks
 	apply_saved_field_chunk(field, chunk)
 	field_world_insert_chunk(&field.world, chunk)
 	mark_field_neighbours_dirty(&field.world, chunk.coordinate)
+	if !dig {
+		return false
+	}
+	// A chunk saved before the hit (its water changed) that unloaded and
+	// enters again after it stays whole there: its saved bytes say nothing
+	// of the crater. Alike on every machine, and the descent unloads no
+	// chunk near the crater.
+	if saved {
+		drop_field_crater_overlay(chunk)
+		return false
+	}
+	return apply_field_crater_overlay(&field.world, chunk) > 0
+}
+
+// A loaded world restored after its crater was dug keeps it in its saved
+// chunks, so no restored chunk's overlay is applied (0271).
+drop_field_crater_overlays :: proc(world: ^Field_World) {
+	for _, chunk in world.chunks {
+		drop_field_crater_overlay(chunk)
+	}
 }
 
 // At the start of a tick: a loaded world's set restored first, once all
 // of it arrived (until then nothing changes, so a world alone does not
 // take part of it); then unloads what left the set, inserts what entered
 // it, both in coordinate order. A chunk of the set that has not arrived
-// stays missing (the driver checks field_chunks_ready first).
-update_simulated_field_chunks :: proc(state: ^Simulation_State) {
+// stays missing (the driver checks field_chunks_ready first). Once the
+// impact's crater stands dug (impact_crater_dug), an entering chunk takes
+// it and the sky follows.
+update_simulated_field_chunks :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	field := &state.field
 	if !field.enabled {
 		return
 	}
+	dig := impact_crater_dug(state.world.planet, field.arrival, state.tick, content.field.pod_rest.settle_ticks)
 	if field.chunk_set.restoring {
 		if !restore_arrived_field_set(field) {
 			return
+		}
+		// Dropped only when the hit ran in a tick before this one: a set
+		// saved at the hit's tick less one restores in the hit's own tick
+		// (the tick is counted before the chunks), whose hit_field_arrival
+		// still applies the overlays.
+		settle_ticks := content.field.pod_rest.settle_ticks
+		if impact_crater_dug(state.world.planet, field.arrival, max(state.tick, 1) - 1, settle_ticks) {
+			drop_field_crater_overlays(&field.world)
 		}
 	}
 	centres := field_player_chunk_centres(state.players[:], field.spacing_millimetres)
@@ -226,6 +262,7 @@ update_simulated_field_chunks :: proc(state: ^Simulation_State) {
 	next := next_field_chunks(field.chunk_set, centres)
 	unload_left_field_chunks(field, next, state.world.settings.seed, state.world.planet)
 	clear(&field.chunk_set.chunks)
+	dug := false
 	for coordinate in next {
 		field.chunk_set.chunks[coordinate] = {}
 		if coordinate in field.world.chunks {
@@ -233,8 +270,11 @@ update_simulated_field_chunks :: proc(state: ^Simulation_State) {
 		}
 		if chunk, arrived := field.arrived_chunks[coordinate]; arrived {
 			delete_key(&field.arrived_chunks, coordinate)
-			insert_field_chunk_arrival(field, chunk)
+			dug = insert_field_chunk_arrival(field, chunk, dig) || dug
 		}
+	}
+	if dug {
+		update_field_sky_after_edits(&field.world)
 	}
 	clear(&field.chunk_set.centres)
 	append(&field.chunk_set.centres, ..centres)
@@ -261,7 +301,7 @@ unload_left_field_chunks :: proc(field: ^Field_Simulation, next: []Field_Chunk_C
 		if saved, kept := field_saved_chunk(chunk, seed, planet, field.spacing_millimetres); kept {
 			field.saved_chunks[coordinate] = saved
 		}
-		free(chunk)
+		destroy_field_chunk(chunk)
 		delete_key(&world.chunks, coordinate)
 	}
 	for coordinate in leaving {
@@ -295,7 +335,7 @@ drop_unwanted_field_arrivals :: proc(field: ^Field_Simulation, centres: []Field_
 		}
 	}
 	for coordinate in dropped {
-		free(field.arrived_chunks[coordinate])
+		destroy_field_chunk(field.arrived_chunks[coordinate])
 		delete_key(&field.arrived_chunks, coordinate)
 	}
 }
@@ -310,7 +350,7 @@ stage_generated_field_set :: proc(state: ^Simulation_State) {
 			continue
 		}
 		chunk := new(Field_Chunk)
-		generate_field_chunk(state.world.settings.seed, state.world.planet, field.spacing_millimetres, coordinate, chunk)
+		generate_field_chunk(state.world.settings.seed, state.world.planet, field.spacing_millimetres, coordinate, chunk, crater_overlay = true)
 		stage_field_chunk_arrival(field, chunk)
 	}
 }

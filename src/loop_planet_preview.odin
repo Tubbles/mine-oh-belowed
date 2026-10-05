@@ -288,7 +288,7 @@ fly_planet_preview :: proc(preview: ^Planet_Preview, frame: Input_Frame, frame_s
 planet_preview_body_under_camera :: proc(preview: ^Planet_Preview) -> Field_Player {
 	simulation := planet_preview_simulation(preview)
 	spacing := simulation.field.spacing_millimetres
-	generation := make_planet_generation(simulation.world.settings.seed, preview.session.planet, spacing)
+	generation := baked_planet_generation(make_planet_generation(simulation.world.settings.seed, preview.session.planet, spacing))
 	clearance := millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)
 	feet := field_surface_under(generation, metres_to_world_position(preview.camera.position), clearance)
 	forward := planet_preview_basis_to_world(preview.basis, fly_camera_forward(preview.camera))
@@ -630,7 +630,7 @@ lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 	}
 	preview.pad_laid = true
 	point := planet_preview_home_point(preview.home_site, preview.home_axes, PLANET_PREVIEW_PAD_FORWARD_MILLIMETRES, PLANET_PREVIEW_PAD_FRAME_RIGHT_MILLIMETRES)
-	generation := make_planet_generation(simulation.world.settings.seed, preview.session.planet, simulation.field.spacing_millimetres)
+	generation := baked_planet_generation(make_planet_generation(simulation.world.settings.seed, preview.session.planet, simulation.field.spacing_millimetres))
 	entities := &simulation.world.entities
 	pitch := content.field.foundation_pitch_millimetres
 	_, frame := place_free_foundation(entities, content.machines, foundation, field_surface_under(generation, point, 0), preview.home_axes[FRAME_FORWARD], pitch)
@@ -765,7 +765,7 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 	give_planet_preview_items(&session.simulation.players[0], content.items, content.machines)
 	planet := session.planet
 	spacing := session.simulation.field.spacing_millimetres
-	generation := make_planet_generation(seed, planet, spacing)
+	generation := baked_planet_generation(make_planet_generation(seed, planet, spacing))
 	home_site, home_axes := planet_preview_home(generation, planet, session.field_content.foundation_pitch_millimetres)
 	basis := planet_preview_basis(home_axes)
 	install_raylib_trace_log()

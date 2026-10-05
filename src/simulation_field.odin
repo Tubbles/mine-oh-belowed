@@ -459,10 +459,10 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 			append(&state.events, Simulation_Event{player = index, kind = .Field_Refused, field_refusal = refusal, needed = counts[0], held = counts[1]})
 		}
 	}
-	// The hit: the pod rests as it hit (0270); a landing in the same tick
-	// rests it itself.
+	// The hit: the crater dug (0271) and the pod resting as it hit (0270);
+	// a landing in the same tick hits itself.
 	if field_arrival_rests_now(state.field.arrival, state.tick, content.field.pod_rest.settle_ticks) {
-		rest_field_pod(state, content)
+		hit_field_arrival(state, content)
 	}
 	// The fall's last tick: it lands, the hatches closed (0200, 0222).
 	if field_arrival_due(state.field.arrival, state.tick) {
@@ -488,12 +488,13 @@ field_home_heading :: proc(planet: Planet, home: [3]i64) -> [3]i64 {
 	return tangent_of(home, look)
 }
 
-// The pod's place: the generated surface at the planet's home, which is
-// the crater's floor (0199), and the heading its frame takes the yaw step
-// of.
+// The pod's place: the surface at the planet's home of the baked
+// generation, the crater's floor (0199), where a world whose hit digs the
+// crater (0271) has it once dug, and the heading its frame takes the yaw
+// step of.
 field_home_site :: proc(generation: Planet_Generation, planet: Planet) -> (surface: World_Position, heading: [3]i64) {
 	home := planet_home_direction(planet.home)
-	return field_surface_under(generation, World_Position(fixed_scale(home, generation.radius)), 0), field_home_heading(planet, home)
+	return field_surface_under(baked_planet_generation(generation), World_Position(fixed_scale(home, generation.radius)), 0), field_home_heading(planet, home)
 }
 
 // Without a pod (content that has none): the clearance above the

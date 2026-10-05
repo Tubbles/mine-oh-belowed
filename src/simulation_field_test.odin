@@ -358,7 +358,7 @@ test_a_field_load_leaves_the_set_to_the_workers :: proc(t: ^testing.T) {
 	chunk := new(Field_Chunk)
 	generate_field_chunk(session.simulation.world.settings.seed, session.simulation.world.planet, field.spacing_millimetres, first, chunk)
 	stage_field_chunk_arrival(field, chunk)
-	update_simulated_field_chunks(&session.simulation)
+	update_simulated_field_chunks(&session.simulation, field_test_content(session, content))
 	testing.expect(t, field.chunk_set.restoring)
 	testing.expect_value(t, len(field.world.chunks), 0)
 	requested := field_chunk_requests(&session.simulation)
@@ -399,7 +399,7 @@ test_a_restored_field_set_matches_the_save_in_either_arrival_order :: proc(t: ^t
 			stage_field_chunk_arrival(&simulation.field, chunk)
 		}
 		testing.expect(t, field_chunks_ready(simulation))
-		update_simulated_field_chunks(simulation)
+		update_simulated_field_chunks(simulation, field_test_content(session, content))
 		field := &simulation.field
 		testing.expect(t, !field.chunk_set.restoring)
 		testing.expect_value(t, len(field.world.chunks), len(coordinates))
