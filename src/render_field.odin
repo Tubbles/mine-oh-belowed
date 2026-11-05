@@ -17,12 +17,12 @@ import "render_frustum"
 // shows through and the water never hides the water behind it. The
 // field light (0173) reaches the shader per vertex, the sky light scaled
 // by the daylight uniform (Field_Renderer.daylight, 1 until the day cycle
-// of 0179 sets it).
+// of 0179 sets it) and shaded by the sun's direction; the sun and the
+// torchlight (0297, render_point_lights.odin) are set per draw
+// (set_field_frame_lights), since each viewer's up turns the sun.
 
 FIELD_VERTEX_SHADER_PATH :: "shaders/field.vs"
 FIELD_FRAGMENT_SHADER_PATH :: "shaders/field.fs"
-// The sun of the slope shading until the day reaches the field.
-FIELD_SUN_DIRECTION :: [3]f32{0.35, 1, 0.2}
 FIELD_FOG_COLOR :: rl.Color{150, 180, 210, 255}
 FIELD_GLOBE_RINGS :: 64
 FIELD_GLOBE_SLICES :: 128
@@ -70,6 +70,12 @@ Field_Renderer :: struct {
 	daylight:                 f32,
 	// The point lights' uniforms (0175, set_field_point_lights).
 	point_light_locations:    [2]i32,
+	// The sun's and the torchlight's (0297, set_field_frame_lights): the
+	// spot's position, direction, cos_inner, cos_outer, range and colour.
+	sun_direction_location:   i32,
+	sky_ambient_location:     i32,
+	sun_strength_location:    i32,
+	spot_locations:           [6]i32,
 	globe:                    rl.Mesh,
 	globe_material:           rl.Material,
 	spacing_millimetres:      int,
@@ -118,9 +124,7 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: 
 	for name, slot in field_material_sampler_names {
 		shader.locs[int(rl.ShaderLocationIndex.MAP_ALBEDO) + slot] = rl.GetShaderLocation(shader, name)
 	}
-	sun := FIELD_SUN_DIRECTION
 	fog := color_to_vector3(FIELD_FOG_COLOR)
-	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "sun_direction"), &sun, .VEC3)
 	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "fog_color"), &fog, .VEC3)
 	set_shader_float(shader, "fog_start", fog_end * FOG_START_SHARE)
 	set_shader_float(shader, "fog_end", fog_end)
@@ -128,6 +132,10 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: 
 	renderer.water_color_location = rl.GetShaderLocation(shader, "water_color")
 	renderer.daylight_location = rl.GetShaderLocation(shader, "daylight")
 	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors")}
+	renderer.sun_direction_location = rl.GetShaderLocation(shader, "sun_direction")
+	renderer.sky_ambient_location = rl.GetShaderLocation(shader, "sky_ambient")
+	renderer.sun_strength_location = rl.GetShaderLocation(shader, "sun_strength")
+	renderer.spot_locations = spot_light_locations(shader)
 	renderer.material.shader = shader
 }
 
@@ -260,9 +268,44 @@ draw_field_water :: proc(renderer: ^Field_Renderer, visible: []Field_Node_Render
 	rlgl.EnableDepthMask()
 }
 
+// The shaders' spot_ uniforms in Spot_Light's field order (field.fs and
+// model.fs declare the same six).
+spot_light_locations :: proc(shader: rl.Shader) -> [6]i32 {
+	return {
+		rl.GetShaderLocation(shader, "spot_position"),
+		rl.GetShaderLocation(shader, "spot_direction"),
+		rl.GetShaderLocation(shader, "spot_cos_inner"),
+		rl.GetShaderLocation(shader, "spot_cos_outer"),
+		rl.GetShaderLocation(shader, "spot_range"),
+		rl.GetShaderLocation(shader, "spot_color"),
+	}
+}
+
+set_spot_light_uniforms :: proc(shader: rl.Shader, locations: [6]i32, spot: Spot_Light) {
+	spot := spot
+	rl.SetShaderValue(shader, locations[0], &spot.position, .VEC3)
+	rl.SetShaderValue(shader, locations[1], &spot.direction, .VEC3)
+	rl.SetShaderValue(shader, locations[2], &spot.cos_inner, .FLOAT)
+	rl.SetShaderValue(shader, locations[3], &spot.cos_outer, .FLOAT)
+	rl.SetShaderValue(shader, locations[4], &spot.range, .FLOAT)
+	rl.SetShaderValue(shader, locations[5], &spot.color, .VEC3)
+}
+
+// The sun and the torchlight (0297), before the terrain so the water
+// pass shares them.
+set_field_frame_lights :: proc(renderer: ^Field_Renderer, lights: Field_Frame_Lights) {
+	lights := lights
+	shader := renderer.material.shader
+	rl.SetShaderValue(shader, renderer.sun_direction_location, &lights.sun_direction, .VEC3)
+	rl.SetShaderValue(shader, renderer.sky_ambient_location, &lights.sky_ambient, .FLOAT)
+	rl.SetShaderValue(shader, renderer.sun_strength_location, &lights.sun_strength, .FLOAT)
+	set_spot_light_uniforms(shader, renderer.spot_locations, lights.spot)
+}
+
 // Must run between BeginMode3D and EndMode3D. The globe, then the
-// selected nodes' terrain, then their water.
-draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node) {
+// selected nodes' terrain, then their water, lit by the frame's sun and
+// torchlight.
+draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights) {
 	renderer.drawn_node_count = 0
 	rl.DrawMesh(renderer.globe, renderer.globe_material, rl.Matrix(1))
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
@@ -271,6 +314,7 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	rl.SetShaderValue(renderer.material.shader, renderer.camera_position_location, &position, .VEC3)
 	daylight := renderer.daylight
 	rl.SetShaderValue(renderer.material.shader, renderer.daylight_location, &daylight, .FLOAT)
+	set_field_frame_lights(renderer, lights)
 	set_field_water_color(renderer, {})
 	visible := make([dynamic]Field_Node_Render, 0, len(selection), context.temp_allocator)
 	for node in selection {

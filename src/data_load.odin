@@ -124,6 +124,9 @@ Game_Config :: struct {
 	// The pod's airlock (work items 0222, 0231, entity_pod_airlock.odin):
 	// how near a player's capsule keeps a hatch open (0231).
 	pod_airlock:                      Pod_Airlock_Config,
+	// The sun and the torchlight on the field (0297,
+	// render_point_lights.odin, sun_and_torchlight_problem).
+	sun_and_torchlight:               Sun_And_Torchlight_Config,
 }
 
 // A footprint in cells: width along the model's x, depth along its z,
@@ -150,6 +153,20 @@ Field_Simulation_Config :: struct {
 // reach in millimetres.
 Pod_Airlock_Config :: struct {
 	reach_millimetres: int,
+}
+
+// The sun and the torchlight on the field (work item 0297,
+// doc/presentation.md, Light on the field): the sky light's share
+// without the sun and the sun's, both in percent; the torchlight's
+// brightness in percent of TORCHLIGHT_COLOR, its cone's full and outer
+// half angles in degrees (outer above inner) and its reach in metres.
+Sun_And_Torchlight_Config :: struct {
+	sky_ambient_percent:           int,
+	sun_strength_percent:          int,
+	torchlight_strength_percent:   int,
+	torchlight_inner_cone_degrees: int,
+	torchlight_outer_cone_degrees: int,
+	torchlight_range_metres:       int,
 }
 
 // The atmosphere the pod falls through (work item 0269,
@@ -773,6 +790,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := pod_airlock_problem(config.pod_airlock); problem != "" {
 		return problem
 	}
+	if problem := sun_and_torchlight_problem(config.sun_and_torchlight); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
 }
 
@@ -930,6 +950,35 @@ pod_airlock_problem :: proc(airlock: Pod_Airlock_Config) -> string {
 		if bound.value < bound.minimum || bound.value > bound.maximum {
 			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
 		}
+	}
+	return ""
+}
+
+// The bounds of data/game.sjson's sun_and_torchlight values (0297): the
+// shares to four times full, the cones inside a right angle, the reach
+// inside the field's last level of detail.
+MAXIMUM_SUN_SHARE_PERCENT :: 400
+MAXIMUM_TORCHLIGHT_RANGE_METRES :: 200
+
+// Every sun_and_torchlight value inside its bound and the outer cone
+// above the inner; a missing table reads as zeros and fails on the
+// inner cone.
+sun_and_torchlight_problem :: proc(config: Sun_And_Torchlight_Config) -> string {
+	bounds := [?]Config_Bound {
+		{"sun_and_torchlight.sky_ambient_percent", config.sky_ambient_percent, 0, 100},
+		{"sun_and_torchlight.sun_strength_percent", config.sun_strength_percent, 0, MAXIMUM_SUN_SHARE_PERCENT},
+		{"sun_and_torchlight.torchlight_strength_percent", config.torchlight_strength_percent, 0, MAXIMUM_SUN_SHARE_PERCENT},
+		{"sun_and_torchlight.torchlight_inner_cone_degrees", config.torchlight_inner_cone_degrees, 1, 89},
+		{"sun_and_torchlight.torchlight_outer_cone_degrees", config.torchlight_outer_cone_degrees, 2, 90},
+		{"sun_and_torchlight.torchlight_range_metres", config.torchlight_range_metres, 1, MAXIMUM_TORCHLIGHT_RANGE_METRES},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	if config.torchlight_outer_cone_degrees <= config.torchlight_inner_cone_degrees {
+		return fmt.tprintf("sun_and_torchlight.torchlight_outer_cone_degrees %d is not above torchlight_inner_cone_degrees %d", config.torchlight_outer_cone_degrees, config.torchlight_inner_cone_degrees)
 	}
 	return ""
 }

@@ -13,7 +13,8 @@ import "platform"
 // the light tint for the lit meshes and the glow brightness for the
 // emissive ones (model_motion.odin). The lit layer draws with the model
 // shader (data/shaders/model.vs, model.fs, work item 0224), which adds the
-// point lights (set_model_point_lights); the emissive layer draws with
+// point lights (set_model_point_lights) and the torchlight (0297,
+// set_model_spot_light); the emissive layer draws with
 // raylib's default material, so it never takes them. A model shader that
 // fails to load leaves the lit layer on the default material too.
 
@@ -39,6 +40,9 @@ Model_Renderer :: struct {
 	// the positions, the colours and the clip boxes (0229).
 	point_light_locations: [3]i32,
 	point_lights_ready:    bool,
+	// The torchlight's uniforms (0297, set_model_spot_light, the order of
+	// spot_light_locations).
+	spot_locations:        [6]i32,
 	// By Machine_Id; no vertices in the body for a machine drawn as a box.
 	models:                []Uploaded_Machine_Model,
 	// The furnaces' and the torches' flames (render_flames.odin, 0274).
@@ -258,6 +262,7 @@ use_model_shader :: proc(renderer: ^Model_Renderer, data_directory: string) {
 	}
 	renderer.material.shader = shader
 	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors"), rl.GetShaderLocation(shader, "point_light_boxes")}
+	renderer.spot_locations = spot_light_locations(shader)
 	renderer.point_lights_ready = true
 }
 
@@ -303,6 +308,16 @@ set_model_point_lights :: proc(renderer: Model_Renderer, lights: [MAXIMUM_POINT_
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[2], &boxes, .VEC4, MAXIMUM_POINT_LIGHTS * POINT_LIGHT_BOX_ROWS)
+}
+
+// The torchlight (0297): the field's spot, the same the field shader
+// takes, uploaded before the models draw. Nothing without the model
+// shader.
+set_model_spot_light :: proc(renderer: Model_Renderer, spot: Spot_Light) {
+	if !renderer.point_lights_ready {
+		return
+	}
+	set_spot_light_uniforms(renderer.material.shader, renderer.spot_locations, spot)
 }
 
 brightness_color :: proc(brightness: [3]f32) -> rl.Color {

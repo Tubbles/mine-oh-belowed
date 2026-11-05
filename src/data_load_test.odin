@@ -219,3 +219,25 @@ test_reachable_data_edits_refusal_cases :: proc(t: ^testing.T) {
 	testing.expect_value(t, reachable_data_edits_refusal("/storage/emulated/0/Download", true, false), Reachable_Data_Edits_Refusal.Not_A_Directory)
 	testing.expect_value(t, reachable_data_edits_refusal("/storage/emulated/0/Download", true, true), Reachable_Data_Edits_Refusal.None)
 }
+
+// The sun and the torchlight (0297): the shipped table loads, the cones
+// must be ordered, every key is bounded.
+@(test)
+test_sun_and_torchlight_is_range_checked :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, config.sun_and_torchlight, Sun_And_Torchlight_Config{sky_ambient_percent = 35, sun_strength_percent = 100, torchlight_strength_percent = 100, torchlight_inner_cone_degrees = 28, torchlight_outer_cone_degrees = 36, torchlight_range_metres = 40})
+	testing.expect_value(t, sun_and_torchlight_problem(config.sun_and_torchlight), "")
+	flat := config.sun_and_torchlight
+	flat.torchlight_outer_cone_degrees = 28
+	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(flat), "sun_and_torchlight.torchlight_outer_cone_degrees "))
+	short := config.sun_and_torchlight
+	short.torchlight_range_metres = 0
+	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(short), "sun_and_torchlight.torchlight_range_metres "))
+	bright := config.sun_and_torchlight
+	bright.sky_ambient_percent = 101
+	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(bright), "sun_and_torchlight.sky_ambient_percent "))
+	config.sun_and_torchlight = bright
+	testing.expect(t, strings.has_prefix(validate_game_config(config), "sun_and_torchlight.sky_ambient_percent "))
+	testing.expect(t, sun_and_torchlight_problem({}) != "", "a missing table fails")
+}

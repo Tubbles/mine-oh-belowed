@@ -253,3 +253,16 @@ field_simulation = {
 	torch_emitter = "torch"
 	pad_foundation = "wooden_foundation"
 }
+// The sun and the torchlight on the field (0297, doc/presentation.md,
+// Light on the field): the sky light's share without the sun and the
+// sun's, both in percent; the torchlight's brightness in percent of
+// TORCHLIGHT_COLOR, its cone's full and outer half angles in degrees
+// (outer above inner) and its reach in metres.
+sun_and_torchlight = {
+	sky_ambient_percent = 35
+	sun_strength_percent = 100
+	torchlight_strength_percent = 100
+	torchlight_inner_cone_degrees = 28
+	torchlight_outer_cone_degrees = 36
+	torchlight_range_metres = 40
+}

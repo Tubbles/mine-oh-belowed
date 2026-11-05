@@ -102,6 +102,12 @@ Action :: enum u8 {
 	Toggle_Cheat_Movement,
 	// F8, in developer mode: reload the content tables (work item 0054).
 	Reload_Data,
+	// The torchlight (0297): D-pad up in the tech demo and in developer
+	// mode, where it rides on Pipette's control.
+	Toggle_Torchlight,
+	// Steps the clock noon, dusk, midnight, dawn (0297): D-pad down in
+	// the tech demo, on Drop_Stack's control.
+	Step_Time_Of_Day,
 	// The placement editor's nudges (0215): the D-pad and the arrows;
 	// they never reach the simulation (placement_editor_world_frame).
 	Placement_Nudge_Away,
@@ -343,6 +349,19 @@ WORLD_ACTIONS :: Action_Set {
 	.Toggle_Fly_Mode,
 	.Toggle_No_Clip,
 	.Toggle_Cheat_Movement,
+	.Toggle_Torchlight,
+	.Step_Time_Of_Day,
+}
+
+// The world's frame in the water tech demo (0297): the D-pad's world
+// meanings are the torchlight and the clock there, so Pipette and
+// Drop_Stack, which share its controls, are dropped and the kit is never
+// dropped; outside the demo the frame is unchanged.
+tech_demo_world_frame :: proc(frame: Input_Frame, tech_demo: bool) -> Input_Frame {
+	if !tech_demo {
+		return frame
+	}
+	return without_actions(frame, {.Pipette, .Drop_Stack})
 }
 
 without_actions :: proc(frame: Input_Frame, removed: Action_Set) -> Input_Frame {

@@ -473,6 +473,7 @@ viewport_world_input :: proc(state: ^Frame_State, viewport: Viewport) -> Input_F
 		frame = without_actions(frame, {.Look})
 	}
 	frame = tools_radial_world_frame(frame, viewport.interaction.ui.tools_radial)
+	frame = tech_demo_world_frame(frame, field_tech_demo_on(state))
 	editor := viewport.interaction.placement_editor
 	applies := false
 	if session := state.session; viewport_player_ready(session, viewport) && session.simulation.field.enabled {
@@ -480,6 +481,26 @@ viewport_world_input :: proc(state: ^Frame_State, viewport: Viewport) -> Input_F
 		applies = placement_editor_applies(editor, view.field, frame_simulation_content(state))
 	}
 	return placement_editor_world_frame(frame, editor, applies)
+}
+
+// The torchlight and the clock step of the D-pad (0297), from the
+// world's frame after a screen, the tools radial and the editor have had
+// their say. The torchlight is the viewport's render state and never
+// reaches the simulation; the clock step enters it as a
+// Developer_Request through the lockstep records, as the debug edits do,
+// so every machine serves it alike and the frame side only chooses the
+// target.
+apply_field_light_actions :: proc(state: ^Frame_State, viewport: ^Viewport, world: Input_Frame) {
+	tech_demo := field_tech_demo_on(state)
+	if .Toggle_Torchlight in world.just_pressed && (tech_demo || developer_mode_on(state)) {
+		viewport.presentation.torchlight = !viewport.presentation.torchlight
+	}
+	session := state.session
+	if .Step_Time_Of_Day in world.just_pressed && tech_demo && viewport_player_ready(session, viewport^) {
+		simulation := &session.simulation
+		request := Developer_Request{action = .Set_Time_Of_Day, time_of_day = next_time_of_day(simulation_day_ticks(simulation^), simulation.day_length_ticks)}
+		queue_player_command(&simulation.player_commands, viewport.player, request)
+	}
 }
 
 // The viewport's placement editor for the frame (0215), against the
@@ -565,6 +586,7 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	worlds: [MAXIMUM_VIEWPORTS]Input_Frame
 	for &viewport, index in active_viewports(state) {
 		worlds[index] = viewport_world_input(state, viewport)
+		apply_field_light_actions(state, &viewport, worlds[index])
 		viewport.tick_input = holding ? paused_frame_input(viewport.tick_input, worlds[index]) : accumulate_frame_input(viewport.tick_input, worlds[index])
 	}
 	tick_count: int
@@ -1202,9 +1224,11 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 	torch_flickers, _ := block_torch_flicker_uniform(chunk_torch_cells(&state.presentation.renderer), camera.position, model_frame_seconds(frame), frame.reduced_motion)
 	apply_torch_flickers(&state.presentation.renderer, torch_flickers)
 	draw_chunks(&state.presentation.renderer, camera)
-	// The block world takes no point lights; the model renderer lives for
-	// the process, so a field session's lights are cleared (0224).
+	// The block world takes no point lights and no torchlight; the model
+	// renderer lives for the process, so a field session's lights are
+	// cleared (0224, 0297).
 	set_model_point_lights(state.presentation.model_renderer, {})
+	set_model_spot_light(state.presentation.model_renderer, {})
 	draw_entities(world, content.machines, state.presentation.model_renderer, content.items, frame)
 	if state.settings.bottleneck_overlay {
 		draw_machine_markers(world, content.machines, state.presentation.model_renderer, camera.position, bottleneck_marker_colors(ui_theme(&viewport.interaction.ui), state.settings.palette))
@@ -1362,6 +1386,7 @@ make_hud_context :: proc(state: ^Frame_State, index: int) -> Hud_Context {
 		biomes             = session.generator.biomes,
 		field_view_set     = true,
 		field_session      = session.simulation.field.enabled,
+		torchlight         = viewport.presentation.torchlight,
 	}
 	view_player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
 	hud.field_view = view_player.field

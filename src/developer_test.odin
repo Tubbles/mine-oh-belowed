@@ -447,3 +447,20 @@ test_developer_teleport_on_the_field_goes_to_the_cabin :: proc(t: ^testing.T) {
 	testing.expect(t, !state.players[0].flying, "the block body stays as it is")
 	testing.expect(t, field_movement_toggles(state.players[0]).flying)
 }
+
+// Work item 0297: the tech demo's clock step goes to the quarter after
+// the one the day tick is in: from the start Noon, then Dusk, Midnight,
+// Dawn and Noon again; a day length of 0 gives Noon.
+@(test)
+test_the_time_step_cycles_noon_dusk_midnight_dawn :: proc(t: ^testing.T) {
+	length := u64(1200 * TEST_TICK_RATE)
+	testing.expect_value(t, next_time_of_day(0, length), Time_Of_Day.Noon)
+	order := [4]Time_Of_Day{.Noon, .Dusk, .Midnight, .Dawn}
+	for time_of_day, index in order {
+		next := order[(index + 1) % 4]
+		day_ticks := time_of_day_day_ticks(time_of_day, length)
+		testing.expectf(t, next_time_of_day(day_ticks, length) == next, "after %v: %v", time_of_day, next_time_of_day(day_ticks, length))
+		testing.expectf(t, next_time_of_day(day_ticks + 1, length) == next, "a tick after %v: %v", time_of_day, next_time_of_day(day_ticks + 1, length))
+	}
+	testing.expect_value(t, next_time_of_day(123, 0), Time_Of_Day.Noon)
+}

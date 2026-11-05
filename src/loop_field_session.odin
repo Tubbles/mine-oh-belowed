@@ -63,6 +63,9 @@ Field_Scene :: struct {
 	// The viewer's placement editor (0215): its outline or anchored ghost
 	// replaces Place's ghost; zero draws today's ghosts.
 	placement_editor: Placement_Editor,
+	// The sun and the viewer's torchlight (0297, field_frame_lights),
+	// filled by the callers for the camera they draw with.
+	lights:       Field_Frame_Lights,
 }
 
 // A player as the scene draws it: the prediction of a local one while the
@@ -179,13 +182,8 @@ stop_field_presentation :: proc(presentation: ^Frame_Presentation) {
 	destroy_arrival_presentation(&presentation.arrival)
 }
 
-// A rotation that takes the up to +y, so the sky drawn round +y stands
-// about the up.
-up_to_sky_rotation :: proc(up: [3]f32) -> quaternion128 {
-	return linalg.quaternion_between_two_vector3_f32(linalg.normalize(up), [3]f32{0, 1, 0})
-}
-
-// The camera's look and up turned into the sky's frame, at the origin.
+// The camera's look and up turned into the sky's frame, at the origin
+// (up_to_sky_rotation, render_day.odin).
 field_sky_camera :: proc(camera: rl.Camera3D, up: [3]f32) -> rl.Camera3D {
 	rotation := up_to_sky_rotation(up)
 	look := linalg.quaternion128_mul_vector3(rotation, camera.target - camera.position)
@@ -544,7 +542,8 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	scene := scene
 	scene.frame.interiors = gather_interior_lights(&scene.state.world.entities, scene.content.machines)
 	set_field_scene_point_lights(scene, camera)
-	draw_field(scene.renderer, camera, selection)
+	set_model_spot_light(scene.models, scene.lights.spot)
+	draw_field(scene.renderer, camera, selection, scene.lights)
 	world := &scene.state.world
 	push_pod_transform(scene.pod_transform)
 	draw_frames(&world.entities, scene.content.machines)
@@ -694,6 +693,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		pod_transform = pod_transform,
 		window_lights = window_lights[:window_light_count],
 		placement_editor = viewport.interaction.placement_editor,
+		lights       = field_frame_lights(sky.fraction, camera, viewport.presentation.torchlight, state.config.sun_and_torchlight),
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))

@@ -363,6 +363,21 @@ time_of_day_day_ticks :: proc(time_of_day: Time_Of_Day, day_length_ticks: u64) -
 	return (time_of_day_quarter(time_of_day) * day_length_ticks / 4 + day_length_ticks - start_ticks % day_length_ticks) % day_length_ticks
 }
 
+// The time of day the next step of the clock goes to (0297, D-pad down
+// in the tech demo): the quarter after the one the day tick is in, so
+// from the demo's start a little after sunrise the steps give Noon,
+// Dusk, Midnight, Dawn, Noon. Integers but the one rounded constant
+// time_of_day_day_ticks has; Noon with a day length of 0.
+next_time_of_day :: proc(day_ticks, day_length_ticks: u64) -> Time_Of_Day {
+	if day_length_ticks == 0 {
+		return .Noon
+	}
+	start_ticks := u64(math.round(DAY_START_FRACTION * f64(day_length_ticks)))
+	since_sunrise := (day_ticks % day_length_ticks + start_ticks) % day_length_ticks
+	quarter := since_sunrise * 4 / day_length_ticks
+	return Time_Of_Day((quarter + 1) % 4)
+}
+
 // The offset that makes tick fall on the given day tick.
 day_offset_for :: proc(tick, day_ticks, day_length_ticks: u64) -> u64 {
 	if day_length_ticks == 0 {

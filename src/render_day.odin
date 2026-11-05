@@ -1,13 +1,17 @@
 package game
 
 import "core:math"
+import "core:math/linalg"
 import rl "shared:raylib"
 
 // The cosmetic day and night cycle, a function of the simulation tick
 // alone. It sets the sky colours, the fog colour, the sun and moon
 // directions and how much sky light reaches the shader, and in which
 // colour (work item 0064). Block light is neither scaled nor tinted, so
-// torches glow the same at night.
+// torches glow the same at night. On the field the sun also lights the
+// slopes (0297, field_sun_world_direction): the sky is drawn about the
+// viewer's up, so the sun the field shades by is the sky's turned back
+// into the world's frame.
 
 DAY_SKY_COLOR :: rl.Color{150, 190, 230, 255}
 NIGHT_SKY_COLOR :: rl.Color{12, 16, 32, 255}
@@ -135,6 +139,20 @@ sun_direction :: proc(fraction: f64) -> [3]f32 {
 
 moon_direction :: proc(fraction: f64) -> [3]f32 {
 	return -sun_direction(fraction)
+}
+
+// A rotation that takes the up to +y, so the sky drawn round +y stands
+// about the up (field_sky_camera, loop_field_session.odin).
+up_to_sky_rotation :: proc(up: [3]f32) -> quaternion128 {
+	return linalg.quaternion_between_two_vector3_f32(linalg.normalize(up), [3]f32{0, 1, 0})
+}
+
+// The sun as the field shader lights by it (0297): sun_direction in the
+// sky's frame turned back by the inverse of the sky's rotation, so it
+// stands where the sky dome shows it for a viewer with that up. Unit.
+// Noon is overhead for every longitude at once, as daylight is.
+field_sun_world_direction :: proc(fraction: f64, up: [3]f32) -> [3]f32 {
+	return linalg.quaternion128_mul_vector3(linalg.quaternion_inverse(up_to_sky_rotation(up)), sun_direction(fraction))
 }
 
 // The axis the sun, the moon and the stars turn about, so that turning

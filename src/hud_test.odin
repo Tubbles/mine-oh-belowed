@@ -71,6 +71,12 @@ test_the_held_hints_follow_the_tool :: proc(t: ^testing.T) {
 	hints, kept = world_glyph_hints(screen_context, hud)
 	testing.expect_value(t, hints[2].label, "Brush")
 	testing.expect_value(t, kept, 3)
+	// In the tech demo the control is the torchlight's (0297).
+	screen_context.content.field.tech_demo = true
+	hints, kept = world_glyph_hints(screen_context, hud)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Use_Item, .Torchlight, .Rotate, .Inventory, .Pause}), "Place, Torch, Brush, Inventory, Pause")
+	testing.expect_value(t, hints[1].label, "Torch")
+	testing.expect_value(t, kept, 3)
 }
 
 // The tools radial (0215): a tap is Pipette and draws nothing; a steered
@@ -286,4 +292,26 @@ test_the_jet_bar_and_cheat_tag_follow_the_field_player :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(state.draw_list), 0)
 	draw_jet_bar(&state, half, tuning)
 	testing.expect(t, len(state.draw_list) > 0, "a half budget draws the bar")
+}
+
+// Work item 0297: Torch on shows after Sprint and before Pause while the
+// torchlight is on, outside the kept hints.
+@(test)
+test_the_torchlight_hint_shows_while_it_is_on :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	world: World
+	defer destroy_world(&world)
+	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
+	player.on_ground, player.velocity.x = true, 1
+	screen_context := Screen_Context{world = &world, player = &player}
+	hud := Hud_Context{field_view_set = true}
+	testing.expect(t, sprint_hint_shown(player))
+	hints, kept := world_glyph_hints(screen_context, hud)
+	testing.expect(t, !slice.contains(hint_buttons(hints), Glyph_Button.Torchlight))
+	hud.torchlight = true
+	lit, lit_kept := world_glyph_hints(screen_context, hud)
+	testing.expect(t, slice.equal(hint_buttons(lit), []Glyph_Button{.Sprint, .Torchlight, .Inventory, .Pause}), "Sprint, Torch on, Inventory, Pause")
+	testing.expect_value(t, lit[1].label, "Torch on")
+	testing.expect_value(t, lit_kept, kept)
 }

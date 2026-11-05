@@ -58,6 +58,9 @@ Viewport_Presentation :: struct {
 	camera:           rl.Camera3D,
 	// The sprint field of view kick's progress, 0 to 1 (advance_sprint_kick).
 	sprint_kick:      f32,
+	// The torchlight (0297, apply_field_light_actions): a cone from this
+	// viewer's eye along its view, render state, reset with the session.
+	torchlight:       bool,
 	// The frame's cues (work item 0162, cues.odin) of the viewport's
 	// player, reset with the session.
 	cue_memory:       Cue_Memory,

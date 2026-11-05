@@ -1,6 +1,8 @@
 package game
 
+import "core:math"
 import "core:testing"
+import rl "shared:raylib"
 
 @(test)
 test_the_nearest_point_lights_are_kept_nearest_first :: proc(t: ^testing.T) {
@@ -177,4 +179,46 @@ test_point_light_uniform_values_pack_the_clip_boxes :: proc(t: ^testing.T) {
 	for index in 1 ..< MAXIMUM_POINT_LIGHTS {
 		testing.expect_value(t, colors[index].a, 1)
 	}
+}
+
+// The shipped sun_and_torchlight table of data/game.sjson.
+shipped_sun_and_torchlight :: proc(t: ^testing.T) -> Sun_And_Torchlight_Config {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	return config.sun_and_torchlight
+}
+
+// Work item 0297: the torchlight's spot is the eye along the view with
+// the config's cone, reach and strength; off it is the zero spot.
+@(test)
+test_the_torchlight_spot_follows_the_camera :: proc(t: ^testing.T) {
+	config := shipped_sun_and_torchlight(t)
+	camera := rl.Camera3D{position = {10, 20, 30}, target = {14, 20, 30}, up = {0, 1, 0}}
+	spot := torchlight_spot(camera, config, true)
+	testing.expect_value(t, spot.position, [3]f32{10, 20, 30})
+	testing.expect_value(t, spot.direction, [3]f32{1, 0, 0})
+	testing.expect(t, abs(f64(spot.cos_inner) - math.cos(28 * math.RAD_PER_DEG)) < 1e-5, "the inner cone's cosine")
+	testing.expect(t, abs(f64(spot.cos_outer) - math.cos(36 * math.RAD_PER_DEG)) < 1e-5, "the outer cone's cosine")
+	testing.expect_value(t, spot.range, 40)
+	testing.expect_value(t, spot.color, TORCHLIGHT_COLOR)
+	testing.expect_value(t, torchlight_spot(camera, config, false), Spot_Light{})
+	half := config
+	half.torchlight_strength_percent = 50
+	testing.expect_value(t, torchlight_spot(camera, half, true).color, TORCHLIGHT_COLOR / 2)
+}
+
+// Work item 0297: the frame's sun follows the clock, up at noon and down
+// at midnight for an up on +y, with the shipped shares.
+@(test)
+test_field_frame_lights_follow_the_clock :: proc(t: ^testing.T) {
+	config := shipped_sun_and_torchlight(t)
+	camera := rl.Camera3D{position = {0, 100, 0}, target = {1, 100, 0}, up = {0, 1, 0}}
+	noon := field_frame_lights(0.25, camera, false, config)
+	testing.expect(t, noon.sun_direction.y > 0.9, "noon up")
+	midnight := field_frame_lights(0.75, camera, true, config)
+	testing.expect(t, midnight.sun_direction.y < -0.9, "midnight down")
+	testing.expect_value(t, noon.sky_ambient, 0.35)
+	testing.expect_value(t, noon.sun_strength, 1)
+	testing.expect_value(t, noon.spot, Spot_Light{})
+	testing.expect_value(t, midnight.spot.range, 40)
 }

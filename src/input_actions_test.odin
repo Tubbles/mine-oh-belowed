@@ -261,3 +261,17 @@ test_an_x_press_on_a_target_that_takes_interact_is_interacts_alone :: proc(t: ^t
 test_the_cheat_movement_toggle_is_a_world_action :: proc(t: ^testing.T) {
 	testing.expect(t, .Toggle_Cheat_Movement in WORLD_ACTIONS)
 }
+
+// Work item 0297: in the tech demo the D-pad's world meanings are the
+// torchlight and the clock, so Pipette and Drop_Stack are dropped from
+// the frame; outside it the frame is unchanged.
+@(test)
+test_the_tech_demo_takes_the_d_pads_world_meanings :: proc(t: ^testing.T) {
+	actions := Action_Set{.Pipette, .Drop_Stack, .Toggle_Torchlight, .Step_Time_Of_Day, .Jump}
+	frame := Input_Frame{pressed = actions, just_pressed = actions}
+	demo := tech_demo_world_frame(frame, true)
+	testing.expect_value(t, demo.pressed, Action_Set{.Toggle_Torchlight, .Step_Time_Of_Day, .Jump})
+	testing.expect_value(t, demo.just_pressed, Action_Set{.Toggle_Torchlight, .Step_Time_Of_Day, .Jump})
+	testing.expect_value(t, tech_demo_world_frame(frame, false), frame)
+	testing.expect(t, .Toggle_Torchlight in WORLD_ACTIONS && .Step_Time_Of_Day in WORLD_ACTIONS)
+}

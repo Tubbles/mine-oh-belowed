@@ -41,6 +41,11 @@ bindings = [
 	// The touch overlay's long press on the selected hotbar slot presses
 	// it too (hotbar_drop_control, work item 0119).
 	{action = "Drop_Stack" device = "gamepad" control = "DPAD_DOWN" context = "world"}
+	// The tech demo's D-pad (0297): the torchlight on Pipette's up, the
+	// clock on Drop_Stack's down; outside the demo the torchlight needs
+	// developer mode and the clock does nothing.
+	{action = "Toggle_Torchlight" device = "gamepad" control = "DPAD_UP" context = "world"}
+	{action = "Step_Time_Of_Day" device = "gamepad" control = "DPAD_DOWN" context = "world"}
 	{action = "Hotbar_Previous" device = "gamepad" control = "DPAD_LEFT" context = "world"}
 	{action = "Hotbar_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "world"}
 	{action = "Hotbar_Next" device = "gamepad" control = "DPAD_RIGHT" context = "world"}

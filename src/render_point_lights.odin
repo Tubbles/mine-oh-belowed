@@ -1,6 +1,8 @@
 package game
 
+import "core:math"
 import "core:math/linalg"
+import rl "shared:raylib"
 
 // Point lights of working parts (work item 0175, DESIGN.md: point lights
 // come on top for working parts and never replace the field's light).
@@ -15,6 +17,9 @@ import "core:math/linalg"
 // machine_light_clip_box), and a clipped light gives nothing to a face
 // turned away from it, so the hull of a machine with a lamp inside stays
 // dark outside; the arm's lamp has no box.
+// The torchlight (0297, Spot_Light, torchlight_spot): a cone from the
+// viewer's eye along its view, and the sun's direction and shares
+// (Field_Frame_Lights, field_frame_lights), set per draw on both shaders.
 // Pure; the shader uploads are in render_field.odin and render_models.odin.
 
 // Matches the array size in data/shaders/field.fs and model.fs.
@@ -32,6 +37,61 @@ POINT_LIGHT_BOX_ROWS :: 3
 // footprint) plus the f32 error of a world position 16 km from the
 // planet's centre (about 0.006 cells on a 500 mm frame).
 MACHINE_LIGHT_CLIP_PADDING_CELLS :: 0.05
+
+// The torchlight's colour at a strength of 100 percent: a warm white.
+TORCHLIGHT_COLOR :: [3]f32{1.0, 0.93, 0.8}
+
+// The torchlight's cone as the shaders' spot_ uniforms take it: the eye,
+// the unit view direction, the cosines of the full and the outer half
+// angles, the reach in metres and the colour. A range of 0 is off, and
+// every field is zero then.
+Spot_Light :: struct {
+	position:  [3]f32,
+	direction: [3]f32,
+	cos_inner: f32,
+	cos_outer: f32,
+	range:     f32,
+	color:     [3]f32,
+}
+
+// What draw_field sets on the field shader each frame beside the
+// daylight (set_field_frame_lights): the sun's unit direction in the
+// world's frame, the sky light's share without the sun and the sun's,
+// and the torchlight.
+Field_Frame_Lights :: struct {
+	sun_direction: [3]f32,
+	sky_ambient:   f32,
+	sun_strength:  f32,
+	spot:          Spot_Light,
+}
+
+// The torchlight from the camera: off, the zero spot; on, the eye along
+// the view with the config's cone, reach and strength.
+torchlight_spot :: proc(camera: rl.Camera3D, config: Sun_And_Torchlight_Config, on: bool) -> Spot_Light {
+	if !on {
+		return {}
+	}
+	return Spot_Light {
+		position  = camera.position,
+		direction = linalg.normalize0(camera.target - camera.position),
+		cos_inner = f32(math.cos(f64(config.torchlight_inner_cone_degrees) * math.RAD_PER_DEG)),
+		cos_outer = f32(math.cos(f64(config.torchlight_outer_cone_degrees) * math.RAD_PER_DEG)),
+		range     = f32(config.torchlight_range_metres),
+		color     = TORCHLIGHT_COLOR * (f32(config.torchlight_strength_percent) / 100),
+	}
+}
+
+// The frame's lights for a viewer with the camera: the sun of the day
+// fraction turned into the world's frame for the camera's up, the
+// config's shares and the torchlight when on.
+field_frame_lights :: proc(fraction: f64, camera: rl.Camera3D, torchlight: bool, config: Sun_And_Torchlight_Config) -> Field_Frame_Lights {
+	return Field_Frame_Lights {
+		sun_direction = field_sun_world_direction(fraction, camera.up),
+		sky_ambient   = f32(config.sky_ambient_percent) / 100,
+		sun_strength  = f32(config.sun_strength_percent) / 100,
+		spot          = torchlight_spot(camera, config, torchlight),
+	}
+}
 
 Point_Light :: struct {
 	position: [3]f32,

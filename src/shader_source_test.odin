@@ -285,3 +285,53 @@ test_the_plasma_crosses_the_glass_as_fast_as_the_footage :: proc(t: ^testing.T) 
 	testing.expect(t, strings.contains(source, "\nuniform float layer;\n"), "arrival.fs does not declare layer")
 	testing.expect(t, strings.contains(source, "\nuniform float sheath_scale;\n"), "arrival.fs does not declare sheath_scale")
 }
+
+// The spot light of a shader: from `vec3 spot_light(` to its closing
+// brace; "" without it.
+shader_spot_light :: proc(source: string) -> string {
+	start := strings.index(source, "vec3 spot_light(")
+	if start < 0 {
+		return ""
+	}
+	length := strings.index(source[start:], "\n}\n")
+	if length < 0 {
+		return ""
+	}
+	return source[start:][:length + 3]
+}
+
+read_lit_shaders :: proc(t: ^testing.T) -> (field, model: string) {
+	directory := platform.join_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
+	field_data, field_error := os.read_entire_file(platform.join_path(directory, "field.fs"), context.temp_allocator)
+	testing.expect_value(t, field_error, nil)
+	model_data, model_error := os.read_entire_file(platform.join_path(directory, "model.fs"), context.temp_allocator)
+	testing.expect_value(t, model_error, nil)
+	return string(field_data), string(model_data)
+}
+
+// Work item 0297: the field and model shaders take the same torchlight,
+// the six spot_ uniforms and spot_light line for line.
+@(test)
+test_the_lit_shaders_share_the_spot_light :: proc(t: ^testing.T) {
+	field, model := read_lit_shaders(t)
+	uniforms := [?]string{"uniform vec3 spot_position;", "uniform vec3 spot_direction;", "uniform float spot_cos_inner;", "uniform float spot_cos_outer;", "uniform float spot_range;", "uniform vec3 spot_color;"}
+	for uniform in uniforms {
+		testing.expectf(t, strings.contains(field, uniform), "field.fs declares %s", uniform)
+		testing.expectf(t, strings.contains(model, uniform), "model.fs declares %s", uniform)
+	}
+	field_spot, model_spot := shader_spot_light(field), shader_spot_light(model)
+	testing.expect(t, field_spot != "" && field_spot == model_spot, "spot_light differs between field.fs and model.fs")
+}
+
+// Work item 0297: the field shader lights by the clock's sun and the two
+// shares, the old ambient share is gone, and the model shader takes no
+// sun.
+@(test)
+test_the_field_shader_lights_by_the_sun :: proc(t: ^testing.T) {
+	field, model := read_lit_shaders(t)
+	testing.expect(t, strings.contains(field, "uniform vec3 sun_direction;"), "field.fs declares the sun")
+	testing.expect(t, strings.contains(field, "uniform float sky_ambient;"), "field.fs declares the ambient share")
+	testing.expect(t, strings.contains(field, "uniform float sun_strength;"), "field.fs declares the sun's share")
+	testing.expect(t, !strings.contains(field, "ambient_share"), "field.fs keeps no ambient_share")
+	testing.expect(t, !strings.contains(model, "sun_direction"), "model.fs takes no sun")
+}

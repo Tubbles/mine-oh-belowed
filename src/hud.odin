@@ -98,6 +98,8 @@ Hud_Context :: struct {
 	// The session plays the field (0219): the glyph bar shows the held
 	// item's hints.
 	field_session:            bool,
+	// The viewport's torchlight is on (0297): the glyph bar says so.
+	torchlight:               bool,
 }
 
 // The field player the tool line describes.
@@ -507,10 +509,12 @@ tools_radial_position :: proc(right_stick, steer: [2]f32) -> [2]f32 {
 // Pipette's controls held show the tools radial (0215): the look input
 // steers, release selects, a tap is Pipette and the shown radial's dead
 // centre selects nothing. Not while the placement editor is anchored or
-// the hotbar radial is open.
-tools_radial :: proc(state: ^Ui_State, editor: ^Placement_Editor) {
+// the hotbar radial is open, and not at all where shown is false (the
+// water tech demo, 0297: the pipette and the editor are the inventory
+// game's, and D-pad up is the torchlight there).
+tools_radial :: proc(state: ^Ui_State, editor: ^Placement_Editor, shown := true) {
 	tools := &state.tools_radial
-	touching := state.input.tools_radial_down && !(editor != nil && editor.anchored) && !state.radial.open
+	touching := shown && state.input.tools_radial_down && !(editor != nil && editor.anchored) && !state.radial.open
 	if touching && !tools.radial.open {
 		tools.steer, tools.held_seconds = {}, 0
 	} else if touching {
@@ -705,7 +709,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		draw_magnetometer(state, player^)
 	}
 	hotbar_radial(state, player, screen_context.player_index, screen_context.player_commands, items)
-	tools_radial(state, screen_context.placement_editor)
+	tools_radial(state, screen_context.placement_editor, !screen_context.content.field.tech_demo)
 	// On touch the gestures and the overlay's buttons are the hints (0137).
 	if touch_row_shows(state) {
 		return
@@ -720,7 +724,8 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 }
 
 // The world's glyph bar (0219), in the temp allocator: the aimed thing's
-// hints, the held item's on the field, Sprint, then Inventory and Pause.
+// hints, the held item's on the field, Sprint, Torch on while the
+// torchlight is on (0297), then Inventory and Pause.
 // kept counts the aimed and held hints, which the bar keeps beside the
 // hotbar or moves above it for (hud_glyph_bar_layout). Where the aimed
 // thing takes Interact on the Inventory's control (the gamepad's X, 0233)
@@ -736,11 +741,14 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, inte
 	player := screen_context.player
 	// A seated player holds nothing to use (0223).
 	if hud.field_session && !stack_is_empty(selected_hotbar_stack(player^)) && hud_field_player(screen_context, hud).seat == .Standing {
-		append(&list, ..held_glyph_hints(hud_field_player(screen_context, hud).tool))
+		append(&list, ..held_glyph_hints(hud_field_player(screen_context, hud).tool, screen_context.content.field.tech_demo))
 	}
 	kept = len(list)
 	if sprint_hint_shown(player^) {
 		append(&list, Glyph_Hint{.Sprint, text("hint_sprint")})
+	}
+	if hud.torchlight {
+		append(&list, Glyph_Hint{.Torchlight, text("hint_torchlight_on")})
 	}
 	if !opens && !merged {
 		append(&list, Glyph_Hint{.Inventory, text("hint_inventory")})
@@ -782,14 +790,19 @@ aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> [
 }
 
 // The held item's hints on the field (0219): Place with a placeable
-// tool, Tools with any item, then Turn with a machine (Next_Brush turns
+// tool, Tools with any item (Torch in the tech demo, where the control is
+// the torchlight's, 0297), then Turn with a machine (Next_Brush turns
 // it) or Brush where Next_Brush cycles the brush. In the temp allocator.
-held_glyph_hints :: proc(tool: Field_Held_Tool) -> []Glyph_Hint {
+held_glyph_hints :: proc(tool: Field_Held_Tool, tech_demo := false) -> []Glyph_Hint {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
 	if field_held_tool_places(tool) {
 		append(&list, Glyph_Hint{.Use_Item, text("hint_place")})
 	}
-	append(&list, Glyph_Hint{.Tools, text("hint_tools")})
+	if tech_demo {
+		append(&list, Glyph_Hint{.Torchlight, text("hint_torchlight")})
+	} else {
+		append(&list, Glyph_Hint{.Tools, text("hint_tools")})
+	}
 	if field_held_tool_turns(tool) {
 		append(&list, Glyph_Hint{.Rotate, text("hint_turn")})
 	}

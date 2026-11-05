@@ -43,6 +43,9 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_FACE_UP, .Rotate_Building},
 	{.LEFT_FACE_UP, .Pipette},
 	{.LEFT_FACE_DOWN, .Drop_Stack},
+	// The tech demo's D-pad (0297): the torchlight and the clock step.
+	{.LEFT_FACE_UP, .Toggle_Torchlight},
+	{.LEFT_FACE_DOWN, .Step_Time_Of_Day},
 	{.LEFT_FACE_LEFT, .Hotbar_Previous},
 	{.LEFT_FACE_RIGHT, .Hotbar_Next},
 	{.LEFT_TRIGGER_1, .Hotbar_Previous},
@@ -141,6 +144,8 @@ reference_sdl3_buttons := [?]Reference_Sdl3_Button {
 	{.NORTH, .Rotate_Building},
 	{.DPAD_UP, .Pipette},
 	{.DPAD_DOWN, .Drop_Stack},
+	{.DPAD_UP, .Toggle_Torchlight},
+	{.DPAD_DOWN, .Step_Time_Of_Day},
 	{.DPAD_LEFT, .Hotbar_Previous},
 	{.DPAD_RIGHT, .Hotbar_Next},
 	{.LEFT_SHOULDER, .Hotbar_Previous},
@@ -350,4 +355,26 @@ test_binding_rows :: proc(t: ^testing.T) {
 	testing.expect(t, found_sprint)
 	testing.expect(t, found_sprint_hold)
 	testing.expect_value(t, unsupported_bindings_report({}, .Raylib), "input: the raylib backend cannot express 0 bindings:")
+}
+
+// Work item 0297: the torchlight rides on Pipette's D-pad up and the clock
+// step on Drop_Stack's D-pad down, both in the world, and the two keep
+// their lines.
+@(test)
+test_the_shipped_bindings_put_the_torchlight_and_the_clock_on_the_d_pad :: proc(t: ^testing.T) {
+	bindings := shipped_default_bindings(t)
+	lines := [?]struct {
+		action:  Action,
+		control: string,
+	}{{.Toggle_Torchlight, "DPAD_UP"}, {.Pipette, "DPAD_UP"}, {.Step_Time_Of_Day, "DPAD_DOWN"}, {.Drop_Stack, "DPAD_DOWN"}}
+	for line in lines {
+		found := false
+		for binding in bindings {
+			found ||= binding.action == line.action && binding.device == .Gamepad && binding.control == line.control && binding.binding_context == .World
+		}
+		testing.expectf(t, found, "%v on the gamepad's %s in the world", line.action, line.control)
+	}
+	tables, _ := build_input_bindings(bindings, .Sdl3, context.temp_allocator)
+	testing.expect(t, .Toggle_Torchlight in tables.gamepad_buttons[int(sdl.GamepadButton.DPAD_UP)])
+	testing.expect(t, .Step_Time_Of_Day in tables.gamepad_buttons[int(sdl.GamepadButton.DPAD_DOWN)])
 }

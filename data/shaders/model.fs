@@ -5,10 +5,13 @@
 // times colDiffuse (the light tint, a ghost's colour or the broken tint),
 // as raylib's default shader draws it, plus the vertex colour's rgb times
 // the point lights' sum, each machine lamp clipped to its machine's box
-// (work item 0229). point_light_sum is copied from field.fs: keep the
-// two in step (they differ in the clip line alone). Without a texture
-// sampler: raylib's default texture is white, so leaving it out changes
-// nothing.
+// (work item 0229), and the torchlight's cone (spot_light, work item
+// 0297), so a dug-out machine at night shows in the beam. No directional
+// sun: the faces are pre-shaded on the CPU. point_light_sum and
+// spot_light are copied from field.fs: keep the two in step (the sum
+// differs in the clip line alone, the spot not at all). Without a
+// texture sampler: raylib's default texture is white, so leaving it out
+// changes nothing.
 //
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin), as the point lights' array sizes and loop do.
@@ -75,10 +78,40 @@ vec3 point_light_sum(vec3 position, vec3 normal)
     return sum;
 }
 
+// The torchlight (0297): a cone from spot_position along spot_direction,
+// full inside spot_cos_inner, gone past spot_cos_outer, inverse square
+// from torchlight_reference_metres, ended smoothly at spot_range; a range
+// of 0 is off and costs one compare. Half the facing is wrapped as the
+// point lights do.
+uniform vec3 spot_position;
+uniform vec3 spot_direction;
+uniform float spot_cos_inner;
+uniform float spot_cos_outer;
+uniform float spot_range;
+uniform vec3 spot_color;
+
+const float torchlight_reference_metres = 4.0;
+
+vec3 spot_light(vec3 position, vec3 normal)
+{
+    if (spot_range <= 0.0) {
+        return vec3(0.0);
+    }
+    vec3 offset = position - spot_position;
+    float distance_squared = dot(offset, offset);
+    vec3 to_fragment = offset * inversesqrt(max(distance_squared, smallest_weight_sum));
+    float cone = smoothstep(spot_cos_outer, spot_cos_inner, dot(to_fragment, spot_direction));
+    float reach = clamp(1.0 - distance_squared / (spot_range * spot_range), 0.0, 1.0);
+    float reference = torchlight_reference_metres * torchlight_reference_metres;
+    float falloff = reference / (reference + distance_squared) * reach * reach;
+    float facing = mix(point_light_wrap, 1.0, max(dot(normal, -to_fragment), 0.0));
+    return spot_color * cone * falloff * facing;
+}
+
 void main()
 {
     vec3 normal = normalize(fragment_normal);
     vec4 base = fragment_color * colDiffuse;
-    vec3 lit = base.rgb + fragment_color.rgb * point_light_sum(fragment_world_position, normal);
+    vec3 lit = base.rgb + fragment_color.rgb * (point_light_sum(fragment_world_position, normal) + spot_light(fragment_world_position, normal));
     finalColor = vec4(min(lit, vec3(1.0)), base.a);
 }

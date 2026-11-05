@@ -895,6 +895,9 @@ hint_place = "Place"
 hint_tools = "Tools"
 hint_turn = "Turn"
 hint_brush = "Brush"
+// The torchlight's control in the tech demo, and that it is on (0297).
+hint_torchlight = "Torch"
+hint_torchlight_on = "Torch on"
 
 // Machines (data/machines.sjson) and their panels
 machine_wooden_chest = "Wooden chest"

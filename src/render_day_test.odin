@@ -81,3 +81,25 @@ test_sky_colors_follow_the_day :: proc(t: ^testing.T) {
 	// Dawn mirrors dusk.
 	testing.expect_value(t, sky_colors(0).horizon, DUSK_HORIZON_COLOR)
 }
+
+// Work item 0297: the sun the field lights by is the sky's sun turned
+// back into the world's frame for the viewer's up. With the up on +y the
+// sky's frame is the world's; with the up on +x the noon sun stands
+// cos(tilt) above that up and leans towards +z as it did.
+@(test)
+test_the_field_sun_turns_with_the_viewers_up :: proc(t: ^testing.T) {
+	tilt := f32(SUN_PATH_TILT_DEGREES * math.RAD_PER_DEG)
+	for fraction in ([4]f64{0, 0.25, 0.5, 0.75}) {
+		expect_near_point(t, field_sun_world_direction(fraction, {0, 1, 0}), sun_direction(fraction), "the up on +y keeps the sky's sun")
+		testing.expect(t, abs(linalg.length(field_sun_world_direction(fraction, {0, 1, 0})) - 1) < MOTION_TEST_TOLERANCE)
+	}
+	up := [3]f32{1, 0, 0}
+	noon := field_sun_world_direction(0.25, up)
+	expect_near_point(t, noon, {math.cos(tilt), 0, math.sin(tilt)}, "noon stands over the up on +x")
+	testing.expect(t, abs(linalg.dot(noon, up) - math.cos(tilt)) < MOTION_TEST_TOLERANCE)
+	midnight := field_sun_world_direction(0.75, up)
+	testing.expect(t, abs(linalg.dot(midnight, up) + math.cos(tilt)) < MOTION_TEST_TOLERANCE)
+	for fraction in ([4]f64{0, 0.25, 0.5, 0.75}) {
+		testing.expect(t, abs(linalg.length(field_sun_world_direction(fraction, up)) - 1) < MOTION_TEST_TOLERANCE)
+	}
+}

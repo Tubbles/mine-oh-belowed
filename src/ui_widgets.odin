@@ -97,6 +97,8 @@ Glyph_Button :: enum u8 {
 	Nudge,
 	// The tools radial (0215, 0219): Pipette held, D-pad Up and Q.
 	Tools,
+	// The torchlight's toggle (0297): D-pad up.
+	Torchlight,
 }
 
 Glyph_Hint :: struct {
@@ -912,6 +914,7 @@ glyph_button_actions := [Glyph_Button]Action {
 	.Rotate         = .Rotate_Building,
 	.Nudge          = .Placement_Nudge_Away,
 	.Tools          = .Pipette,
+	.Torchlight     = .Toggle_Torchlight,
 }
 
 // The action whose control a glyph shows first. On the keyboard Back shows

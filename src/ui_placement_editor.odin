@@ -33,7 +33,7 @@ PLACEMENT_NUDGE_ACTION_SET :: Action_Set{.Placement_Nudge_Away, .Placement_Nudge
 
 // What the world never sees while the editor is anchored: the editor's
 // own controls and the ones without a meaning there (doc/input.md).
-PLACEMENT_EDITOR_TAKEN_ACTIONS :: Action_Set{.Place, .Use_Item, .Mine, .Rotate_Building, .Pipette, .Drop_Stack, .Interact, .Placement_Nudge_Away, .Placement_Nudge_Towards, .Placement_Nudge_Left, .Placement_Nudge_Right}
+PLACEMENT_EDITOR_TAKEN_ACTIONS :: Action_Set{.Place, .Use_Item, .Mine, .Rotate_Building, .Pipette, .Drop_Stack, .Interact, .Toggle_Torchlight, .Step_Time_Of_Day, .Placement_Nudge_Away, .Placement_Nudge_Towards, .Placement_Nudge_Left, .Placement_Nudge_Right}
 
 // Per local player on its viewport, presentation only: never saved,
 // hashed or sent; off at a session's start.

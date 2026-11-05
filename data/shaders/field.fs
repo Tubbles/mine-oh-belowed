@@ -9,12 +9,17 @@
 // scales whose ratio is not a fraction of small numbers, so the tile's
 // period never shows as a grid (DESIGN.md, No perceivable repetition).
 // The seven materials (every one but air) blend by the vertex weights,
-// the palette's tint and the vertex light are multiplied in (the brighter
-// of the block light and the sky light times daylight, work item 0173), a
-// gentle sun term shades the slopes, and the fog fades to the sky colour towards the last level of detail
-// distance. With water_color's alpha above 0 (the water pass, work item
-// 0172) the surface takes water_color's colour instead of the materials
-// and its alpha as its opacity; the terrain pass sets it to 0.
+// the palette's tint and the light are multiplied in: the brighter of the
+// block light and the sky light times daylight (work item 0173), the sky
+// light's share being the ambient plus the sun's term on a slope facing
+// sun_direction (the day clock's sun in the world's frame, work item
+// 0297), so a cave's samples, with no sky light, take no sun; then the
+// point lights and the torchlight (spot_light, 0297) add on top, and the
+// fog fades to the sky colour towards the last level of detail distance.
+// With water_color's alpha above 0 (the water pass, work item 0172) the
+// surface takes water_color's colour instead of the materials and its
+// alpha as its opacity, and the sun's glint, white, where the half vector
+// of the sun and the eye meets the normal; the terrain pass sets it to 0.
 //
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin), as the point lights' array sizes and loop do.
@@ -34,13 +39,20 @@ uniform sampler2D material_texture_bedrock;
 uniform sampler2D material_texture_hematite_ore;
 uniform sampler2D material_texture_chalcopyrite_ore;
 uniform sampler2D material_texture_coal_ore;
+// The sun's unit direction in the world's frame (field_sun_world_direction,
+// 0297), the sky light's share without the sun and the sun's.
 uniform vec3 sun_direction;
+uniform float sky_ambient;
+uniform float sun_strength;
 uniform vec3 fog_color;
 uniform float fog_start;
 uniform float fog_end;
 uniform vec4 water_color;
 // The sky light's share: 1 by day, 0 at night.
 uniform float daylight;
+// The eye in the world's metres, the same uniform field.vs declares (one
+// location in the program), for the water's glint (0297).
+uniform vec3 camera_position;
 
 out vec4 finalColor;
 
@@ -52,9 +64,10 @@ const float second_scale_ratio = 2.71828;
 const float blend_sharpness = 4.0;
 // The tiles are mid tones; the tint scaled so carries the colour.
 const float tint_scale = 2.0;
-// The light on a slope facing away from the sun.
-const float ambient_share = 0.45;
 const float smallest_weight_sum = 0.0001;
+// The sun on the water (0297): the glint's sharpness and its brightness.
+const float water_glint_power = 48.0;
+const float water_glint_strength = 0.6;
 
 vec3 triplanar(sampler2D tile, vec3 position, vec3 blend)
 {
@@ -119,6 +132,36 @@ vec3 point_light_sum(vec3 position, vec3 normal)
     return sum;
 }
 
+// The torchlight (0297): a cone from spot_position along spot_direction,
+// full inside spot_cos_inner, gone past spot_cos_outer, inverse square
+// from torchlight_reference_metres, ended smoothly at spot_range; a range
+// of 0 is off and costs one compare. Half the facing is wrapped as the
+// point lights do.
+uniform vec3 spot_position;
+uniform vec3 spot_direction;
+uniform float spot_cos_inner;
+uniform float spot_cos_outer;
+uniform float spot_range;
+uniform vec3 spot_color;
+
+const float torchlight_reference_metres = 4.0;
+
+vec3 spot_light(vec3 position, vec3 normal)
+{
+    if (spot_range <= 0.0) {
+        return vec3(0.0);
+    }
+    vec3 offset = position - spot_position;
+    float distance_squared = dot(offset, offset);
+    vec3 to_fragment = offset * inversesqrt(max(distance_squared, smallest_weight_sum));
+    float cone = smoothstep(spot_cos_outer, spot_cos_inner, dot(to_fragment, spot_direction));
+    float reach = clamp(1.0 - distance_squared / (spot_range * spot_range), 0.0, 1.0);
+    float reference = torchlight_reference_metres * torchlight_reference_metres;
+    float falloff = reference / (reference + distance_squared) * reach * reach;
+    float facing = mix(point_light_wrap, 1.0, max(dot(normal, -to_fragment), 0.0));
+    return spot_color * cone * falloff * facing;
+}
+
 void main()
 {
     vec3 normal = normalize(fragment_normal);
@@ -140,10 +183,20 @@ void main()
     albedo *= fragment_color.rgb * tint_scale;
     float water = step(smallest_weight_sum, water_color.a);
     albedo = mix(albedo, water_color.rgb, water);
-    float sun = max(dot(normal, normalize(sun_direction)), 0.0);
-    float light = max(fragment_block_light, fragment_color.a * daylight);
-    vec3 lit = albedo * light * mix(ambient_share, 1.0, sun);
+    // The sky light gates the sun: a cave's samples have none and take
+    // no sun, the cheap shadow. Block light stays the brighter, never
+    // added, so a torch-lit wall keeps its light whichever way it faces.
+    float sun_facing = max(dot(normal, sun_direction), 0.0);
+    float sun_light = fragment_color.a * daylight * (sky_ambient + sun_strength * sun_facing);
+    float light = max(fragment_block_light, sun_light);
+    vec3 lit = albedo * light;
     lit += albedo * point_light_sum(fragment_world_position, normal);
+    lit += albedo * spot_light(fragment_world_position, normal);
+    // The sun on the water: paid as a multiply by water, not a branch
+    // (the mipmapped samples' rule above).
+    vec3 to_camera = normalize(camera_position - fragment_world_position);
+    float glint = water * fragment_color.a * daylight * pow(max(dot(normal, normalize(sun_direction + to_camera + vec3(smallest_weight_sum))), 0.0), water_glint_power) * water_glint_strength;
+    lit += vec3(glint);
     float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);
     finalColor = vec4(mix(min(lit, vec3(1.0)), fog_color, fog), mix(1.0, water_color.a, water));
 }

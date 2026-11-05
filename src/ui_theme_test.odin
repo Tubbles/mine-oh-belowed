@@ -132,6 +132,7 @@ default_gamepad_glyph_icons := [Glyph_Button]Ui_Icon {
 	.Rotate         = .Button_North,
 	.Nudge          = .Dpad,
 	.Tools          = .Dpad,
+	.Torchlight     = .Dpad,
 }
 
 @(rodata)
@@ -154,6 +155,8 @@ default_keyboard_glyph_labels := [Glyph_Button]string {
 	.Rotate         = "R",
 	.Nudge          = "Up",
 	.Tools          = "Q",
+	// No keyboard binding (0297): the unbound glyph.
+	.Torchlight     = "?",
 }
 
 @(test)

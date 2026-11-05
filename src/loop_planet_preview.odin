@@ -132,6 +132,9 @@ Planet_Preview :: struct {
 	session:         ^Session,
 	content:         Game_Content,
 	level_distances: [FIELD_LEVEL_COUNT]int,
+	// The sun's shares and the torchlight's cone (0297); the preview's
+	// sun stands at noon over the camera and its torchlight stays off.
+	sun_and_torchlight: Sun_And_Torchlight_Config,
 	camera:          Fly_Camera,
 	renderer:        Field_Renderer,
 	input_bindings:  Input_Bindings,
@@ -565,7 +568,10 @@ planet_preview_tool_text :: proc(preview: ^Planet_Preview) -> string {
 	return fmt.tprintf("brush %s %.1f m, holding %s  target %s %s%s", shapes[brush.shape], f64(brush.radius) / POSITION_UNITS_PER_METRE, field_held_name(player.field), target, held, refusal)
 }
 
-planet_preview_scene :: proc(preview: ^Planet_Preview, alpha: f32, body_shown: bool) -> Field_Scene {
+// camera is the one the scene is drawn with: the sun stands at noon over
+// its up, scaled by --planet-preview-daylight through the renderer's
+// daylight as before.
+planet_preview_scene :: proc(preview: ^Planet_Preview, camera: rl.Camera3D, alpha: f32, body_shown: bool) -> Field_Scene {
 	simulation := planet_preview_simulation(preview)
 	return Field_Scene {
 		state = simulation,
@@ -577,6 +583,7 @@ planet_preview_scene :: proc(preview: ^Planet_Preview, alpha: f32, body_shown: b
 		frame = Model_Frame{world = &simulation.world, tick = simulation.tick, alpha = alpha, tick_rate = simulation.tick_rate, day_factor = preview.renderer.daylight, sky_tint = {1, 1, 1}, open_sky = true, reaching_arm = preview.reaching_arm},
 		viewer = preview.walking ? 0 : NO_PLAYER,
 		viewer_body_shown = body_shown,
+		lights = field_frame_lights(NOON_FRACTION, camera, false, preview.sun_and_torchlight),
 	}
 }
 
@@ -587,7 +594,7 @@ draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, c
 	rl.BeginDrawing()
 	rl.ClearBackground(FIELD_FOG_COLOR)
 	rl.BeginMode3D(camera)
-	draw_field_scene(planet_preview_scene(preview, alpha, body_shown), camera, selection)
+	draw_field_scene(planet_preview_scene(preview, camera, alpha, body_shown), camera, selection)
 	rl.EndMode3D()
 	height := planet_preview_height_metres(preview)
 	line := fmt.ctprintf("%d fps  %s  height %.0f m  nodes %d of %d  vertices %d  chunks %d", rl.GetFPS(), planet_preview_mode_text(preview), height, preview.renderer.drawn_node_count, len(selection), preview.renderer.vertex_count, len(preview.session.simulation.field.world.chunks))
@@ -793,6 +800,7 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 		session         = session,
 		content         = content,
 		level_distances = level_distances,
+		sun_and_torchlight = config.sun_and_torchlight,
 		camera          = planet_preview_start_camera(home_site, basis, yaw_degrees),
 		renderer        = renderer,
 		input_bindings  = make_backend_bindings(bindings, .Raylib),
