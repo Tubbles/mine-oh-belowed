@@ -1,6 +1,6 @@
 # 0292: Teleport pressure and the dead band
 
-Status: verified (2026-11-05)
+Status: landed (2026-11-05, d9d2138)
 
 Milestone: the water tech demo (0291). The first of the water stream: 0292, then 0293, 0294, 0295, all on `world_field_water.odin` and `world_field_mesh.odin`.
 
