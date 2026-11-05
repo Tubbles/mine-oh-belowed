@@ -1,6 +1,6 @@
 # 0291: The water tech demo mode
 
-Status: verified (2026-11-05)
+Status: landed (2026-11-05, 7511735)
 
 Milestone: side quest for M14 (the ground game): a couch build that drops straight onto a planet to judge the water models of the browser study (`work/research` of the water-demos session, 2026-11-03 to 05: the body model and the cellular rule with teleport pressure, both with a wave layer and a thin-sheet mesher), with the player walking, digging, raising, adding and removing water and placing pumps, under a sun and a torchlight. The items: 0291 (this, the mode, the menu, the demo kit, the couch script), 0292 (teleport pressure and the dead band), 0293 (water bodies), 0294 (the water's look: sheet, radial plane, waves), 0295 (water tools and pumps), 0296 (jetpack, cheat mode), 0297 (sun and torchlight).
 
