@@ -195,3 +195,4 @@ Stillness is "no flux through the sample" (the study's item 5): a steady drip ha
 2. The owner plane stays `u16`: 76 MB more for the shipped set is acceptable for the tech demo, and a per-chunk id table would add a failure path for nothing yet.
 3. The generation marks the sea's ownership, as designed.
 - Approved.
+- Added at 0294's approval: `displace_water_body_volume(world, id, intake: Sample_Coordinate, amount: i64) -> i64` takes the intake sample (unused by 0293 beyond the signature; 0294 and 0295 read it).
