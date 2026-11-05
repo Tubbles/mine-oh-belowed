@@ -1116,10 +1116,15 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 	biome_name := biome < len(session.generator.biomes) ? text(session.generator.biomes[biome].definition.name_key) : "?"
 	field_session := session.simulation.field.enabled
 	room, inside := sealed_room_at_feet(&world.entities, session_local_player(session).field.position)
+	field_world := &session.simulation.field.world
 	return World_Facts {
 		field_session = field_session,
 		sealed_room_inside = field_session && inside,
 		sealed_room_oxygen = room.oxygen,
+		water_awake_chunk_count = field_session ? len(field_world.water_awake_chunks) : 0,
+		water_teleports = field_session ? field_world.water_pressure.teleports : 0,
+		water_visits = field_session ? field_world.water_pressure.visits : 0,
+		water_failures = field_session ? field_world.water_pressure.failures : 0,
 		overlay_lines = world_overlay_statistics_lines(diagnostics),
 		tick = session.simulation.tick,
 		player_chunk = world_to_chunk_coordinate(cell),

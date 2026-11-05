@@ -167,6 +167,35 @@ test_the_pod_airlock_config_is_bounded :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0292: the pressure keys of field_water are bounded and a
+// value outside its bound is named.
+@(test)
+test_field_water_pressure_values_are_bounded :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	water := config.field_water
+	testing.expect_value(t, water.pressure, true)
+	testing.expect_value(t, water.pressure_visit_budget, 128)
+	testing.expect_value(t, water.pressure_visit_budget_per_tick, 20000)
+	testing.expect_value(t, water.minimum_head, 4)
+	testing.expect_value(t, field_water_problem(water), "")
+	cases := [?]struct {
+		change: proc(water: ^Field_Water_Config),
+		key:    string,
+	} {
+		{proc(water: ^Field_Water_Config) {water.pressure_visit_budget = 0}, "field_water.pressure_visit_budget "},
+		{proc(water: ^Field_Water_Config) {water.pressure_visit_budget = 4097}, "field_water.pressure_visit_budget "},
+		{proc(water: ^Field_Water_Config) {water.pressure_visit_budget_per_tick = 0}, "field_water.pressure_visit_budget_per_tick "},
+		{proc(water: ^Field_Water_Config) {water.minimum_head = 65}, "field_water.minimum_head "},
+	}
+	for entry in cases {
+		changed := water
+		entry.change(&changed)
+		problem := field_water_problem(changed)
+		testing.expectf(t, strings.has_prefix(problem, entry.key), "%q: %q", entry.key, problem)
+	}
+}
+
 // Work item 0228: the state copy first, the edits directory's second,
 // none while the overlay is off.
 @(test)

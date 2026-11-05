@@ -80,11 +80,23 @@ field_brushes = [
 // its equals; a sample whose fill did not change for still_ticks_to_sleep
 // ticks sleeps until a neighbour changes; fill at or below minimum_fill on
 // dry ground stops moving and drops by one every dry_ticks_per_step ticks.
+// The pressure pull (work item 0292): with pressure on, a not-full sample
+// on full water that moved nothing searches the full body under it, at
+// most pressure_visit_budget samples a search and
+// pressure_visit_budget_per_tick a tick, for the highest surface and takes
+// its share from there in one step (communicating vessels). minimum_head
+// is the dead band in fill (4 is about 1/64 of a sample): a level
+// difference at or under it moves nothing except into a cell entirely
+// below, so a settled lake is still.
 field_water = {
 	fill_rate_per_tick = 64
 	still_ticks_to_sleep = 20
 	minimum_fill = 8
 	dry_ticks_per_step = 60
+	pressure = true
+	pressure_visit_budget = 128
+	pressure_visit_budget_per_tick = 20000
+	minimum_head = 4
 }
 // The chunks every machine of a session simulates: this many chunks
 // around each player's chunk across and up and down (work item 0177).

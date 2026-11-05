@@ -84,6 +84,10 @@ Field_Chunk :: struct {
 	water_flow:   [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	water_awake:  Field_Sample_Bits,
 	water_source: Field_Sample_Bits,
+	// The pressure pull's failed bit (0292, pull_field_water_pressure):
+	// derived, never saved or hashed, zero on a fresh or decoded chunk and
+	// rebuilt by the first tick.
+	water_pressure_failed: Field_Sample_Bits,
 	block_light:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	sky_light:    [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	dirty:        bool,
@@ -128,6 +132,9 @@ Field_World :: struct {
 	// Water a terrain place displaced and no neighbour had room for
 	// (displace_field_water).
 	water_dropped:      i64,
+	// The last tick's pressure pulls (0292): teleports, visits, failures;
+	// not saved, not hashed.
+	water_pressure:     Field_Water_Pressure_Counts,
 	// The planet as the water and the light's sky march read it, set by
 	// the world's owner (make_field_water_planet); zero is a world with no
 	// sea and no sky march.

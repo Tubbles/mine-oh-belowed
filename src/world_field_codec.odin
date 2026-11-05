@@ -13,7 +13,9 @@ import "run_length"
 //   u32 run count, run count times (u8 value, u32 count).
 // A chunk equal to its generation writes nothing and regenerates from the
 // seed; a changed chunk is written whole. The water's flow is measured
-// again each tick and not written. The version follows the block chunk's
+// again each tick and not written, and the pressure pull's failed bit
+// (0292) is left out too: a decoded chunk starts with it clear and the
+// first tick rebuilds it. The version follows the block chunk's
 // CHUNK_FORMAT_VERSION (1), so block chunk bytes are refused by name;
 // version 2 had no water and 3 no light, and both are refused too, since
 // the field is not saved yet.

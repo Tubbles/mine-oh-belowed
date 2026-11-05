@@ -35,6 +35,20 @@ import "core:slice"
 // is sea) to the sea's fill at its level, each tick they are awake. A
 // missing chunk's sample holds the sea's fill when the generation makes it
 // air (field_sea_fill), and is a wall otherwise.
+//
+// The dead band and the pressure pull (0292, the tech demo's teleport
+// model): a move between two cells that overlap in height needs a head
+// above minimum_head (static friction: a settled lake is still), while a
+// fall into a cell entirely below is never banded. A not-full sample
+// resting on full water that moved nothing searches the full body under
+// it, depth first and upwards first, for the surface sample with the
+// highest level (pull_field_water_pressure), and when that level stands
+// more than one fill of each cell plus the band above its own, the
+// equalising fill moves from there to here in one step: communicating
+// vessels, a U-tube. The search is bounded per search and per tick; a
+// search that finds no head sets the sample's failed bit, which any change
+// next door clears. A film's drying is a sink, not a flow: it wakes nobody,
+// and a film nobody refills above the band dries alone and sleeps.
 
 FIELD_SAMPLE_BIT_WORDS :: FIELD_CHUNK_SAMPLE_COUNT / 64
 // One bit per sample, by sample index.
@@ -64,10 +78,47 @@ Field_Water_Span :: struct {
 // field_water of data/game.sjson in the world's units.
 Field_Water_Tuning :: struct {
 	// Fill per tick per neighbour.
-	rate:         i32,
-	still_ticks:  u8,
-	minimum_fill: i32,
-	dry_ticks:    u64,
+	rate:                           i32,
+	still_ticks:                    u8,
+	minimum_fill:                   i32,
+	dry_ticks:                      u64,
+	// The pressure pull (0292): on or off, the samples one search visits
+	// at most, the visits of a tick at most, and the dead band in fill.
+	pressure:                       bool,
+	pressure_visit_budget:          i32,
+	pressure_visit_budget_per_tick: i64,
+	minimum_head:                   i32,
+}
+
+// The last tick's pressure pulls (Field_World.water_pressure): the
+// teleports made, the samples the searches visited, the searches that
+// found no head. Reset at the top of step_field_water; not saved, not
+// hashed.
+Field_Water_Pressure_Counts :: struct {
+	teleports, visits, failures: i64,
+}
+
+// The chunks one search may visit; a further chunk is a wall to it.
+FIELD_WATER_SEARCH_CHUNK_LIMIT :: 8
+
+// One tick's search state (make_field_water_search), reset before every
+// search: the chunks visited with a bit per visited sample, and the depth
+// first stack.
+Field_Water_Search :: struct {
+	chunks:      [FIELD_WATER_SEARCH_CHUNK_LIMIT]Field_Water_Search_Chunk,
+	chunk_count: int,
+	stack:       [dynamic]Field_Water_Search_Cell,
+}
+
+Field_Water_Search_Chunk :: struct {
+	chunk:   ^Field_Chunk,
+	visited: Field_Sample_Bits,
+}
+
+Field_Water_Search_Cell :: struct {
+	chunk:  ^Field_Chunk,
+	index:  int,
+	sample: Sample_Coordinate,
 }
 
 // The planet a field world lies on, as the water reads it: the generation
@@ -102,7 +153,49 @@ make_field_water_tuning :: proc(config: Field_Water_Config) -> Field_Water_Tunin
 		still_ticks = u8(config.still_ticks_to_sleep),
 		minimum_fill = i32(config.minimum_fill),
 		dry_ticks = u64(config.dry_ticks_per_step),
+		pressure = config.pressure,
+		pressure_visit_budget = i32(config.pressure_visit_budget),
+		pressure_visit_budget_per_tick = i64(config.pressure_visit_budget_per_tick),
+		minimum_head = i32(config.minimum_head),
 	}
+}
+
+// The dead band in exact level units.
+field_water_band :: proc(tuning: Field_Water_Tuning) -> i64 {
+	return i64(tuning.minimum_head) * FIELD_WATER_FULL
+}
+
+// The stack is reserved for the most a search can push: six for the
+// seeds and six for every visit.
+make_field_water_search :: proc(tuning: Field_Water_Tuning, allocator := context.temp_allocator) -> ^Field_Water_Search {
+	search := new(Field_Water_Search, allocator)
+	search.stack = make([dynamic]Field_Water_Search_Cell, 0, 6 * int(tuning.pressure_visit_budget) + 6, allocator)
+	return search
+}
+
+// Marks the sample visited; false when it was already, or when its chunk
+// would be the one past the limit (a wall to this search).
+field_water_search_visit :: proc(search: ^Field_Water_Search, chunk: ^Field_Chunk, index: int) -> bool {
+	entry: ^Field_Water_Search_Chunk
+	for slot in 0 ..< search.chunk_count {
+		if search.chunks[slot].chunk == chunk {
+			entry = &search.chunks[slot]
+			break
+		}
+	}
+	if entry == nil {
+		if search.chunk_count >= FIELD_WATER_SEARCH_CHUNK_LIMIT {
+			return false
+		}
+		entry = &search.chunks[search.chunk_count]
+		entry.chunk, entry.visited = chunk, {}
+		search.chunk_count += 1
+	}
+	if field_sample_bit(&entry.visited, index) {
+		return false
+	}
+	set_field_sample_bit(&entry.visited, index)
+	return true
 }
 
 make_field_water_planet :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Field_Water_Planet {
@@ -257,19 +350,45 @@ field_water_neighbour_fill :: proc(neighbour: Field_Water_Neighbour) -> i32 {
 }
 
 // Whether a sample has anything to do awake: it holds water, or it is
-// air that can be a source (a spring, or below sea level beside the sea).
+// air that can be a source (a spring, or below sea level beside the sea)
+// or that rests on full water (a pull may fill it).
 field_water_can_wake :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int) -> bool {
 	if chunk.water[index] > 0 || field_sample_bit(&chunk.water_source, index) {
 		return true
 	}
-	return chunk.density[index] <= 0 && field_sample_below_sea(world, chunk, index)
+	if chunk.density[index] > 0 {
+		return false
+	}
+	if field_sample_below_sea(world, chunk, index) {
+		return true
+	}
+	sample := field_chunk_sample(chunk, index)
+	return field_water_rests_on_full(field_water_span(sample), field_water_neighbours(world, chunk, sample))
 }
 
 field_sample_below_sea :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int) -> bool {
 	return field_sea_fill(world.water_planet.sea_level, field_water_span(field_chunk_sample(chunk, index))) > 0
 }
 
+// A loaded neighbour nearer the centre is full water; a missing sea sample
+// does not count (the sea edge refill covers it).
+field_water_rests_on_full :: proc(span: Field_Water_Span, neighbours: [6]Field_Water_Neighbour) -> bool {
+	for neighbour in neighbours {
+		if field_water_is_full_below(span, neighbour) {
+			return true
+		}
+	}
+	return false
+}
+
+field_water_is_full_below :: proc(span: Field_Water_Span, neighbour: Field_Water_Neighbour) -> bool {
+	return neighbour.chunk != nil && neighbour.span.middle < span.middle && neighbour.chunk.density[neighbour.index] <= 0 && neighbour.chunk.water[neighbour.index] == FIELD_WATER_FULL
+}
+
+// Every change next door clears the pull's failed bit, whether or not
+// the sample can wake.
 wake_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int) {
+	clear_field_sample_bit(&chunk.water_pressure_failed, index)
 	if !field_water_can_wake(world, chunk, index) {
 		return
 	}
@@ -419,23 +538,40 @@ field_water_is_film :: proc(fill: i32, span: Field_Water_Span, neighbours: [6]Fi
 	return true
 }
 
+// A film's drying: a sink, not a flow, so nobody wakes. The sample
+// sleeps once dry (step_field_water_sample).
+dry_field_water_film :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate) {
+	chunk.water[index] -= 1
+	note_field_chunk_change(chunk)
+	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
+	world.edited_chunks[chunk.coordinate] = {}
+}
+
 move_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, neighbour: Field_Water_Neighbour, amount: i32) {
 	set_field_water(world, chunk, index, sample, i32(chunk.water[index]) - amount)
 	set_field_water(world, neighbour.chunk, neighbour.index, neighbour.sample, i32(neighbour.chunk.water[neighbour.index]) + amount)
+}
+
+// Whether the cell below lies entirely under the mover's: a fall, which
+// the dead band never holds. Cells that overlap in height (lateral, the
+// sphere's staircase) are banded.
+field_water_is_drop :: proc(span, below: Field_Water_Span) -> bool {
+	return field_water_bottom(below) + below.height <= field_water_bottom(span)
 }
 
 // The fill that makes the two levels equal, rounded to the nearest with
 // a half rounded down (towards the mover), at most left, the neighbour's
 // room and the rate. What is left between the two is then under half a
 // fill either way, so the move never turns back and a level settles
-// within half a fill a step.
+// within half a fill a step. Nothing moves for a difference at or under
+// the dead band unless the move is a drop (0292).
 field_water_share :: proc(chunk: ^Field_Chunk, index: int, span: Field_Water_Span, neighbour: Field_Water_Neighbour, tuning: Field_Water_Tuning, left: i32) -> i32 {
 	room := field_water_room(neighbour)
 	if room == 0 {
 		return 0
 	}
 	difference := field_water_level_exact(span, i32(chunk.water[index])) - field_water_level_exact(neighbour.span, i32(neighbour.chunk.water[neighbour.index]))
-	if difference <= 0 {
+	if difference <= (field_water_is_drop(span, neighbour.span) ? 0 : field_water_band(tuning)) {
 		return 0
 	}
 	heights := span.height + neighbour.span.height
@@ -462,8 +598,112 @@ spread_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int,
 	return allowed - left
 }
 
+// Whether the two samples share a face.
+field_samples_are_face_neighbours :: proc(first, second: Sample_Coordinate) -> bool {
+	return abs(first.x - second.x) + abs(first.y - second.y) + abs(first.z - second.z) == 1
+}
+
+// A sample of the search: a surface when it is partial, or full with a
+// neighbour farther from the centre that has room. neighbours are read
+// only for a full sample.
+field_water_search_is_surface :: proc(fill: i32, span: Field_Water_Span, neighbours: [6]Field_Water_Neighbour) -> bool {
+	if fill < FIELD_WATER_FULL {
+		return true
+	}
+	for neighbour in neighbours {
+		if neighbour.chunk != nil && neighbour.span.middle > span.middle && field_water_room(neighbour) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// The pressure pull of a not-full sample resting on full water that moved
+// nothing: a depth first search through the full body under it (the
+// seeds the full neighbours nearer the centre, in slot order; from a full
+// sample its neighbours nearer or level first, then the farther, so the
+// farther pop first and the search climbs out of a tunnel before it
+// wanders the lake bed; a missing chunk, ground and an empty sample are
+// never pushed, since an empty sample is neither a head nor a path; a
+// partial sample is visited but not expanded) for the surface sample with the
+// highest level that is no face neighbour of the receiver (those level by
+// the plain rule) and stands more than one fill of each cell plus the band
+// above the receiver's level. The share from there to here moves in one
+// step. A search that finds nothing, or a banded share of nothing, sets
+// the failed bit, so the sample does not search again until a change
+// next door clears it; a tick whose visits are spent postpones the search
+// without a flag. The head gives from its fill as it stands, the one
+// place the rule reads a current fill as a budget; the order is fixed, so
+// every machine does alike.
+pull_field_water_pressure :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, span: Field_Water_Span, neighbours: [6]Field_Water_Neighbour, tuning: Field_Water_Tuning, search: ^Field_Water_Search) -> (moved: i32, postponed: bool) {
+	if field_sample_bit(&chunk.water_pressure_failed, index) {
+		return 0, false
+	}
+	if world.water_pressure.visits >= tuning.pressure_visit_budget_per_tick {
+		return 0, true
+	}
+	search.chunk_count = 0
+	clear(&search.stack)
+	field_water_search_visit(search, chunk, index)
+	for neighbour in neighbours {
+		if field_water_is_full_below(span, neighbour) && field_water_search_visit(search, neighbour.chunk, neighbour.index) {
+			append(&search.stack, Field_Water_Search_Cell{neighbour.chunk, neighbour.index, neighbour.sample})
+		}
+	}
+	// The receiver's level plus its own fill and the band; a candidate adds
+	// one fill of its own cell.
+	floor := field_water_level_exact(span, i32(chunk.water[index])) + span.height + field_water_band(tuning)
+	best: Field_Water_Search_Cell
+	best_span: Field_Water_Span
+	best_level: i64
+	found := false
+	visits: i64 = 0
+	for len(search.stack) > 0 && visits < i64(tuning.pressure_visit_budget) {
+		cell := pop(&search.stack)
+		visits += 1
+		cell_fill := i32(cell.chunk.water[cell.index])
+		cell_span := field_water_span(cell.sample)
+		cell_neighbours: [6]Field_Water_Neighbour
+		if cell_fill == FIELD_WATER_FULL {
+			cell_neighbours = field_water_neighbours(world, cell.chunk, cell.sample)
+		}
+		if cell_fill > 0 && !field_samples_are_face_neighbours(sample, cell.sample) && field_water_search_is_surface(cell_fill, cell_span, cell_neighbours) {
+			level := field_water_level_exact(cell_span, cell_fill)
+			if level > floor + cell_span.height && (!found || level > best_level) {
+				best, best_span, best_level, found = cell, cell_span, level, true
+			}
+		}
+		if cell_fill < FIELD_WATER_FULL {
+			continue
+		}
+		for farther in ([2]bool{false, true}) {
+			for neighbour in cell_neighbours {
+				if (neighbour.span.middle > cell_span.middle) != farther || neighbour.chunk == nil || neighbour.chunk.density[neighbour.index] > 0 || neighbour.chunk.water[neighbour.index] == 0 {
+					continue
+				}
+				if field_water_search_visit(search, neighbour.chunk, neighbour.index) {
+					append(&search.stack, Field_Water_Search_Cell{neighbour.chunk, neighbour.index, neighbour.sample})
+				}
+			}
+		}
+	}
+	world.water_pressure.visits += visits
+	if found {
+		receiver := Field_Water_Neighbour{chunk = chunk, index = index, sample = sample, span = span}
+		amount := field_water_share(best.chunk, best.index, best_span, receiver, tuning, min(i32(best.chunk.water[best.index]), tuning.rate))
+		if amount > 0 {
+			move_field_water(world, best.chunk, best.index, best.sample, receiver, amount)
+			world.water_pressure.teleports += 1
+			return amount, false
+		}
+	}
+	set_field_sample_bit(&chunk.water_pressure_failed, index)
+	world.water_pressure.failures += 1
+	return 0, false
+}
+
 // One awake sample's tick; start is its fill when the tick began.
-step_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, tuning: Field_Water_Tuning, tick: u64, start: u8) {
+step_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, tuning: Field_Water_Tuning, tick: u64, start: u8, search: ^Field_Water_Search) {
 	if chunk.density[index] > 0 {
 		chunk.water_flow[index] = 0
 		sleep_field_water_sample(chunk, index)
@@ -484,14 +724,26 @@ step_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index:
 	switch {
 	case film:
 		if tuning.dry_ticks > 0 && tick % tuning.dry_ticks == 0 {
-			set_field_water(world, chunk, index, sample, fill - 1)
+			dry_field_water_film(world, chunk, index, sample)
+			if chunk.water[index] == 0 {
+				chunk.water_flow[index] = 0
+				sleep_field_water_sample(chunk, index)
+				return
+			}
 		}
 	case fill > 0:
 		moved = spread_field_water(world, chunk, index, sample, span, neighbours, tuning, budget)
 	}
+	// The flow counts the spread only; the teleports are counted on the
+	// world.
 	chunk.water_flow[index] = u8(min(moved, 255))
-	// A film stays awake until it has dried.
-	if film || moved > 0 || chunk.water[index] != before {
+	postponed := false
+	if !film && moved == 0 && tuning.pressure && i32(chunk.water[index]) < FIELD_WATER_FULL && field_water_rests_on_full(span, neighbours) {
+		moved, postponed = pull_field_water_pressure(world, chunk, index, sample, span, neighbours, tuning, search)
+	}
+	// A film stays awake until it has dried; a postponed search keeps its
+	// sample awake for the next tick's budget.
+	if film || moved > 0 || postponed || chunk.water[index] != before {
 		chunk.water_still[index] = 0
 		return
 	}
@@ -507,13 +759,13 @@ field_bits_above :: proc(bit: u64) -> u64 {
 }
 
 // The samples awake when the tick began, in sample order.
-step_field_water_pass :: proc(world: ^Field_World, pass: ^Field_Water_Pass, tuning: Field_Water_Tuning, tick: u64) {
+step_field_water_pass :: proc(world: ^Field_World, pass: ^Field_Water_Pass, tuning: Field_Water_Tuning, tick: u64, search: ^Field_Water_Search) {
 	for word in 0 ..< FIELD_SAMPLE_BIT_WORDS {
 		bits := pass.awake[word]
 		for bits != 0 {
 			bit := u64(intrinsics.count_trailing_zeros(bits))
 			index := word * 64 + int(bit)
-			step_field_water_sample(world, pass.chunk, index, tuning, tick, pass.start[index])
+			step_field_water_sample(world, pass.chunk, index, tuning, tick, pass.start[index], search)
 			bits &= field_bits_above(bit)
 		}
 	}
@@ -533,8 +785,9 @@ field_chunk_coordinate_before :: proc(first, second: Field_Chunk_Coordinate) -> 
 // The water's tick (in tick_field_simulation, after the edits): the
 // samples awake when it began, chunks in coordinate order, each moving at
 // most the fill it held then. A sample woken during the step runs from
-// the next tick.
+// the next tick. The pressure counts are the tick's.
 step_field_water :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
+	world.water_pressure = {}
 	coordinates := make([dynamic]Field_Chunk_Coordinate, 0, len(world.water_awake_chunks), context.temp_allocator)
 	for coordinate in world.water_awake_chunks {
 		append(&coordinates, coordinate)
@@ -553,8 +806,9 @@ step_field_water :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: 
 		note_field_chunk_change(chunk)
 		append(&passes, pass)
 	}
+	search := make_field_water_search(tuning)
 	for pass in passes {
-		step_field_water_pass(world, pass, tuning, tick)
+		step_field_water_pass(world, pass, tuning, tick, search)
 	}
 	for pass in passes {
 		if !field_sample_bits_any(&pass.chunk.water_awake) {

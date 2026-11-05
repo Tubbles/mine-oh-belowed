@@ -265,8 +265,9 @@ restore_field_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 // The state hash.
 
 // The terrain and the water of a chunk: density, material, fill, still
-// ticks, the awake and the source bits; not the tint, the light or the
-// flow. Kept on the chunk until a write of the tick
+// ticks, the awake and the source bits; not the tint, the light, the
+// flow or the pressure pull's failed bit (derived, 0292). Kept on the
+// chunk until a write of the tick
 // (note_field_chunk_change) makes it stale.
 field_chunk_state_hash :: proc(chunk: ^Field_Chunk) -> u64 {
 	if chunk.hash_current {

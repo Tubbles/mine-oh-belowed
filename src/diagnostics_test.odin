@@ -173,6 +173,17 @@ test_the_world_page_tells_the_sealed_room :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0292: in a field session the World page counts the water's
+// awake chunks and the pressure pull's teleports, visits and failures.
+@(test)
+test_the_world_page_counts_the_water_pressure :: proc(t: ^testing.T) {
+	facts := World_Facts{field_session = true, water_awake_chunk_count = 1, water_teleports = 3, water_visits = 400, water_failures = 2}
+	testing.expect(t, contains_line(world_page_lines(facts), "water awake chunks 1  teleports 3  visits 400  failed 2"))
+	for line in world_page_lines(World_Facts{}) {
+		testing.expect(t, !strings.has_prefix(line.text, "water awake"), line.text)
+	}
+}
+
 @(test)
 test_belt_items_count_every_lane :: proc(t: ^testing.T) {
 	network: Belt_Network

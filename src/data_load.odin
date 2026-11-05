@@ -240,12 +240,19 @@ Field_Player_Config :: struct {
 // 1/FIELD_WATER_FULL of a sample. Each tick an awake sample moves at most
 // the rate to each neighbour; a sample still for the still ticks sleeps;
 // fill at or below the minimum stops moving and drops by one every dry
-// ticks.
+// ticks. The pressure pull (0292): whether it runs, the samples one search
+// and one tick visit at most, and the dead band in fill under which a
+// level difference moves nothing. pressure is a bool and cannot be
+// refused when missing: it reads false, pressure off.
 Field_Water_Config :: struct {
-	fill_rate_per_tick:   int,
-	still_ticks_to_sleep: int,
-	minimum_fill:         int,
-	dry_ticks_per_step:   int,
+	fill_rate_per_tick:             int,
+	still_ticks_to_sleep:           int,
+	minimum_fill:                   int,
+	dry_ticks_per_step:             int,
+	pressure:                       bool,
+	pressure_visit_budget:          int,
+	pressure_visit_budget_per_tick: int,
+	minimum_head:                   int,
 }
 
 // A full water sample's fill: FIELD_WATER_FULL - MAXIMUM_DENSITY maps the
@@ -256,6 +263,13 @@ FIELD_WATER_FULL :: 254
 MAXIMUM_FIELD_WATER_STILL_TICKS :: 255
 // An hour at 60 ticks a second.
 MAXIMUM_FIELD_WATER_DRY_TICKS :: 216_000
+// The samples one pressure search visits at most (its stack is six
+// entries a visit), and the visits of one tick at most.
+MAXIMUM_FIELD_WATER_PRESSURE_VISITS :: 4096
+MAXIMUM_FIELD_WATER_PRESSURE_VISITS_PER_TICK :: 1_000_000
+// The dead band at most, a quarter cell: the study's sweep tilts the
+// surface from 16.
+MAXIMUM_FIELD_WATER_MINIMUM_HEAD :: 64
 
 // The shapes of a field brush (work item 0171, world_field_edit.odin): a
 // sphere round the hit, or the level mode, which flattens the sphere
@@ -1058,6 +1072,9 @@ field_water_problem :: proc(water: Field_Water_Config) -> string {
 		{"still_ticks_to_sleep", water.still_ticks_to_sleep, 1, MAXIMUM_FIELD_WATER_STILL_TICKS},
 		{"minimum_fill", water.minimum_fill, 1, FIELD_WATER_FULL - 1},
 		{"dry_ticks_per_step", water.dry_ticks_per_step, 1, MAXIMUM_FIELD_WATER_DRY_TICKS},
+		{"pressure_visit_budget", water.pressure_visit_budget, 1, MAXIMUM_FIELD_WATER_PRESSURE_VISITS},
+		{"pressure_visit_budget_per_tick", water.pressure_visit_budget_per_tick, 1, MAXIMUM_FIELD_WATER_PRESSURE_VISITS_PER_TICK},
+		{"minimum_head", water.minimum_head, 0, MAXIMUM_FIELD_WATER_MINIMUM_HEAD},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {

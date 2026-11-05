@@ -7,8 +7,249 @@ import "core:testing"
 // along -y and a shell is a level layer of samples.
 WATER_TEST_CHUNK_Y :: 100
 
+// The plain rule: pressure off and no band, so the older tests assert the
+// same bytes as before 0292.
 water_test_tuning :: proc() -> Field_Water_Tuning {
-	return {rate = 64, still_ticks = 20, minimum_fill = 8, dry_ticks = 60}
+	return {rate = 64, still_ticks = 20, minimum_fill = 8, dry_ticks = 60, pressure = false, pressure_visit_budget = 128, pressure_visit_budget_per_tick = 20000, minimum_head = 0}
+}
+
+// The shipped pressure values (0292) over the plain tuning.
+water_pressure_test_tuning :: proc() -> Field_Water_Tuning {
+	tuning := water_test_tuning()
+	tuning.pressure, tuning.minimum_head = true, 4
+	return tuning
+}
+
+field_water_level_at :: proc(world: ^Field_World, sample: Sample_Coordinate) -> i64 {
+	return field_water_level(field_water_span(sample), water_fill_at(world, sample))
+}
+
+// The level of the highest wet sample of the column, in the test chunks'
+// local coordinates.
+highest_wet_level_in_column :: proc(world: ^Field_World, x, z, low_y, high_y: i32) -> (level: i64, found: bool) {
+	for y := high_y; y >= low_y; y -= 1 {
+		sample := water_test_sample({x, y, z})
+		if water_fill_at(world, sample) > 0 {
+			return field_water_level_at(world, sample), true
+		}
+	}
+	return 0, false
+}
+
+// A lake, a sealed tunnel from its bed and a shaft open to air at the
+// tunnel's end: the lake at x lake_x..lake_x+7, the tunnel at the bed's
+// height, the shaft the sample past it. The lake's twelve lowest layers
+// are poured full (768 samples).
+carve_water_test_u_tube :: proc(world: ^Field_World, lake_x: i32, tunnel_length: i32) {
+	carve_water_test_box(world, water_test_sample({lake_x, 3, 4}), water_test_sample({lake_x + 7, 20, 11}))
+	carve_water_test_box(world, water_test_sample({lake_x + 8, 3, 7}), water_test_sample({lake_x + 8 + tunnel_length - 1, 3, 7}))
+	carve_water_test_box(world, water_test_sample({lake_x + 8 + tunnel_length, 3, 7}), water_test_sample({lake_x + 8 + tunnel_length, 25, 7}))
+	pour_test_water(world, water_test_sample({lake_x, 3, 4}), water_test_sample({lake_x + 7, 14, 11}), FIELD_WATER_FULL)
+}
+
+// Steps until no chunk is awake, summing the tick's teleports; returns
+// the ticks run, or limit.
+settle_test_water_counting_teleports :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: ^u64, limit: int, teleports: ^i64) -> int {
+	for ticks in 0 ..< limit {
+		if len(world.water_awake_chunks) == 0 {
+			return ticks
+		}
+		tick^ += 1
+		step_field_water(world, tuning, tick^)
+		teleports^ += world.water_pressure.teleports
+	}
+	return limit
+}
+
+// 0292: a lateral head at or under minimum_head moves nothing, one above
+// it moves; a drop into a cell entirely below is never banded.
+@(test)
+test_the_dead_band_holds_a_head_at_or_under_the_minimum_but_not_a_drop :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	chunk := world.chunks[{0, WATER_TEST_CHUNK_Y, 0}]
+	first, second := Sample_Coordinate{0, 3200, 0}, Sample_Coordinate{1, 3200, 0}
+	carve_water_test_box(&world, first, second)
+	testing.expect_value(t, field_water_span(first), field_water_span(second))
+	first_index, second_index := sample_to_field_index(first), sample_to_field_index(second)
+	neighbour := Field_Water_Neighbour{chunk = chunk, index = second_index, sample = second, span = field_water_span(second)}
+	tuning := water_pressure_test_tuning()
+	chunk.water[first_index], chunk.water[second_index] = 100, 96
+	testing.expect_value(t, field_water_share(chunk, first_index, field_water_span(first), neighbour, tuning, 100), 0)
+	chunk.water[second_index] = 95
+	testing.expect_value(t, field_water_share(chunk, first_index, field_water_span(first), neighbour, tuning, 100), 2)
+	chunk.water[second_index] = 96
+	tuning.minimum_head = 0
+	testing.expect_value(t, field_water_share(chunk, first_index, field_water_span(first), neighbour, tuning, 100), 2)
+
+	above := Sample_Coordinate{0, 3201, 0}
+	carve_water_test_box(&world, above, above)
+	above_index := sample_to_field_index(above)
+	chunk.water[above_index], chunk.water[first_index] = 1, 253
+	testing.expect(t, field_water_is_drop(field_water_span(above), field_water_span(first)), "the cell below lies entirely under the cell above")
+	below := Field_Water_Neighbour{chunk = chunk, index = first_index, sample = first, span = field_water_span(first)}
+	tuning.minimum_head = 4
+	testing.expect_value(t, field_water_share(chunk, above_index, field_water_span(above), below, tuning, 1), 1)
+}
+
+// 0292: with pressure on, a shaft joined to a lake's bed, beside it or
+// through a tunnel, fills to the lake's level.
+@(test)
+test_a_shaft_joined_to_a_lake_bed_rises_to_the_lake_level :: proc(t: ^testing.T) {
+	for tunnel_length in ([2]i32{1, 8}) {
+		world := make_water_test_world()
+		defer destroy_field_world(&world)
+		carve_water_test_u_tube(&world, 4, tunnel_length)
+		poured := total_test_water(&world)
+		testing.expect_value(t, poured, 768 * FIELD_WATER_FULL)
+		tuning := water_pressure_test_tuning()
+		tick: u64 = 0
+		teleports: i64 = 0
+		ticks := settle_test_water_counting_teleports(&world, tuning, &tick, 1500, &teleports)
+		testing.expectf(t, ticks < 1500, "tunnel %d: the shaft settles in %d ticks", tunnel_length, ticks)
+		testing.expectf(t, teleports > 0, "tunnel %d: the shaft fills by teleports", tunnel_length)
+		testing.expect_value(t, total_test_water(&world), poured)
+		// The band's staircase tilts the lake's surface away from the
+		// tunnel's corner (its far corner stands up to 19 fill over the
+		// shaft), so the shaft is held against the surface's mean.
+		highest, sum := min(i64), i64(0)
+		for z in i32(4) ..= 11 {
+			for x in i32(4) ..= 11 {
+				level, found := highest_wet_level_in_column(&world, x, z, 3, 20)
+				testing.expect(t, found, "every lake column holds water")
+				highest, sum = max(highest, level), sum + level
+			}
+		}
+		lake := sum / 64
+		shaft_x := 12 + tunnel_length
+		shaft, shaft_wet := highest_wet_level_in_column(&world, shaft_x, 7, 3, 25)
+		testing.expectf(t, shaft_wet, "tunnel %d: the shaft holds water", tunnel_length)
+		testing.expectf(t, lake - shaft <= 12 && shaft <= highest + 2, "tunnel %d: the shaft at %d against the lake's mean %d and highest %d (ticks %d, teleports %d)", tunnel_length, shaft, lake, highest, ticks, teleports)
+		highest_wet := i32(-1)
+		for y in i32(3) ..= 25 {
+			if water_fill_at(&world, water_test_sample({shaft_x, y, 7})) > 0 {
+				highest_wet = y
+			}
+		}
+		for y in i32(3) ..< highest_wet {
+			testing.expect_value(t, water_fill_at(&world, water_test_sample({shaft_x, y, 7})), FIELD_WATER_FULL)
+		}
+	}
+}
+
+// 0292: with pressure off the plain rule fills the tunnel to the band's
+// staircase (each sample up to minimum_head under the one before it) and
+// nothing rises in the shaft.
+@(test)
+test_the_shaft_stays_at_the_tunnel_with_pressure_off :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	carve_water_test_u_tube(&world, 4, 8)
+	poured := total_test_water(&world)
+	tuning := water_pressure_test_tuning()
+	tuning.pressure = false
+	tick: u64 = 0
+	for _ in 0 ..< 1500 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	testing.expect(t, water_fill_at(&world, water_test_sample({19, 3, 7})) >= FIELD_WATER_FULL - 8 * tuning.minimum_head, "the tunnel's end holds the staircase's fill")
+	testing.expect_value(t, water_fill_at(&world, water_test_sample({20, 4, 7})), 0)
+	testing.expect_value(t, total_test_water(&world), poured)
+}
+
+// 0292: a settled lake is still: no awake sample, no search, no move.
+@(test)
+test_a_settled_lake_stays_asleep :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	carve_water_test_box(&world, water_test_sample(BASIN_LOW), water_test_sample(BASIN_HIGH))
+	pour_test_water(&world, water_test_sample({4, 3, 4}), water_test_sample({8, 3, 7}), FIELD_WATER_FULL)
+	poured := total_test_water(&world)
+	testing.expect_value(t, poured, 20 * FIELD_WATER_FULL)
+	tuning := water_pressure_test_tuning()
+	tick: u64 = 0
+	testing.expect(t, settle_test_water(&world, tuning, &tick, 5000) < 5000, "the lake settles")
+	for _ in 0 ..< 3000 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		testing.expect_value(t, len(world.water_awake_chunks), 0)
+		testing.expect_value(t, total_test_water(&world), poured)
+		testing.expect_value(t, world.water_pressure, Field_Water_Pressure_Counts{})
+	}
+}
+
+// 0292: a film at a sill dries alone and sleeps; the lake beside it is
+// never woken to top it up (the old rule woke the lake every dry step).
+@(test)
+test_a_film_at_a_sill_dries_without_waking_the_lake :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	carve_water_test_box(&world, water_test_sample(BASIN_LOW), water_test_sample(BASIN_HIGH))
+	pour_test_water(&world, water_test_sample({4, 3, 4}), water_test_sample({11, 9, 11}), FIELD_WATER_FULL)
+	// A top layer of 10 fill: the lake gives the sill half, then tops the
+	// cell beside it up and levels the sill to the minimum fill, where the
+	// band holds (a pour of 12 lifts the sill to 9, no film).
+	pour_test_water(&world, water_test_sample({4, 10, 4}), water_test_sample({11, 10, 11}), 10)
+	tuning := water_pressure_test_tuning()
+	tick: u64 = 0
+	testing.expect(t, settle_test_water(&world, tuning, &tick, 5000) < 5000, "the lake settles")
+
+	// The sill: a hole in the wall at the top layer's height, ground under
+	// it, on the wall nearer the centre, so the lake cell beside it lies
+	// farther out and the sill is a film by field_water_is_film (on the
+	// far wall the lake cell beside it counts as nearer, with room, and the
+	// sill never dries).
+	sill := water_test_sample({3, 10, 7})
+	testing.expect(t, field_world_set_sample(&world, sill, FIELD_AIR_SAMPLE))
+	film_seen := false
+	for _ in 0 ..< 20 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		fill := water_fill_at(&world, sill)
+		film_seen ||= fill >= 1 && fill <= tuning.minimum_fill
+	}
+	testing.expect(t, film_seen, "the lake tops the sill up to a film")
+	for _ in 0 ..< 600 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	testing.expect_value(t, len(world.water_awake_chunks), 0)
+	testing.expect_value(t, water_fill_at(&world, sill), 0)
+	total := total_test_water(&world)
+	for _ in 0 ..< 3000 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		testing.expect_value(t, len(world.water_awake_chunks), 0)
+		testing.expect_value(t, total_test_water(&world), total)
+	}
+}
+
+// 0292: the search crosses a chunk border, and the two chunks inserted in
+// either order give the same bytes, the same failed bits and counts.
+@(test)
+test_the_pressure_search_crosses_a_chunk_border_alike_in_either_order :: proc(t: ^testing.T) {
+	first := make_ground_chunks_water_world({0, 1})
+	defer destroy_field_world(&first)
+	second := make_ground_chunks_water_world({1, 0})
+	defer destroy_field_world(&second)
+	tuning := water_pressure_test_tuning()
+	for world in ([2]^Field_World{&first, &second}) {
+		carve_water_test_u_tube(world, 20, 8)
+		tick: u64 = 0
+		for _ in 0 ..< 600 {
+			tick += 1
+			step_field_water(world, tuning, tick)
+		}
+	}
+	for coordinate, chunk in first.chunks {
+		other := second.chunks[coordinate]
+		testing.expect_value(t, field_chunk_state_hash(chunk), field_chunk_state_hash(other))
+		testing.expect(t, chunk.water_pressure_failed == other.water_pressure_failed)
+		testing.expect(t, chunk.water_flow == other.water_flow)
+	}
+	testing.expect(t, water_fill_at(&first, water_test_sample({36, 4, 7})) > 0, "the search crossed the border")
+	testing.expect_value(t, first.water_pressure, second.water_pressure)
 }
 
 water_test_sample :: proc(local: [3]i32, chunk_x: i32 = 0) -> Sample_Coordinate {
@@ -258,11 +499,16 @@ test_a_film_below_the_minimum_stops_and_dries :: proc(t: ^testing.T) {
 TWO_CHUNK_BASIN_LOW :: [3]i32{20, 3, 4}
 TWO_CHUNK_BASIN_HIGH :: [3]i32{FIELD_CHUNK_SIZE + 11, 20, 11}
 
-make_two_chunk_water_world :: proc(order: [2]i32) -> Field_World {
+make_ground_chunks_water_world :: proc(order: [2]i32) -> Field_World {
 	world: Field_World
 	for x in order {
 		field_world_insert_chunk(&world, make_ground_water_test_chunk(x))
 	}
+	return world
+}
+
+make_two_chunk_water_world :: proc(order: [2]i32) -> Field_World {
+	world := make_ground_chunks_water_world(order)
 	carve_water_test_box(&world, water_test_sample(TWO_CHUNK_BASIN_LOW), water_test_sample(TWO_CHUNK_BASIN_HIGH))
 	return world
 }

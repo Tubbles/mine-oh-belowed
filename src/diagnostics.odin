@@ -98,6 +98,12 @@ World_Facts :: struct {
 	field_session:      bool,
 	sealed_room_inside: bool,
 	sealed_room_oxygen: Oxygen_Supply,
+	// The water field's last tick (0292): the chunks with an awake
+	// sample, and the pressure pull's teleports, visits and failures.
+	water_awake_chunk_count: int,
+	water_teleports:         i64,
+	water_visits:            i64,
+	water_failures:          i64,
 }
 
 // What the pages and the F4 overlay read besides Render_Facts and
@@ -191,6 +197,7 @@ world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
 		// field's feet line says where the player is.
 		append_line(&lines, false, "tick %d", facts.tick)
 		append_line(&lines, false, "%s", sealed_room_line(facts.sealed_room_inside, facts.sealed_room_oxygen))
+		append_line(&lines, false, "water awake chunks %d  teleports %d  visits %d  failed %d", facts.water_awake_chunk_count, facts.water_teleports, facts.water_visits, facts.water_failures)
 	} else {
 		chunk := facts.player_chunk
 		append_line(&lines, false, "tick %d  chunk %d %d %d  biome %s", facts.tick, chunk.x, chunk.y, chunk.z, facts.biome_name)
