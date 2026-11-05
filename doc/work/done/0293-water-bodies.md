@@ -1,6 +1,6 @@
 # 0293: Water bodies
 
-Status: verified (2026-11-05)
+Status: landed (2026-11-05, 302d061)
 
 Milestone: the water tech demo (0291); the water stream after 0292.
 
