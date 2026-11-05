@@ -49,6 +49,19 @@ import "core:slice"
 // search that finds no head sets the sample's failed bit, which any change
 // next door clears. A film's drying is a sink, not a flow: it wakes nobody,
 // and a film nobody refills above the band dries alone and sleeps.
+//
+// The bodies model (0293, world_field_water_body.odin): step_field_water
+// dispatches on the world's model. Under bodies the still water is the
+// bodies', and the rule above runs only on the front (the awake samples
+// that are no body's still water) in two passes: every front sample plans
+// its moves from the fills the tick began with, its own falling with every
+// move so it never overspends and each receiver's promised fill counted
+// against its room, then every move applies at once. A move into a body's
+// water or the sea's goes to its volume. Front water resting on a body's
+// water, or that a body's level rose over, is absorbed; front water still
+// for the still ticks in no body's basin seeds a body. No pressure pull and
+// no sea edge refill run under bodies: the bodies level and the sea's claim
+// owns its samples.
 
 FIELD_SAMPLE_BIT_WORDS :: FIELD_CHUNK_SAMPLE_COUNT / 64
 // One bit per sample, by sample index.
@@ -88,6 +101,15 @@ Field_Water_Tuning :: struct {
 	pressure_visit_budget:          i32,
 	pressure_visit_budget_per_tick: i64,
 	minimum_head:                   i32,
+	// The bodies (0293): the weir's fill a tick per sample of head, its
+	// cap and floor a tick and its dead band in fill over the sill, the
+	// flood's visits a tick and its rise cap in samples.
+	weir_rate_per_head:             i64,
+	weir_cap:                       i32,
+	weir_floor:                     i32,
+	weir_dead_band:                 i32,
+	flood_visit_budget:             i64,
+	flood_rise_samples:             i32,
 }
 
 // The last tick's pressure pulls (Field_World.water_pressure): the
@@ -157,6 +179,12 @@ make_field_water_tuning :: proc(config: Field_Water_Config) -> Field_Water_Tunin
 		pressure_visit_budget = i32(config.pressure_visit_budget),
 		pressure_visit_budget_per_tick = i64(config.pressure_visit_budget_per_tick),
 		minimum_head = i32(config.minimum_head),
+		weir_rate_per_head = i64(config.weir_rate_per_head),
+		weir_cap = i32(config.weir_cap),
+		weir_floor = i32(config.weir_floor),
+		weir_dead_band = i32(config.weir_dead_band),
+		flood_visit_budget = i64(config.flood_visit_budget),
+		flood_rise_samples = i32(config.flood_rise_samples),
 	}
 }
 
@@ -392,7 +420,15 @@ field_water_neighbour_fill :: proc(neighbour: Field_Water_Neighbour) -> i32 {
 // Whether a sample has anything to do awake: it holds water, or it is
 // air that can be a source (a spring, or below sea level beside the sea)
 // or that rests on full water (a pull may fill it).
+// Under bodies a body's or the sea's still sample never wakes (its byte
+// is derived), and only water or a source has something to do.
 field_water_can_wake :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int) -> bool {
+	if world.water_model == .Bodies {
+		if chunk.water_owner[index] != WATER_OWNER_NONE && !field_sample_bit(&chunk.water_awake, index) {
+			return false
+		}
+		return chunk.water[index] > 0 || field_sample_bit(&chunk.water_source, index)
+	}
 	if chunk.water[index] > 0 || field_sample_bit(&chunk.water_source, index) {
 		return true
 	}
@@ -428,10 +464,25 @@ field_water_is_full_below :: proc(span: Field_Water_Span, neighbour: Field_Water
 // Every change next door clears the pull's failed bit, whether or not
 // the sample can wake.
 wake_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int) {
-	clear_field_sample_bit(&chunk.water_pressure_failed, index)
+	// The bit is hashed (0293): clearing it is a change.
+	if field_sample_bit(&chunk.water_pressure_failed, index) {
+		clear_field_sample_bit(&chunk.water_pressure_failed, index)
+		note_field_chunk_change(chunk)
+	}
 	if !field_water_can_wake(world, chunk, index) {
 		return
 	}
+	chunk.water_still[index] = 0
+	note_field_chunk_change(chunk)
+	if !field_sample_bit(&chunk.water_awake, index) {
+		set_field_sample_bit(&chunk.water_awake, index)
+		world.water_awake_chunks[chunk.coordinate] = {}
+	}
+}
+
+// Wakes the sample whatever it holds: front water put into a body's dry
+// air, or old water the bodies take over as front.
+force_wake_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int) {
 	chunk.water_still[index] = 0
 	note_field_chunk_change(chunk)
 	if !field_sample_bit(&chunk.water_awake, index) {
@@ -468,6 +519,55 @@ set_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sa
 	wake_field_water_around(world, chunk, index, sample)
 }
 
+// A body's derived byte (0293): the byte, the meshes and the edited
+// chunks follow, nobody wakes; nothing when it is unchanged.
+write_field_water_quiet :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, fill: i32) {
+	if i32(chunk.water[index]) == fill {
+		return
+	}
+	chunk.water[index] = u8(fill)
+	note_field_chunk_change(chunk)
+	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
+	world.edited_chunks[chunk.coordinate] = {}
+}
+
+// Front water under bodies (0293): the byte as set_field_water writes it,
+// and the sample awake whoever owns it, so water in a body's dry air is
+// front.
+set_front_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, fill: i32) {
+	set_field_water(world, chunk, index, sample, fill)
+	if fill > 0 || field_sample_bit(&chunk.water_source, index) {
+		force_wake_field_water_sample(world, chunk, index)
+	}
+}
+
+// Whether a move into the sample goes to a body's volume: the sea's
+// samples, and a body's still samples under its level (the released
+// samples are the pending flood's). The body is returned.
+field_water_sample_credits :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, span: Field_Water_Span) -> (id: Water_Body_Id, credited: bool) {
+	owner := chunk.water_owner[index]
+	if owner == WATER_OWNER_SEA {
+		return WATER_BODY_SEA, true
+	}
+	body, owned := water_owner_body(world, owner)
+	if !owned || body == WATER_BODY_SEA {
+		return 0, false
+	}
+	if field_sample_bit(&chunk.water_awake, index) && !field_sample_bit(&chunk.water_source, index) {
+		return 0, false
+	}
+	return body, field_water_bottom(span) < world.water_bodies[body].level
+}
+
+// The front's fill in a sample: a body's still sample holds none of it
+// (its byte is the body's).
+field_water_front_fill :: proc(chunk: ^Field_Chunk, index: int) -> i32 {
+	if chunk.water_owner[index] != WATER_OWNER_NONE && !field_sample_bit(&chunk.water_awake, index) {
+		return 0
+	}
+	return i32(chunk.water[index])
+}
+
 // A place turned a wet sample into ground: its fill goes to the
 // neighbours with room in sample order, and what fits nowhere is dropped
 // and counted.
@@ -488,6 +588,10 @@ displace_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: in
 // out, and the sample and its neighbours wake, so a dug hole floods on
 // the next tick.
 follow_field_terrain_with_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate) {
+	if world.water_model == .Bodies {
+		follow_field_terrain_with_bodies(world, chunk, index, sample)
+		return
+	}
 	if chunk.density[index] > 0 && chunk.water[index] > 0 {
 		displace_field_water(world, chunk, index, sample)
 	}
@@ -610,11 +714,20 @@ field_water_share :: proc(chunk: ^Field_Chunk, index: int, span: Field_Water_Spa
 	if room == 0 {
 		return 0
 	}
-	difference := field_water_level_exact(span, i32(chunk.water[index])) - field_water_level_exact(neighbour.span, i32(neighbour.chunk.water[neighbour.index]))
-	if difference <= (field_water_is_drop(span, neighbour.span) ? 0 : field_water_band(tuning)) {
+	return field_water_share_from(span, i32(chunk.water[index]), neighbour.span, i32(neighbour.chunk.water[neighbour.index]), room, tuning, left)
+}
+
+// The pure core of field_water_share: the levels from the two fills given
+// (the bodies' front gives the tick-start fills, 0293).
+field_water_share_from :: proc(span: Field_Water_Span, fill: i32, neighbour_span: Field_Water_Span, neighbour_fill: i32, room: i32, tuning: Field_Water_Tuning, left: i32) -> i32 {
+	if room <= 0 {
 		return 0
 	}
-	heights := span.height + neighbour.span.height
+	difference := field_water_level_exact(span, fill) - field_water_level_exact(neighbour_span, neighbour_fill)
+	if difference <= (field_water_is_drop(span, neighbour_span) ? 0 : field_water_band(tuning)) {
+		return 0
+	}
+	heights := span.height + neighbour_span.height
 	equal := floor_divide_i64(2 * difference - heights + 2 * heights - 1, 2 * heights)
 	return i32(min(equal, i64(left), i64(room), i64(tuning.rate)))
 }
@@ -822,11 +935,48 @@ field_chunk_coordinate_before :: proc(first, second: Field_Chunk_Coordinate) -> 
 	return first.x < second.x
 }
 
-// The water's tick (in tick_field_simulation, after the edits): the
-// samples awake when it began, chunks in coordinate order, each moving at
-// most the fill it held then. A sample woken during the step runs from
-// the next tick. The pressure counts are the tick's.
+// For a binary search over coordinates in that order.
+field_chunk_coordinate_order :: proc(first, second: Field_Chunk_Coordinate) -> slice.Ordering {
+	switch {
+	case field_chunk_coordinate_before(first, second):
+		return .Less
+	case field_chunk_coordinate_before(second, first):
+		return .Greater
+	}
+	return .Equal
+}
+
+// A map's chunk coordinates in that order, in the temp allocator.
+sorted_field_chunk_coordinates :: proc(chunks: map[Field_Chunk_Coordinate]$T) -> []Field_Chunk_Coordinate {
+	coordinates := make([dynamic]Field_Chunk_Coordinate, 0, len(chunks), context.temp_allocator)
+	for coordinate in chunks {
+		append(&coordinates, coordinate)
+	}
+	slice.sort_by(coordinates[:], field_chunk_coordinate_before)
+	return coordinates[:]
+}
+
+field_sample_before :: proc(first, second: Sample_Coordinate) -> bool {
+	return field_chunk_coordinate_before(Field_Chunk_Coordinate(first), Field_Chunk_Coordinate(second))
+}
+
+// The water's tick (in tick_field_simulation, after the edits), by the
+// world's model: teleport (0292's rule) or bodies (0293,
+// step_field_water_bodies).
 step_field_water :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
+	switch world.water_model {
+	case .Teleport:
+		step_field_water_teleport(world, tuning, tick)
+	case .Bodies:
+		step_field_water_bodies(world, tuning, tick)
+	}
+}
+
+// The teleport model's tick: the samples awake when it began, chunks in
+// coordinate order, each moving at most the fill it held then. A sample
+// woken during the step runs from the next tick. The pressure counts are
+// the tick's.
+step_field_water_teleport :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
 	world.water_pressure = {}
 	coordinates := make([dynamic]Field_Chunk_Coordinate, 0, len(world.water_awake_chunks), context.temp_allocator)
 	for coordinate in world.water_awake_chunks {
@@ -855,4 +1005,474 @@ step_field_water :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: 
 			delete_key(&world.water_awake_chunks, pass.chunk.coordinate)
 		}
 	}
+}
+
+// The bodies model's front (0293).
+
+// One chunk's front in a tick: the samples awake when it began and their
+// fills then, the fill each sample gains or loses (planned in pass one,
+// applied in pass two), what moved out of it, and its films. A receiving
+// chunk with no awake sample gets one too (field_water_front_pass_for).
+Field_Water_Front_Pass :: struct {
+	chunk:   ^Field_Chunk,
+	awake:   Field_Sample_Bits,
+	film:    Field_Sample_Bits,
+	start:   [FIELD_CHUNK_SAMPLE_COUNT]u8,
+	delta:   [FIELD_CHUNK_SAMPLE_COUNT]i16,
+	outflow: [FIELD_CHUNK_SAMPLE_COUNT]u8,
+}
+
+Field_Water_Front :: struct {
+	passes:   [dynamic]^Field_Water_Front_Pass,
+	by_chunk: map[Field_Chunk_Coordinate]^Field_Water_Front_Pass,
+	// Inflow into each body's water this tick, by id.
+	inflow:   []i64,
+}
+
+field_water_front_pass_for :: proc(front: ^Field_Water_Front, chunk: ^Field_Chunk) -> ^Field_Water_Front_Pass {
+	if pass := front.by_chunk[chunk.coordinate] or_else nil; pass != nil {
+		return pass
+	}
+	pass := new(Field_Water_Front_Pass, context.temp_allocator)
+	pass.chunk, pass.start = chunk, chunk.water
+	front.by_chunk[chunk.coordinate] = pass
+	append(&front.passes, pass)
+	return pass
+}
+
+// Before any planning, every awake spring of the front refills to full
+// (its tick-start fill too), so no sender planned before it promises
+// water against a fill the refill then overwrites. A spring the sea owns
+// or under a body's level pours into it in pass one instead.
+refill_field_water_front_springs :: proc(world: ^Field_World, front: ^Field_Water_Front) {
+	for pass in front.passes {
+		chunk := pass.chunk
+		for word in 0 ..< FIELD_SAMPLE_BIT_WORDS {
+			bits := pass.awake[word] & chunk.water_source[word]
+			for bits != 0 {
+				bit := u64(intrinsics.count_trailing_zeros(bits))
+				bits &= field_bits_above(bit)
+				index := word * 64 + int(bit)
+				if chunk.density[index] > 0 || chunk.water_owner[index] == WATER_OWNER_SEA || pass.start[index] == FIELD_WATER_FULL {
+					continue
+				}
+				sample := field_chunk_sample(chunk, index)
+				if _, credited := field_water_sample_credits(world, chunk, index, field_water_span(sample)); credited {
+					continue
+				}
+				pass.start[index] = FIELD_WATER_FULL
+				set_front_water(world, chunk, index, sample, FIELD_WATER_FULL)
+			}
+		}
+	}
+}
+
+// Pass one for an awake sample: ground and the sea's samples sleep (a
+// spring the sea owns pours into it); a spring under a body's level pours
+// into the body (through the inflow, so its level follows); a spring was
+// refilled before the planning; a film dries; else the sample
+// plans its moves to its six neighbours, nearer the centre first, each the
+// share of the levels the tick began with, at most what it has left and
+// the receiver's room after what others promised it. A move into a body's
+// water or the sea's counts against the room and goes to the volume.
+plan_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, pass: ^Field_Water_Front_Pass, index: int, tuning: Field_Water_Tuning, tick: u64) {
+	chunk := pass.chunk
+	if chunk.density[index] > 0 {
+		chunk.water_flow[index] = 0
+		sleep_field_water_sample(chunk, index)
+		return
+	}
+	source := field_sample_bit(&chunk.water_source, index)
+	sample := field_chunk_sample(chunk, index)
+	span := field_water_span(sample)
+	if chunk.water_owner[index] == WATER_OWNER_SEA {
+		chunk.water_flow[index] = 0
+		if source {
+			world.water_to_sea += i64(tuning.rate)
+		} else {
+			sleep_field_water_sample(chunk, index)
+		}
+		return
+	}
+	if source {
+		if id, credited := field_water_sample_credits(world, chunk, index, span); credited {
+			front.inflow[id] += i64(tuning.rate)
+			chunk.water_flow[index] = 0
+			return
+		}
+	}
+	world.water_body_counts.front += 1
+	neighbours := field_water_neighbours(world, chunk, sample)
+	start := i32(pass.start[index])
+	if start == 0 {
+		return
+	}
+	if field_water_is_film(start, span, neighbours, tuning) {
+		set_field_sample_bit(&pass.film, index)
+		if tuning.dry_ticks > 0 && tick % tuning.dry_ticks == 0 {
+			dry_field_water_film(world, chunk, index, sample)
+			if chunk.water[index] == 0 {
+				chunk.water_flow[index] = 0
+				sleep_field_water_sample(chunk, index)
+			}
+		}
+		return
+	}
+	left := start
+	for nearer in ([2]bool{true, false}) {
+		for neighbour in neighbours {
+			if (neighbour.span.middle < span.middle) != nearer || left == 0 {
+				continue
+			}
+			receiver := neighbour.chunk
+			if receiver == nil || receiver.density[neighbour.index] > 0 {
+				continue
+			}
+			receiver_pass := front.by_chunk[receiver.coordinate] or_else nil
+			body, credited := field_water_sample_credits(world, receiver, neighbour.index, neighbour.span)
+			receiver_start := receiver_pass != nil ? i32(receiver_pass.start[neighbour.index]) : i32(receiver.water[neighbour.index])
+			if !credited && receiver.water_owner[neighbour.index] != WATER_OWNER_NONE && !field_sample_bit(&receiver.water_awake, neighbour.index) {
+				// A body's dry air holds no front water: its byte is stale.
+				receiver_start = 0
+			}
+			promised := receiver_pass != nil ? i32(receiver_pass.delta[neighbour.index]) : 0
+			amount := field_water_share_from(span, start, neighbour.span, receiver_start, FIELD_WATER_FULL - receiver_start - promised, tuning, left)
+			if amount <= 0 {
+				continue
+			}
+			pass.delta[index] -= i16(amount)
+			pass.outflow[index] += u8(amount)
+			left -= amount
+			receiver_pass = field_water_front_pass_for(front, receiver)
+			receiver_pass.delta[neighbour.index] += i16(amount)
+			if credited {
+				if body == WATER_BODY_SEA {
+					world.water_to_sea += i64(amount)
+				} else {
+					front.inflow[body] += i64(amount)
+				}
+			}
+		}
+	}
+}
+
+// Pass two, chunks in coordinate order: every planned fill applies at
+// once (the front sample and its neighbours wake, which is how the front
+// spreads; a body's water took its share as volume), and an awake front
+// sample counts a still tick when nothing moved through it (a steady drip
+// is not still) and it held its fill.
+apply_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front) {
+	slice.sort_by(front.passes[:], proc(first, second: ^Field_Water_Front_Pass) -> bool {
+		return field_chunk_coordinate_before(first.chunk.coordinate, second.chunk.coordinate)
+	})
+	for pass in front.passes {
+		chunk := pass.chunk
+		note_field_chunk_change(chunk)
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			delta := i32(pass.delta[index])
+			planned := field_sample_bit(&pass.awake, index)
+			if delta == 0 && !planned {
+				continue
+			}
+			sample := field_chunk_sample(chunk, index)
+			span := field_water_span(sample)
+			_, credited := field_water_sample_credits(world, chunk, index, span)
+			if delta != 0 && !credited {
+				set_front_water(world, chunk, index, sample, field_water_front_fill(chunk, index) + delta)
+			}
+			if !planned || credited || !field_sample_bit(&chunk.water_awake, index) || chunk.water_owner[index] == WATER_OWNER_SEA {
+				continue
+			}
+			chunk.water_flow[index] = pass.outflow[index]
+			if field_sample_bit(&pass.film, index) || delta != 0 || pass.outflow[index] != 0 || chunk.water[index] != pass.start[index] {
+				chunk.water_still[index] = 0
+			} else {
+				chunk.water_still[index] = u8(min(int(chunk.water_still[index]) + 1, 255))
+			}
+		}
+	}
+	for amount, id in front.inflow {
+		if amount == 0 || !world.water_bodies[id].alive {
+			continue
+		}
+		world.water_bodies[id].volume += amount
+		world.water_body_counts.absorbed += amount
+		relevel_water_body(world, Water_Body_Id(id))
+	}
+}
+
+// A front sample into a body: its fill to the volume (the sea's discards
+// it), its owner the body (the cell into the curve when it was another's
+// or no one's), its byte the body's, asleep. A sample above the sea's
+// level stays no one's.
+absorb_front_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, span: Field_Water_Span, target: Water_Body_Id, changed: []bool) {
+	fill := i64(chunk.water[index])
+	level := water_body_level(world, target)
+	if target == WATER_BODY_SEA {
+		world.water_to_sea += fill
+	} else {
+		world.water_bodies[target].volume += fill
+		changed[target] = true
+	}
+	world.water_body_counts.absorbed += fill
+	owner := chunk.water_owner[index]
+	new_owner := water_owner_of(target)
+	if target == WATER_BODY_SEA && field_sea_fill(level, span) == 0 {
+		new_owner = WATER_OWNER_NONE
+	}
+	if owner != new_owner {
+		if previous, owned := water_owner_body(world, owner); owned && previous != WATER_BODY_SEA && owner != WATER_OWNER_RELEASED {
+			remove_water_body_cell(&world.water_bodies[previous], &world.water_bodies[previous].loaded, span)
+			changed[previous] = true
+		}
+		if target != WATER_BODY_SEA {
+			body := &world.water_bodies[target]
+			add_water_body_cell(body, &body.loaded, span)
+			insert_sorted_field_chunk(&body.chunks, chunk.coordinate)
+		}
+		chunk.water_owner[index] = new_owner
+		note_field_chunk_change(chunk)
+	}
+	write_field_water_quiet(world, chunk, index, sample, field_sea_fill(level, span))
+	if !field_sample_bit(&chunk.water_source, index) {
+		sleep_field_water_sample(chunk, index)
+	}
+}
+
+Field_Water_Seed_Candidate :: struct {
+	bottom: i64,
+	sample: Sample_Coordinate,
+}
+
+// Absorb and seed, over the front samples the passes ran: one whose
+// nearer neighbour is a body's water (or the sea's) joins it; one a
+// body's level rose over joins that body; one still for the still ticks
+// joins the body whose dry air it rests in, or, in no body's, is a seed.
+// Seeds flood in (bottom, sample order) while the budget lasts and no
+// flood is pending; one left over stays awake and is tried next tick. An
+// empty front sample still for the still ticks sleeps. A spring is neither
+// absorbed nor a seed: it pours every tick (pass one).
+settle_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, tuning: Field_Water_Tuning, budget: ^i64) {
+	changed := make([]bool, len(world.water_bodies), context.temp_allocator)
+	candidates := make([dynamic]Field_Water_Seed_Candidate, context.temp_allocator)
+	for pass in front.passes {
+		chunk := pass.chunk
+		for word in 0 ..< FIELD_SAMPLE_BIT_WORDS {
+			bits := pass.awake[word]
+			for bits != 0 {
+				bit := u64(intrinsics.count_trailing_zeros(bits))
+				bits &= field_bits_above(bit)
+				index := word * 64 + int(bit)
+				if chunk.density[index] > 0 || !field_sample_bit(&chunk.water_awake, index) {
+					continue
+				}
+				owner := chunk.water_owner[index]
+				// A spring pours (pass one) and is never absorbed: its byte is
+				// refilled every tick.
+				if owner == WATER_OWNER_SEA || owner == WATER_OWNER_RELEASED || field_sample_bit(&chunk.water_source, index) {
+					continue
+				}
+				own, owned := water_owner_body(world, owner)
+				if owned && water_body_is_pending(world, own) {
+					continue
+				}
+				fill := chunk.water[index]
+				sample := field_chunk_sample(chunk, index)
+				span := field_water_span(sample)
+				target := -1
+				if fill > 0 {
+					for neighbour in field_water_neighbours(world, chunk, sample) {
+						if neighbour.chunk == nil || neighbour.span.middle >= span.middle || neighbour.chunk.density[neighbour.index] > 0 {
+							continue
+						}
+						if body, credited := field_water_sample_credits(world, neighbour.chunk, neighbour.index, neighbour.span); credited && !water_body_is_pending(world, body) {
+							target = int(body)
+							break
+						}
+					}
+				}
+				if target < 0 && owned && field_water_bottom(span) < world.water_bodies[own].level {
+					target = int(own)
+				}
+				if target < 0 && fill > 0 && chunk.water_still[index] >= tuning.still_ticks {
+					if owned {
+						target = int(own)
+					} else {
+						append(&candidates, Field_Water_Seed_Candidate{field_water_bottom(span), sample})
+					}
+				}
+				if target >= 0 {
+					if len(changed) < len(world.water_bodies) {
+						changed = make([]bool, len(world.water_bodies), context.temp_allocator)
+					}
+					absorb_front_water(world, chunk, index, sample, span, Water_Body_Id(target), changed)
+				} else if fill == 0 && chunk.water_still[index] >= tuning.still_ticks {
+					chunk.water_flow[index] = 0
+					sleep_field_water_sample(chunk, index)
+				}
+			}
+		}
+	}
+	for is_changed, id in changed {
+		if is_changed {
+			relevel_water_body(world, Water_Body_Id(id))
+		}
+	}
+	slice.sort_by(candidates[:], proc(first, second: Field_Water_Seed_Candidate) -> bool {
+		if first.bottom != second.bottom {
+			return first.bottom < second.bottom
+		}
+		return field_sample_before(first.sample, second.sample)
+	})
+	for candidate in candidates {
+		if budget^ <= 0 || world.water_flood.active {
+			break
+		}
+		chunk, index := field_world_cell(world, candidate.sample)
+		if chunk == nil || chunk.water_owner[index] != WATER_OWNER_NONE || !field_sample_bit(&chunk.water_awake, index) || chunk.water[index] == 0 {
+			continue
+		}
+		if !seed_water_body(world, candidate.sample, tuning, budget) {
+			break
+		}
+	}
+}
+
+// The bodies model's tick: the sea's claim, the dirty bodies' floods
+// (the pending one first), the weirs; then the front's two passes, the
+// inflow into the bodies, absorption and seeding. The chunks whose front
+// went to sleep leave the awake set. Nothing here reads the pressure
+// pull.
+step_field_water_bodies :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
+	world.water_body_counts = {}
+	world.water_pressure = {}
+	make_sea_water_body(world)
+	claim_sea(world)
+	budget := tuning.flood_visit_budget
+	reflood_dirty_water_bodies(world, tuning, &budget)
+	emit_water_body_weirs(world, tuning)
+	coordinates := make([dynamic]Field_Chunk_Coordinate, 0, len(world.water_awake_chunks), context.temp_allocator)
+	for coordinate in world.water_awake_chunks {
+		append(&coordinates, coordinate)
+	}
+	slice.sort_by(coordinates[:], field_chunk_coordinate_before)
+	front := Field_Water_Front {
+		passes   = make([dynamic]^Field_Water_Front_Pass, 0, len(coordinates), context.temp_allocator),
+		by_chunk = make(map[Field_Chunk_Coordinate]^Field_Water_Front_Pass, context.temp_allocator),
+		inflow   = make([]i64, len(world.water_bodies), context.temp_allocator),
+	}
+	for coordinate in coordinates {
+		chunk := world.chunks[coordinate] or_else nil
+		if chunk == nil {
+			delete_key(&world.water_awake_chunks, coordinate)
+			continue
+		}
+		pass := field_water_front_pass_for(&front, chunk)
+		pass.awake = chunk.water_awake
+	}
+	refill_field_water_front_springs(world, &front)
+	awake_passes := len(front.passes)
+	for pass_index in 0 ..< awake_passes {
+		pass := front.passes[pass_index]
+		for word in 0 ..< FIELD_SAMPLE_BIT_WORDS {
+			bits := pass.awake[word]
+			for bits != 0 {
+				bit := u64(intrinsics.count_trailing_zeros(bits))
+				plan_field_water_front(world, &front, pass, word * 64 + int(bit), tuning, tick)
+				bits &= field_bits_above(bit)
+			}
+		}
+	}
+	apply_field_water_front(world, &front)
+	settle_field_water_front(world, &front, tuning, &budget)
+	for pass in front.passes {
+		if !field_sample_bits_any(&pass.chunk.water_awake) {
+			delete_key(&world.water_awake_chunks, pass.chunk.coordinate)
+		}
+	}
+	for body in world.water_bodies {
+		if body.alive {
+			world.water_body_counts.bodies += 1
+		}
+	}
+}
+
+// After a terrain set under bodies: a body's still sample turned ground
+// leaves the body, which keeps its volume and floods again (its level
+// rises over the lost cell); the sea's leaves the sea; front water there
+// goes to the neighbours, a body's water among them taking it as volume.
+// The body of the sample and of its six neighbours floods again this tick
+// (a hole beside or under a lake: the step runs after the edits), and an
+// air sample below the sea level beside the sea seeds the sea's claim.
+follow_field_terrain_with_bodies :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate) {
+	span := field_water_span(sample)
+	if chunk.density[index] > 0 {
+		owner := chunk.water_owner[index]
+		front_water := field_water_front_fill(chunk, index)
+		if owner != WATER_OWNER_NONE {
+			if id, owned := water_owner_body(world, owner); owned && id != WATER_BODY_SEA {
+				if owner != WATER_OWNER_RELEASED {
+					remove_water_body_cell(&world.water_bodies[id], &world.water_bodies[id].loaded, span)
+				}
+				mark_water_body_dirty(world, id)
+			}
+			chunk.water_owner[index] = WATER_OWNER_NONE
+			note_field_chunk_change(chunk)
+			if front_water == 0 {
+				write_field_water_quiet(world, chunk, index, sample, 0)
+			}
+		}
+		if front_water > 0 {
+			displace_front_water(world, chunk, index, sample, front_water)
+		}
+	}
+	follow_cell :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate) {
+		owner := chunk.water_owner[index]
+		if id, owned := water_owner_body(world, owner); owned {
+			mark_water_body_dirty(world, id)
+		}
+		if chunk.density[index] <= 0 && owner != WATER_OWNER_SEA && owner != WATER_OWNER_RELEASED && field_sea_fill(world.water_planet.sea_level, field_water_span(sample)) > 0 && field_sample_beside_sea(world, chunk, sample) {
+			append(&world.water_sea_seeds, sample)
+		}
+	}
+	follow_cell(world, chunk, index, sample)
+	for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
+		if neighbour, neighbour_index := field_water_cell(world, chunk, sample, offset); neighbour != nil {
+			follow_cell(world, neighbour, neighbour_index, sample + Sample_Coordinate(offset))
+		}
+	}
+	wake_field_water_around(world, chunk, index, sample)
+}
+
+// Front water a place displaced: to the neighbours with room in sample
+// order, all of it into a body's water or the sea's when one is beside;
+// what fits nowhere is dropped and counted.
+displace_front_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, fill: i32) {
+	left := fill
+	set_field_water(world, chunk, index, sample, 0)
+	for neighbour in field_water_neighbours(world, chunk, sample) {
+		if left == 0 {
+			break
+		}
+		if neighbour.chunk == nil || neighbour.chunk.density[neighbour.index] > 0 {
+			continue
+		}
+		if body, credited := field_water_sample_credits(world, neighbour.chunk, neighbour.index, neighbour.span); credited {
+			if body == WATER_BODY_SEA {
+				world.water_to_sea += i64(left)
+			} else {
+				world.water_bodies[body].volume += i64(left)
+				relevel_water_body(world, body)
+			}
+			left = 0
+			break
+		}
+		base := field_water_front_fill(neighbour.chunk, neighbour.index)
+		amount := min(left, FIELD_WATER_FULL - base)
+		if amount > 0 {
+			set_front_water(world, neighbour.chunk, neighbour.index, neighbour.sample, base + amount)
+			left -= amount
+		}
+	}
+	world.water_dropped += i64(left)
 }

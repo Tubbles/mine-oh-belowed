@@ -165,6 +165,9 @@ test_the_tech_demo_starts_at_the_spring_without_a_save_or_a_fall :: proc(t: ^tes
 	simulation := &session.simulation
 	testing.expect_value(t, session.planet.radius_metres, 4000)
 	testing.expect_value(t, simulation.world.settings.water_model, Water_Model.Bodies)
+	// The field runs the bodies model with the sea as body 0 (0293).
+	testing.expect_value(t, simulation.field.world.water_model, Water_Model.Bodies)
+	testing.expect(t, len(simulation.field.world.water_bodies) > 0 && simulation.field.world.water_bodies[WATER_BODY_SEA].sea)
 	testing.expect(t, !session.save.enabled, "saving is off")
 	testing.expect_value(t, session.save.location.directory_name, "")
 	testing.expect_value(t, simulation.field.arrival, Field_Arrival{})

@@ -9,16 +9,19 @@ import "run_length"
 //   then for each plane in this order: the densities, the materials, the
 //   tints, the water fills, the water's still ticks (0172), the awake bits
 //   and the source bits (each as FIELD_SAMPLE_BIT_BYTES bytes, the words
-//   little endian), the block light and the sky light (0173):
+//   little endian), the water owners' low bytes and high bytes (0293,
+//   Field_Chunk.water_owner), the pressure pull's failed bits (0292, as
+//   the other bits), the block light and the sky light (0173):
 //   u32 run count, run count times (u8 value, u32 count).
 // A chunk equal to its generation writes nothing and regenerates from the
 // seed; a changed chunk is written whole. The water's flow is measured
-// again each tick and not written, and the pressure pull's failed bit
-// (0292) is left out too: a decoded chunk starts with it clear and the
-// first tick rebuilds it. The version follows the block chunk's
-// CHUNK_FORMAT_VERSION (1), so block chunk bytes are refused by name;
-// version 2 had no water and 3 no light, and both are refused too, since
-// the field is not saved yet.
+// again each tick and not written. Version 4 (before 0293) had no owner
+// and no failed planes and is still read: both read zero, and the caller
+// learns it (decode_field_chunk), since under the bodies model such a
+// chunk's water settles into bodies again (insert_field_chunk_arrival).
+// The version follows the block chunk's CHUNK_FORMAT_VERSION (1), so block
+// chunk bytes are refused by name; version 2 had no water and 3 no light,
+// and both are refused too, since the field was not saved then.
 //
 // The light is saved, not rebuilt on load as the block light is: the sky
 // of an edited chunk depends on edits in the chunks above it along the
@@ -29,10 +32,13 @@ import "run_length"
 // emitter in a neighbour chunk still lights the chunk again when that
 // neighbour arrives (seed_field_chunk_light).
 
-FIELD_CHUNK_FORMAT_VERSION :: 4
+FIELD_CHUNK_FORMAT_VERSION :: 5
+// The version before the owner and failed planes (0293), still read.
+FIELD_CHUNK_FORMAT_VERSION_WITHOUT_OWNERS :: 4
 FIELD_RUN_BYTE_SIZE :: 5
 FIELD_SAMPLE_BIT_BYTES :: FIELD_CHUNK_SAMPLE_COUNT / 8
-FIELD_CHUNK_PLANE_COUNT :: 9
+FIELD_CHUNK_PLANE_COUNT :: 12
+FIELD_CHUNK_PLANE_COUNT_WITHOUT_OWNERS :: 9
 
 // The terrain and the water alike: what a tick changes and generation
 // makes. The light is left out, since an arrival seeds it and the
@@ -45,7 +51,9 @@ field_chunk_terrain_and_water_equal :: proc(first, second: ^Field_Chunk) -> bool
 		slice.equal(first.water[:], second.water[:]) &&
 		slice.equal(first.water_still[:], second.water_still[:]) &&
 		first.water_awake == second.water_awake &&
-		first.water_source == second.water_source \
+		first.water_source == second.water_source &&
+		slice.equal(first.water_owner[:], second.water_owner[:]) &&
+		first.water_pressure_failed == second.water_pressure_failed \
 	)
 }
 
@@ -117,6 +125,9 @@ encode_field_chunk :: proc(chunk: ^Field_Chunk, allocator := context.allocator) 
 		chunk.water_still[:],
 		field_sample_bits_to_bytes(chunk.water_awake),
 		field_sample_bits_to_bytes(chunk.water_source),
+		water_owner_plane_bytes(chunk, 0),
+		water_owner_plane_bytes(chunk, 1),
+		field_sample_bits_to_bytes(chunk.water_pressure_failed),
 		chunk.block_light[:],
 		chunk.sky_light[:],
 	}
@@ -147,41 +158,62 @@ read_field_plane :: proc(reader: ^Byte_Reader, plane: []u8) -> bool {
 	return offset == len(plane)
 }
 
+// The owners' low (part 0) or high (part 1) bytes as a plane.
+water_owner_plane_bytes :: proc(chunk: ^Field_Chunk, part: uint) -> []u8 {
+	bytes := make([]u8, FIELD_CHUNK_SAMPLE_COUNT, context.temp_allocator)
+	for owner, index in chunk.water_owner {
+		bytes[index] = u8(owner >> (8 * part))
+	}
+	return bytes
+}
+
 // Fills chunk only when the bytes are whole and of this version; the
 // problem names what was refused.
 decode_field_chunk_delta :: proc(data: []byte, chunk: ^Field_Chunk) -> (problem: string) {
+	problem, _ = decode_field_chunk(data, chunk)
+	return problem
+}
+
+// As decode_field_chunk_delta; old_owner_plane is true for version 4
+// bytes, whose owner and failed planes read zero.
+decode_field_chunk :: proc(data: []byte, chunk: ^Field_Chunk) -> (problem: string, old_owner_plane: bool) {
 	reader := Byte_Reader {
 		data = data,
 	}
 	version, has_version := read_u16(&reader)
 	if !has_version {
-		return "field chunk: no version"
+		return "field chunk: no version", false
 	}
-	if version != FIELD_CHUNK_FORMAT_VERSION {
-		return fmt.tprintf("field chunk: format version %d is not %d, which this build reads", version, FIELD_CHUNK_FORMAT_VERSION)
+	if version != FIELD_CHUNK_FORMAT_VERSION && version != FIELD_CHUNK_FORMAT_VERSION_WITHOUT_OWNERS {
+		return fmt.tprintf("field chunk: format version %d is not %d, which this build reads", version, FIELD_CHUNK_FORMAT_VERSION), false
 	}
+	old_owner_plane = version == FIELD_CHUNK_FORMAT_VERSION_WITHOUT_OWNERS
 	decoded := new(Field_Chunk, context.temp_allocator)
 	for axis in 0 ..< 3 {
 		value, ok := read_u32(&reader)
 		if !ok {
-			return "field chunk: the coordinate is cut off"
+			return "field chunk: the coordinate is cut off", false
 		}
 		decoded.coordinate[axis] = i32(value)
 	}
 	awake := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
 	source := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
-	planes := [FIELD_CHUNK_PLANE_COUNT][]u8{transmute([]u8)decoded.density[:], transmute([]u8)decoded.material[:], decoded.tint[:], decoded.water[:], decoded.water_still[:], awake, source, decoded.block_light[:], decoded.sky_light[:]}
-	for plane in planes {
+	failed := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
+	owner_low := make([]u8, FIELD_CHUNK_SAMPLE_COUNT, context.temp_allocator)
+	owner_high := make([]u8, FIELD_CHUNK_SAMPLE_COUNT, context.temp_allocator)
+	planes := [FIELD_CHUNK_PLANE_COUNT][]u8{transmute([]u8)decoded.density[:], transmute([]u8)decoded.material[:], decoded.tint[:], decoded.water[:], decoded.water_still[:], awake, source, owner_low, owner_high, failed, decoded.block_light[:], decoded.sky_light[:]}
+	old_planes := [FIELD_CHUNK_PLANE_COUNT_WITHOUT_OWNERS][]u8{transmute([]u8)decoded.density[:], transmute([]u8)decoded.material[:], decoded.tint[:], decoded.water[:], decoded.water_still[:], awake, source, decoded.block_light[:], decoded.sky_light[:]}
+	for plane in (old_owner_plane ? old_planes[:] : planes[:]) {
 		if !read_field_plane(&reader, plane) {
-			return "field chunk: malformed sample runs"
+			return "field chunk: malformed sample runs", false
 		}
 	}
 	if reader.offset != len(data) {
-		return "field chunk: bytes after the sky light"
+		return "field chunk: bytes after the sky light", false
 	}
 	for fill in decoded.water {
 		if fill > FIELD_WATER_FULL {
-			return fmt.tprintf("field chunk: water fill %d is above %d", fill, FIELD_WATER_FULL)
+			return fmt.tprintf("field chunk: water fill %d is above %d", fill, FIELD_WATER_FULL), false
 		}
 	}
 	// Ground holds no light; a malformed chunk's light there is dropped,
@@ -193,14 +225,18 @@ decode_field_chunk_delta :: proc(data: []byte, chunk: ^Field_Chunk) -> (problem:
 	}
 	decoded.water_awake = field_sample_bits_from_bytes(awake)
 	decoded.water_source = field_sample_bits_from_bytes(source)
+	decoded.water_pressure_failed = field_sample_bits_from_bytes(failed)
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		decoded.water_owner[index] = Water_Owner(owner_low[index]) | Water_Owner(owner_high[index]) << 8
+	}
 	for material in decoded.material {
 		if material > max(Field_Material) {
-			return fmt.tprintf("field chunk: unknown material %d", u8(material))
+			return fmt.tprintf("field chunk: unknown material %d", u8(material)), false
 		}
 	}
 	// The crater overlay is the generation's, not the save's (0271).
 	decoded.crater_overlay = chunk.crater_overlay
 	chunk^ = decoded^
 	chunk.dirty = true
-	return ""
+	return "", old_owner_plane
 }

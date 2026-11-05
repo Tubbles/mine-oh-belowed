@@ -1162,7 +1162,13 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 	field_session := session.simulation.field.enabled
 	room, inside := sealed_room_at_feet(&world.entities, session_local_player(session).field.position)
 	field_world := &session.simulation.field.world
+	bodies := field_session && session.simulation.world.settings.water_model == .Bodies
 	return World_Facts {
+		water_bodies = bodies,
+		water_body_count = bodies ? int(field_world.water_body_counts.bodies) : 0,
+		water_front_count = bodies ? int(field_world.water_body_counts.front) : 0,
+		water_flood_visits = bodies ? field_world.water_body_counts.flood_visits : 0,
+		water_to_sea = bodies ? field_world.water_to_sea : 0,
 		field_session = field_session,
 		sealed_room_inside = field_session && inside,
 		sealed_room_oxygen = room.oxygen,

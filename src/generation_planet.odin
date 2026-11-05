@@ -438,7 +438,9 @@ field_chunk_reaches_below :: proc(origin: Sample_Coordinate, sea_level: i64) -> 
 
 // Every sample below the sea level that is not ground holds the sea's
 // fill (field_sea_fill), asleep: full below, the cells the sea level
-// crosses partly, so the generated sea is level and settled.
+// crosses partly, so the generated sea is level and settled. Each is the
+// sea's (WATER_OWNER_SEA, the bodies model's body 0, 0293) under either
+// model, so a pristine coastal chunk equals its generation.
 fill_field_chunk_sea :: proc(planet: Planet, spacing_millimetres: int, chunk: ^Field_Chunk) {
 	sea_level := field_sea_level(planet, spacing_millimetres)
 	origin := field_chunk_origin(chunk.coordinate)
@@ -447,7 +449,11 @@ fill_field_chunk_sea :: proc(planet: Planet, spacing_millimetres: int, chunk: ^F
 	}
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		if chunk.density[index] <= 0 {
-			chunk.water[index] = u8(field_sea_fill(sea_level, field_water_span(origin + Sample_Coordinate(field_index_to_local(index)))))
+			fill := field_sea_fill(sea_level, field_water_span(origin + Sample_Coordinate(field_index_to_local(index))))
+			chunk.water[index] = u8(fill)
+			if fill > 0 {
+				chunk.water_owner[index] = WATER_OWNER_SEA
+			}
 		}
 	}
 }

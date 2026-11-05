@@ -184,6 +184,17 @@ test_the_world_page_counts_the_water_pressure :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0293: under the bodies model the World page counts the
+// bodies, the front, the flood's visits and the sea's inflow.
+@(test)
+test_the_world_page_counts_the_water_bodies :: proc(t: ^testing.T) {
+	facts := World_Facts{field_session = true, water_bodies = true, water_body_count = 2, water_front_count = 17, water_flood_visits = 1856, water_to_sea = 9}
+	testing.expect(t, contains_line(world_page_lines(facts), "water bodies 2  front 17  flood visits 1856  to sea 9"))
+	for line in world_page_lines(World_Facts{field_session = true}) {
+		testing.expect(t, !strings.has_prefix(line.text, "water bodies"), line.text)
+	}
+}
+
 @(test)
 test_belt_items_count_every_lane :: proc(t: ^testing.T) {
 	network: Belt_Network

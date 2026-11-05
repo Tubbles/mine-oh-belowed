@@ -176,11 +176,16 @@ malformed_field_chunk_runs :: proc() -> [3][]byte {
 		append(bytes, value)
 		append_u32(bytes, count)
 	}
-	// The water's and the light's planes after the first three, all zero.
+	// The water's and the light's planes after the first three, all zero:
+	// the fills, the still ticks, the awake and source bits, the owners'
+	// two planes and the failed bits (0293), the two lights.
 	water_planes :: proc(bytes: ^[dynamic]byte) {
 		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
 		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
 		plane_bytes(bytes, 0, FIELD_SAMPLE_BIT_BYTES)
+		plane_bytes(bytes, 0, FIELD_SAMPLE_BIT_BYTES)
+		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
+		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
 		plane_bytes(bytes, 0, FIELD_SAMPLE_BIT_BYTES)
 		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
 		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)

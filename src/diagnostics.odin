@@ -104,6 +104,14 @@ World_Facts :: struct {
 	water_teleports:         i64,
 	water_visits:            i64,
 	water_failures:          i64,
+	// The water bodies' last tick (0293), under the bodies model: the live
+	// bodies (the sea among them), the front samples the passes ran, the
+	// flood's visits and the inflow the sea discarded in all.
+	water_bodies:       bool,
+	water_body_count:   int,
+	water_front_count:  int,
+	water_flood_visits: i64,
+	water_to_sea:       i64,
 }
 
 // What the pages and the F4 overlay read besides Render_Facts and
@@ -203,6 +211,9 @@ world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
 		append_line(&lines, false, "tick %d", facts.tick)
 		append_line(&lines, false, "%s", sealed_room_line(facts.sealed_room_inside, facts.sealed_room_oxygen))
 		append_line(&lines, false, "water awake chunks %d  teleports %d  visits %d  failed %d", facts.water_awake_chunk_count, facts.water_teleports, facts.water_visits, facts.water_failures)
+		if facts.water_bodies {
+			append_line(&lines, false, "water bodies %d  front %d  flood visits %d  to sea %d", facts.water_body_count, facts.water_front_count, facts.water_flood_visits, facts.water_to_sea)
+		}
 	} else {
 		chunk := facts.player_chunk
 		append_line(&lines, false, "tick %d  chunk %d %d %d  biome %s", facts.tick, chunk.x, chunk.y, chunk.z, facts.biome_name)

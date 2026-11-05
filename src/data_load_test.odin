@@ -200,6 +200,40 @@ test_field_water_pressure_values_are_bounded :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0293: the water bodies' keys of field_water are bounded and
+// a value outside its bound is named.
+@(test)
+test_field_water_body_values_are_bounded :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	water := config.field_water
+	testing.expect_value(t, water.weir_rate_per_head, 51)
+	testing.expect_value(t, water.weir_cap, 63)
+	testing.expect_value(t, water.weir_floor, 15)
+	testing.expect_value(t, water.weir_dead_band, 8)
+	testing.expect_value(t, water.flood_visit_budget, 4000)
+	testing.expect_value(t, water.flood_rise_samples, 64)
+	testing.expect_value(t, field_water_problem(water), "")
+	cases := [?]struct {
+		change: proc(water: ^Field_Water_Config),
+		key:    string,
+	} {
+		{proc(water: ^Field_Water_Config) {water.weir_rate_per_head = 0}, "field_water.weir_rate_per_head "},
+		{proc(water: ^Field_Water_Config) {water.weir_rate_per_head = 4065}, "field_water.weir_rate_per_head "},
+		{proc(water: ^Field_Water_Config) {water.weir_cap = 255}, "field_water.weir_cap "},
+		{proc(water: ^Field_Water_Config) {water.weir_floor = 0}, "field_water.weir_floor "},
+		{proc(water: ^Field_Water_Config) {water.weir_dead_band = 255}, "field_water.weir_dead_band "},
+		{proc(water: ^Field_Water_Config) {water.flood_visit_budget = 0}, "field_water.flood_visit_budget "},
+		{proc(water: ^Field_Water_Config) {water.flood_rise_samples = 257}, "field_water.flood_rise_samples "},
+	}
+	for entry in cases {
+		changed := water
+		entry.change(&changed)
+		problem := field_water_problem(changed)
+		testing.expectf(t, strings.has_prefix(problem, entry.key), "%q: %q", entry.key, problem)
+	}
+}
+
 // Work item 0228: the state copy first, the edits directory's second,
 // none while the overlay is off.
 @(test)

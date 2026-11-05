@@ -595,9 +595,13 @@ test_a_save_from_before_the_arrival_loads_landed :: proc(t: ^testing.T) {
 	tick_field_test_simulation(&session.simulation, simulation_content, {})
 	testing.expect(t, session.simulation.field.arrival.landed_tick != 0)
 	files := encode_save_files(&session.simulation, simulation_content, "before the arrival", 0)
+	// The water bodies' table (0293) follows the arrival's; a save from
+	// before the arrival ends before both.
+	water_table := make([dynamic]byte, context.temp_allocator)
+	write_water_body_table(&water_table, &session.simulation.field.world)
 	end_session(session)
 	ARRIVAL_TABLE_BYTES :: 24
-	files.entities = files.entities[:len(files.entities) - ARRIVAL_TABLE_BYTES]
+	files.entities = files.entities[:len(files.entities) - ARRIVAL_TABLE_BYTES - len(water_table)]
 	loaded := load_test_field_save(config, content, &files)
 	defer end_session(loaded)
 	testing.expect_value(t, loaded.simulation.field.arrival, Field_Arrival{})

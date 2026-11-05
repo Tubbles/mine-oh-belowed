@@ -112,6 +112,11 @@ start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Co
 		}
 	}
 	field.world.water_planet = make_field_water_planet(seed, session.planet, field.spacing_millimetres)
+	field.world.water_model = simulation.world.settings.water_model
+	make_sea_water_body(&field.world)
+	if len(field.world.water_bodies) > 0 {
+		field.world.water_bodies[WATER_BODY_SEA].level = field.world.water_planet.sea_level
+	}
 	field.chunk_set.restoring = plan.loading && len(field.chunk_set.chunks) > 0
 	world := &simulation.world
 	generation := make_planet_generation(seed, session.planet, field.spacing_millimetres)

@@ -104,6 +104,13 @@ field_brushes = [
 // is the dead band in fill (4 is about 1/64 of a sample): a level
 // difference at or under it moves nothing except into a cell entirely
 // below, so a settled lake is still.
+// The water bodies (work item 0293), read only under the bodies model of
+// the tech demo: a body over its sill hands weir_rate_per_head fill a tick
+// per sample of head to its spill (51 is about 200 litres a cell of head
+// at 1 m), between weir_floor and weir_cap fill a tick, and nothing while
+// it stands weir_dead_band fill or less over the sill's volume (8 is 1/32
+// sample); a flood visits flood_visit_budget samples a tick at most and
+// rises flood_rise_samples samples above its floor at most.
 field_water = {
 	fill_rate_per_tick = 64
 	still_ticks_to_sleep = 20
@@ -113,6 +120,12 @@ field_water = {
 	pressure_visit_budget = 128
 	pressure_visit_budget_per_tick = 20000
 	minimum_head = 4
+	weir_rate_per_head = 51
+	weir_cap = 63
+	weir_floor = 15
+	weir_dead_band = 8
+	flood_visit_budget = 4000
+	flood_rise_samples = 64
 }
 // The chunks every machine of a session simulates: this many chunks
 // around each player's chunk across and up and down (work item 0177).

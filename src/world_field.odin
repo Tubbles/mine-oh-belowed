@@ -84,9 +84,15 @@ Field_Chunk :: struct {
 	water_flow:   [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	water_awake:  Field_Sample_Bits,
 	water_source: Field_Sample_Bits,
+	// The body each sample belongs to under the bodies model (0293,
+	// world_field_water_body.odin, Water_Owner): none, the sea (the
+	// generation marks it), a body's id plus one, or the pending flood's
+	// released samples. Saved and hashed; a teleport world writes the
+	// generation's and never reads it.
+	water_owner:  [FIELD_CHUNK_SAMPLE_COUNT]Water_Owner,
 	// The pressure pull's failed bit (0292, pull_field_water_pressure):
-	// derived, never saved or hashed, zero on a fresh or decoded chunk and
-	// rebuilt by the first tick.
+	// zero on a fresh chunk, saved and hashed since 0293 (format version
+	// 5), so a joiner holds the host's failed searches.
 	water_pressure_failed: Field_Sample_Bits,
 	block_light:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	sky_light:    [FIELD_CHUNK_SAMPLE_COUNT]u8,
@@ -141,6 +147,18 @@ Field_World :: struct {
 	water_planet:       Field_Water_Planet,
 	// The light's queues and emitters (0173).
 	light:              Field_Lighting,
+	// The water bodies (0293, world_field_water_body.odin): the model the
+	// step runs (the world's setting, set beside water_planet), the body
+	// table by id (body 0 the sea under bodies), the pending flood, the
+	// samples a dig or an arrival hands to the sea's claim this tick, the
+	// inflow the sea discarded (saved), and the last tick's counts (debug
+	// only).
+	water_model:        Water_Model,
+	water_bodies:       [dynamic]Water_Body,
+	water_flood:        Water_Flood,
+	water_sea_seeds:    [dynamic]Sample_Coordinate,
+	water_to_sea:       i64,
+	water_body_counts:  Water_Body_Counts,
 }
 
 sample_spacing_is_valid :: proc(millimetres: int) -> bool {
@@ -287,9 +305,12 @@ mark_field_chunks_around_sample_dirty :: proc(world: ^Field_World, coordinate: F
 }
 
 // Takes ownership of a chunk made with new; it starts dirty so the mesher
-// meshes it once. The water beside it wakes (wake_field_water_facing), so
-// water held by the missing chunk flows on, and the light's tick compares
-// its borders with its neighbours' (seed_field_chunk_light).
+// meshes it once. Under the bodies model (0293) the bodies frozen in it
+// take its samples back (thaw_water_body_chunk) and its faces beside the
+// sea seed the sea's claim (seed_water_sea_facing). The water beside it
+// wakes (wake_field_water_facing), so water held by the missing chunk
+// flows on, and the light's tick compares its borders with its
+// neighbours' (seed_field_chunk_light).
 field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	chunk.dirty = true
 	if old := world.chunks[chunk.coordinate] or_else nil; old != nil {
@@ -299,8 +320,34 @@ field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	if field_sample_bits_any(&chunk.water_awake) {
 		world.water_awake_chunks[chunk.coordinate] = {}
 	}
+	if world.water_model == .Bodies {
+		thaw_water_body_chunk(world, chunk)
+		seed_water_sea_facing(world, chunk)
+	}
 	wake_field_water_facing(world, chunk.coordinate)
 	world.light.arrived_chunks[chunk.coordinate] = {}
+}
+
+// Takes a chunk out of the world without freeing it: under the bodies
+// model its samples go to their bodies' frozen parts first
+// (freeze_water_body_chunk), so a lake straddling the set's edge keeps
+// its volume and level. Nil when the chunk is not loaded.
+field_world_detach_chunk :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) -> ^Field_Chunk {
+	chunk := world.chunks[coordinate] or_else nil
+	if chunk == nil {
+		return nil
+	}
+	delete_key(&world.chunks, coordinate)
+	if world.water_model == .Bodies {
+		freeze_water_body_chunk(world, chunk)
+	}
+	return chunk
+}
+
+// A chunk leaves the world (unload_left_field_chunks frees it after the
+// save took its bytes).
+field_world_remove_chunk :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) {
+	destroy_field_chunk(field_world_detach_chunk(world, coordinate))
 }
 
 destroy_field_world :: proc(world: ^Field_World) {
@@ -311,5 +358,6 @@ destroy_field_world :: proc(world: ^Field_World) {
 	delete(world.edited_chunks)
 	delete(world.water_awake_chunks)
 	destroy_field_lighting(&world.light)
+	destroy_water_bodies(world)
 	world^ = {}
 }

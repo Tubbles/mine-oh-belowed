@@ -2,6 +2,7 @@ package game
 
 import "core:container/queue"
 import "core:slice"
+import "platform"
 
 // The field session's save (work item 0179, doc/architecture.md, Save
 // format). Two parts:
@@ -15,6 +16,10 @@ import "core:slice"
 //   drained early: draining them on the host at save time would leave the
 //   peers that did not drain them behind. Being in entities.bin, they are
 //   in the state hash (simulation_state_hash).
+// - The water bodies' table (0293, write_water_body_table), after the
+//   arrival table: the bodies by id with their curves, and the pending
+//   flood with its heap and its pushed samples as they stand, so a loaded
+//   machine finishes it on the same tick as the one that saved.
 // - field.bin (encode_field_file): chunks whole, as the field codec writes
 //   them (encode_field_chunk): every chunk of the set a tick changed, and
 //   the ones that left it with terrain or water unlike their generation
@@ -36,19 +41,6 @@ FIELD_FILE_MAGIC :: "MOBF"
 Field_Light_Source_Record :: struct {
 	sample: Sample_Coordinate,
 	level:  u8,
-}
-
-sorted_field_chunk_coordinates :: proc(chunks: map[Field_Chunk_Coordinate]$T) -> []Field_Chunk_Coordinate {
-	coordinates := make([dynamic]Field_Chunk_Coordinate, 0, len(chunks), context.temp_allocator)
-	for coordinate in chunks {
-		append(&coordinates, coordinate)
-	}
-	slice.sort_by(coordinates[:], field_chunk_coordinate_before)
-	return coordinates[:]
-}
-
-field_sample_before :: proc(first, second: Sample_Coordinate) -> bool {
-	return field_chunk_coordinate_before(Field_Chunk_Coordinate(first), Field_Chunk_Coordinate(second))
 }
 
 sorted_field_light_sources :: proc(sources: map[Sample_Coordinate]u8) -> []Field_Light_Source_Record {
@@ -135,6 +127,218 @@ read_field_tables :: proc(reader: ^Byte_Reader, field: ^Field_Simulation) -> boo
 		lighting.arrived_chunks[coordinate] = {}
 	}
 	field.world.water_dropped = i64(read_u64(reader) or_return)
+	return true
+}
+
+// The water bodies (0293).
+
+Water_Body_Record :: struct {
+	id:                             u16,
+	alive, sea, dirty, spill_to_sea: bool,
+	volume, level, written_level:   i64,
+	spill_level, spill_volume:      i64,
+	flood_visits, base:             i64,
+	seed, spill:                    Sample_Coordinate,
+}
+
+// A nonzero band of a body's curve: its loaded bands, or a frozen part's
+// (the chunk and the owner its samples carry there).
+Water_Body_Band_Record :: struct {
+	body:          u16,
+	frozen:        bool,
+	chunk:         Field_Chunk_Coordinate,
+	owner:         u16,
+	band:          i32,
+	opens, closes: i64,
+}
+
+Water_Flood_Record :: struct {
+	active, seeding, redirty: bool,
+	body:                     u16,
+	rise_samples:             i32,
+	sill, rise_limit:         i64,
+}
+
+Water_Flood_Pushed_Record :: struct {
+	chunk: Field_Chunk_Coordinate,
+	bits:  Field_Sample_Bits,
+}
+
+// The least bytes a record's body takes in a list (each field at its size;
+// a nested struct takes more, with its length and schema).
+WATER_BODY_RECORD_BYTES :: 2 + 4 + 7 * 8 + 2 * 12
+WATER_BODY_BAND_RECORD_BYTES :: 2 + 1 + 12 + 2 + 4 + 2 * 8
+WATER_FLOOD_RECORD_BYTES :: 3 + 2 + 4 + 2 * 8
+WATER_FLOOD_ENTRY_BYTES :: 8 + 12
+WATER_FLOOD_PUSHED_RECORD_BYTES :: 12 + FIELD_SAMPLE_BIT_BYTES
+
+// The list's count, read without moving the reader, fits the bytes left
+// at element_bytes a record, so a count cannot make read_list allocate
+// more than the file could hold.
+list_count_fits :: proc(reader: ^Byte_Reader, element_bytes: int) -> bool {
+	saved := reader.offset
+	count, ok := read_u32(reader)
+	reader.offset = saved
+	return ok && int(count) <= bytes_left(reader^) / element_bytes
+}
+
+append_water_body_bands :: proc(records: ^[dynamic]Water_Body_Band_Record, id: int, frozen: bool, chunk: Field_Chunk_Coordinate, owner: Water_Owner, bands: []Water_Body_Band) {
+	for band, index in bands {
+		if band != {} {
+			append(records, Water_Body_Band_Record{body = u16(id), frozen = frozen, chunk = chunk, owner = owner, band = i32(index), opens = band.opens, closes = band.closes})
+		}
+	}
+}
+
+// In a field world, after the arrival table (write_simulation_state): the
+// sea's discarded inflow, the bodies in id order (dead slots too, so the
+// ids keep their meaning), every nonzero band (bodies in id order, the
+// loaded bands then the frozen parts in order, bands rising), then the
+// pending flood, its heap as it stands and its pushed samples by chunk.
+// The chunk lists are derived (rebuild_water_body_chunks).
+write_water_body_table :: proc(bytes: ^[dynamic]byte, world: ^Field_World) {
+	append_u64(bytes, u64(world.water_to_sea))
+	bodies := make([dynamic]Water_Body_Record, 0, len(world.water_bodies), context.temp_allocator)
+	bands := make([dynamic]Water_Body_Band_Record, context.temp_allocator)
+	for &body, id in world.water_bodies {
+		append(&bodies, Water_Body_Record{id = u16(id), alive = body.alive, sea = body.sea, dirty = body.dirty, spill_to_sea = body.spill_to_sea, volume = body.volume, level = body.level, written_level = body.written_level, spill_level = body.spill_level, spill_volume = body.spill_volume, flood_visits = body.flood_visits, base = body.base, seed = body.seed, spill = body.spill})
+		append_water_body_bands(&bands, id, false, {}, 0, body.loaded[:])
+		for part in body.frozen {
+			append_water_body_bands(&bands, id, true, part.chunk, part.owner, part.bands[:])
+		}
+	}
+	write_list(bytes, bodies[:])
+	write_list(bytes, bands[:])
+	flood := &world.water_flood
+	record := Water_Flood_Record{active = flood.active, seeding = flood.seeding, redirty = flood.redirty, body = u16(flood.body), rise_samples = flood.rise_samples, sill = flood.sill, rise_limit = flood.rise_limit}
+	write_list(bytes, []Water_Flood_Record{record})
+	write_list(bytes, flood.heap[:])
+	pushed := make([dynamic]Water_Flood_Pushed_Record, 0, len(flood.pushed), context.temp_allocator)
+	for coordinate in sorted_field_chunk_coordinates(flood.pushed) {
+		append(&pushed, Water_Flood_Pushed_Record{chunk = coordinate, bits = flood.pushed[coordinate]^})
+	}
+	write_list(bytes, pushed[:])
+}
+
+// Into the world's (empty) table. A save from before 0293 ends before the
+// table and loads with no bodies and one log line; under bodies the sea is
+// added and the water settles into bodies over the first ticks. False for
+// malformed records: a list count beyond the bytes left, ids out of order
+// or past the owner plane's reach, a sea that is not body 0 or not alone,
+// a base off the bands or a base or level outside the far limit, a band
+// naming a dead or unknown body or past MAXIMUM_WATER_BODY_BAND, a frozen
+// band whose owner names no listed body, more band entries in all than
+// MAXIMUM_WATER_BODY_BAND_ENTRIES, a flood naming a body that is not alive
+// and dirty.
+read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool {
+	if bytes_left(reader^) == 0 {
+		platform.log_printf("save: written before the water bodies (0293), the water settles into bodies over the first ticks")
+		return true
+	}
+	world.water_to_sea = i64(read_u64(reader) or_return)
+	// Each count is checked against the bytes left at its record's encoded
+	// size before read_list allocates the records.
+	bodies := make([dynamic]Water_Body_Record, context.temp_allocator)
+	list_count_fits(reader, WATER_BODY_RECORD_BYTES) or_return
+	read_list(reader, &bodies) or_return
+	bands := make([dynamic]Water_Body_Band_Record, context.temp_allocator)
+	list_count_fits(reader, WATER_BODY_BAND_RECORD_BYTES) or_return
+	read_list(reader, &bands) or_return
+	floods := make([dynamic]Water_Flood_Record, context.temp_allocator)
+	list_count_fits(reader, WATER_FLOOD_RECORD_BYTES) or_return
+	read_list(reader, &floods) or_return
+	heap := make([dynamic]Water_Flood_Entry, context.temp_allocator)
+	list_count_fits(reader, WATER_FLOOD_ENTRY_BYTES) or_return
+	read_list(reader, &heap) or_return
+	pushed := make([dynamic]Water_Flood_Pushed_Record, context.temp_allocator)
+	list_count_fits(reader, WATER_FLOOD_PUSHED_RECORD_BYTES) or_return
+	read_list(reader, &pushed) or_return
+	if len(bodies) > MAXIMUM_WATER_BODIES || len(floods) != 1 {
+		return false
+	}
+	in_range :: proc(value: i64) -> bool {
+		return value >= 0 && value <= MAXIMUM_WATER_BODY_LEVEL
+	}
+	for record, id in bodies {
+		if int(record.id) != id || record.sea != (id == 0) || (id == 0 && !record.alive) {
+			return false
+		}
+		if record.base %% WATER_BODY_BAND != 0 || !in_range(record.base) || !in_range(record.level) || !in_range(record.written_level) {
+			return false
+		}
+	}
+	// The arrays the band records make: their lengths in all are bounded
+	// before anything is allocated.
+	Band_Array :: struct {
+		body:   u16,
+		frozen: bool,
+		chunk:  Field_Chunk_Coordinate,
+		owner:  u16,
+	}
+	lengths := make(map[Band_Array]int, context.temp_allocator)
+	for band in bands {
+		if int(band.body) >= len(bodies) || !bodies[band.body].alive || band.band < 0 || band.band >= MAXIMUM_WATER_BODY_BAND {
+			return false
+		}
+		if band.frozen && (band.owner < u16(WATER_OWNER_SEA) + 1 || Water_Owner(band.owner) == WATER_OWNER_RELEASED || int(band.owner) - 1 >= len(bodies)) {
+			return false
+		}
+		key := Band_Array{band.body, band.frozen, band.frozen ? band.chunk : {}, band.frozen ? band.owner : 0}
+		lengths[key] = max(lengths[key] or_else 0, int(band.band) + 1)
+	}
+	entries := 0
+	for _, length in lengths {
+		entries += length
+	}
+	if entries > MAXIMUM_WATER_BODY_BAND_ENTRIES {
+		return false
+	}
+	flood := floods[0]
+	if flood.active && (int(flood.body) >= len(bodies) || flood.body == 0 || !bodies[flood.body].alive || !bodies[flood.body].dirty || len(heap) == 0) {
+		return false
+	}
+	destroy_water_bodies(world)
+	world.water_bodies = {}
+	world.water_flood = {}
+	world.water_sea_seeds = {}
+	for record in bodies {
+		append(&world.water_bodies, Water_Body{alive = record.alive, sea = record.sea, dirty = record.dirty, spill_to_sea = record.spill_to_sea, volume = record.volume, level = record.level, written_level = record.written_level, spill_level = record.spill_level, spill_volume = record.spill_volume, flood_visits = record.flood_visits, base = record.base, seed = record.seed, spill = record.spill})
+	}
+	for band in bands {
+		body := &world.water_bodies[band.body]
+		target := &body.loaded
+		if band.frozen {
+			part_index := -1
+			for part, index in body.frozen {
+				if part.chunk == band.chunk && part.owner == Water_Owner(band.owner) {
+					part_index = index
+				}
+			}
+			if part_index < 0 {
+				append(&body.frozen, Water_Body_Frozen{chunk = band.chunk, owner = Water_Owner(band.owner)})
+				part_index = len(body.frozen) - 1
+			}
+			target = &body.frozen[part_index].bands
+		}
+		if len(target) <= int(band.band) {
+			resize(target, int(band.band) + 1)
+		}
+		target[band.band] = {opens = band.opens, closes = band.closes}
+	}
+	for &body in world.water_bodies {
+		sort_water_body_frozen(&body)
+	}
+	if flood.active {
+		target := &world.water_flood
+		target.active, target.seeding, target.redirty = true, flood.seeding, flood.redirty
+		target.body, target.rise_samples, target.sill, target.rise_limit = Water_Body_Id(flood.body), flood.rise_samples, flood.sill, flood.rise_limit
+		append(&target.heap, ..heap[:])
+		for record in pushed {
+			bits := new(Field_Sample_Bits)
+			bits^ = record.bits
+			target.pushed[record.chunk] = bits
+		}
+	}
 	return true
 }
 
@@ -244,9 +448,17 @@ restore_arrived_field_set :: proc(field: ^Field_Simulation) -> bool {
 			continue
 		}
 		delete_key(&field.arrived_chunks, coordinate)
-		apply_saved_field_chunk(field, chunk)
+		old_owner_plane := apply_saved_field_chunk(field, chunk)
 		restore_field_chunk(&field.world, chunk)
+		if old_owner_plane && field.world.water_model == .Bodies {
+			// Saved before the water bodies (0293): its sea is claimed and
+			// its water settles into bodies over the first ticks.
+			seed_water_sea_facing(&field.world, chunk)
+			wake_old_field_chunk_water(&field.world, chunk)
+		}
 	}
+	// The bodies' chunk lists are derived from the restored planes (0293).
+	rebuild_water_body_chunks(&field.world)
 	field.chunk_set.restoring = false
 	return true
 }
@@ -265,9 +477,9 @@ restore_field_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 // The state hash.
 
 // The terrain and the water of a chunk: density, material, fill, still
-// ticks, the awake and the source bits; not the tint, the light, the
-// flow or the pressure pull's failed bit (derived, 0292). Kept on the
-// chunk until a write of the tick
+// ticks, the awake and the source bits, the water owners (0293) and the
+// pressure pull's failed bits (0292, hashed since 0293); not the tint,
+// the light or the flow. Kept on the chunk until a write of the tick
 // (note_field_chunk_change) makes it stale.
 field_chunk_state_hash :: proc(chunk: ^Field_Chunk) -> u64 {
 	if chunk.hash_current {
@@ -281,6 +493,8 @@ field_chunk_state_hash :: proc(chunk: ^Field_Chunk) -> u64 {
 	result = fingerprint_bytes(result, chunk.water_still[:])
 	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_awake[:]))
 	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_source[:]))
+	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_owner[:]))
+	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_pressure_failed[:]))
 	chunk.state_hash, chunk.hash_current = result, true
 	return result
 }

@@ -103,16 +103,6 @@ next_field_chunks :: proc(set: Field_Chunk_Set, centres: []Field_Chunk_Coordinat
 	return coordinates[:]
 }
 
-field_chunk_coordinate_order :: proc(first, second: Field_Chunk_Coordinate) -> slice.Ordering {
-	switch {
-	case field_chunk_coordinate_before(first, second):
-		return .Less
-	case field_chunk_coordinate_before(second, first):
-		return .Greater
-	}
-	return .Equal
-}
-
 // The set unchanged: the same player chunks and every chunk loaded.
 field_set_settled :: proc(field: ^Field_Simulation, centres: []Field_Chunk_Coordinate) -> bool {
 	return slice.equal(field.chunk_set.centres[:], centres) && len(field.chunk_set.chunks) == len(field.world.chunks)
@@ -180,19 +170,37 @@ field_chunks_ready :: proc(state: ^Simulation_State) -> bool {
 // Its saved bytes over a generated chunk that has some, which then stays
 // marked changed, so the next save writes it again. field.bin decoded
 // every saved chunk once already (decode_saved_field_chunk), so a refusal
-// here only logs and the chunk regenerates.
-apply_saved_field_chunk :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
+// here only logs and the chunk regenerates. old_owner_plane: the bytes
+// were written before the water bodies (0293), with no owners.
+apply_saved_field_chunk :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) -> (old_owner_plane: bool) {
 	saved, found := field.saved_chunks[chunk.coordinate]
 	if !found {
-		return
+		return false
 	}
-	if problem := decode_field_chunk_delta(saved.bytes, chunk); problem != "" {
+	problem: string
+	if problem, old_owner_plane = decode_field_chunk(saved.bytes, chunk); problem != "" {
 		platform.log_printf("error: the saved field chunk %v does not load, it regenerates: %s", chunk.coordinate, problem)
 	} else {
 		chunk.modified = true
 	}
 	delete(saved.bytes)
 	delete_key(&field.saved_chunks, chunk.coordinate)
+	return problem == "" && old_owner_plane
+}
+
+// A chunk saved before the water bodies (0293) entering a bodies world:
+// its sea is claimed by the arrival's face seeds, and its other water no
+// one owns wakes, so it settles and seeds bodies by the normal rule with
+// its volume conserved as front water.
+wake_old_field_chunk_water :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
+	if world.water_model != .Bodies {
+		return
+	}
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if chunk.water[index] > 0 && chunk.water_owner[index] == WATER_OWNER_NONE && chunk.density[index] <= 0 {
+			force_wake_field_water_sample(world, chunk, index)
+		}
+	}
 }
 
 // A chunk entering the set: its saved bytes over the generated chunk when
@@ -204,8 +212,11 @@ apply_saved_field_chunk :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
 // whether the overlay wrote a sample.
 insert_field_chunk_arrival :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk, dig: bool) -> bool {
 	saved := chunk.coordinate in field.saved_chunks
-	apply_saved_field_chunk(field, chunk)
+	old_owner_plane := apply_saved_field_chunk(field, chunk)
 	field_world_insert_chunk(&field.world, chunk)
+	if old_owner_plane {
+		wake_old_field_chunk_water(&field.world, chunk)
+	}
 	mark_field_neighbours_dirty(&field.world, chunk.coordinate)
 	if !dig {
 		return false
@@ -286,7 +297,9 @@ update_simulated_field_chunks :: proc(state: ^Simulation_State, content: Simulat
 // differs from a fresh generation (field_saved_chunk); one the sea woke
 // and that slept back to its generation leaves nothing behind. The water
 // beside a leaving chunk below sea level wakes, so it can become a sea
-// edge (wake_field_water_beside_missing).
+// edge (wake_field_water_beside_missing). Under the water bodies (0293)
+// the chunk's samples freeze into their bodies as it leaves
+// (field_world_detach_chunk).
 unload_left_field_chunks :: proc(field: ^Field_Simulation, next: []Field_Chunk_Coordinate, seed: u64, planet: Planet) {
 	world := &field.world
 	leaving := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
@@ -297,12 +310,13 @@ unload_left_field_chunks :: proc(field: ^Field_Simulation, next: []Field_Chunk_C
 	}
 	slice.sort_by(leaving[:], field_chunk_coordinate_before)
 	for coordinate in leaving {
-		chunk := world.chunks[coordinate]
+		// Detached first, so the bodies' frozen parts (0293) are taken and
+		// the saved bytes carry the ownership as frozen.
+		chunk := field_world_detach_chunk(world, coordinate)
 		if saved, kept := field_saved_chunk(chunk, seed, planet, field.spacing_millimetres); kept {
 			field.saved_chunks[coordinate] = saved
 		}
 		destroy_field_chunk(chunk)
-		delete_key(&world.chunks, coordinate)
 	}
 	for coordinate in leaving {
 		wake_field_water_beside_missing(world, coordinate)

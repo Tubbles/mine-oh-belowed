@@ -612,6 +612,8 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 		fill_field_jet(&player.field, field_content.tuning)
 	}
 	field.world.water_planet = make_field_water_planet(seed, planet, spacing_millimetres)
+	field.world.water_model = state.world.settings.water_model
+	make_sea_water_body(&field.world)
 	field.felled_trees_recorded = true
 }
 

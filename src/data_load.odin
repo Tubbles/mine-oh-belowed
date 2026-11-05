@@ -285,6 +285,13 @@ Field_Water_Config :: struct {
 	pressure_visit_budget:          int,
 	pressure_visit_budget_per_tick: int,
 	minimum_head:                   int,
+	// The water bodies (0293), read under the bodies model only.
+	weir_rate_per_head:             int,
+	weir_cap:                       int,
+	weir_floor:                     int,
+	weir_dead_band:                 int,
+	flood_visit_budget:             int,
+	flood_rise_samples:             int,
 }
 
 // A full water sample's fill: FIELD_WATER_FULL - MAXIMUM_DENSITY maps the
@@ -302,6 +309,11 @@ MAXIMUM_FIELD_WATER_PRESSURE_VISITS_PER_TICK :: 1_000_000
 // The dead band at most, a quarter cell: the study's sweep tilts the
 // surface from 16.
 MAXIMUM_FIELD_WATER_MINIMUM_HEAD :: 64
+// The weir's rate at most, 16 fill a tick for each fill of head (0293).
+MAXIMUM_FIELD_WATER_WEIR_RATE :: 4064
+// The flood's visits a tick at most, and its rise cap in samples.
+MAXIMUM_FIELD_WATER_FLOOD_VISITS :: 1_000_000
+MAXIMUM_FIELD_WATER_FLOOD_RISE :: 256
 
 // The shapes of a field brush (work item 0171, world_field_edit.odin): a
 // sphere round the hit, or the level mode, which flattens the sphere
@@ -1153,6 +1165,12 @@ field_water_problem :: proc(water: Field_Water_Config) -> string {
 		{"pressure_visit_budget", water.pressure_visit_budget, 1, MAXIMUM_FIELD_WATER_PRESSURE_VISITS},
 		{"pressure_visit_budget_per_tick", water.pressure_visit_budget_per_tick, 1, MAXIMUM_FIELD_WATER_PRESSURE_VISITS_PER_TICK},
 		{"minimum_head", water.minimum_head, 0, MAXIMUM_FIELD_WATER_MINIMUM_HEAD},
+		{"weir_rate_per_head", water.weir_rate_per_head, 1, MAXIMUM_FIELD_WATER_WEIR_RATE},
+		{"weir_cap", water.weir_cap, 1, FIELD_WATER_FULL},
+		{"weir_floor", water.weir_floor, 1, FIELD_WATER_FULL},
+		{"weir_dead_band", water.weir_dead_band, 0, FIELD_WATER_FULL},
+		{"flood_visit_budget", water.flood_visit_budget, 1, MAXIMUM_FIELD_WATER_FLOOD_VISITS},
+		{"flood_rise_samples", water.flood_rise_samples, 1, MAXIMUM_FIELD_WATER_FLOOD_RISE},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {
