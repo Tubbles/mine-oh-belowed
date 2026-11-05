@@ -27,7 +27,7 @@ The screens a developer uses in a running game: the Developer screen, the diagno
 
 ## Diagnostics pages
 
-F3 steps Input, Render, World and off (0086); each draws over a full screen backdrop in the diagnostics font, headed like "Diagnostics 2/3 Render (F3 next)". F4's world statistics overlay is separate, off by default, and shows while the pages are off.
+F3 steps Input, Render, World and off (0086); each draws over a full screen backdrop in the diagnostics font, headed like "Diagnostics 2/3 Render (F3 next)". F4's world statistics overlay is separate, off by default, and shows while the pages are off. In a field session the overlay and the World page carry the water line (0291): "water N m3  awake N samples in N chunks  dropped N m3", the census taken once a second while either shows (`field_water_census`); a water tech demo session starts with the overlay on ([build.md](build.md), The water tech demo).
 
 | Page | Shows |
 | --- | --- |

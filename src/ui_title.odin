@@ -5,7 +5,8 @@ import "core:strings"
 import "platform"
 
 // The title screen and its screens: New world, Load and the delete
-// confirmation (Multiplayer is ui_multiplayer.odin). They run without a world behind them, over a plain
+// confirmation (Multiplayer is ui_multiplayer.odin, the water tech demo's
+// menu ui_tech_demo.odin). They run without a world behind them, over a plain
 // backdrop in the day sky colour (render_frame), since a generated view
 // would need a session.
 
@@ -33,6 +34,8 @@ Session_Request_Kind :: enum u8 {
 	Quit_To_Title,
 	// Join the game at Title_State.join_address, as --join does.
 	Join,
+	// Start the water tech demo of Title_State.tech_demo (0291).
+	Tech_Demo,
 }
 
 // Handled by the frame loop after the frame that made it
@@ -65,6 +68,8 @@ Title_State :: struct {
 	// Join request joins.
 	multiplayer:      Multiplayer_State,
 	join_address:     Text_Field,
+	// The Tech demo screen's choices (0291, ui_tech_demo.odin).
+	tech_demo:        Tech_Demo_Setup,
 }
 
 make_title_state :: proc(config: Game_Config, saves_directory: string, saves_found: bool, expected_header: Save_Header) -> Title_State {
@@ -76,6 +81,7 @@ make_title_state :: proc(config: Game_Config, saves_directory: string, saves_fou
 		expected_header = expected_header,
 		multiplayer = make_multiplayer_state(),
 		join_address = make_text_field("", TEXT_FIELD_CAPACITY),
+		tech_demo = DEFAULT_TECH_DEMO_SETUP,
 	}
 }
 
@@ -96,12 +102,15 @@ refresh_title_saves :: proc(title: ^Title_State) {
 title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	title := screen_context.title
 	area := ui_safe_area(state)
-	heading := cut_top(&area, area.height * 0.3)
+	newest, has_save := newest_save(title.saves[:])
+	button_count := has_save ? 7 : 6
+	height := panel_height(button_count, -UI_GAP)
+	// The heading takes the top third, or what the buttons leave of the
+	// safe area at a large scale (0291: the seventh button).
+	heading := cut_top(&area, min(area.height * 0.3, max(area.height - height, 0)))
 	ui_label(state, cut_top(&heading, heading.height * 0.7), text("title_game_name"), TITLE_NAME_TEXT_SIZE, .Centre)
 	ui_label(state, heading, format_message_text(text("title_version"), BUILD_STAMP), UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
-	newest, has_save := newest_save(title.saves[:])
-	button_count := has_save ? 6 : 5
-	panel := centred_rectangle(area, TITLE_PANEL_WIDTH, panel_height(button_count, -UI_GAP))
+	panel := fitted_panel(area, TITLE_PANEL_WIDTH, height)
 	panel.y = area.y
 	ui_panel_begin(state, "title", panel)
 	content := inset(panel, UI_PADDING)
@@ -113,6 +122,9 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		title.setup = make_world_setup(title.default_settings, screen_context.planets, name, 0)
 		randomise_seed(&title.setup)
 		push_screen(&state.screens, .New_World)
+	}
+	if ui_button(state, cut_row(&content), text("title_tech_demo")) {
+		push_screen(&state.screens, .Tech_Demo)
 	}
 	if ui_button(state, cut_row(&content), text("title_load")) {
 		push_screen(&state.screens, .Load_World)

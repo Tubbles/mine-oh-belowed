@@ -128,6 +128,11 @@ Diagnostics_Context :: struct {
 	tick_interpolation: f64,
 	drawn_chunk_count:  int,
 	vertex_count:       int,
+	// The water line of a field session (0291): the census the loop takes
+	// once a second, the water a place dropped and the field's spacing.
+	water_census:       Field_Water_Census,
+	water_dropped:      i64,
+	field_spacing_millimetres: int,
 }
 
 // The entity kinds per line on the World page.
@@ -545,8 +550,24 @@ world_overlay_statistics_lines :: proc(diagnostics: Diagnostics_Context) -> []Di
 	append_line(&lines, false, "%s", world_statistics_text(diagnostics))
 	append_line(&lines, false, "%s", streaming_statistics_text(diagnostics))
 	append_line(&lines, false, "%s", light_statistics_text(diagnostics.simulation, diagnostics.player))
+	if diagnostics.simulation.field.enabled {
+		append_line(&lines, false, "%s", field_water_line(diagnostics))
+	}
 	append_player_lines(&lines, diagnostics)
 	return lines[:]
+}
+
+// The water field's line (0291): the total water in cubic metres, the
+// awake samples and chunks of the census, and what places dropped.
+field_water_line :: proc(diagnostics: Diagnostics_Context) -> string {
+	spacing := diagnostics.field_spacing_millimetres
+	return fmt.tprintf(
+		"water %d m3  awake %d samples in %d chunks  dropped %d m3",
+		field_water_cubic_metres(diagnostics.water_census.fill, spacing),
+		diagnostics.water_census.awake_samples,
+		diagnostics.water_census.awake_chunks,
+		field_water_cubic_metres(diagnostics.water_dropped, spacing),
+	)
 }
 
 // Shown while the diagnostics pages are off and the overlay is on (F4 or

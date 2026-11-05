@@ -15,7 +15,7 @@
 - [hud.md](hud.md): the HUD over the world, targeting and placement ghosts, Mission Control and the notices, the player's hands.
 - [developer_tools.md](developer_tools.md): the Developer screen, the diagnostics pages, the texture editor and the Data files screen with its export.
 - [commands.md](commands.md): the command socket the assistant drives a running game with in developer mode: transport, protocol, every command, blueprints.
-- [build.md](build.md): host toolchain, the shared collection and raylib archive, `build.sh`, the command line, the play build, the Steam shortcut and Deck, Nix, CI, the Windows build.
+- [build.md](build.md): host toolchain, the shared collection and raylib archive, `build.sh`, the command line, the play build, the Steam shortcut and Deck, the water tech demo, Nix, CI, the Windows build.
 - [android.md](android.md): the native Android app: toolchain, raylib patches, entry point, link, APK, the phone's files, haptics, the keyboard, storage access for the export.
 - [inspiration.md](inspiration.md): lessons taken from Factorio, Satisfactory, Dyson Sphere Program, the voxel factory games and the mod ecosystem, with sources.
 - [art/booklet.md](art/booklet.md): the art direction booklet: astro-industrial punk found in generated images, every generated image reduced with a sentence under it, round by round with the user's verdict, the kept image per machine, and one page per machine taken on (its reference sheet, the game's render of the accepted model, the user's sign off), the stone furnace first; how the images are made and how a machine gets its page.

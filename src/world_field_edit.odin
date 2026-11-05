@@ -32,6 +32,9 @@ Field_Brush :: struct {
 	rate:   i32,
 }
 
+// A place that stops only when the brush is done (the tech demo, 0291).
+FIELD_UNLIMITED_BUDGET :: max(i64)
+
 Field_Edit :: struct {
 	mode:     Field_Edit_Mode,
 	brush:    Field_Brush,

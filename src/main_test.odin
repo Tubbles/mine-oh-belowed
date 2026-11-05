@@ -129,9 +129,63 @@ test_command_line_usage_lists_every_flag :: proc(t: ^testing.T) {
 	write_command_line_usage(strings.to_writer(&builder))
 	usage := strings.to_string(builder)
 	testing.expect(t, strings.contains(usage, PROGRAM_NAME))
-	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all", "--benchmark", "--model-check", "--model-preview", "--model-preview-directory"}) {
+	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all", "--benchmark", "--model-check", "--model-preview", "--model-preview-directory", "--tech-demo"}) {
 		testing.expectf(t, strings.contains(usage, flag), "usage lacks %s:\n%s", flag, usage)
 	}
+}
+
+// --tech-demo (0291): bare it opens the menu, with words it starts the
+// world; each word is checked, the radius against the data's presets.
+@(test)
+test_command_line_tech_demo :: proc(t: ^testing.T) {
+	menu, error := parse_command_line({"--tech-demo"})
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, menu.tech_demo, TECH_DEMO_MENU_WORD)
+	testing.expect(t, tech_demo_opens_menu(menu))
+	testing.expect(t, !tech_demo_starts_world(menu))
+	testing.expect_value(t, command_line_value_problem(menu), "")
+	testing.expect_value(t, command_line_conflict(menu), "")
+	testing.expect(t, !command_line_starts_world(menu))
+
+	full, _ := parse_command_line({"--tech-demo=bodies,4000,home"})
+	testing.expect(t, tech_demo_starts_world(full))
+	testing.expect_value(t, command_line_value_problem(full), "")
+	setup, problem := command_line_tech_demo_setup(full)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, setup, Tech_Demo_Setup{.Bodies, 4000, .Home})
+	partial, _ := parse_command_line({"--tech-demo=,16000"})
+	setup, problem = command_line_tech_demo_setup(partial)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, setup, Tech_Demo_Setup{.Teleport, 16000, .Spring})
+	for invalid in ([?]string{"--tech-demo=rivers", "--tech-demo=teleport,abc", "--tech-demo=teleport,0", "--tech-demo=teleport,8000,moon", "--tech-demo=teleport,8000,spring,extra"}) {
+		command_line, _ := parse_command_line({invalid})
+		testing.expectf(t, strings.has_prefix(command_line_value_problem(command_line), "invalid --tech-demo"), "%s accepted: %q", invalid, command_line_value_problem(command_line))
+	}
+
+	with_load, _ := parse_command_line({"--tech-demo", "--load=x"})
+	testing.expect(t, strings.has_prefix(command_line_conflict(with_load), "--tech-demo and --load"), command_line_conflict(with_load))
+	with_preview, _ := parse_command_line({"--tech-demo=bodies", "--planet-preview"})
+	testing.expect(t, strings.contains(command_line_conflict(with_preview), "--planet-preview"), command_line_conflict(with_preview))
+	with_seed, _ := parse_command_line({"--tech-demo", "--seed=5", "--dev"})
+	testing.expect_value(t, command_line_value_problem(with_seed), "")
+	testing.expect_value(t, command_line_conflict(with_seed), "")
+	testing.expect(t, with_seed.developer_mode)
+	testing.expect_value(t, with_seed.seed, "5")
+
+	planets := shipped_test_planets()
+	items := make_test_items()
+	kits := make_test_developer_kits(items)
+	off_preset, _ := parse_command_line({"--tech-demo=teleport,5000"})
+	_, data_problem := command_line_data_problem(off_preset, items, kits, planets)
+	testing.expect(t, strings.has_prefix(data_problem, "invalid --tech-demo radius 5000"), data_problem)
+	testing.expect(t, strings.contains(data_problem, "4000"), data_problem)
+	for accepted in ([?]string{"--tech-demo=teleport,4000", "--tech-demo=bodies"}) {
+		command_line, _ := parse_command_line({accepted})
+		_, data_problem = command_line_data_problem(command_line, items, kits, planets)
+		testing.expectf(t, data_problem == "", "%s refused: %s", accepted, data_problem)
+	}
+	_, data_problem = command_line_data_problem(full, items, kits, nil)
+	testing.expect(t, strings.contains(data_problem, "no planet"), data_problem)
 }
 
 @(test)

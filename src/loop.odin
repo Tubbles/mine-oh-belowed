@@ -161,6 +161,11 @@ Frame_Developer_Tools :: struct {
 	diagnostics_page:   Diagnostics_Page,
 	// The world statistics overlay (draw_world_overlay), off by default.
 	show_world_overlay: bool,
+	// The overlay's water line (0291), taken once a second while the
+	// overlay or the World page shows.
+	water_census:       Field_Water_Census,
+	water_census_tick:  u64,
+	water_census_taken: bool,
 	// The command socket (work item 0053): open while developer mode is
 	// on, served between ticks (serve_command_socket). The paths are
 	// owned, empty when the environment names no directory.
@@ -1088,7 +1093,17 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 // What the diagnostics pages and the F4 overlay read (diagnostics.odin).
 diagnostics_context :: proc(state: ^Frame_State) -> Diagnostics_Context {
 	session := state.session
+	field := &session.simulation.field
+	developer := &state.developer
+	if field.enabled && (!developer.water_census_taken || session.simulation.tick - developer.water_census_tick >= u64(state.config.tick_rate)) {
+		developer.water_census = field_water_census(&field.world)
+		developer.water_census_tick = session.simulation.tick
+		developer.water_census_taken = true
+	}
 	return Diagnostics_Context {
+		water_census = developer.water_census,
+		water_dropped = field.world.water_dropped,
+		field_spacing_millimetres = field.spacing_millimetres,
 		simulation = &session.simulation,
 		player = session_local_player_index(session),
 		technologies = session.technologies,
@@ -1580,6 +1595,13 @@ apply_session_request :: proc(state: ^Frame_State) {
 		show_title(state)
 	case .Join:
 		start_title_join(state, text_field_text(&state.interaction.title.join_address))
+	case .Tech_Demo:
+		session, problem := start_tech_demo_session(state.config, state.content, state.base_generator, DEFAULT_WORLD_SEED, state.interaction.title.tech_demo)
+		if problem != "" {
+			report_session_problem(state, problem)
+			return
+		}
+		enter_session(state, session)
 	}
 }
 
@@ -1618,6 +1640,10 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 		destroy_session_join(&state.joining)
 	}
 	state.session = session
+	// The tech demo starts with the water line showing (0291);
+	// leave_session clears it.
+	state.developer.show_world_overlay ||= session.field_content.tech_demo
+	// Not the tech demo (host_windowed_session returns for it).
 	host_windowed_session(session, state.hosting)
 	state.presentation.sound_memory = {}
 	if session.simulation.field.enabled {
@@ -1665,6 +1691,7 @@ leave_session :: proc(state: ^Frame_State) {
 	state.session = nil
 	state.developer.diagnostics_page = .Off
 	state.developer.show_world_overlay = false
+	state.developer.water_census_taken = false
 	// A pause command holds only the world it was given in.
 	state.developer.command_control.paused = false
 }
@@ -1830,6 +1857,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		enter_session(state, session)
 	} else {
 		show_title(state)
+		if player_configuration.tech_demo_menu {
+			push_screen(&primary_ui(state).screens, .Tech_Demo)
+		}
 	}
 	defer leave_session(state)
 	defer destroy_session_join(&state.joining)

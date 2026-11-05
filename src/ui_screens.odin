@@ -287,6 +287,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		confirm_delete_screen(state, screen_context)
 	case .Multiplayer:
 		multiplayer_screen(state, screen_context)
+	case .Tech_Demo:
+		tech_demo_screen(state, screen_context)
 	}
 	// After the screen, so that the Back press a screen consumed this frame
 	// and the screen change land in the same frame. While the keyboard is

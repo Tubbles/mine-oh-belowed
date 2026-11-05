@@ -303,6 +303,47 @@ dig_uniform_test_field :: proc(content: Simulation_Content, material: Field_Mate
 	return before - field_ground_steps(&simulation.field.world), inventory_count(simulation.players[0].inventory, item), simulation.players[0].field_refusal
 }
 
+// The tech demo (0291): any digging tool digs every material with an
+// item, bedrock stays, nothing is credited; a place raises ground from an
+// empty inventory and takes nothing, where the game refuses it.
+@(test)
+test_the_tech_demo_digs_any_material_free_and_places_from_nothing :: proc(t: ^testing.T) {
+	items := make_test_items()
+	content := test_field_simulation_content(items, test_brush(.Sphere, 1500, 254))
+	content.field.tech_demo = true
+	for material in ([?]Field_Material{.Topsoil, .Stone, .Deep_Stone}) {
+		dug, credited, refusal := dig_uniform_test_field(content, material, "wooden_pickaxe")
+		testing.expectf(t, dug > 0, "the demo pickaxe dug %v", material)
+		testing.expectf(t, credited == 0, "%v credited %d", material, credited)
+		testing.expectf(t, refusal == .None, "%v refused %v", material, refusal)
+	}
+	dug, credited, refusal := dig_uniform_test_field(content, .Bedrock, "wooden_pickaxe")
+	testing.expect_value(t, dug, 0)
+	testing.expect_value(t, credited, 0)
+	testing.expect_value(t, refusal, Field_Edit_Refusal.Undiggable)
+
+	for demo in ([?]bool{true, false}) {
+		content.field.tech_demo = demo
+		simulation := make_test_field_state(make_uniform_test_field({-MAXIMUM_DENSITY, .Air, 0}), 1000)
+		defer destroy_simulation(&simulation)
+		add_test_miner(&simulation, items, FAR_FEET)
+		hold_test_item(&simulation.players[0], content, "dirt")
+		centre := Sample_Coordinate{0, 0, 0}
+		drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Place, brush = content.field.brushes[0], centre = sample_to_world_position(centre, 1000), material = .Topsoil})
+		placed := field_world_get_sample(&simulation.field.world, centre)
+		if demo {
+			testing.expect_value(t, placed.material, Field_Material.Topsoil)
+			testing.expect(t, placed.density > 0, "the centre is ground")
+			testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
+			testing.expect_value(t, inventory_count(simulation.players[0].inventory, test_item(items, "dirt")), 0)
+			testing.expect_value(t, simulation.players[0].field_credit[.Topsoil], 0)
+		} else {
+			testing.expect_value(t, placed.material, Field_Material.Air)
+			testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.Nothing_Held)
+		}
+	}
+}
+
 // A shovel digs topsoil into dirt and leaves stone, telling the pickaxe
 // it needs (0265).
 @(test)

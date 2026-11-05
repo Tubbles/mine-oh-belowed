@@ -58,6 +58,9 @@ World_File_Settings :: struct {
 	planet_radius_metres:       int,
 	mode:                       World_Mode,
 	keep_inventory:             bool,
+	// The water field's rule (0291). A file without it was written before
+	// 0291 and reads as teleport.
+	water_model:                Water_Model,
 }
 
 World_File :: struct {
@@ -198,6 +201,7 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 			planet_radius_metres = state.world.settings.planet_radius_metres,
 			mode = state.world.settings.mode,
 			keep_inventory = state.world.settings.keep_inventory,
+			water_model = state.world.settings.water_model,
 		},
 		tick = state.tick,
 		day_time_ticks = simulation_day_ticks(state^) % day_length_ticks,
@@ -220,7 +224,7 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 	if error := json.unmarshal(data, &file, .SJSON, allocator); error != nil {
 		return {}, fmt.tprintf("cannot parse %s: %v", WORLD_FILE_NAME, error)
 	}
-	if problem = world_file_mode_problem(data); problem != "" {
+	if problem = world_file_setting_names_problem(data); problem != "" {
 		return file, problem
 	}
 	file.settings = with_setting_defaults(file.settings)
@@ -249,23 +253,35 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 // an integer token unchecked, so the raw tree's mode is checked here: a
 // mode that is not a name is refused, an unknown name reads as peaceful
 // with a log line.
-world_file_mode_problem :: proc(data: []byte) -> string {
+world_file_setting_names_problem :: proc(data: []byte) -> string {
 	tree, error := json.parse(data, .SJSON, true, context.temp_allocator)
 	if error != nil {
 		return ""
 	}
 	root, _ := tree.(json.Object)
 	settings, _ := root["settings"].(json.Object)
-	value, present := settings["mode"]
+	if value, present := settings["mode"]; present {
+		name, is_name := value.(json.String)
+		if !is_name {
+			return fmt.tprintf("mode must be one of %v", reflect.enum_field_names(World_Mode))
+		}
+		if _, known := reflect.enum_from_name(World_Mode, name); !known {
+			platform.log_printf("world: the mode %q is not one of %v, the world reads it as peaceful", name, reflect.enum_field_names(World_Mode))
+		}
+	}
+	// The water model (0291): a file from before it has none, an unknown
+	// name reads as teleport; the unmarshal leaves Teleport either way.
+	value, present := settings["water_model"]
 	if !present {
+		platform.log_printf("world: the save has no water_model, the world reads it as teleport")
 		return ""
 	}
 	name, is_name := value.(json.String)
 	if !is_name {
-		return fmt.tprintf("mode must be one of %v", reflect.enum_field_names(World_Mode))
+		return fmt.tprintf("water_model must be one of %v", reflect.enum_field_names(Water_Model))
 	}
-	if _, known := reflect.enum_from_name(World_Mode, name); !known {
-		platform.log_printf("world: the mode %q is not one of %v, the world reads it as peaceful", name, reflect.enum_field_names(World_Mode))
+	if _, known := reflect.enum_from_name(Water_Model, name); !known {
+		platform.log_printf("world: the water model %q is not one of %v, the world reads it as teleport", name, reflect.enum_field_names(Water_Model))
 	}
 	return ""
 }

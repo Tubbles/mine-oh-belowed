@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
 import "core:time"
 import "generation_seed"
@@ -230,6 +231,50 @@ start_session :: proc(requested_plan: Session_Plan, config: Game_Config, content
 	}
 	session.lockstep = make_single_player_lockstep(session.simulation.tick, session.start.player)
 	session.streaming = start_chunk_streaming(&session.generator, content.blocks, !plan.debug_terrain && !field, default_worker_count())
+	return session, ""
+}
+
+TECH_DEMO_WORLD_NAME :: "water tech demo"
+
+// The water tech demo's session (0291): a new world of the seed on the
+// default planet at the setup's radius with its water model, never saved
+// (saves "" and not found), no fall, no quests, the first player standing
+// at the spring or in the pod with the demo kit (tech_demo_items of
+// data/game.sjson) and Field_Content.tech_demo set, so every material
+// digs free and a place spends nothing.
+start_tech_demo_session :: proc(config: Game_Config, content: Game_Content, base_generator: Generator, seed: u64, setup: Tech_Demo_Setup) -> (session: ^Session, problem: string) {
+	settings := default_world_file_settings(config)
+	settings.water_model = setup.water_model
+	settings.planet_radius_metres = tech_demo_radius_metres(setup, content.planets)
+	plan := new_world_plan(TECH_DEMO_WORLD_NAME, seed, settings, "", false, false)
+	session, problem = start_session(plan, config, content, base_generator)
+	if problem != "" {
+		return nil, problem
+	}
+	if !session.simulation.field.enabled {
+		end_session(session)
+		return nil, "the data has no planet for the tech demo"
+	}
+	simulation := &session.simulation
+	// No fall.
+	simulation.field.arrival = {}
+	session.field_content.tech_demo = true
+	silence_quests(&simulation.quests)
+	player := &simulation.players[0]
+	slice.fill(player.inventory.slots, EMPTY_STACK)
+	give_starting_items(player, content.items, config.tech_demo_items)
+	player.selected_hotbar_slot = 0
+	switch setup.start {
+	case .Home:
+		stand_field_player_from_seat(&simulation.world.entities, content.machines, &player.field)
+	case .Spring:
+		if spring, found := field_spring_spawn(seed, session.planet, simulation.field.spacing_millimetres); found {
+			player.field = spring
+		} else {
+			stand_field_player_from_seat(&simulation.world.entities, content.machines, &player.field)
+		}
+	}
+	platform.log_printf("tech demo: water model %v, radius %d m, start %v, seed %d", setup.water_model, session.planet.radius_metres, setup.start, seed)
 	return session, ""
 }
 

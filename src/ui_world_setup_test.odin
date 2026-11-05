@@ -52,6 +52,8 @@ test_world_setup_defaults_follow_the_config :: proc(t: ^testing.T) {
 test_world_settings_round_trip_through_world_file :: proc(t: ^testing.T) {
 	setup := non_default_world_setup()
 	settings := world_file_settings_from_setup(setup, shipped_test_planets())
+	// The water model has no row (0291); it travels with the settings.
+	settings.water_model = .Bodies
 	testing.expect_value(t, settings.vein_richness_percent, 400)
 	// The planet rows (0179): home's next preset after 8 km, the spacing
 	// after 1 m wraps to a third of a metre, survival after peaceful.
@@ -74,6 +76,7 @@ test_world_settings_round_trip_through_world_file :: proc(t: ^testing.T) {
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, parsed.seed, 99)
 	testing.expect_value(t, parsed.settings, settings)
+	testing.expect_value(t, parsed.settings.water_model, Water_Model.Bodies)
 	testing.expect_value(t, world_settings_from_file(parsed.seed, parsed.settings), simulation.world.settings)
 	// The pad travels with the file (0049).
 	testing.expect(t, parsed.landing_pad_present)

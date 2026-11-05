@@ -269,6 +269,46 @@ field_sample_bits_any :: proc(bits: ^Field_Sample_Bits) -> bool {
 	return false
 }
 
+field_sample_bits_count :: proc(bits: ^Field_Sample_Bits) -> int {
+	count := 0
+	for word in bits {
+		count += int(intrinsics.count_ones(word))
+	}
+	return count
+}
+
+// The water field's totals for the overlay's water line (0291): the fill
+// over every loaded chunk, and the awake samples and chunks of the awake
+// set. One byte sum per chunk, taken once a second by the loop.
+Field_Water_Census :: struct {
+	fill:          i64,
+	awake_samples: int,
+	awake_chunks:  int,
+}
+
+field_water_census :: proc(world: ^Field_World) -> Field_Water_Census {
+	census: Field_Water_Census
+	for _, chunk in world.chunks {
+		for fill in chunk.water {
+			census.fill += i64(fill)
+		}
+	}
+	census.awake_chunks = len(world.water_awake_chunks)
+	for coordinate in world.water_awake_chunks {
+		if chunk := world.chunks[coordinate] or_else nil; chunk != nil {
+			census.awake_samples += field_sample_bits_count(&chunk.water_awake)
+		}
+	}
+	return census
+}
+
+// A fill sum as whole cubic metres at the spacing: a full sample holds
+// one cube of the spacing.
+field_water_cubic_metres :: proc(fill: i64, spacing_millimetres: int) -> i64 {
+	spacing := i64(spacing_millimetres)
+	return fill * spacing * spacing * spacing / (FIELD_WATER_FULL * 1_000_000_000)
+}
+
 // The water as the mesher's density: its level over the sample's own
 // distance in the terrain's scale (DENSITY_STEPS_PER_SAMPLE a sample),
 // a signed distance to the surface wherever the sample sits, so a level

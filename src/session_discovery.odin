@@ -59,6 +59,12 @@ host_windowed_session :: proc(session: ^Session, plan: Hosting_Plan) {
 	if session.network.role != .Offline || plan.port_count == 0 {
 		return
 	}
+	// The water tech demo (0291) is one machine's: a joiner would build
+	// its field content without the demo flag and part on the first edit.
+	if session.field_content.tech_demo {
+		platform.log_printf("network: the tech demo is not hosted")
+		return
+	}
 	if problem := start_hosting(&session.network, plan); problem != "" {
 		network_notice(&session.network, "%s: %s", text("network_cannot_host"), problem)
 		return

@@ -463,6 +463,19 @@ start_quests :: proc(state: ^Quest_State, registry: Quest_Registry, statistics: 
 	}
 }
 
+// The tech demo plays without quests (0291): none active, every quest
+// locked, no Mission Control line, so tick_quests advances nothing and
+// the HUD shows no objective. Nothing is completed, so no reward lands.
+silence_quests :: proc(state: ^Quest_State) {
+	state.active = NO_QUEST
+	for &progress in state.progress {
+		progress.status = .Locked
+	}
+	clear(&state.messages)
+	clear(&state.notices)
+	state.hints_fired = 0
+}
+
 // Removes up to count of the item, last slots first.
 remove_from_slots :: proc(slots: []Item_Stack, item: Item_Id, count: u64) {
 	remaining := int(count)

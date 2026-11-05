@@ -552,6 +552,37 @@ field_pod_spawn :: proc(entities: ^Entities, machines: Machine_Registry) -> (pla
 	return {}, false
 }
 
+// The tech demo's spring start (0291): standing one sample towards the
+// home along the heading from the spring's source sample, the first air
+// sample over the surface under the spring's point (planet_spring_sample,
+// which makes it a source), so the feet start beside the water, not in
+// it; a spring with no air above its surface falls back to the generated
+// surface under its point, as the surface teleport does. The spring lies
+// outside the crater's reach, so the baked overlay does not matter.
+// Facing the home. found is false without springs.
+field_spring_spawn :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> (player: Field_Player, found: bool) {
+	if len(planet.springs) == 0 {
+		return {}, false
+	}
+	generation := make_planet_generation(seed, planet, spacing_millimetres)
+	spring := planet.springs[0]
+	direction := planet_spring_direction(spring)
+	clearance := millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)
+	feet: World_Position
+	if sample, air := planet_spring_sample(generation, spring); air {
+		feet = sample_to_world_position(sample, spacing_millimetres) + World_Position(fixed_scale(direction, clearance))
+	} else {
+		feet = field_surface_under(generation, World_Position(fixed_scale(direction, generation.radius)), clearance)
+	}
+	look := [3]i64{UNIT_VECTOR_ONE, 0, 0}
+	if chord, ok := normalize_fixed(planet_home_direction(planet.home) - direction); ok {
+		look = chord
+	}
+	heading := tangent_of(direction, look)
+	feet += World_Position(fixed_scale(heading, generation.spacing))
+	return make_field_player(feet, heading), true
+}
+
 // A new player's body: in the pod's cabin, or at the home without a pod.
 field_spawn_player :: proc(entities: ^Entities, machines: Machine_Registry, seed: u64, planet: Planet, spacing_millimetres: int) -> Field_Player {
 	if player, found := field_pod_spawn(entities, machines); found {

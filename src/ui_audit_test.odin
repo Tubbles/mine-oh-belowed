@@ -942,6 +942,7 @@ audit_touch_rows :: proc(audit: ^Ui_Audit) {
 		{name = "new world", screens = {.Title, .New_World}},
 		{name = "on-screen keyboard", screens = {.Title, .New_World}, keyboard = true},
 		{name = "system keyboard", screens = {.Title, .New_World}, keyboard = true, system_keyboard = true},
+		{name = "tech demo", screens = {.Title, .Tech_Demo}},
 		{name = "load", screens = {.Title, .Load_World}},
 		{name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}},
 		{name = "multiplayer", screens = {.Title, .Multiplayer}},
@@ -1011,6 +1012,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "new world", screens = {.Title, .New_World}, walk_focus = true})
 	audit_case(audit, {name = "on-screen keyboard", screens = {.Title, .New_World}, keyboard = true, walk_focus = true})
 	audit_case(audit, {name = "system keyboard", screens = {.Title, .New_World}, keyboard = true, system_keyboard = true})
+	audit_case(audit, {name = "tech demo", screens = {.Title, .Tech_Demo}, walk_focus = true})
 	audit_case(audit, {name = "load", screens = {.Title, .Load_World}, walk_focus = true})
 	audit_case(audit, {name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}, walk_focus = true})
 	audit_multiplayer(audit)

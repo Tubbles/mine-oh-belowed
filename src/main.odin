@@ -5,6 +5,8 @@ import "core:fmt"
 import "core:io"
 import "core:mem/virtual"
 import "core:os"
+import "core:slice"
+import "core:strings"
 import "platform"
 
 GAME_VERSION :: "0.0.0"
@@ -70,14 +72,82 @@ Command_Line :: struct {
 	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,
 	port:            int `usage:"the one port --server listens on (default: the first free of 47317 to 47326)"`,
 	join_address:    string `args:"name=join" usage:"join the session a --server hosts at <address>[:port] (an IP address on the phone)"`,
+	// Work item 0291: the water tech demo.
+	tech_demo:       string `args:"name=tech-demo" usage:"[=<model>,<radius>,<start>]: the water tech demo (0291): alone, the title with the Tech demo screen open; with values, straight into the demo world (model teleport or bodies, radius a preset in metres, start home or spring; an empty word keeps its default teleport, the planet's default radius, spring)"`,
 }
+
+// The value --tech-demo carries when given bare: core:flags takes a value
+// for a string field (a bare flag is refused, or eats the next argument),
+// so parse_command_line rewrites the bare flag to this word. Typed by
+// hand it means the same.
+TECH_DEMO_MENU_WORD :: "menu"
+TECH_DEMO_FLAG :: "--tech-demo"
 
 // Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
 parse_command_line :: proc(arguments: []string) -> (command_line: Command_Line, error: flags.Error) {
 	command_line.planet_preview_daylight = 100
 	command_line.planet_preview_pitch = PLANET_PREVIEW_PIT_PITCH_DEGREES
-	error = flags.parse(&command_line, arguments, .Unix)
+	rewritten := make([]string, len(arguments), context.temp_allocator)
+	for argument, index in arguments {
+		rewritten[index] = argument == TECH_DEMO_FLAG ? TECH_DEMO_FLAG + "=" + TECH_DEMO_MENU_WORD : argument
+	}
+	error = flags.parse(&command_line, rewritten, .Unix)
 	return
+}
+
+// --tech-demo alone: the title with the Tech demo screen pushed.
+tech_demo_opens_menu :: proc(command_line: Command_Line) -> bool {
+	return command_line.tech_demo == TECH_DEMO_MENU_WORD
+}
+
+// --tech-demo=<model>,<radius>,<start>: the demo world before the window.
+tech_demo_starts_world :: proc(command_line: Command_Line) -> bool {
+	return command_line.tech_demo != "" && !tech_demo_opens_menu(command_line)
+}
+
+// The words of --tech-demo=<model>,<radius>,<start> over the defaults; an
+// empty word keeps its default. The radius is checked against the
+// planet's presets once the data is loaded (command_line_data_problem).
+parse_tech_demo_setup :: proc(value: string, defaults: Tech_Demo_Setup) -> (setup: Tech_Demo_Setup, problem: string) {
+	setup = defaults
+	words := strings.split(value, ",", context.temp_allocator)
+	if len(words) > 3 {
+		return setup, fmt.tprintf("invalid --tech-demo=%s (expected <model>,<radius>,<start>)", value)
+	}
+	if len(words) > 0 && words[0] != "" {
+		switch words[0] {
+		case "teleport":
+			setup.water_model = .Teleport
+		case "bodies":
+			setup.water_model = .Bodies
+		case:
+			return setup, fmt.tprintf("invalid --tech-demo model %q (expected teleport or bodies)", words[0])
+		}
+	}
+	if len(words) > 1 && words[1] != "" {
+		radius, ok := parse_seed(words[1])
+		if !ok || radius < 1 || radius > MAXIMUM_PLANET_RADIUS_METRES {
+			return setup, fmt.tprintf("invalid --tech-demo radius %q (expected a preset in metres, 1 to %d)", words[1], MAXIMUM_PLANET_RADIUS_METRES)
+		}
+		setup.planet_radius_metres = int(radius)
+	}
+	if len(words) > 2 && words[2] != "" {
+		switch words[2] {
+		case "home":
+			setup.start = .Home
+		case "spring":
+			setup.start = .Spring
+		case:
+			return setup, fmt.tprintf("invalid --tech-demo start %q (expected home or spring)", words[2])
+		}
+	}
+	return setup, ""
+}
+
+// The setup of a --tech-demo that starts the world: the parsed words over
+// the menu's defaults (teleport, the planet's default radius, the spring).
+command_line_tech_demo_setup :: proc(command_line: Command_Line) -> (setup: Tech_Demo_Setup, problem: string) {
+	return parse_tech_demo_setup(command_line.tech_demo, DEFAULT_TECH_DEMO_SETUP)
 }
 
 write_command_line_usage :: proc(writer: io.Writer) {
@@ -158,14 +228,30 @@ command_line_value_problem :: proc(command_line: Command_Line) -> string {
 	if command_line.port < 0 || command_line.port > MAXIMUM_PORT {
 		return fmt.tprintf("invalid --port=%d (expected a port from 1 to %d)", command_line.port, MAXIMUM_PORT)
 	}
+	if tech_demo_starts_world(command_line) {
+		if _, problem := command_line_tech_demo_setup(command_line); problem != "" {
+			return problem
+		}
+	}
 	return give_arguments_problem(command_line.give_arguments[:])
 }
 
 // The developer flags checked against the loaded data: --chapter needs a
-// kit, --give known items. The grants are in the temp allocator.
-command_line_data_problem :: proc(command_line: Command_Line, items: Item_Registry, kits: Developer_Kits) -> (grants: []Developer_Grant, problem: string) {
+// kit, --give known items, --tech-demo's radius a preset of the default
+// planet (0291). The grants are in the temp allocator.
+command_line_data_problem :: proc(command_line: Command_Line, items: Item_Registry, kits: Developer_Kits, planets: []Planet) -> (grants: []Developer_Grant, problem: string) {
 	if command_line.chapter > len(kits.kits) {
 		return nil, fmt.tprintf("invalid --chapter=%d (%s has kits for chapters 1 to %d)", command_line.chapter, DEVELOPER_KITS_FILE_NAME, len(kits.kits))
+	}
+	if tech_demo_starts_world(command_line) {
+		if len(planets) == 0 {
+			return nil, "the data has no planet for the tech demo"
+		}
+		setup, _ := command_line_tech_demo_setup(command_line)
+		presets := default_planet(planets).radius_presets_metres
+		if setup.planet_radius_metres != 0 && !slice.contains(presets, setup.planet_radius_metres) {
+			return nil, fmt.tprintf("invalid --tech-demo radius %d (%s offers %v)", setup.planet_radius_metres, PLANETS_FILE_NAME, presets)
+		}
 	}
 	return resolve_give_arguments(command_line.give_arguments[:], items)
 }
@@ -261,7 +347,7 @@ main :: proc() {
 	game_data.content.unlock_all = command_line.unlock_all
 	game_data.content.developer_mode = command_line.developer_mode
 	content := game_data.content
-	developer_grants, developer_problem := command_line_data_problem(command_line, content.items, content.developer_kits)
+	developer_grants, developer_problem := command_line_data_problem(command_line, content.items, content.developer_kits, content.planets)
 	if developer_problem != "" {
 		platform.log_printf("error: %s", developer_problem)
 		os.exit(2)
@@ -284,6 +370,9 @@ main :: proc() {
 		os.exit(run_command_line_server(command_line, config, content, game_data.base_generator, saves_directory, saves_found, loaded_configuration.configuration.settings.autosave_minutes))
 	}
 	session := start_command_line_session(command_line, config, content, game_data.base_generator, saves_directory, saves_found)
+	if session == nil {
+		session = start_command_line_tech_demo(command_line, config, content, game_data.base_generator)
+	}
 	if session != nil {
 		requests := make([dynamic]Developer_Request, context.temp_allocator)
 		command_line_developer_requests(&requests, command_line.chapter, developer_grants)
@@ -310,6 +399,7 @@ main :: proc() {
 		fonts_fell_back = start.fonts_fell_back,
 		edits_need_access = edits_need_access,
 		join_address = command_line.join_address,
+		tech_demo_menu = tech_demo_opens_menu(command_line),
 	}
 	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
 }
@@ -520,6 +610,24 @@ start_command_line_session :: proc(command_line: Command_Line, config: Game_Conf
 	return session
 }
 
+// --tech-demo=<model>,<radius>,<start> (0291): the demo world before the
+// window opens, so a problem shows without a display. Nil without the
+// flag's values.
+start_command_line_tech_demo :: proc(command_line: Command_Line, config: Game_Config, content: Game_Content, base_generator: Generator) -> ^Session {
+	if !tech_demo_starts_world(command_line) {
+		return nil
+	}
+	// Both validated before any data loads.
+	seed, _ := command_line_seed(command_line)
+	setup, _ := command_line_tech_demo_setup(command_line)
+	session, problem := start_tech_demo_session(config, content, base_generator, seed, setup)
+	if problem != "" {
+		platform.log_printf("error: cannot start the tech demo: %s", problem)
+		os.exit(1)
+	}
+	return session
+}
+
 // --server: the world of the command line (a new one by default), hosted
 // without a window until the process is stopped (session_server.odin).
 run_command_line_server :: proc(command_line: Command_Line, config: Game_Config, content: Game_Content, base_generator: Generator, saves_directory: string, saves_found: bool, autosave_minutes: int) -> int {
@@ -561,6 +669,9 @@ command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves
 
 command_line_conflict :: proc(command_line: Command_Line) -> string {
 	if problem := workbench_conflict(command_line); problem != "" {
+		return problem
+	}
+	if problem := tech_demo_conflict(command_line); problem != "" {
 		return problem
 	}
 	if command_line.benchmark > 0 {
@@ -626,6 +737,48 @@ workbench_conflict :: proc(command_line: Command_Line) -> string {
 		return fmt.tprintf("%s runs no world, so it cannot be combined with --benchmark, --planet-preview, --server, --join or a world's flags", checking ? "--model-check" : "--model-preview")
 	}
 	return ""
+}
+
+// The tech demo (0291) builds its own world: the flags that start,
+// load, host, join or preview one, the developer requests and the
+// workbench are refused with it; --seed, --dev, --set, --input,
+// --unlock-all, --touch-overlay and --watch-data combine.
+tech_demo_conflict :: proc(command_line: Command_Line) -> string {
+	if command_line.tech_demo == "" {
+		return ""
+	}
+	other := ""
+	switch {
+	case command_line.load_name != "":
+		other = "--load"
+	case command_line.world_name != "":
+		other = "--name"
+	case command_line.debug_terrain:
+		other = "--debug-terrain"
+	case command_line.chapter > 0:
+		other = "--chapter"
+	case len(command_line.give_arguments) > 0:
+		other = "--give"
+	case command_line.server:
+		other = "--server"
+	case command_line.join_address != "":
+		other = "--join"
+	case command_line.benchmark > 0:
+		other = "--benchmark"
+	case command_line.planet_preview:
+		other = "--planet-preview"
+	case command_line.planet_preview_screenshot != "":
+		other = "--planet-preview-screenshot"
+	case command_line.planet_preview_walk:
+		other = "--planet-preview-walk"
+	case command_line.model_check != "":
+		other = "--model-check"
+	case command_line.model_preview != "":
+		other = "--model-preview"
+	case:
+		return ""
+	}
+	return fmt.tprintf("--tech-demo and %s cannot be combined (the tech demo builds its own world)", other)
 }
 
 // The benchmark builds its own world.

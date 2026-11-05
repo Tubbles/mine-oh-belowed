@@ -242,6 +242,41 @@ test_the_world_file_mode_is_a_known_name :: proc(t: ^testing.T) {
 	testing.expect_value(t, parsed.settings.mode, World_Mode.Peaceful)
 }
 
+// The water model (0291) is written by name: a file without it, or with
+// an unknown name, reads as teleport with a log line; a number is
+// refused.
+@(test)
+test_a_world_file_without_a_water_model_reads_teleport :: proc(t: ^testing.T) {
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = "home", water_model = .Bodies},
+	}
+	text := string(encode_world_file(file, context.temp_allocator))
+	testing.expect(t, strings.contains(text, `"Bodies"`), text)
+	parsed, problem := parse_world_file(transmute([]byte)text, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.settings.water_model, Water_Model.Bodies)
+	lines := strings.split_lines(text, context.temp_allocator)
+	kept := make([dynamic]string, context.temp_allocator)
+	for line in lines {
+		if !strings.contains(line, "water_model") {
+			append(&kept, line)
+		}
+	}
+	without := strings.join(kept[:], "\n", context.temp_allocator)
+	testing.expect(t, !strings.contains(without, "water_model"), without)
+	parsed, problem = parse_world_file(transmute([]byte)without, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.settings.water_model, Water_Model.Teleport)
+	misspelt, _ := strings.replace(text, `"Bodies"`, `"Rivers"`, 1, context.temp_allocator)
+	parsed, problem = parse_world_file(transmute([]byte)misspelt, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.settings.water_model, Water_Model.Teleport)
+	numbered, _ := strings.replace(text, `"Bodies"`, "7", 1, context.temp_allocator)
+	_, problem = parse_world_file(transmute([]byte)numbered, context.temp_allocator)
+	testing.expect(t, strings.contains(problem, "water_model must be one of"), problem)
+}
+
 // A world file written before the relief's shape (0189) loads with every
 // term off, so the unedited ground round its saved chunks generates as it
 // did; a file written now keeps the shape it was made with.

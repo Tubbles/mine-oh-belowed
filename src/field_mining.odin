@@ -227,6 +227,10 @@ Field_Content :: struct {
 	torch_level: u8,
 	// The starter kit a joining player gets (data/game.sjson).
 	starting_items: []Starting_Item,
+	// The water tech demo's session (0291): every material with an item
+	// digs with any digging tool and no credit, a place spends nothing.
+	// Set by start_tech_demo_session, never saved.
+	tech_demo: bool,
 	// Machines on bare ground (0201, machine_wear.odin).
 	bare_ground: Bare_Ground_Tuning,
 	// The pod's airlock (0222, entity_pod_airlock.odin).
@@ -379,6 +383,18 @@ field_diggable_materials :: proc(table: Field_Material_Table, role: Item_Tool_Ro
 	return diggable
 }
 
+// The tech demo's reach (0291): every material with an item, whatever
+// the tool's role and tier; bedrock and air have none.
+field_demo_diggable_materials :: proc(table: Field_Material_Table) -> bit_set[Field_Material] {
+	diggable: bit_set[Field_Material]
+	for record, material in table {
+		if record.item != NO_ITEM {
+			diggable += {material}
+		}
+	}
+	return diggable
+}
+
 // The yield.
 
 field_steps_to_volume :: proc(steps: i64, spacing_millimetres: int) -> i64 {
@@ -515,12 +531,13 @@ field_dig_rates :: proc(table: Field_Material_Table) -> [Field_Material]i32 {
 drain_field_dig :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, edit: Field_Edit) {
 	field := &state.field
 	dig := edit
-	dig.diggable = field_diggable_materials(content.field.materials, player.field.held_tool_role, int(player.field.held_tool_tier))
+	dig.diggable = content.field.tech_demo ? field_demo_diggable_materials(content.field.materials) : field_diggable_materials(content.field.materials, player.field.held_tool_role, int(player.field.held_tool_tier))
 	dig.dig_rate_percent = field_dig_rates(content.field.materials)
 	dig.tick = state.tick
 	result := apply_field_edit(&field.world, field.spacing_millimetres, dig)
+	// The tech demo's dug steps go nowhere (0291).
 	for steps, material in result.steps {
-		if steps > 0 {
+		if steps > 0 && !content.field.tech_demo {
 			volume := field_steps_to_volume(steps, field.spacing_millimetres)
 			credit_field_volume(player.inventory, content.items, content.field.materials[material].item, &player.field_credit[material], volume)
 		}
@@ -534,7 +551,10 @@ drain_field_place :: proc(state: ^Simulation_State, content: Simulation_Content,
 	material := edit.material
 	item := content.field.materials[material].item
 	place := edit
-	if item != NO_ITEM {
+	// The tech demo (0291) places from nothing: the brush alone ends it.
+	if content.field.tech_demo {
+		place.budget = FIELD_UNLIMITED_BUDGET
+	} else if item != NO_ITEM {
 		place.budget = field_place_volume_available(player.inventory, item, player.field_credit[material]) / field_steps_to_volume(1, field.spacing_millimetres)
 	}
 	if place.budget <= 0 {
@@ -546,7 +566,9 @@ drain_field_place :: proc(state: ^Simulation_State, content: Simulation_Content,
 		return
 	}
 	result := apply_field_edit(&field.world, field.spacing_millimetres, place)
-	debit_field_volume(player.inventory, item, &player.field_credit[material], field_steps_to_volume(result.steps[material], field.spacing_millimetres))
+	if !content.field.tech_demo {
+		debit_field_volume(player.inventory, item, &player.field_credit[material], field_steps_to_volume(result.steps[material], field.spacing_millimetres))
+	}
 }
 
 // The end of the tick: every queued edit in order, then the queue is

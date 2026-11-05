@@ -12,6 +12,9 @@ test_shipped_game_config_parses_and_validates :: proc(t: ^testing.T) {
 	testing.expect_value(t, config.day_length_seconds, 1200)
 	testing.expect_value(t, validate_game_config(config), "")
 	testing.expect_value(t, validate_starting_items(config.starting_items, make_test_items()), "")
+	// The tech demo's kit (0291), validated like the starter kit.
+	testing.expect_value(t, validate_starting_items(config.tech_demo_items, make_test_items(), "tech demo item"), "")
+	testing.expect_value(t, len(config.tech_demo_items), 3)
 }
 
 @(test)
@@ -19,6 +22,7 @@ test_game_config_rejects_bad_values :: proc(t: ^testing.T) {
 	testing.expect(t, validate_game_config(Game_Config{name = "x", tick_rate = 60, day_length_seconds = 0}) != "")
 	unknown := [?]Starting_Item{{item = "no_such_item", count = 1}}
 	testing.expect(t, validate_starting_items(unknown[:], make_test_items()) != "")
+	testing.expect(t, strings.has_prefix(validate_starting_items(unknown[:], make_test_items(), "tech demo item"), "tech demo item"))
 	empty := [?]Starting_Item{{item = "torch", count = 0}}
 	testing.expect(t, validate_starting_items(empty[:], make_test_items()) != "")
 }

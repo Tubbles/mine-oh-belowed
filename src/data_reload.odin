@@ -65,6 +65,10 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 		platform.log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		return {}, {}, false
 	}
+	if problem := validate_starting_items(config.tech_demo_items, content.items, "tech demo item"); problem != "" {
+		platform.log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
+		return {}, {}, false
+	}
 	content.developer_kits = load_developer_kits(data_directory, content.items) or_return
 	content.touch_overlay = load_touch_overlay(data_directory) or_return
 	content.planets = load_planets(data_directory) or_return
@@ -374,6 +378,7 @@ reload_session :: proc(session: ^Session, old_content: Game_Content, data: Game_
 	field_content: Field_Content
 	if session.simulation.field.enabled {
 		field_content = make_field_content(config, data.content.items, data.content.machines, data.content.field_materials, data.content.lighting, session.planet, session.simulation.field.spacing_millimetres)
+		field_content.tech_demo = session.field_content.tech_demo
 	}
 	old_simulation_content := session_simulation_content(old_content, session.technologies, session.field_content)
 	new_simulation_content := session_simulation_content(data.content, technologies, field_content)

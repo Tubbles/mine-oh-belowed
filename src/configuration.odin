@@ -86,6 +86,9 @@ Player_Configuration :: struct {
 	// The edits directory is set but All files access is missing (work
 	// item 0228): the title shows one toast.
 	edits_need_access: bool,
+	// --tech-demo alone (0291): the title opens with the Tech demo screen
+	// pushed.
+	tech_demo_menu: bool,
 }
 
 // The environment variables the layering reads, passed in so that tests

@@ -147,6 +147,72 @@ test_new_worlds_generate_each_preset_radius :: proc(t: ^testing.T) {
 	}
 }
 
+// The water tech demo's session (0291): at the chosen radius with the
+// chosen water model, nothing saved, no fall, no quest, the player
+// standing within 2 m of the spring's surface on its radial with the demo
+// kit in the hotbar's first slots and nothing of the starter kit; at the
+// pod when the start is the home; the planet's default radius for 0.
+@(test)
+test_the_tech_demo_starts_at_the_spring_without_a_save_or_a_fall :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session, problem := start_tech_demo_session(config, content, make_test_generator(DEFAULT_WORLD_SEED), DEFAULT_WORLD_SEED, {water_model = .Bodies, planet_radius_metres = 4000, start = .Spring})
+	testing.expect_value(t, problem, "")
+	if session == nil {
+		return
+	}
+	defer end_session(session)
+	simulation := &session.simulation
+	testing.expect_value(t, session.planet.radius_metres, 4000)
+	testing.expect_value(t, simulation.world.settings.water_model, Water_Model.Bodies)
+	testing.expect(t, !session.save.enabled, "saving is off")
+	testing.expect_value(t, session.save.location.directory_name, "")
+	testing.expect_value(t, simulation.field.arrival, Field_Arrival{})
+	testing.expect(t, session.field_content.tech_demo)
+	testing.expect_value(t, simulation.quests.active, NO_QUEST)
+	testing.expect_value(t, len(simulation.quests.messages), 0)
+	// One machine's: the frame's hosting leaves it offline, no listener,
+	// no discovery socket.
+	host_windowed_session(session, default_hosting_plan())
+	testing.expect_value(t, session.network.role, Network_Role.Offline)
+	testing.expect_value(t, session.network.listener, platform.Network_Listener{})
+	testing.expect_value(t, session.network.discovery, platform.Discovery_Socket{})
+	player := &simulation.players[0]
+	testing.expect_value(t, player.field.seat, Field_Seat.Standing)
+	spring := planet_spring_direction(session.planet.springs[0])
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, session.planet, simulation.field.spacing_millimetres)
+	surface := field_surface_under(generation, World_Position(fixed_scale(spring, generation.radius)), 0)
+	feet := player.field.position
+	testing.expectf(t, vector_length(cast([3]i64)(feet - surface)) <= 2 * POSITION_UNITS_PER_METRE, "the feet %v stand %d units from the spring's surface %v", feet, vector_length(cast([3]i64)(feet - surface)), surface)
+	radial, _ := normalize_fixed(cast([3]i64)feet)
+	testing.expectf(t, fixed_dot(radial, spring) >= UNIT_VECTOR_ONE - 2, "the feet lie on the spring's radial (dot %d)", fixed_dot(radial, spring))
+	slots := player.inventory.slots
+	testing.expect_value(t, slots[0], Item_Stack{test_item(content.items, "iron_pickaxe"), 1})
+	testing.expect_value(t, slots[1], Item_Stack{test_item(content.items, "dirt"), 50})
+	testing.expect_value(t, slots[2], Item_Stack{test_item(content.items, "torch"), 20})
+	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "wooden_foundation")), 0)
+	testing.expect_value(t, player.selected_hotbar_slot, 0)
+
+	home, home_problem := start_tech_demo_session(config, content, make_test_generator(DEFAULT_WORLD_SEED), DEFAULT_WORLD_SEED, {planet_radius_metres = 4000, start = .Home})
+	testing.expect_value(t, home_problem, "")
+	if home != nil {
+		defer end_session(home)
+		pod, found := field_pod_spawn(&home.simulation.world.entities, content.machines)
+		testing.expect(t, found, "the world has a pod")
+		body := home.simulation.players[0].field
+		testing.expect_value(t, body.seat, Field_Seat.Standing)
+		testing.expect(t, vector_length(cast([3]i64)(body.position - pod.position)) <= 2 * POSITION_UNITS_PER_METRE, "the player stands in the pod")
+		testing.expect_value(t, home.simulation.world.settings.water_model, Water_Model.Teleport)
+	}
+
+	default_radius, default_problem := start_tech_demo_session(config, content, make_test_generator(DEFAULT_WORLD_SEED), DEFAULT_WORLD_SEED, DEFAULT_TECH_DEMO_SETUP)
+	testing.expect_value(t, default_problem, "")
+	if default_radius != nil {
+		defer end_session(default_radius)
+		testing.expect_value(t, default_radius.planet.radius_metres, content.planets[0].radius_metres)
+	}
+}
+
 // Two simulations of one plan fed the same script hash alike at tick
 // 1000, and part after one extra input on one side.
 @(test)

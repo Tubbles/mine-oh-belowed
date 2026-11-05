@@ -373,6 +373,30 @@ any_water_awake :: proc(world: ^Field_World) -> bool {
 BASIN_LOW :: [3]i32{4, 3, 4}
 BASIN_HIGH :: [3]i32{11, FIELD_CHUNK_SIZE - 1, 11}
 
+// The overlay's census (0291) sums the fill over the loaded chunks and
+// counts the awake samples of the awake chunks; the cubic metres are
+// whole cubes of the spacing per full sample.
+@(test)
+test_the_water_census_counts_fill_and_awake_samples :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	chunk := world.chunks[{0, WATER_TEST_CHUNK_Y, 0}]
+	for index in 0 ..< 3 {
+		chunk.water[index] = FIELD_WATER_FULL
+	}
+	chunk.water[3], chunk.water[4] = 10, 10
+	set_field_sample_bit(&chunk.water_awake, 1)
+	set_field_sample_bit(&chunk.water_awake, 4)
+	world.water_awake_chunks[chunk.coordinate] = {}
+	census := field_water_census(&world)
+	testing.expect_value(t, census.fill, 3 * i64(FIELD_WATER_FULL) + 20)
+	testing.expect_value(t, census.awake_samples, 2)
+	testing.expect_value(t, census.awake_chunks, 1)
+	testing.expect_value(t, field_water_cubic_metres(FIELD_WATER_FULL * 8, 500), 1)
+	testing.expect_value(t, field_water_cubic_metres(FIELD_WATER_FULL * 7, 500), 0)
+	testing.expect_value(t, field_water_cubic_metres(FIELD_WATER_FULL * 3, 1000), 3)
+}
+
 @(test)
 test_water_poured_into_a_basin_settles_level_and_keeps_its_volume :: proc(t: ^testing.T) {
 	world := make_water_test_world()

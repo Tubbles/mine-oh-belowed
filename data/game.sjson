@@ -15,6 +15,14 @@ starting_items = [
 	{item = "wooden_foundation", count = 16}
 	{item = "torch", count = 4}
 ]
+// The water tech demo's hotbar (work item 0291): one entry per slot in
+// order. Dirt is one full stack since the demo never debits it; 0295 adds
+// its bucket, drain bucket and pump before the torch.
+tech_demo_items = [
+	{item = "iron_pickaxe", count = 1}
+	{item = "dirt", count = 50}
+	{item = "torch", count = 20}
+]
 // World setting "all recipes unlocked at start", for repeat playthroughs:
 // every technology counts as researched and every item as discovered.
 // The --unlock-all command line flag does the same.

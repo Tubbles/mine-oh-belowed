@@ -59,6 +59,8 @@ Game_Config :: struct {
 	tick_rate:            int,
 	day_length_seconds:   int,
 	starting_items:       []Starting_Item,
+	// The water tech demo's hotbar (0291), validated like the starter kit.
+	tech_demo_items:      []Starting_Item,
 	// The world setting "all recipes unlocked at start".
 	all_recipes_unlocked: bool,
 	// The world setting "vein finiteness": true lets veins never run dry.
@@ -1108,13 +1110,13 @@ field_player_speed_problem :: proc(player: Field_Player_Config, tick_rate: int) 
 }
 
 // Needs the item registry, so it runs after both files are loaded.
-validate_starting_items :: proc(starting_items: []Starting_Item, items: Item_Registry) -> string {
+validate_starting_items :: proc(starting_items: []Starting_Item, items: Item_Registry, what := "starting item") -> string {
 	for starting in starting_items {
 		if _, found := find_item_id(items, starting.item); !found {
-			return fmt.tprintf("starting item %q is not in %s", starting.item, ITEMS_FILE_NAME)
+			return fmt.tprintf("%s %q is not in %s", what, starting.item, ITEMS_FILE_NAME)
 		}
 		if starting.count < 1 {
-			return fmt.tprintf("starting item %q has count %d", starting.item, starting.count)
+			return fmt.tprintf("%s %q has count %d", what, starting.item, starting.count)
 		}
 	}
 	return ""

@@ -46,12 +46,22 @@ World_Settings :: struct {
 	mode:                       World_Mode,
 	// Stored; read by death and respawn (M15).
 	keep_inventory:             bool,
+	// The water field's rule (0291), read by the water step.
+	water_model:                Water_Model,
 }
 
 World_Mode :: enum u8 {
 	Peaceful,
 	Survival,
 	Creative,
+}
+
+// The water field's rule (0291): Teleport is 0292's cellular rule with
+// teleport pressure, Bodies 0293's bodies of still water. Stored with
+// the world, read by the water step.
+Water_Model :: enum u8 {
+	Teleport,
+	Bodies,
 }
 
 world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> World_Settings {
@@ -66,6 +76,7 @@ world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> Wo
 		planet_radius_metres = settings.planet_radius_metres,
 		mode = settings.mode,
 		keep_inventory = settings.keep_inventory,
+		water_model = settings.water_model,
 	}
 }
 

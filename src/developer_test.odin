@@ -88,13 +88,13 @@ test_give_argument_parsing :: proc(t: ^testing.T) {
 test_chapter_flag_checks_the_kits :: proc(t: ^testing.T) {
 	items := make_test_items()
 	kits := make_test_developer_kits(items)
-	_, problem := command_line_data_problem(Command_Line{chapter = 9}, items, kits)
+	_, problem := command_line_data_problem(Command_Line{chapter = 9}, items, kits, nil)
 	testing.expect(t, problem != "")
 	command_line := Command_Line{chapter = 8}
 	append(&command_line.give_arguments, "iron_plate:3")
 	defer delete(command_line.give_arguments)
 	grants: []Developer_Grant
-	grants, problem = command_line_data_problem(command_line, items, kits)
+	grants, problem = command_line_data_problem(command_line, items, kits, nil)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, len(grants), 1)
 	testing.expect_value(t, command_line_value_problem(Command_Line{chapter = -1}) != "", true)
