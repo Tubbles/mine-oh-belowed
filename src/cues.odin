@@ -67,7 +67,14 @@ Frame_Cues :: struct {
 Cue_Counters :: struct {
 	tick:                 u64,
 	distance_millimetres: u64,
+	// The simulation's cheat speed or the field player's cheat movement
+	// (0296), and the factor the walk is divided by under it, so the
+	// footsteps keep their cadence per metre (DESIGN.md: no cadence speeds
+	// up with cheat speed): the larger of the block world's
+	// CHEAT_SPEED_FACTOR and the field's cheat_speed_factor that is on;
+	// 0 reads as the block world's.
 	cheat_speed:          bool,
+	cheat_factor:         f64,
 	placed_total:         u64,
 	blocks_mined:         u64,
 	// The local player's dig, and the block now at the last frame's dig
@@ -97,12 +104,32 @@ Cue_Memory :: struct {
 
 // The cadence distance after a tick walked from previous_distance to
 // distance: under cheat speed the tick's walk counts divided by the cheat
-// speed factor, rounded like the statistics round a tick's walk.
-advance_cadence_millimetres :: proc(cadence, previous_distance, distance: u64, cheat_speed: bool) -> u64 {
+// factor (the block world's by default, the field's cheat_speed_factor
+// where its cheat movement is on, 0296), rounded like the statistics
+// round a tick's walk.
+advance_cadence_millimetres :: proc(cadence, previous_distance, distance: u64, cheat_speed: bool, cheat_factor: f64 = CHEAT_SPEED_FACTOR) -> u64 {
 	if distance <= previous_distance {
 		return cadence
 	}
-	return cadence + u64(math.round(f64(distance - previous_distance) / f64(cheat_speed_factor(cheat_speed))))
+	// A record that names no factor (0) divides by the block world's.
+	divisor := f64(1)
+	if cheat_speed {
+		divisor = cheat_factor >= 1 ? cheat_factor : CHEAT_SPEED_FACTOR
+	}
+	return cadence + u64(math.round(f64(distance - previous_distance) / divisor))
+}
+
+// The cadence's divisor of the cheats that are on: the block world's
+// constant, the field's factor, the larger where both are, 1 for none.
+cue_cheat_factor :: proc(cheat_speed, cheat_movement: bool, field_cheat_factor: i64) -> f64 {
+	factor := f64(1)
+	if cheat_speed {
+		factor = CHEAT_SPEED_FACTOR
+	}
+	if cheat_movement {
+		factor = max(factor, f64(field_cheat_factor))
+	}
+	return factor
 }
 
 // A foot comes down each half cycle: true when the distance crossed one.
@@ -160,7 +187,7 @@ advance_walk :: proc(memory: Cue_Memory, counters: Cue_Counters) -> (next: Cue_M
 		return next, false
 	}
 	next.moving = counters.distance_millimetres != memory.distance_millimetres
-	next.cadence_millimetres = advance_cadence_millimetres(memory.cadence_millimetres, memory.distance_millimetres, counters.distance_millimetres, counters.cheat_speed)
+	next.cadence_millimetres = advance_cadence_millimetres(memory.cadence_millimetres, memory.distance_millimetres, counters.distance_millimetres, counters.cheat_speed, counters.cheat_factor)
 	next.tick, next.distance_millimetres = counters.tick, counters.distance_millimetres
 	return next, footstep_due(memory.cadence_millimetres, next.cadence_millimetres)
 }
@@ -250,15 +277,17 @@ launching_pad_count :: proc(world: ^World) -> int {
 }
 
 // The counters of the frame for the local player; the memory names the
-// cell of the last frame's dig.
-observe_cue_counters :: proc(memory: Cue_Memory, simulation: ^Simulation_State, local_player: int) -> Cue_Counters {
+// cell of the last frame's dig. field_cheat_factor is the field tuning's
+// cheat_speed_factor (0296).
+observe_cue_counters :: proc(memory: Cue_Memory, simulation: ^Simulation_State, local_player: int, field_cheat_factor: i64) -> Cue_Counters {
 	world := &simulation.world
 	player := simulation.players[local_player]
 	statistics := simulation.records.statistics
 	return Cue_Counters {
 		tick = simulation.tick,
 		distance_millimetres = statistics.distance_walked_millimetres,
-		cheat_speed = simulation.cheat_speed,
+		cheat_speed = simulation.cheat_speed || player.field.cheat_movement,
+		cheat_factor = cue_cheat_factor(simulation.cheat_speed, player.field.cheat_movement, field_cheat_factor),
 		placed_total = placed_total(statistics),
 		blocks_mined = statistics.blocks_mined,
 		dig = player.mining,

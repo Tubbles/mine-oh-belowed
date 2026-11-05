@@ -1,5 +1,7 @@
 package game
 
+import "core:slice"
+import "core:strings"
 import "core:testing"
 
 // Test terrains of the field player, written straight into a Field_World
@@ -60,6 +62,13 @@ test_field_player_config :: proc() -> Field_Player_Config {
 		fall_speed_limit_millimetres_per_second = 50000,
 		fly_speed_millimetres_per_second = 12000,
 		fly_sprint_speed_millimetres_per_second = 36000,
+		jetpack_acceleration_millimetres_per_second_squared = 20000,
+		jetpack_budget_ticks = 90,
+		jetpack_refill_ticks_per_tick = 2,
+		jet_speed_limit_millimetres_per_second = 9000,
+		cheat_speed_factor = 4,
+		cheat_jump_factor = 3,
+		cheat_jet_factor = 3,
 	}
 }
 
@@ -298,20 +307,23 @@ test_heading :: proc(degrees: int) -> [3]i64 {
 }
 
 // Walks 70 ticks along +x (or turned towards +z) from 2 m before a ledge
-// of height (position units), holding Jump when asked, then stands for a
-// second (a jump lasts about that); reports whether the player ended on
-// the top past the face.
+// of height (position units), holding Jump on the ground when asked (in
+// the air a held Jump would jet, 0296, which is not the jump or the
+// mantle under test), then stands for a second (a jump lasts about
+// that); reports whether the player ended on the top past the face.
 walk_at_test_ledge :: proc(height: i64, spacing_millimetres: int, jump: bool, config := Field_Player_Config{}, heading_degrees := 0) -> bool {
 	world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = height}, spacing_millimetres)
 	defer destroy_field_world(&world)
 	tuning := test_field_tuning(spacing_millimetres, config)
 	player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE / 4, 0), test_heading(heading_degrees))
 	run_field_player(&world, tuning, &player, {}, 20)
-	input := FIELD_WALK_FORWARD
-	if jump {
-		input.held = {.Jump}
+	for _ in 0 ..< 70 {
+		input := FIELD_WALK_FORWARD
+		if jump && player.on_ground {
+			input.held = {.Jump}
+		}
+		tick_field_player(&world, nil, tuning, &player, input)
 	}
-	run_field_player(&world, tuning, &player, input, 70)
 	run_field_player(&world, tuning, &player, {}, 60)
 	on_top := abs(site_height(player.position) - height) <= tenth_sample(spacing_millimetres)
 	return on_top && player.position.x > metres_to_position_units(TEST_LEDGE_FACE_METRES)
@@ -473,6 +485,211 @@ test_the_field_player_config_is_bounded :: proc(t: ^testing.T) {
 	testing.expect(t, field_player_problem(high_crouch_eye) != "", "a crouch eye above the crouch is refused")
 	testing.expect_value(t, field_player_speed_problem(test_field_player_config(), 60), "")
 	testing.expect(t, field_player_speed_problem(test_field_player_config(), 1) != "", "36 m/s flying is 36 m a tick at 1 Hz")
+	// The jetpack and the cheat (0296).
+	no_budget := test_field_player_config()
+	no_budget.jetpack_budget_ticks = 0
+	testing.expect(t, field_player_problem(no_budget) != "", "a budget of nothing is refused")
+	fast_refill := test_field_player_config()
+	fast_refill.jetpack_refill_ticks_per_tick = 91
+	testing.expect(t, field_player_problem(fast_refill) != "", "a refill over the budget is refused")
+	no_cheat := test_field_player_config()
+	no_cheat.cheat_speed_factor = 0
+	testing.expect(t, field_player_problem(no_cheat) != "", "a cheat factor of nothing is refused")
+	wild_cheat := test_field_player_config()
+	wild_cheat.cheat_speed_factor = 9
+	testing.expect(t, field_player_problem(wild_cheat) != "", "a cheat factor of 9 is refused")
+	eightfold := test_field_player_config()
+	eightfold.cheat_speed_factor = 8
+	testing.expect_value(t, field_player_speed_problem(eightfold, 60), "")
+	testing.expect(t, field_player_speed_problem(eightfold, 30) != "", "fly sprint times 8 is 9.6 m a tick at 30 Hz")
+	testing.expect_value(t, field_player_speed_problem(test_field_player_config(), 30), "")
+}
+
+// A player standing on flat ground at 1000 mm with the full jet budget a
+// spawn gives (fill_field_jet); a bare make_field_player starts with
+// none, as a save from before 0296 loads.
+start_jet_test_player :: proc(t: ^testing.T, world: ^Field_World, tuning: Field_Player_Tuning, look: [3]i64) -> Field_Player {
+	player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE / 4, 0), look)
+	testing.expect_value(t, player.jet_budget_ticks, 0)
+	fill_field_jet(&player, tuning)
+	run_field_player(world, tuning, &player, {}, 20)
+	testing.expect(t, player.on_ground)
+	testing.expect_value(t, player.jet_budget_ticks, 90)
+	return player
+}
+
+// The jetpack (0296): Jump held through a jump spends nothing before the
+// apex, then thrusts until the budget is spent, carrying the player past
+// three jump heights; landed, the budget refills two ticks a tick on the
+// ground from the tick after the landing.
+@(test)
+test_the_jet_carries_the_jump_higher_until_the_budget_is_spent :: proc(t: ^testing.T) {
+	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(1000)
+	player := start_jet_test_player(t, &world, tuning, {UNIT_VECTOR_ONE, 0, 0})
+	start := site_height(player.position)
+	apex: i64 = 0
+	held := 0
+	for ; held < 300; held += 1 {
+		tick_field_player(&world, nil, tuning, &player, {held = {.Jump}})
+		apex = max(apex, site_height(player.position) - start)
+		if held == 9 {
+			testing.expect_value(t, player.jet_budget_ticks, 90)
+		}
+		if player.jet_budget_ticks == 0 {
+			break
+		}
+	}
+	testing.expect(t, held < 300, "the budget was never spent")
+	landed := false
+	for _ in 0 ..< 600 {
+		tick_field_player(&world, nil, tuning, &player, {})
+		apex = max(apex, site_height(player.position) - start)
+		if player.on_ground {
+			landed = true
+			break
+		}
+	}
+	wanted := 3 * millimetres_to_position_units(test_field_player_config().jump_height_millimetres)
+	testing.expectf(t, apex >= wanted, "the jet rose %d, wanted at least %d", apex, wanted)
+	testing.expect(t, landed, "the player never landed")
+	testing.expect_value(t, player.jet_budget_ticks, 0)
+	run_field_player(&world, tuning, &player, {}, 1)
+	testing.expect_value(t, player.jet_budget_ticks, 2)
+	run_field_player(&world, tuning, &player, {}, 43)
+	testing.expect_value(t, player.jet_budget_ticks, 88)
+	run_field_player(&world, tuning, &player, {}, 1)
+	testing.expect_value(t, player.jet_budget_ticks, 90)
+	run_field_player(&world, tuning, &player, {}, 10)
+	testing.expect_value(t, player.jet_budget_ticks, 90)
+}
+
+// Jump pressed again in the air engages the jet at once, before the
+// apex: the touch overlay's jump tap is this one tick press, which on
+// the ground jumps as test_the_jump_rises_its_height asserts.
+@(test)
+test_a_second_jump_press_in_the_air_jets_at_once :: proc(t: ^testing.T) {
+	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(1000)
+	player := start_jet_test_player(t, &world, tuning, {UNIT_VECTOR_ONE, 0, 0})
+	run_field_player(&world, tuning, &player, {held = {.Jump}}, 1)
+	run_field_player(&world, tuning, &player, {}, 3)
+	testing.expect(t, fixed_dot(player.velocity, player.up) > 0, "still rising")
+	testing.expect_value(t, player.jet_budget_ticks, 90)
+	run_field_player(&world, tuning, &player, {held = {.Jump}, just_pressed = {.Jump}}, 1)
+	testing.expect_value(t, player.jet_budget_ticks, 89)
+	testing.expect(t, player.jetting)
+	run_field_player(&world, tuning, &player, {held = {.Jump}}, 5)
+	testing.expect_value(t, player.jet_budget_ticks, 84)
+}
+
+// Cheat movement (0296): R3 toggles it only with the developer's frame;
+// on, the walk covers four times the distance, the jump rises three
+// times the height and fly mode climbs four times as fast.
+@(test)
+test_cheat_movement_multiplies_the_walk_the_jump_and_the_fly :: proc(t: ^testing.T) {
+	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(1000)
+	plain := start_jet_test_player(t, &world, tuning, {-UNIT_VECTOR_ONE, 0, 0})
+	cheat := plain
+	run_field_player(&world, tuning, &cheat, {just_pressed = {.Toggle_Cheat}}, 1)
+	testing.expect(t, !cheat.cheat_movement, "without the developer's frame the toggle does nothing")
+	run_field_player(&world, tuning, &cheat, {just_pressed = {.Toggle_Cheat}, developer = true}, 1)
+	testing.expect(t, cheat.cheat_movement)
+	plain_start, cheat_start := plain.position, cheat.position
+	run_field_player(&world, tuning, &plain, FIELD_WALK_FORWARD, 30)
+	run_field_player(&world, tuning, &cheat, FIELD_WALK_FORWARD, 30)
+	plain_moved := plain_start.x - plain.position.x
+	cheat_moved := cheat_start.x - cheat.position.x
+	testing.expectf(t, plain_moved > 0 && abs(cheat_moved - 4 * plain_moved) <= tenth_sample(1000), "the plain walk went %d, the cheat's %d", plain_moved, cheat_moved)
+	run_field_player(&world, tuning, &cheat, {}, 20)
+	ground := site_height(cheat.position)
+	run_field_player(&world, tuning, &cheat, {held = {.Jump}}, 1)
+	apex: i64 = 0
+	for _ in 0 ..< 90 {
+		tick_field_player(&world, nil, tuning, &cheat, {})
+		apex = max(apex, site_height(cheat.position) - ground)
+	}
+	wanted := millimetres_to_position_units(3300)
+	testing.expectf(t, abs(apex - wanted) <= sample_axis_to_position(1, 1000) / 4, "the cheat jump rose %d, wanted %d", apex, wanted)
+	run_field_player(&world, tuning, &cheat, {}, 60)
+	testing.expect(t, cheat.on_ground)
+	run_field_player(&world, tuning, &cheat, {just_pressed = {.Toggle_Fly_Mode}}, 1)
+	testing.expect(t, cheat.flying)
+	before := cheat.position
+	run_field_player(&world, tuning, &cheat, {held = {.Jump}}, 60)
+	rose := fixed_dot(cast([3]i64)(cheat.position - before), cheat.up)
+	testing.expectf(t, abs(rose - metres_to_position_units(48)) <= POSITION_UNITS_PER_METRE / 16, "the cheat fly rose %d", rose)
+}
+
+// Two players stepped alike stay alike through a cheat jump and jet, so
+// every machine of a lockstep game agrees on the jet's integers.
+@(test)
+test_two_field_players_stepped_alike_stay_alike :: proc(t: ^testing.T) {
+	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(1000)
+	first := start_jet_test_player(t, &world, tuning, {UNIT_VECTOR_ONE, 0, 0})
+	second := first
+	script := [?]struct {
+		input: Field_Player_Input,
+		ticks: int,
+	}{{{}, 20}, {{just_pressed = {.Toggle_Cheat}, developer = true}, 1}, {{held = {.Jump}}, 100}, {{}, 100}}
+	tick := 0
+	for step in script {
+		for _ in 0 ..< step.ticks {
+			tick_field_player(&world, nil, tuning, &first, step.input)
+			tick_field_player(&world, nil, tuning, &second, step.input)
+			tick += 1
+			testing.expectf(t, first.position == second.position && first.velocity == second.velocity && first.jet_budget_ticks == second.jet_budget_ticks, "tick %d: the players differ", tick)
+		}
+	}
+	testing.expect(t, first.cheat_movement, "the cheat was toggled")
+	testing.expect(t, first.jet_budget_ticks < 90, "the jet was used")
+	first_bytes := make([dynamic]byte, context.temp_allocator)
+	second_bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&first_bytes, &first)
+	write_value_of(&second_bytes, &second)
+	testing.expect(t, slice.equal(first_bytes[:], second_bytes[:]), "the saved bodies differ")
+}
+
+// The field player's tick stays integer: no float type and no math call
+// in its source, as the lockstep needs.
+@(test)
+test_the_field_player_source_stays_integer :: proc(t: ^testing.T) {
+	source := #load("player_field.odin", string)
+	testing.expect(t, len(source) > 0)
+	testing.expect(t, !strings.contains(source, "f32"), "player_field.odin names f32")
+	testing.expect(t, !strings.contains(source, "f64"), "player_field.odin names f64")
+	testing.expect(t, !strings.contains(source, "math."), "player_field.odin calls math")
+}
+
+// Work item 0296: the jet budget, the latch and the cheat flag round
+// trip; a player written before them loads 0, false and false.
+@(test)
+test_the_field_player_saves_its_jet_and_cheat :: proc(t: ^testing.T) {
+	player := make_field_player(FAR_FEET, {UNIT_VECTOR_ONE, 0, 0})
+	player.jet_budget_ticks, player.jetting, player.cheat_movement = 7, true, true
+	bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&bytes, &player)
+	read: Field_Player
+	reader := Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read.jet_budget_ticks, 7)
+	testing.expect(t, read.jetting)
+	testing.expect(t, read.cheat_movement)
+	old := Field_Player_Before_Crouch{yaw = 7}
+	clear(&bytes)
+	write_value_of(&bytes, &old)
+	read = {}
+	reader = Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read.yaw, 7)
+	testing.expect_value(t, read.jet_budget_ticks, 0)
+	testing.expect(t, !read.jetting && !read.cheat_movement, "an old save loads without the jet or the cheat")
 }
 
 // The field player saves its foundation block indices (0193); a player

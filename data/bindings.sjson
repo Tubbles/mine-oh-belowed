@@ -52,6 +52,8 @@ bindings = [
 	{action = "Placement_Nudge_Left" device = "gamepad" control = "DPAD_LEFT" context = "world"}
 	{action = "Placement_Nudge_Right" device = "gamepad" control = "DPAD_RIGHT" context = "world"}
 	{action = "Sprint" device = "gamepad" control = "LEFT_STICK" context = "world"}
+	// R3 toggles cheat movement on the field in the tech demo and under --dev (0296); in menus the click is Menu_Drop.
+	{action = "Toggle_Cheat_Movement" device = "gamepad" control = "RIGHT_STICK" context = "world"}
 	{action = "Open_Map" device = "gamepad" control = "BACK" context = "both"}
 	{action = "Pause" device = "gamepad" control = "START" context = "both"}
 	{action = "Mine" device = "gamepad" control = "RIGHT_TRIGGER" context = "world"}

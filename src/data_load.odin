@@ -236,6 +236,19 @@ Field_Player_Config :: struct {
 	fall_speed_limit_millimetres_per_second: int,
 	fly_speed_millimetres_per_second:        int,
 	fly_sprint_speed_millimetres_per_second: int,
+	// The jetpack (0296): Jump held in the air thrusts along the up at the
+	// acceleration for the budget's ticks, the up speed held to the limit;
+	// each tick on walkable ground gives the refill's ticks back.
+	jetpack_acceleration_millimetres_per_second_squared: int,
+	jetpack_budget_ticks:                    int,
+	jetpack_refill_ticks_per_tick:           int,
+	jet_speed_limit_millimetres_per_second:  int,
+	// Cheat movement (0296): the walk, sprint, fly and fly sprint speeds
+	// times the speed factor, the jump height times the jump factor, the
+	// jet's thrust and limit times the jet factor.
+	cheat_speed_factor:                      int,
+	cheat_jump_factor:                       int,
+	cheat_jet_factor:                        int,
 }
 
 // The water field (work item 0172, world_field_water.odin): fill in
@@ -317,6 +330,12 @@ MAXIMUM_FIELD_PLAYER_SPEED_MILLIMETRES_PER_SECOND :: 200000
 MAXIMUM_STEP_HEIGHT_SAMPLES :: 4
 // 8 m a tick: 2^31 velocity units (field_player_speed_problem).
 MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK :: 8000
+// The jetpack and the cheat (0296): a thousand metres per second squared,
+// a minute of thrust, and factors of at most 8, so every cheat product
+// is checked against the 8 m a tick like the plain speeds.
+MAXIMUM_FIELD_JET_ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED :: 1000000
+MAXIMUM_FIELD_JET_BUDGET_TICKS :: 3600
+MAXIMUM_FIELD_CHEAT_FACTOR :: 8
 // The widest of the world setting's sample spacings
 // (SAMPLE_SPACING_CHOICES_MILLIMETRES, asserted in world_field.odin), here
 // so the content checks need not reach into the world.
@@ -1035,6 +1054,14 @@ field_player_problem :: proc(player: Field_Player_Config) -> string {
 		{"fall_speed_limit_millimetres_per_second", player.fall_speed_limit_millimetres_per_second, 1, speed},
 		{"fly_speed_millimetres_per_second", player.fly_speed_millimetres_per_second, 1, speed},
 		{"fly_sprint_speed_millimetres_per_second", player.fly_sprint_speed_millimetres_per_second, 1, speed},
+		{"jetpack_acceleration_millimetres_per_second_squared", player.jetpack_acceleration_millimetres_per_second_squared, 1, MAXIMUM_FIELD_JET_ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED},
+		{"jetpack_budget_ticks", player.jetpack_budget_ticks, 1, MAXIMUM_FIELD_JET_BUDGET_TICKS},
+		{"jetpack_refill_ticks_per_tick", player.jetpack_refill_ticks_per_tick, 1, player.jetpack_budget_ticks},
+		{"jet_speed_limit_millimetres_per_second", player.jet_speed_limit_millimetres_per_second, 1, speed},
+		{"cheat_speed_factor", player.cheat_speed_factor, 1, MAXIMUM_FIELD_CHEAT_FACTOR},
+		{"cheat_jump_factor", player.cheat_jump_factor, 1, MAXIMUM_FIELD_CHEAT_FACTOR},
+		{"cheat_jet_factor", player.cheat_jet_factor, 1, MAXIMUM_FIELD_CHEAT_FACTOR},
+		{"jump_height_millimetres times cheat_jump_factor", player.jump_height_millimetres * player.cheat_jump_factor, 1, length},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {
@@ -1086,10 +1113,12 @@ field_water_problem :: proc(water: Field_Water_Config) -> string {
 	return ""
 }
 
-// Each speed within MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK at the tick
-// rate: the controller's velocities (1/65536 of a 1/4096 m unit per tick)
-// then stay below 2^31, so their products with unit vectors and their
-// squares stay inside an i64 (player_field.odin).
+// Each speed, and each cheat product of one (0296), within
+// MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK at the tick rate: the
+// controller's velocities (1/65536 of a 1/4096 m unit per tick) then stay
+// below 2^31, so their products with unit vectors and their squares stay
+// inside an i64 (player_field.odin). The jet's acceleration is held to
+// that much a tick a tick the same way.
 field_player_speed_problem :: proc(player: Field_Player_Config, tick_rate: int) -> string {
 	speeds := [?]Config_Bound {
 		{"slide_speed_millimetres_per_second", player.slide_speed_millimetres_per_second, 0, 0},
@@ -1099,12 +1128,21 @@ field_player_speed_problem :: proc(player: Field_Player_Config, tick_rate: int) 
 		{"fall_speed_limit_millimetres_per_second", player.fall_speed_limit_millimetres_per_second, 0, 0},
 		{"fly_speed_millimetres_per_second", player.fly_speed_millimetres_per_second, 0, 0},
 		{"fly_sprint_speed_millimetres_per_second", player.fly_sprint_speed_millimetres_per_second, 0, 0},
+		{"jet_speed_limit_millimetres_per_second", player.jet_speed_limit_millimetres_per_second, 0, 0},
+		{"walk_speed_millimetres_per_second times cheat_speed_factor", player.walk_speed_millimetres_per_second * player.cheat_speed_factor, 0, 0},
+		{"sprint_speed_millimetres_per_second times cheat_speed_factor", player.sprint_speed_millimetres_per_second * player.cheat_speed_factor, 0, 0},
+		{"fly_speed_millimetres_per_second times cheat_speed_factor", player.fly_speed_millimetres_per_second * player.cheat_speed_factor, 0, 0},
+		{"fly_sprint_speed_millimetres_per_second times cheat_speed_factor", player.fly_sprint_speed_millimetres_per_second * player.cheat_speed_factor, 0, 0},
+		{"jet_speed_limit_millimetres_per_second times cheat_jet_factor", player.jet_speed_limit_millimetres_per_second * player.cheat_jet_factor, 0, 0},
 	}
 	limit := MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK * tick_rate
 	for speed in speeds {
 		if speed.value > limit {
 			return fmt.tprintf("field_player.%s %d moves more than %d mm a tick at tick_rate %d (at most %d)", speed.name, speed.value, MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK, tick_rate, limit)
 		}
+	}
+	if player.jetpack_acceleration_millimetres_per_second_squared > limit * tick_rate {
+		return fmt.tprintf("field_player.jetpack_acceleration_millimetres_per_second_squared %d accelerates more than %d mm a tick a tick at tick_rate %d (at most %d)", player.jetpack_acceleration_millimetres_per_second_squared, MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK, tick_rate, limit * tick_rate)
 	}
 	return ""
 }

@@ -456,10 +456,18 @@ viewport_aimed_target :: proc(state: ^Frame_State, viewport: Viewport) -> (takes
 	return takes_interact && !viewport.interaction.placement_editor.anchored, has_panel
 }
 
+// The session is the water tech demo (0291): the field's cheat movement
+// and fly double tap are honoured as under --dev (0296). Nothing else
+// reads it; the Developer pause entry, F8 and the data watch keep
+// developer_mode_on.
+field_tech_demo_on :: proc(state: ^Frame_State) -> bool {
+	return state.session != nil && state.session.field_content.tech_demo
+}
+
 // The viewport's frame input as the world takes it: Pipette through the
 // tools radial and the placement editor's controls taken (0215).
 viewport_world_input :: proc(state: ^Frame_State, viewport: Viewport) -> Input_Frame {
-	frame := world_input(viewport.interaction.input, viewport_world_blocked(viewport), viewport.interaction.world_action_guard, state.settings, developer_mode_on(state))
+	frame := world_input(viewport.interaction.input, viewport_world_blocked(viewport), viewport.interaction.world_action_guard, state.settings, developer_mode_on(state) || field_tech_demo_on(state))
 	// The right stick drives an open hotbar radial instead of the camera.
 	if viewport.interaction.ui.radial.open {
 		frame = without_actions(frame, {.Look})
@@ -842,7 +850,7 @@ draw_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: S
 		return
 	}
 	memory := &viewport.presentation.cue_memory
-	cues, memory^ = detect_cues(memory^, observe_cue_counters(memory^, &session.simulation, viewport.player))
+	cues, memory^ = detect_cues(memory^, observe_cue_counters(memory^, &session.simulation, viewport.player, content.field.tuning.cheat_speed_factor))
 	counts = draw_session_world(state, viewport, content, sky, weather, &cues)
 	begin_render_pixel_drawing()
 	if counts.underwater {

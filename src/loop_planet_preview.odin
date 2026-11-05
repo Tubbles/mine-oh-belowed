@@ -299,6 +299,7 @@ planet_preview_body_under_camera :: proc(preview: ^Planet_Preview) -> Field_Play
 // The walk mode with the player standing as body.
 start_planet_preview_walk :: proc(preview: ^Planet_Preview, body: Field_Player) {
 	planet_preview_player(preview).field = body
+	fill_field_jet(&planet_preview_player(preview).field, preview.session.field_content.tuning)
 	preview.walking = true
 	preview.tick_seconds = 0
 	preview.tick_input = {}

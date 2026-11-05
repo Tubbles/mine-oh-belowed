@@ -97,6 +97,9 @@ Action :: enum u8 {
 	Toggle_Fly_Mode,
 	// F9: flying passes through blocks (Player.no_clip).
 	Toggle_No_Clip,
+	// R3 in the world (0296): cheat movement on the field, honoured in the
+	// tech demo and under --dev; in menus the click is Menu_Drop.
+	Toggle_Cheat_Movement,
 	// F8, in developer mode: reload the content tables (work item 0054).
 	Reload_Data,
 	// The placement editor's nudges (0215): the D-pad and the arrows;
@@ -339,6 +342,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Toggle_Camera_Mode,
 	.Toggle_Fly_Mode,
 	.Toggle_No_Clip,
+	.Toggle_Cheat_Movement,
 }
 
 without_actions :: proc(frame: Input_Frame, removed: Action_Set) -> Input_Frame {

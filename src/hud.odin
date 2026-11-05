@@ -37,6 +37,10 @@ HUD_RADIAL_RADIUS :: UI_SLOT_SIZE * 2.5
 // The mining progress bar above the crosshair.
 HUD_MINING_BAR_WIDTH :: 4 * CROSSHAIR_SIZE
 HUD_MINING_BAR_HEIGHT :: 6.0
+// The jetpack's budget bar under the crosshair (0296), inside the gap
+// above the first target line.
+HUD_JET_BAR_WIDTH :: HUD_MINING_BAR_WIDTH
+HUD_JET_BAR_HEIGHT :: 4.0
 // The tools radial (0215): the look pixels that reach an entry, the stick
 // past which the right stick steers directly, the hold before the
 // radial draws (a tap does not flash it) and an entry's width.
@@ -117,6 +121,37 @@ draw_mining_progress :: proc(state: ^Ui_State, mining: Mining_State) {
 	centre := state.screen_units / 2
 	bar := Ui_Rectangle{centre.x - HUD_MINING_BAR_WIDTH / 2, centre.y - CROSSHAIR_SIZE - 2 * UI_GAP - HUD_MINING_BAR_HEIGHT, HUD_MINING_BAR_WIDTH, HUD_MINING_BAR_HEIGHT}
 	ui_progress_bar(state, bar, fraction)
+}
+
+// The jet budget's fraction (0296), shown while it is below full.
+// Presentation only: the budget itself is whole ticks.
+jet_bar_fraction :: proc(player: Field_Player, tuning: Field_Player_Tuning) -> (fraction: f32, shown: bool) {
+	if tuning.jet_budget_ticks == 0 || player.jet_budget_ticks >= tuning.jet_budget_ticks {
+		return 0, false
+	}
+	return f32(player.jet_budget_ticks) / f32(tuning.jet_budget_ticks), true
+}
+
+// A bar under the crosshair with the jet budget left, inside the gap
+// above the first target line (hud_target_line_top), so the lines never
+// move; gone while the budget is full.
+draw_jet_bar :: proc(state: ^Ui_State, player: Field_Player, tuning: Field_Player_Tuning) {
+	fraction, shown := jet_bar_fraction(player, tuning)
+	if !shown {
+		return
+	}
+	centre := state.screen_units / 2
+	ui_progress_bar(state, {centre.x - HUD_JET_BAR_WIDTH / 2, centre.y + CROSSHAIR_SIZE + (UI_GAP - HUD_JET_BAR_HEIGHT) / 2, HUD_JET_BAR_WIDTH, HUD_JET_BAR_HEIGHT}, fraction)
+}
+
+// "CHEAT" right of the crosshair on its line while cheat movement is on
+// (0296), clear of the mining bar above and the target lines below.
+draw_cheat_tag :: proc(state: ^Ui_State, player: Field_Player) {
+	if !player.cheat_movement {
+		return
+	}
+	centre := state.screen_units / 2
+	draw_text(state, {centre.x + CROSSHAIR_SIZE + UI_GAP, centre.y - UI_ROW_HEIGHT / 2, 4 * UI_ROW_HEIGHT, UI_ROW_HEIGHT}, text("hud_cheat_movement"), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
 }
 
 // The touch tap scheme's progress: no crosshair shows where the finger
@@ -619,6 +654,13 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	} else {
 		draw_crosshair(state)
 		draw_mining_progress(state, player.mining)
+	}
+	// The predicted body's jet budget and cheat tag (0296); touch sees
+	// the bar too.
+	if hud.field_session {
+		field := hud_field_player(screen_context, hud)
+		draw_jet_bar(state, field, screen_context.content.field.tuning)
+		draw_cheat_tag(state, field)
 	}
 	draw_hud_hotbar(state, player^, items)
 	draw_craft_queue(state, player^, screen_context)

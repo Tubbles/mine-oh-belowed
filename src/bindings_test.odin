@@ -37,6 +37,7 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	// the touch overlay (0115) presses them on Android.
 	{.RIGHT_FACE_RIGHT, .Sneak},
 	{.LEFT_THUMB, .Sprint},
+	{.RIGHT_THUMB, .Toggle_Cheat_Movement},
 	{.RIGHT_FACE_LEFT, .Open_Inventory},
 	{.RIGHT_FACE_LEFT, .Interact},
 	{.RIGHT_FACE_UP, .Rotate_Building},
@@ -149,6 +150,7 @@ reference_sdl3_buttons := [?]Reference_Sdl3_Button {
 	{.DPAD_LEFT, .Placement_Nudge_Left},
 	{.DPAD_RIGHT, .Placement_Nudge_Right},
 	{.LEFT_STICK, .Sprint},
+	{.RIGHT_STICK, .Toggle_Cheat_Movement},
 	{.BACK, .Open_Map},
 	{.START, .Pause},
 	{.LEFT_PADDLE1, .Jump},

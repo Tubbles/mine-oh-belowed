@@ -122,7 +122,7 @@ field_tick_input :: proc(frame: Input_Frame, tick_rate: int) -> Field_Player_Inp
 	buttons := [?]struct {
 		action: Action,
 		button: Field_Player_Button,
-	}{{.Jump, .Jump}, {.Sneak, .Sneak}, {.Sprint, .Sprint}, {.Sprint_Hold, .Sprint}, {.Toggle_Fly_Mode, .Toggle_Fly_Mode}, {.Toggle_No_Clip, .Toggle_No_Clip}, {.Toggle_Camera_Mode, .Toggle_Camera_Mode}, {.Mine, .Dig}, {.Place, .Place}, {.Rotate_Building, .Next_Brush}, {.Back, .Back}}
+	}{{.Jump, .Jump}, {.Sneak, .Sneak}, {.Sprint, .Sprint}, {.Sprint_Hold, .Sprint}, {.Toggle_Fly_Mode, .Toggle_Fly_Mode}, {.Toggle_No_Clip, .Toggle_No_Clip}, {.Toggle_Camera_Mode, .Toggle_Camera_Mode}, {.Toggle_Cheat_Movement, .Toggle_Cheat}, {.Mine, .Dig}, {.Place, .Place}, {.Rotate_Building, .Next_Brush}, {.Back, .Back}}
 	for entry in buttons {
 		if entry.action in frame.pressed {
 			input.held += {entry.button}
@@ -609,6 +609,7 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 	settle_quest_reward_target(&state.quests, &state.records.statistics, &state.world.entities, machines, true)
 	for &player in state.players {
 		player.field = field_spawn_player(&state.world.entities, machines, seed, planet, spacing_millimetres)
+		fill_field_jet(&player.field, field_content.tuning)
 	}
 	field.world.water_planet = make_field_water_planet(seed, planet, spacing_millimetres)
 	field.felled_trees_recorded = true
@@ -621,6 +622,7 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 make_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, start: Player_Start) -> Player {
 	player := make_player(start)
 	player.field = field_spawn_player(&state.world.entities, content.machines, state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	fill_field_jet(&player.field, content.field.tuning)
 	// The first player of a new world joins inside the fall (0223).
 	if field_arrival_falling(state.field.arrival) {
 		seat_field_player(&state.world.entities, content.machines, content.field.tuning, &player.field, .Strapped)

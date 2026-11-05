@@ -2106,3 +2106,32 @@ test_a_foundation_cannot_be_laid_in_the_cabin :: proc(t: ^testing.T) {
 	cells := [1]World_Coordinate{{}}
 	testing.expect(t, new_frame_cells_meet_a_frame(&state.world.entities.frames, Frame{origin = origin, axes = axes, pitch_millimetres = pitch}, cells[:]), "a frame in the cabin meets the pod's")
 }
+
+// Work item 0296: the cheat movement toggle reaches the field's input.
+@(test)
+test_the_field_input_carries_the_cheat_toggle :: proc(t: ^testing.T) {
+	input := field_tick_input(Input_Frame{just_pressed = {.Toggle_Cheat_Movement}, pressed = {.Toggle_Cheat_Movement}}, 60)
+	testing.expect(t, .Toggle_Cheat in input.just_pressed)
+	testing.expect(t, .Toggle_Cheat in input.held)
+	testing.expect(t, .Toggle_Cheat not_in field_tick_input({}, 60).just_pressed)
+}
+
+// Work item 0296: a session's new player, the first and a joiner, starts
+// with the full jet budget, so the HUD's bar does not show through the
+// arrival; the bar reads not shown.
+@(test)
+test_a_new_field_session_player_starts_with_a_full_jet_budget :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	tuning := session.field_content.tuning
+	testing.expect(t, tuning.jet_budget_ticks > 0)
+	first := session.simulation.players[0].field
+	testing.expect_value(t, first.jet_budget_ticks, tuning.jet_budget_ticks)
+	_, shown := jet_bar_fraction(first, tuning)
+	testing.expect(t, !shown, "a new player's bar is not shown")
+	joiner := make_field_session_player(&session.simulation, field_test_content(session, content), {})
+	defer destroy_player(joiner)
+	testing.expect_value(t, joiner.field.jet_budget_ticks, tuning.jet_budget_ticks)
+}

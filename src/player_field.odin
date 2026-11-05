@@ -22,7 +22,10 @@ package game
 // walkable ground, and steep ground with walkable ground a step up and a
 // stride ahead is stepped onto instead of slid down. Sneak on foot shrinks
 // the capsule to the crouch height (0218); standing waits for room. A
-// machine's collision volumes are surfaces like the field's (0230).
+// machine's collision volumes are surfaces like the field's (0230). Jump
+// held in the air past the apex jets along the up on a budget of ticks
+// that refills on walkable ground, and R3's cheat movement multiplies
+// the speeds, the jump and the jet (0296).
 
 VELOCITY_FRACTION_ONE :: 65536
 // Full stick in Field_Player_Input.move.
@@ -62,6 +65,8 @@ Field_Player_Button :: enum u8 {
 	Toggle_Fly_Mode,
 	Toggle_No_Clip,
 	Toggle_Camera_Mode,
+	// R3's cheat movement (0296), honoured with developer.
+	Toggle_Cheat,
 	// The hand tool (0171, field_mining.odin): dig or place with the
 	// brush while held; the next brush, or with a machine held its next
 	// quarter turn (0179).
@@ -141,6 +146,19 @@ Field_Player_Tuning :: struct {
 	sneak_speed:         i64,
 	fly_speed:           i64,
 	fly_sprint_speed:    i64,
+	// The jetpack (0296): velocity units a tick of thrust along the up,
+	// the up speed it stops pushing at, the ticks of thrust and the ticks
+	// a tick on walkable ground gives back.
+	jet_acceleration:    i64,
+	jet_speed_limit:     i64,
+	jet_budget_ticks:    u16,
+	jet_refill_ticks_per_tick: u16,
+	// Cheat movement (0296): the walk, sprint and fly speeds times the
+	// factor, the launch speed of the cheat's taller jump, and the jet's
+	// thrust and cap times the jet factor.
+	cheat_speed_factor:  i64,
+	cheat_jump_speed:    i64,
+	cheat_jet_factor:    i64,
 }
 
 // position is the feet, the bottom of the capsule. forward is the
@@ -172,6 +190,16 @@ Field_Player :: struct {
 	flying:            bool,
 	no_clip:           bool,
 	jump_tap_ticks:    u8,
+	// The jetpack (0296, field_jet_thrust): the ticks of thrust left,
+	// and whether the jet is engaged (Jump held since it caught, cleared
+	// when Jump is released or the player stands on walkable ground). A
+	// save from before 0296 loads 0 and false: the player refills on its
+	// first ground ticks.
+	jet_budget_ticks:  u16,
+	jetting:           bool,
+	// Cheat movement (0296, toggle_field_cheat_movement): the speeds, the
+	// jump and the jet multiplied. In the hash like the rest of the body.
+	cheat_movement:    bool,
 	camera_mode:       Camera_Mode,
 	// The field under the reticle within the tool reach, and the
 	// foundation frames' cell (0174); the nearer of the two is kept
@@ -234,6 +262,11 @@ gravity_to_velocity_step :: proc(centimetres_per_second_squared: int, tick_rate:
 	return i64(centimetres_per_second_squared) * POSITION_UNITS_PER_METRE * VELOCITY_FRACTION_ONE / (100 * i64(tick_rate) * i64(tick_rate))
 }
 
+// Velocity units gained per tick from millimetres per second squared.
+acceleration_to_velocity_step :: proc(millimetres_per_second_squared: int, tick_rate: int) -> i64 {
+	return i64(millimetres_per_second_squared) * POSITION_UNITS_PER_METRE * VELOCITY_FRACTION_ONE / (MILLIMETRES_PER_METRE * i64(tick_rate) * i64(tick_rate))
+}
+
 // The launch speed that rises height (position units) under gravity:
 // v^2 = 2 g h, with v and g in velocity units, so v is the root of 2 g h
 // in position units times the root of VELOCITY_FRACTION_ONE (256), which
@@ -265,6 +298,14 @@ make_field_player_tuning :: proc(config: Field_Player_Config, planet: Planet, sp
 		sneak_speed = speed_to_velocity(config.sneak_speed_millimetres_per_second, tick_rate),
 		fly_speed = speed_to_velocity(config.fly_speed_millimetres_per_second, tick_rate),
 		fly_sprint_speed = speed_to_velocity(config.fly_sprint_speed_millimetres_per_second, tick_rate),
+		jet_acceleration = acceleration_to_velocity_step(config.jetpack_acceleration_millimetres_per_second_squared, tick_rate),
+		jet_speed_limit = speed_to_velocity(config.jet_speed_limit_millimetres_per_second, tick_rate),
+		jet_budget_ticks = u16(config.jetpack_budget_ticks),
+		jet_refill_ticks_per_tick = u16(config.jetpack_refill_ticks_per_tick),
+		cheat_speed_factor = i64(config.cheat_speed_factor),
+		// The root is not linear, so the cheat jump is its own launch speed.
+		cheat_jump_speed = jump_speed_for_height(millimetres_to_position_units(config.jump_height_millimetres * config.cheat_jump_factor), gravity),
+		cheat_jet_factor = i64(config.cheat_jet_factor),
 	}
 }
 
@@ -437,16 +478,99 @@ update_field_jump_double_tap :: proc(player: ^Field_Player, input: Field_Player_
 	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
+// R3's cheat movement (0296), honoured where the frame is a developer's
+// (the tech demo, --dev, the planet preview), so every machine of a
+// lockstep game toggles alike from the input record.
+toggle_field_cheat_movement :: proc(player: ^Field_Player, input: Field_Player_Input) {
+	if .Toggle_Cheat in input.just_pressed && input.developer {
+		player.cheat_movement = !player.cheat_movement
+	}
+}
+
 // The sneak speed follows the crouch, not the button, so a player held
 // crouched under a ceiling walks slowly until there is room to stand.
-field_walk_speed :: proc(tuning: Field_Player_Tuning, held: Field_Player_Buttons, crouching: bool) -> i64 {
+// Cheat movement multiplies the walk and the sprint, never the sneak: a
+// crouch under a ceiling stays slow.
+field_walk_speed :: proc(tuning: Field_Player_Tuning, held: Field_Player_Buttons, crouching, cheat_movement: bool) -> i64 {
+	factor := cheat_movement ? tuning.cheat_speed_factor : 1
 	switch {
 	case crouching:
 		return tuning.sneak_speed
 	case .Sprint in held:
-		return tuning.sprint_speed
+		return tuning.sprint_speed * factor
 	}
-	return tuning.walk_speed
+	return tuning.walk_speed * factor
+}
+
+field_fly_speed :: proc(tuning: Field_Player_Tuning, held: Field_Player_Buttons, cheat_movement: bool) -> i64 {
+	speed := .Sprint in held ? tuning.fly_sprint_speed : tuning.fly_speed
+	return cheat_movement ? speed * tuning.cheat_speed_factor : speed
+}
+
+field_jump_speed :: proc(tuning: Field_Player_Tuning, cheat_movement: bool) -> i64 {
+	return cheat_movement ? tuning.cheat_jump_speed : tuning.jump_speed
+}
+
+// The jetpack (0296): Jump held in the air thrusts along the up from the
+// jump's apex on, or at once when pressed again in the air, while the
+// budget lasts. Releasing Jump disengages it; a held Jump from the ground
+// launches the jump on the ground tick and catches again at the apex, so
+// nothing is spent on the way up. thrust and limit are velocity units,
+// the cheat's jet factor applied.
+field_jet_thrust :: proc(player: ^Field_Player, tuning: Field_Player_Tuning, input: Field_Player_Input) -> (thrust, limit: i64, jetting: bool) {
+	if .Jump not_in input.held {
+		player.jetting = false
+		return 0, 0, false
+	}
+	if !player.jetting {
+		if .Jump not_in input.just_pressed && fixed_dot(player.velocity, player.up) > 0 {
+			return 0, 0, false
+		}
+		player.jetting = true
+	}
+	if player.jet_budget_ticks == 0 {
+		return 0, 0, false
+	}
+	player.jet_budget_ticks -= 1
+	factor := player.cheat_movement ? tuning.cheat_jet_factor : 1
+	return tuning.jet_acceleration * factor, tuning.jet_speed_limit * factor, true
+}
+
+// The velocity with its part along the up held to limit; the tangent
+// part is left to limit_speed.
+limit_field_up_speed :: proc(velocity, up: [3]i64, limit: i64) -> [3]i64 {
+	along := fixed_dot(velocity, up)
+	if along > limit {
+		return velocity - fixed_scale(up, along - limit)
+	}
+	return velocity
+}
+
+// A tick on walkable ground gives the jet its refill and disengages it.
+// Steep ground neither refills nor spends unless Jump is held, so a
+// player sliding into a pit's wall keeps what is left to jet out with.
+refill_field_jet :: proc(player: ^Field_Player, tuning: Field_Player_Tuning) {
+	player.jetting = false
+	player.jet_budget_ticks = min(player.jet_budget_ticks + tuning.jet_refill_ticks_per_tick, tuning.jet_budget_ticks)
+}
+
+// A body made for play starts with the full budget (every spawn path:
+// the new world's players, a joiner, the planet preview's walker), so
+// the bar does not sit empty through the arrival; a save from before
+// 0296 loads 0 and refills.
+fill_field_jet :: proc(player: ^Field_Player, tuning: Field_Player_Tuning) {
+	player.jet_budget_ticks = tuning.jet_budget_ticks
+}
+
+// Gravity, the jet's thrust and the speed limit of a tick in the air or
+// on steep ground: the thrust is added before the limit, and while
+// jetting the up component is capped on its own.
+fall_field_player :: proc(player: ^Field_Player, tuning: Field_Player_Tuning, input: Field_Player_Input, speed_limit: i64) {
+	thrust, limit, jetting := field_jet_thrust(player, tuning, input)
+	player.velocity = limit_speed(player.velocity - fixed_scale(player.up, tuning.gravity) + fixed_scale(player.up, thrust), speed_limit)
+	if jetting {
+		player.velocity = limit_field_up_speed(player.velocity, player.up, limit)
+	}
 }
 
 // Tangent to the up, in velocity units.
@@ -931,7 +1055,7 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 	resolve_field_penetration(world, frames, tuning, &player.position, player.up, &player.velocity)
 	ground := probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, player.on_ground)
 	ground = judge_ground_over_footprint(world, frames, tuning, player.position, player.up, player.forward, ground)
-	walk := field_walk_velocity(player^, input.move, field_walk_speed(tuning, input.held, player.crouching))
+	walk := field_walk_velocity(player^, input.move, field_walk_speed(tuning, input.held, player.crouching, player.cheat_movement))
 	raw_walk_motion := walk / VELOCITY_FRACTION_ONE
 	walk_direction, walking := normalize_fixed(walk)
 	held_on_ground := ground.on && ground.walkable
@@ -942,6 +1066,7 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 	switch {
 	case held_on_ground:
 		player.velocity = {}
+		refill_field_jet(player, tuning)
 		walk = ground_walk_velocity(walk, ground.normal)
 		if .Jump in input.held {
 			if walking {
@@ -950,7 +1075,7 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 					return
 				}
 			}
-			player.velocity = fixed_scale(player.up, tuning.jump_speed)
+			player.velocity = fixed_scale(player.up, field_jump_speed(tuning, player.cheat_movement))
 			held_on_ground = false
 		}
 	case ground.on:
@@ -961,9 +1086,11 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 			}
 		}
 		walk = steep_walk_velocity(walk, ground, player.up, tuning.walkable_cosine)
-		player.velocity = limit_speed(player.velocity - fixed_scale(player.up, tuning.gravity), tuning.slide_speed)
+		// Jump held on a steep face lifts off at up to the slide speed;
+		// the air case takes over next tick.
+		fall_field_player(player, tuning, input, tuning.slide_speed)
 	case:
-		player.velocity = limit_speed(player.velocity - fixed_scale(player.up, tuning.gravity), tuning.fall_speed_limit)
+		fall_field_player(player, tuning, input, tuning.fall_speed_limit)
 	}
 	held_on_walkable := held_on_ground
 	start := player.position
@@ -1041,9 +1168,10 @@ capsule_rests_on_walkable_frame_contact :: proc(frames: ^Frame_Table, tuning: Fi
 
 // The developer fly mode in the planet's frame: the heading and its right
 // across, Jump and Sneak along the up, no gravity. The field stops it like
-// walking unless no clip is on.
+// walking unless no clip is on. It never reads the jet: the budget stays
+// as it was.
 fly_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
-	speed := .Sprint in input.held ? tuning.fly_sprint_speed : tuning.fly_speed
+	speed := field_fly_speed(tuning, input.held, player.cheat_movement)
 	velocity := field_walk_velocity(player^, input.move, speed)
 	if .Jump in input.held {
 		velocity += fixed_scale(player.up, speed)
@@ -1092,6 +1220,7 @@ tick_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 		return
 	}
 	apply_field_player_toggles(player, input.just_pressed)
+	toggle_field_cheat_movement(player, input)
 	update_field_jump_double_tap(player, input)
 	orient_field_player(player)
 	turn_field_player(player, input.turn)

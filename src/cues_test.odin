@@ -92,3 +92,27 @@ test_dig_detectors :: proc(t: ^testing.T) {
 	other.block = {2, 0, 0}
 	testing.expect(t, !dig_quarter_crossed(block, other), "a new dig")
 }
+
+// Work item 0296: the field's cheat movement divides the walk cadence
+// like the block world's cheat speed, by the larger factor that is on,
+// so the footsteps keep their cadence per metre.
+@(test)
+test_the_cadence_divides_by_the_cheat_that_is_on :: proc(t: ^testing.T) {
+	testing.expect_value(t, cue_cheat_factor(false, false, 4), 1)
+	testing.expect_value(t, cue_cheat_factor(true, false, 4), CHEAT_SPEED_FACTOR)
+	testing.expect_value(t, cue_cheat_factor(false, true, 4), 4)
+	testing.expect_value(t, cue_cheat_factor(true, true, 4), 4)
+	testing.expect_value(t, cue_cheat_factor(true, true, 2), CHEAT_SPEED_FACTOR)
+	testing.expect_value(t, advance_cadence_millimetres(100, 500, 900, true, 4), 200)
+	testing.expect_value(t, advance_cadence_millimetres(100, 500, 900, false, 4), 500)
+	memory: Cue_Memory
+	counters := Cue_Counters{tick = 1, cheat_speed = true, cheat_factor = 4}
+	expect_cues(t, &memory, counters, {})
+	// Four metres under the field's cheat count as one: no footstep short
+	// of the half cycle, one past it.
+	counters.tick, counters.distance_millimetres = 2, 4 * u64(WALK_CYCLE_MILLIMETRES / 2) - 400
+	walked := expect_cues(t, &memory, counters, {})
+	testing.expect(t, walked.moving)
+	counters.tick, counters.distance_millimetres = 3, counters.distance_millimetres + 800
+	expect_cues(t, &memory, counters, {.Footstep})
+}

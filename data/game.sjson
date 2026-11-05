@@ -69,6 +69,14 @@ field_player = {
 	fall_speed_limit_millimetres_per_second = 50000
 	fly_speed_millimetres_per_second = 12000
 	fly_sprint_speed_millimetres_per_second = 36000
+	// The jetpack and the cheat movement (0296, doc/content.md): 90 ticks of thrust at 20 m/s² capped at 9 m/s up, 2 ticks back per tick on the ground; the cheat multiplies the speeds by 4, the jump height and the jet by 3.
+	jetpack_acceleration_millimetres_per_second_squared = 20000
+	jetpack_budget_ticks = 90
+	jetpack_refill_ticks_per_tick = 2
+	jet_speed_limit_millimetres_per_second = 9000
+	cheat_speed_factor = 4
+	cheat_jump_factor = 3
+	cheat_jet_factor = 3
 }
 // The hand tool's brushes on the terrain field (work item 0171,
 // doc/content.md, Brushes). Each tick a brush is held, every sample within

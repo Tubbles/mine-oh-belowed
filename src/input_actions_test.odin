@@ -255,3 +255,9 @@ test_an_x_press_on_a_target_that_takes_interact_is_interacts_alone :: proc(t: ^t
 	interact := Input_Frame{pressed = {.Interact}, just_pressed = {.Interact}}
 	testing.expect_value(t, route_open_inventory_press(interact, false, true, true), interact)
 }
+
+// Work item 0296: R3's cheat movement reaches the world.
+@(test)
+test_the_cheat_movement_toggle_is_a_world_action :: proc(t: ^testing.T) {
+	testing.expect(t, .Toggle_Cheat_Movement in WORLD_ACTIONS)
+}

@@ -256,3 +256,34 @@ test_the_chair_hints_unbuckle_stand_and_sit :: proc(t: ^testing.T) {
 	hud.field_session = false
 	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "")
 }
+
+// Work item 0296: the jet bar shows while the budget is below full and
+// the CHEAT tag while cheat movement is on; neither draws otherwise.
+@(test)
+test_the_jet_bar_and_cheat_tag_follow_the_field_player :: proc(t: ^testing.T) {
+	tuning := Field_Player_Tuning{jet_budget_ticks = 90}
+	full := Field_Player{jet_budget_ticks = 90}
+	half := Field_Player{jet_budget_ticks = 45}
+	_, shown := jet_bar_fraction(full, tuning)
+	testing.expect(t, !shown, "a full budget shows no bar")
+	fraction, half_shown := jet_bar_fraction(half, tuning)
+	testing.expect(t, half_shown)
+	testing.expect_value(t, fraction, 0.5)
+	_, no_budget := jet_bar_fraction(half, {})
+	testing.expect(t, !no_budget, "a tuning without a budget shows no bar")
+	use_shipped_strings()
+	defer thread_string_table = nil
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	ui_begin(&state, {}, {1920, 1080}, 0.5, 1, 1)
+	draw_cheat_tag(&state, full)
+	testing.expect_value(t, len(state.draw_list), 0)
+	draw_cheat_tag(&state, Field_Player{cheat_movement = true})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hud_cheat_movement")))
+	testing.expect_value(t, text("hud_cheat_movement"), "CHEAT")
+	clear(&state.draw_list)
+	draw_jet_bar(&state, full, tuning)
+	testing.expect_value(t, len(state.draw_list), 0)
+	draw_jet_bar(&state, half, tuning)
+	testing.expect(t, len(state.draw_list) > 0, "a half budget draws the bar")
+}
