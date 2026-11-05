@@ -196,3 +196,4 @@ Stillness is "no flux through the sample" (the study's item 5): a steady drip ha
 3. The generation marks the sea's ownership, as designed.
 - Approved.
 - Added at 0294's approval: `displace_water_body_volume(world, id, intake: Sample_Coordinate, amount: i64) -> i64` takes the intake sample (unused by 0293 beyond the signature; 0294 and 0295 read it).
+- Added after 0292's review (2026-11-05): the codec's version 5 also carries 0292's `water_pressure_failed` bits as a plane (a version-4 decode leaves them clear), and the bit joins the state hash, so a joiner holds the host's failed searches; 0292 lands without it (the tech demo is one machine) and names the window in the log.
