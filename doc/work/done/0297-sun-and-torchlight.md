@@ -1,6 +1,6 @@
 # 0297: Sun and torchlight
 
-Status: verified (2026-11-05)
+Status: landed (2026-11-05, 16147e0)
 
 Milestone: the water tech demo (0291); the presentation stream.
 
