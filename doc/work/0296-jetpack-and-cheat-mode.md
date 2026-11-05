@@ -1,6 +1,6 @@
 # 0296: Jetpack and cheat mode
 
-Status: designed (2026-11-05)
+Status: implementing (2026-11-05)
 
 Milestone: the water tech demo (0291); the player stream.
 
