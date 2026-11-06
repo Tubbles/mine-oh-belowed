@@ -174,3 +174,10 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - The flames draw before the water as the old billboards did, so water in front of a flame covers it. A furnace at a shore is rare enough to leave; the fix is a second flame pass after the water, which costs a batch.
 - The model preview shows the mean flicker with the flow at `phase · 8` seconds; a preview that advances the clock would show the flow moving, which the user may want for judging a new fire.
+
+## Suggestions from the entry's flames outside the pod (0303 to 0305, 2026-11-06)
+
+- An outside view during the fall: a strapped player is first person, so the wake (0304) shows in play only through the portholes; the developer command `arrival_camera` is the one outside view. Letting the camera toggle reach the strapped seat with a chase camera behind the pod would be a control change for its own item. Recommendation: do it, since the outside flames were made to be seen.
+- KSP's brighter body: its trail keeps full light for about a third of a shield diameter and then halves every 0.35 diameters, where ours halves every quarter from the rim (0305's measurement). Matching it is two constants and a new gain for the porthole, which then reads brighter.
+- A pod for every joiner: today a joiner after the landing spawns in the landed pod's cabin, so nobody sees another player arrive; the wake is drawn on any falling pod, so a pod per joiner would show it to the players on the ground. A gameplay feature, not a look one.
+- The wake's sparks keep 0304's flicker factor and can clamp to a pale yellow at a flare (never white), and no test catches a brightness factor coming back into the shell (0305's review).
