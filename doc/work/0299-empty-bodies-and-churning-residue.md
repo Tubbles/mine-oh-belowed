@@ -1,6 +1,6 @@
 # 0299: Empty bodies die and a residue above a lake rests
 
-Status: todo (2026-11-06)
+Status: designing (2026-11-06)
 
 Milestone: the water tech demo (0291); found by 0298's verifier, a follow-up to 0293.
 
