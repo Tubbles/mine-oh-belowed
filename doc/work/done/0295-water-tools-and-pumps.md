@@ -1,6 +1,6 @@
 # 0295: Water tools and pumps
 
-Status: verified (2026-11-06)
+Status: landed (2026-11-06, 37a2dbe)
 
 Milestone: the water tech demo (0291); the water stream after 0294.
 
