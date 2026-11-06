@@ -186,3 +186,9 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - `ATMOSPHERE_CLEAR_GROUND_METRES` (64 m, `src/data_arrival_curve.odin`) dates from relief within 34 m. A planet may now reach 256 m, and `game.sjson` is checked without the planets, so valid data could dim the day sky over a peak. The shipped data has 360 m of clear sky over peaks of 126 m. A check of the clear sky against the planets' highest relief at load would catch it.
 - An old world logs that it keeps its relief on every load, also after this build saved it, since a zero `landforms` object reads like an absent one.
+
+## Suggestions from the ground's colours (0307, 2026-11-07)
+
+- `loop_planet_preview.odin` loads the field's tiles and renderer without the overlay fallback, so an overlay copy from before 0307 makes `--planet-preview` exit with an error.
+- An overlay copy of `field.vs` alone from before 0307 links with the new `field.fs` on desktop Mesa and draws without the looks. A uniform only the new vertex shader uses would let the renderer catch it.
+- The Odin mirror of the shader's `unpack_bytes` (`unpack_test_bytes`) is checked against its own packing, not against the GLSL body, so the two could drift.

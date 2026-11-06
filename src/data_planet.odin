@@ -41,10 +41,16 @@ MAXIMUM_RELIEF_HEIGHT_METRES :: 256
 LANDFORM_KNOT_COUNT :: 9
 MAXIMUM_LANDFORM_WARP_METRES :: 10_000
 MAXIMUM_LANDFORM_WILD_METRES :: 8192
-// A planet record may leave these out: the relief's shape (0189) and the
-// landforms (0306), each off at zero, so a planet without them generates
-// as before.
-OPTIONAL_PLANET_KEYS :: [2]string{"relief_shape", "landforms"}
+// A planet record may leave these out: the relief's shape (0189), the
+// landforms (0306) and the climate (0307), each off at zero, so a planet
+// without them generates and looks as before.
+OPTIONAL_PLANET_KEYS :: [3]string{"relief_shape", "landforms", "climate"}
+// The climate's bounds (0307, Planet_Climate).
+MINIMUM_CLIMATE_WAVELENGTH_METRES :: 64
+MAXIMUM_CLIMATE_CELSIUS :: 100
+MAXIMUM_LAPSE_MILLICELSIUS_PER_METRE :: 1000
+MAXIMUM_SNOW_FADE_CELSIUS :: 50
+MAXIMUM_SAND_METRES :: 64
 MAXIMUM_SURFACE_GRAVITY_CENTIMETRES_PER_SECOND_SQUARED :: 5000
 MINIMUM_ROTATION_PERIOD_SECONDS :: 60
 MAXIMUM_ROTATION_PERIOD_SECONDS :: 86_400
@@ -137,6 +143,52 @@ Planet_Landforms :: struct {
 	home_metres:              int,
 	calm_metres:              int,
 	wild_metres:              int,
+}
+
+// The climate's field (work item 0307, generation_planet_climate.odin),
+// the keys a world records: a temperature at the sea level of
+// sea_level_celsius, moved by a noise of temperature_wavelength_metres by
+// up to temperature_spread_celsius either side and cooled by
+// lapse_millicelsius_per_metre over the sea (warmed below it), and a
+// moisture of moisture_percent moved by a noise of
+// moisture_wavelength_metres by up to moisture_spread_percent. Off at the
+// zero value.
+Planet_Climate_Field :: struct {
+	temperature_wavelength_metres: int,
+	moisture_wavelength_metres:    int,
+	sea_level_celsius:             int,
+	temperature_spread_celsius:    int,
+	lapse_millicelsius_per_metre:  int,
+	moisture_percent:              int,
+	moisture_spread_percent:       int,
+}
+
+// The climate (work item 0307): the field's keys, which a world records,
+// and the ground's look, which is the data's in every world (the
+// mesher's world_field_ground_look.odin, the field shader). grass_colors
+// are the grass at full light, rows cold, temperate and hot (at
+// grass_cold_celsius, their mean and grass_hot_celsius), each dry,
+// moderate and wet, index row times 3 plus column. Snow lies below
+// snow_celsius, fading over snow_fade_celsius; sand within sand_metres of
+// the sea level and below it, fading over sand_fade_metres. Off at the
+// zero value: the ground keeps the look without a climate.
+Planet_Climate :: struct {
+	temperature_wavelength_metres: int,
+	moisture_wavelength_metres:    int,
+	sea_level_celsius:             int,
+	temperature_spread_celsius:    int,
+	lapse_millicelsius_per_metre:  int,
+	moisture_percent:              int,
+	moisture_spread_percent:       int,
+	grass_colors:                  [9][3]int,
+	grass_cold_celsius:            int,
+	grass_hot_celsius:             int,
+	snow_celsius:                  int,
+	snow_fade_celsius:             int,
+	snow_color:                    [3]int,
+	sand_metres:                   int,
+	sand_fade_metres:              int,
+	sand_color:                    [3]int,
 }
 
 // A planet's relief bound (0306, relief_bounds): the lowest and the
@@ -253,6 +305,8 @@ Planet :: struct {
 	relief_shape:                                   Relief_Shape,
 	// Optional in the file, off at zero (0306).
 	landforms:                                      Planet_Landforms,
+	// Optional in the file, off at zero (0307).
+	climate:                                        Planet_Climate,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
 	// The arrival's hit digs the crater (0271): set only by
@@ -295,6 +349,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 		if landforms, is_object := record.(json.Object)["landforms"].(json.Object); is_object {
 			if key, missing := missing_struct_key(Planet_Landforms, landforms); missing {
 				return fmt.tprintf("%s: planets[%d].landforms is missing %s", source, index, key)
+			}
+		}
+		if climate, is_object := record.(json.Object)["climate"].(json.Object); is_object {
+			if key, missing := missing_struct_key(Planet_Climate, climate); missing {
+				return fmt.tprintf("%s: planets[%d].climate is missing %s", source, index, key)
 			}
 		}
 		for spring, spring_index in record.(json.Object)["springs"].(json.Array) {
@@ -441,6 +500,109 @@ landforms_problem :: proc(landforms: Planet_Landforms) -> string {
 	return ""
 }
 
+// The zero value (off: a planet without one) passes; otherwise the field
+// (climate_field_bounds_problem, a zero field too, since a present climate
+// is on) and every look key within its bound.
+climate_problem :: proc(climate: Planet_Climate) -> string {
+	if climate == {} {
+		return ""
+	}
+	if problem := climate_field_bounds_problem(planet_climate_field(climate)); problem != "" {
+		return problem
+	}
+	bounds := [?]Config_Bound {
+		{"grass_cold_celsius", climate.grass_cold_celsius, -MAXIMUM_CLIMATE_CELSIUS, MAXIMUM_CLIMATE_CELSIUS},
+		{"grass_hot_celsius", climate.grass_hot_celsius, -MAXIMUM_CLIMATE_CELSIUS, MAXIMUM_CLIMATE_CELSIUS},
+		{"snow_celsius", climate.snow_celsius, -MAXIMUM_CLIMATE_CELSIUS, MAXIMUM_CLIMATE_CELSIUS},
+		{"snow_fade_celsius", climate.snow_fade_celsius, 1, MAXIMUM_SNOW_FADE_CELSIUS},
+		{"sand_metres", climate.sand_metres, -MAXIMUM_SAND_METRES, MAXIMUM_SAND_METRES},
+		{"sand_fade_metres", climate.sand_fade_metres, 1, MAXIMUM_SAND_METRES},
+	}
+	if problem := climate_bounds_problem(bounds[:]); problem != "" {
+		return problem
+	}
+	if climate.grass_hot_celsius <= climate.grass_cold_celsius {
+		return fmt.tprintf("climate.grass_hot_celsius %d is not above grass_cold_celsius %d", climate.grass_hot_celsius, climate.grass_cold_celsius)
+	}
+	for color, index in climate.grass_colors {
+		if problem := climate_color_problem(fmt.tprintf("grass_colors[%d]", index), color); problem != "" {
+			return problem
+		}
+	}
+	if problem := climate_color_problem("snow_color", climate.snow_color); problem != "" {
+		return problem
+	}
+	return climate_color_problem("sand_color", climate.sand_color)
+}
+
+// The zero value (off: a world file written before the climate) passes;
+// otherwise every key within its bound.
+climate_field_problem :: proc(field: Planet_Climate_Field) -> string {
+	if field == {} {
+		return ""
+	}
+	return climate_field_bounds_problem(field)
+}
+
+// Every key within its bound, the zero value too: a planet's climate is
+// on whenever it is present (climate_problem).
+climate_field_bounds_problem :: proc(field: Planet_Climate_Field) -> string {
+	bounds := [?]Config_Bound {
+		{"temperature_wavelength_metres", field.temperature_wavelength_metres, MINIMUM_CLIMATE_WAVELENGTH_METRES, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"moisture_wavelength_metres", field.moisture_wavelength_metres, MINIMUM_CLIMATE_WAVELENGTH_METRES, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"sea_level_celsius", field.sea_level_celsius, -MAXIMUM_CLIMATE_CELSIUS, MAXIMUM_CLIMATE_CELSIUS},
+		{"temperature_spread_celsius", field.temperature_spread_celsius, 0, MAXIMUM_CLIMATE_CELSIUS},
+		{"lapse_millicelsius_per_metre", field.lapse_millicelsius_per_metre, 0, MAXIMUM_LAPSE_MILLICELSIUS_PER_METRE},
+		{"moisture_percent", field.moisture_percent, 0, 100},
+		{"moisture_spread_percent", field.moisture_spread_percent, 0, 100},
+	}
+	return climate_bounds_problem(bounds[:])
+}
+
+climate_bounds_problem :: proc(bounds: []Config_Bound) -> string {
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("climate.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	return ""
+}
+
+climate_color_problem :: proc(name: string, color: [3]int) -> string {
+	for component in color {
+		if component < 0 || component > MAXIMUM_COLOR_COMPONENT {
+			return fmt.tprintf("climate.%s has %d, outside 0 to %d", name, component, MAXIMUM_COLOR_COMPONENT)
+		}
+	}
+	return ""
+}
+
+// The keys a world records (Planet_Generation_Record.climate).
+planet_climate_field :: proc(climate: Planet_Climate) -> Planet_Climate_Field {
+	return Planet_Climate_Field {
+		temperature_wavelength_metres = climate.temperature_wavelength_metres,
+		moisture_wavelength_metres = climate.moisture_wavelength_metres,
+		sea_level_celsius = climate.sea_level_celsius,
+		temperature_spread_celsius = climate.temperature_spread_celsius,
+		lapse_millicelsius_per_metre = climate.lapse_millicelsius_per_metre,
+		moisture_percent = climate.moisture_percent,
+		moisture_spread_percent = climate.moisture_spread_percent,
+	}
+}
+
+// The climate with the field's keys replaced, its look kept.
+with_climate_field :: proc(climate: Planet_Climate, field: Planet_Climate_Field) -> Planet_Climate {
+	result := climate
+	result.temperature_wavelength_metres = field.temperature_wavelength_metres
+	result.moisture_wavelength_metres = field.moisture_wavelength_metres
+	result.sea_level_celsius = field.sea_level_celsius
+	result.temperature_spread_celsius = field.temperature_spread_celsius
+	result.lapse_millicelsius_per_metre = field.lapse_millicelsius_per_metre
+	result.moisture_percent = field.moisture_percent
+	result.moisture_spread_percent = field.moisture_spread_percent
+	return result
+}
+
 // A planet with landforms keeps its bound within the caps, the crater on
 // the calm plain and the home's crater floor dry for every seed (the
 // region blends to home_metres there, so only the detail below it varies),
@@ -581,6 +743,9 @@ planet_problem :: proc(planet: Planet) -> string {
 		return problem
 	}
 	if problem := landforms_planet_problem(planet); problem != "" {
+		return problem
+	}
+	if problem := climate_problem(planet.climate); problem != "" {
 		return problem
 	}
 	// Bedrock lies below every local surface's deep stone, so a valley at

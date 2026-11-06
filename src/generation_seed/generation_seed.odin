@@ -39,6 +39,9 @@ Generation_Purpose :: enum u8 {
 	Planet_Trees,
 	// The landforms of work item 0306.
 	Planet_Landforms,
+	// The climate and the ground's look of work item 0307.
+	Planet_Climate,
+	Planet_Ground_Look,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

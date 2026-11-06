@@ -266,10 +266,15 @@ arrival_scaled_color :: proc(color: rl.Color, factor: f32) -> rl.Color {
 }
 
 // Topsoil's and stone's colours at the site: each material tile's mean
-// texel times the palette's tint at the home times the field shader's
-// tint_scale.
+// texel times the tint at the home times the field shader's tint_scale.
+// The tint is the ground's smooth strata tint with a climate (0307,
+// field_ground_tint), else the palette's cube.
 arrival_debris_colors :: proc(renderer: ^Field_Renderer, palette: [][3]int, site: Arrival_Debris_Site) -> (colors: [2]rl.Color) {
 	tint := palette[planet_tint(site.generation, World_Position(site.generation.crater.home))]
+	if site.generation.climate != {} {
+		ground := field_ground_tint(site.generation, palette, site.generation.crater.home)
+		tint = {int(ground.r), int(ground.g), int(ground.b)}
+	}
 	tint_share := [3]f32{f32(tint.r), f32(tint.g), f32(tint.b)} / 255 * ARRIVAL_DEBRIS_TINT_SCALE
 	for material, slot in ([2]Field_Material{.Topsoil, .Stone}) {
 		mean := renderer.material_colors[field_material_tile(material)] * tint_share

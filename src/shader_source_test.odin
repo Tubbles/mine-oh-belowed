@@ -107,6 +107,90 @@ test_shipped_shaders_have_no_bare_integer_literals :: proc(t: ^testing.T) {
 	testing.expect(t, checked >= 12, "found fewer than the twelve shipped shaders (chunk, water, field, arrival, model and flame)")
 }
 
+// The words GLSL ES 3.00 (section 3.8) and GLSL 3.30 (section 3.6)
+// reserve for future use, the ES list first and then the ones only 3.30
+// adds; using one is an error. The ES list holds the 3.30 keywords ES
+// lacks (attribute, varying, noperspective, the 1D and rectangle
+// samplers). Mesa refuses packed as a parameter name where
+// glslangValidator takes it (0307).
+GLSL_RESERVED_WORDS :: [?]string {
+	"attribute", "varying", "coherent", "volatile", "restrict", "readonly", "writeonly", "resource", "atomic_uint",
+	"noperspective", "patch", "sample", "subroutine", "common", "partition", "active", "asm",
+	"class", "union", "enum", "typedef", "template", "this", "goto",
+	"inline", "noinline", "public", "static", "extern", "external", "interface",
+	"long", "short", "double", "half", "fixed", "unsigned", "superp", "input", "output",
+	"hvec2", "hvec3", "hvec4", "dvec2", "dvec3", "dvec4", "fvec2", "fvec3", "fvec4",
+	"sampler3DRect", "filter",
+	"image1D", "image2D", "image3D", "imageCube", "iimage1D", "iimage2D", "iimage3D", "iimageCube",
+	"uimage1D", "uimage2D", "uimage3D", "uimageCube", "image1DArray", "image2DArray",
+	"iimage1DArray", "iimage2DArray", "uimage1DArray", "uimage2DArray", "imageBuffer", "iimageBuffer", "uimageBuffer",
+	"sampler1D", "sampler1DShadow", "sampler1DArray", "sampler1DArrayShadow", "isampler1D", "isampler1DArray", "usampler1D", "usampler1DArray",
+	"sampler2DRect", "sampler2DRectShadow", "isampler2DRect", "usampler2DRect", "samplerBuffer", "isamplerBuffer", "usamplerBuffer",
+	"sampler2DMS", "isampler2DMS", "usampler2DMS", "sampler2DMSArray", "isampler2DMSArray", "usampler2DMSArray",
+	"sizeof", "cast", "namespace", "using",
+	"packed", "image1DShadow", "image2DShadow", "image1DArrayShadow", "image2DArrayShadow", "row_major",
+}
+
+// The first token of a line of code that is a reserved word or holds two
+// consecutive underscores (both specifications reserve those too), empty
+// when it has none.
+first_reserved_glsl_word :: proc(code: string) -> string {
+	index := 0
+	for index < len(code) {
+		if !is_identifier_character(code[index]) {
+			index += 1
+			continue
+		}
+		start := index
+		for index < len(code) && is_identifier_character(code[index]) {
+			index += 1
+		}
+		token := code[start:index]
+		for word in GLSL_RESERVED_WORDS {
+			if token == word {
+				return token
+			}
+		}
+		if strings.contains(token, "__") {
+			return token
+		}
+	}
+	return ""
+}
+
+@(test)
+test_reserved_glsl_words_are_found_as_whole_tokens :: proc(t: ^testing.T) {
+	testing.expect_value(t, first_reserved_glsl_word("vec3 unpack_bytes(float packed)"), "packed")
+	testing.expect_value(t, first_reserved_glsl_word("float sample = 1.0;"), "sample")
+	testing.expect_value(t, first_reserved_glsl_word("float sample_count = input_scale;"), "")
+	testing.expect_value(t, first_reserved_glsl_word("float a__b;"), "a__b")
+	testing.expect_value(t, first_reserved_glsl_word(shader_code_of_line("x = 1.0; // three bytes packed")), "")
+}
+
+@(test)
+test_shipped_shaders_use_no_reserved_glsl_word :: proc(t: ^testing.T) {
+	directory := platform.join_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
+	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	checked := 0
+	for entry in entries {
+		if !strings.has_suffix(entry.name, ".vs") && !strings.has_suffix(entry.name, ".fs") {
+			continue
+		}
+		data, read_error := os.read_entire_file(entry.fullpath, context.temp_allocator)
+		testing.expect_value(t, read_error, nil)
+		text := string(data)
+		line_number := 0
+		for line in strings.split_lines_iterator(&text) {
+			line_number += 1
+			word := first_reserved_glsl_word(shader_code_of_line(line))
+			testing.expectf(t, word == "", "data/shaders/%s:%d: %s is reserved in GLSL 3.30 or GLSL ES 3.00, and Mesa refuses it", entry.name, line_number, word)
+		}
+		checked += 1
+	}
+	testing.expect(t, checked >= 12, "found fewer than the twelve shipped shaders")
+}
+
 // The GLSL ES rewrite for Android (work item 0114).
 @(test)
 test_shader_source_for_gles_rewrites_the_version_line :: proc(t: ^testing.T) {
@@ -356,4 +440,43 @@ test_the_field_shader_lights_by_the_sun :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(field, "uniform float sun_strength;"), "field.fs declares the sun's share")
 	testing.expect(t, !strings.contains(field, "ambient_share"), "field.fs keeps no ambient_share")
 	testing.expect(t, !strings.contains(model, "sun_direction"), "model.fs takes no sun")
+}
+
+// Work item 0307: the field shader reads every tile from the one ground
+// atlas by level (textureLod), never by texture() with its derivatives,
+// takes the look's uniforms, and field.vs unpacks the packed bytes.
+@(test)
+test_the_field_shader_reads_the_ground_atlas_by_level :: proc(t: ^testing.T) {
+	fragment := #load("../data/shaders/field.fs", string)
+	vertex := #load("../data/shaders/field.vs", string)
+	testing.expect(t, strings.contains(fragment, "\nuniform sampler2D ground_atlas;\n"), "field.fs does not declare the ground atlas")
+	testing.expect_value(t, strings.count(fragment, "sampler2D"), 1)
+	testing.expect(t, !strings.contains(fragment, "texture("), "field.fs reads a texture with derivatives")
+	testing.expect(t, strings.contains(fragment, "textureLod(ground_atlas,"), "field.fs reads the atlas by level")
+	for declaration in ([?]string{"\nuniform float ground_look_on;\n", "\nuniform vec3 sand_color;\n", "\nuniform vec3 snow_color;\n"}) {
+		testing.expectf(t, strings.contains(fragment, declaration), "field.fs does not declare %s", strings.trim_space(declaration))
+	}
+	testing.expect(t, strings.contains(vertex, "\nvec3 unpack_bytes(float packed_bytes)\n"), "field.vs does not declare unpack_bytes")
+}
+
+// Work item 0307: field.fs's atlas constants are the Odin ones.
+@(test)
+test_the_field_shader_knows_the_atlas_layout :: proc(t: ^testing.T) {
+	fragment := #load("../data/shaders/field.fs", string)
+	lines := [?]string {
+		fmt.tprintf("const uint ground_tile_count = %du;", FIELD_GROUND_TILE_COUNT),
+		fmt.tprintf("const uint strata_tile_count = %du;", FIELD_MATERIAL_TILE_COUNT),
+		fmt.tprintf("const uint grass_tile = %du;", field_look_tile(.Grass)),
+		fmt.tprintf("const uint sand_tile = %du;", field_look_tile(.Sand)),
+		fmt.tprintf("const uint snow_tile = %du;", field_look_tile(.Snow)),
+		fmt.tprintf("const uint atlas_columns = %du;", FIELD_GROUND_ATLAS_COLUMNS),
+		fmt.tprintf("const float atlas_cell_texels = %.1f;", f32(FIELD_GROUND_ATLAS_CELL_TEXELS)),
+		fmt.tprintf("const float atlas_texels = %.1f;", f32(FIELD_GROUND_ATLAS_TEXELS)),
+		fmt.tprintf("const float tile_texels = %.1f;", f32(ATLAS_TILE_SIZE)),
+		fmt.tprintf("const float tile_margin_texels = %.1f;", f32(FIELD_GROUND_ATLAS_MARGIN_TEXELS)),
+		fmt.tprintf("const float largest_lod = %.1f;", math.log2(f32(ATLAS_TILE_SIZE))),
+	}
+	for line in lines {
+		testing.expectf(t, strings.contains(fragment, strings.concatenate({"\n", line, "\n"}, context.temp_allocator)), "field.fs does not hold %s", line)
+	}
 }

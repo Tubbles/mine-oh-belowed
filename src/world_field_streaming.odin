@@ -78,6 +78,8 @@ Field_Worker_Shared :: struct {
 	seed:          u64,
 	planet:        Planet,
 	generation:    Planet_Generation,
+	// The ground's look the meshes take (0307, make_field_ground_look).
+	look:          Field_Ground_Look,
 	allocator:     runtime.Allocator,
 }
 
@@ -169,7 +171,9 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		if job.generate {
 			generate_field_grid(shared.generation, job.node, grid)
 		}
-		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces)
+		// A job's own grid holds loaded samples, which an edit can have
+		// moved off the generated surface (field_natural_share).
+		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces, look = shared.look, measure_cuts = job.grid != nil)
 		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
 		free(job.grid)
 	}
@@ -193,6 +197,7 @@ start_field_streaming :: proc(seed: u64, planet: Planet, spacing_millimetres: in
 	shared.seed = seed
 	shared.planet = planet
 	shared.generation = make_planet_generation(seed, planet, spacing_millimetres)
+	shared.look = make_field_ground_look(shared.generation, planet)
 	shared.allocator = context.allocator
 	queue.init(&shared.jobs)
 	queue.init(&shared.generated)

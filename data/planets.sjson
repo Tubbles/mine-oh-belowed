@@ -1,6 +1,6 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
-// required but relief_shape (0189) and landforms (0306), whose terms are
-// off without them; the
+// required but relief_shape (0189), landforms (0306) and climate (0307),
+// which are off without them; the
 // trees are doc/content.md, Trees (0197); the
 // terrain field generates a planet from its record, the
 // world seed and the sample spacing (generation_planet.odin). A world
@@ -169,12 +169,55 @@ planets = [
 			calm_metres = 120
 			wild_metres = 600
 		}
-		// The tints of the ground, red, green and blue from 0 to 255.
+		// The climate and the ground's look (work item 0307,
+		// doc/content.md, Planets), optional: without it the ground keeps
+		// the palette's 256 m tint cubes and shows no grass, sand or snow.
+		// A world records the field's seven keys; the look's keys are
+		// these in every world.
+		climate = {
+			// The temperature at the sea level: a mean, moved by a noise of
+			// this wavelength by up to the spread either side (90 percent of
+			// the ground within half of it), and cooled by the lapse per
+			// metre over the sea (warmed below it). The default seed's home
+			// lies at 13.3 degrees at 8 km.
+			temperature_wavelength_metres = 1600
+			sea_level_celsius = 13
+			temperature_spread_celsius = 14
+			lapse_millicelsius_per_metre = 120
+			// The moisture, likewise; the home lies at 88 percent at 8 km.
+			moisture_wavelength_metres = 1100
+			moisture_percent = 55
+			moisture_spread_percent = 70
+			// The grass at full light, rows cold, temperate and hot (at
+			// grass_cold_celsius, their mean, grass_hot_celsius), each row
+			// dry, moderate and wet, blended between them.
+			grass_colors = [
+				[146, 150, 104], [80, 124, 78], [44, 98, 70]
+				[190, 182, 82], [96, 166, 58], [52, 140, 58]
+				[220, 180, 90], [158, 180, 56], [60, 160, 50]
+			]
+			grass_cold_celsius = 2
+			grass_hot_celsius = 26
+			// Snow lies below this temperature, fading in over the fade: at
+			// the mean climate from about 95 m over the sea, lower where the
+			// sea level is colder.
+			snow_celsius = 0
+			snow_fade_celsius = 3
+			snow_color = [210, 218, 232]
+			// Sand lines the sea up to this height over the sea level and
+			// covers its floor, fading over the fade.
+			sand_metres = 1
+			sand_fade_metres = 2
+			sand_color = [208, 188, 142]
+		}
+		// The tints of the ground, red, green and blue from 0 to 255: with
+		// a climate a smooth field of 256 m wavelength blends along them,
+		// without one each 256 m cube takes one of them.
 		palette = [
-			[142, 118, 86]
-			[124, 108, 92]
-			[156, 128, 96]
-			[112, 100, 88]
+			[136, 124, 104]
+			[122, 116, 106]
+			[148, 132, 108]
+			[112, 108, 100]
 		]
 	}
 ]

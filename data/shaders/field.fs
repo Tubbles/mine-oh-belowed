@@ -2,14 +2,22 @@
 
 // Field fragment shader (work item 0169, render_field.odin): triplanar
 // texturing of the smooth terrain, with the point lights of 0175, 0224
-// and 0229. Each material's generated tile
-// (texture_field_materials.odin) is projected along the three axes and
-// the three are blended by the absolute normal, sharpened so a slope
-// shows one projection, not a smear of three. The tile is read at two
-// scales whose ratio is not a fraction of small numbers, so the tile's
-// period never shows as a grid (DESIGN.md, No perceivable repetition).
-// The seven materials (every one but air) blend by the vertex weights,
-// the palette's tint and the light are multiplied in: the brighter of the
+// and 0229. Each generated tile (texture_field_materials.odin), the seven
+// materials' (every one but air) and the three looks' (grass, sand,
+// snow, work item 0307), lies in one atlas (ground_atlas) and is
+// projected along the three axes, the three blended by the absolute
+// normal, sharpened so a slope shows one projection, not a smear of
+// three; a projection whose share is under projection_floor is not read.
+// The tile is read at two scales whose ratio is not a fraction of small
+// numbers, so the tile's period never shows as a grid (DESIGN.md, No
+// perceivable repetition). With a climate (ground_look_on) the topsoil
+// takes the looks: rock (the stone's tile) on faces steeper than 40 to
+// 50 degrees against the local up, and on the natural ground left over
+// snow, sand on slopes under 30 to 40 degrees, and grass, by the vertex's
+// look (world_field_ground_look.odin). The tiles blend by their weights,
+// only the most_tiles_read largest read; the strata take the vertex's
+// tint, the grass its grass colour, the sand and the snow their uniform
+// colours; then the light is multiplied in: the brighter of the
 // block light and the sky light times daylight (work item 0173), the sky
 // light's share being the ambient plus the sun's term on a slope facing
 // sun_direction (the day clock's sun in the world's frame, work item
@@ -20,6 +28,12 @@
 // surface takes water_color's colour instead of the materials and its
 // alpha as its opacity, and the sun's glint, white, where the half vector
 // of the sun and the eye meets the normal; the terrain pass sets it to 0.
+// The water's vertices have no weights, so it reads no tile.
+//
+// Texture levels: every read is textureLod at a level computed from the
+// derivatives of the position outside any branch, one level per
+// projection plane, so the reads may sit in branches and loops without
+// the derivatives' problem where a pixel quad straddles a branch.
 //
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin), as the point lights' array sizes and loop do.
@@ -29,16 +43,19 @@ in vec3 fragment_normal;
 in vec4 fragment_color;
 in vec4 fragment_weights;
 in vec3 fragment_ore_weights;
+in vec3 fragment_grass_color;
+// Snow, sand and the natural share (0307).
+in vec3 fragment_look;
 in float fragment_block_light;
 in float fragment_distance;
 
-uniform sampler2D material_texture_topsoil;
-uniform sampler2D material_texture_stone;
-uniform sampler2D material_texture_deep_stone;
-uniform sampler2D material_texture_bedrock;
-uniform sampler2D material_texture_hematite_ore;
-uniform sampler2D material_texture_chalcopyrite_ore;
-uniform sampler2D material_texture_coal_ore;
+// Every tile in cells of the atlas (field_ground_atlas_pixels).
+uniform sampler2D ground_atlas;
+// 1 with a climate, 0 without (set_field_ground_look_uniforms), and the
+// sand's and the snow's colours, 0 to 1.
+uniform float ground_look_on;
+uniform vec3 sand_color;
+uniform vec3 snow_color;
 // The sun's unit direction in the world's frame (field_sun_world_direction,
 // 0297), the sky light's share without the sun and the sun's.
 uniform vec3 sun_direction;
@@ -65,24 +82,86 @@ const float blend_sharpness = 4.0;
 // The tiles are mid tones; the tint scaled so carries the colour.
 const float tint_scale = 2.0;
 const float smallest_weight_sum = 0.0001;
+// The atlas (texture_field_materials.odin): the materials' tiles in
+// their order, then grass, sand and snow, in cells of atlas_columns
+// columns, each cell holding its tile repeated with the copy read
+// tile_margin_texels in, so a read up to largest_lod (the level where a
+// tile is one texel, its mean) stays inside its cell.
+const uint ground_tile_count = 10u;
+const uint strata_tile_count = 7u;
+const uint grass_tile = 7u;
+const uint sand_tile = 8u;
+const uint snow_tile = 9u;
+const uint atlas_columns = 4u;
+const float atlas_cell_texels = 64.0;
+const float atlas_texels = 256.0;
+const float tile_texels = 16.0;
+const float tile_margin_texels = 24.0;
+const float largest_lod = 4.0;
+// The most tiles a fragment reads, the largest weights first.
+const uint most_tiles_read = 4u;
+// A projection's share under this is not read; a tile weight is lowered
+// by weight_floor, so a trace of a tile reads nothing.
+const float projection_floor = 0.05;
+const float weight_floor = 0.02;
+// The second scale's level lies lower by log2 of its ratio.
+const float far_lod_shift = 1.442695;
+// The steepness (1 less the cosine to the local up) where rock starts and
+// is full (40 and 50 degrees), and where sand gives way (30 to 40).
+const float rock_start_steepness = 0.234;
+const float rock_full_steepness = 0.357;
+const float sand_start_steepness = 0.134;
+const float sand_end_steepness = 0.234;
 // The sun on the water (0297): the glint's sharpness and its brightness.
 const float water_glint_power = 48.0;
 const float water_glint_strength = 0.6;
 
-vec3 triplanar(sampler2D tile, vec3 position, vec3 blend)
+// The tile's texel at a coordinate in tiles, wrapped inside its cell.
+vec3 atlas_texel(uint tile, vec2 coordinate, float lod)
 {
-    vec3 along_x = texture(tile, position.yz).rgb;
-    vec3 along_y = texture(tile, position.zx).rgb;
-    vec3 along_z = texture(tile, position.xy).rgb;
-    return along_x * blend.x + along_y * blend.y + along_z * blend.z;
+    vec2 cell = vec2(float(tile % atlas_columns), float(tile / atlas_columns)) * atlas_cell_texels;
+    vec2 texel = cell + tile_margin_texels + fract(coordinate) * tile_texels;
+    return textureLod(ground_atlas, texel / atlas_texels, min(lod, largest_lod)).rgb;
 }
 
-vec3 material_color(sampler2D tile, vec3 blend)
+// One projection's plane at both scales, the second's coordinate scaled
+// down by second_scale_ratio and its level lowered to match.
+vec3 plane_color(uint tile, vec2 coordinate, float lod)
 {
-    vec3 position = fragment_world_position / tile_metres;
-    vec3 near = triplanar(tile, position, blend);
-    vec3 far = triplanar(tile, position.zxy / second_scale_ratio, blend.zxy);
+    vec3 near = atlas_texel(tile, coordinate, lod);
+    vec3 far = atlas_texel(tile, coordinate / second_scale_ratio, lod - far_lod_shift);
     return mix(near, far, 0.5);
+}
+
+// The tile over the projections with a share.
+vec3 tile_color(uint tile, vec3 position, vec3 blend, vec3 levels)
+{
+    vec3 color = vec3(0.0);
+    if (blend.x > 0.0) {
+        color += blend.x * plane_color(tile, position.yz, levels.x);
+    }
+    if (blend.y > 0.0) {
+        color += blend.y * plane_color(tile, position.zx, levels.y);
+    }
+    if (blend.z > 0.0) {
+        color += blend.z * plane_color(tile, position.xy, levels.z);
+    }
+    return color;
+}
+
+// The strata take the vertex's tint, the looks their colours.
+vec3 tile_tint(uint tile)
+{
+    if (tile < strata_tile_count) {
+        return fragment_color.rgb;
+    }
+    if (tile == grass_tile) {
+        return fragment_grass_color;
+    }
+    if (tile == sand_tile) {
+        return sand_color;
+    }
+    return snow_color;
 }
 
 // Point lights of working parts (work item 0175, render_point_lights.odin):
@@ -167,20 +246,63 @@ void main()
     vec3 normal = normalize(fragment_normal);
     vec3 blend = pow(abs(normal), vec3(blend_sharpness));
     blend /= dot(blend, vec3(1.0));
+    blend = max(blend - projection_floor, vec3(0.0));
+    blend /= dot(blend, vec3(1.0));
+    // The levels, outside every branch: per projection plane, the larger
+    // of the two screen derivatives in texels.
+    vec3 position = fragment_world_position / tile_metres;
+    vec3 position_dx = dFdx(position);
+    vec3 position_dy = dFdy(position);
+    vec3 footprint = vec3(
+        max(length(position_dx.yz), length(position_dy.yz)),
+        max(length(position_dx.zx), length(position_dy.zx)),
+        max(length(position_dx.xy), length(position_dy.xy)));
+    vec3 levels = log2(max(footprint * tile_texels, vec3(smallest_weight_sum)));
     float weight_sum = dot(fragment_weights, vec4(1.0)) + dot(fragment_ore_weights, vec3(1.0));
     vec4 weights = fragment_weights / max(weight_sum, smallest_weight_sum);
     vec3 ore_weights = fragment_ore_weights / max(weight_sum, smallest_weight_sum);
-    // Every material is sampled, also at weight 0: a mipmapped sample
-    // inside a branch has no defined derivatives where a pixel quad
-    // straddles a triangle whose weight is 0 at one end.
-    vec3 albedo = weights.x * material_color(material_texture_topsoil, blend);
-    albedo += weights.y * material_color(material_texture_stone, blend);
-    albedo += weights.z * material_color(material_texture_deep_stone, blend);
-    albedo += weights.w * material_color(material_texture_bedrock, blend);
-    albedo += ore_weights.x * material_color(material_texture_hematite_ore, blend);
-    albedo += ore_weights.y * material_color(material_texture_chalcopyrite_ore, blend);
-    albedo += ore_weights.z * material_color(material_texture_coal_ore, blend);
-    albedo *= fragment_color.rgb * tint_scale;
+    // The looks over the topsoil (0307); the planet's centre is the
+    // origin, so the local up is the position's direction.
+    float steepness = 1.0 - dot(normal, normalize(fragment_world_position));
+    float topsoil = weights.x;
+    float rock = topsoil * ground_look_on * smoothstep(rock_start_steepness, rock_full_steepness, steepness);
+    float cover = (topsoil - rock) * ground_look_on * fragment_look.z;
+    float snow = cover * fragment_look.x;
+    float sand = (cover - snow) * fragment_look.y * (1.0 - smoothstep(sand_start_steepness, sand_end_steepness, steepness));
+    float grass = cover - snow - sand;
+    float tile_weights[ground_tile_count];
+    tile_weights[0u] = topsoil - rock - cover;
+    tile_weights[1u] = weights.y + rock;
+    tile_weights[2u] = weights.z;
+    tile_weights[3u] = weights.w;
+    tile_weights[4u] = ore_weights.x;
+    tile_weights[5u] = ore_weights.y;
+    tile_weights[6u] = ore_weights.z;
+    tile_weights[grass_tile] = grass;
+    tile_weights[sand_tile] = sand;
+    tile_weights[snow_tile] = snow;
+    for (uint tile = 0u; tile < ground_tile_count; tile++) {
+        tile_weights[tile] = max(tile_weights[tile] - weight_floor, 0.0);
+    }
+    // The largest weights first, at most most_tiles_read of them.
+    vec3 albedo = vec3(0.0);
+    float picked = 0.0;
+    for (uint pick = 0u; pick < most_tiles_read; pick++) {
+        uint largest = 0u;
+        for (uint tile = 1u; tile < ground_tile_count; tile++) {
+            if (tile_weights[tile] > tile_weights[largest]) {
+                largest = tile;
+            }
+        }
+        float weight = tile_weights[largest];
+        if (weight <= 0.0) {
+            break;
+        }
+        tile_weights[largest] = 0.0;
+        albedo += weight * tile_color(largest, position, blend, levels) * tile_tint(largest);
+        picked += weight;
+    }
+    albedo *= tint_scale / max(picked, smallest_weight_sum);
     float water = step(smallest_weight_sum, water_color.a);
     albedo = mix(albedo, water_color.rgb, water);
     // The sky light gates the sun: a cave's samples have none and take
@@ -192,8 +314,7 @@ void main()
     vec3 lit = albedo * light;
     lit += albedo * point_light_sum(fragment_world_position, normal);
     lit += albedo * spot_light(fragment_world_position, normal);
-    // The sun on the water: paid as a multiply by water, not a branch
-    // (the mipmapped samples' rule above).
+    // The sun on the water: paid as a multiply by water, not a branch.
     vec3 to_camera = normalize(camera_position - fragment_world_position);
     float glint = water * fragment_color.a * daylight * pow(max(dot(normal, normalize(sun_direction + to_camera + vec3(smallest_weight_sum))), 0.0), water_glint_power) * water_glint_strength;
     lit += vec3(glint);

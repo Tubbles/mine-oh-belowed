@@ -33,7 +33,7 @@ mesh_data_equal :: proc(first, second: Field_Mesh_Data) -> bool {
 		slice.equal(first.colors[:], second.colors[:]) &&
 		slice.equal(first.lights[:], second.lights[:]) &&
 		slice.equal(first.weights[:], second.weights[:]) &&
-		slice.equal(first.ore_weights[:], second.ore_weights[:]) &&
+		slice.equal(first.looks[:], second.looks[:]) &&
 		slice.equal(first.indices[:], second.indices[:]) \
 	)
 }

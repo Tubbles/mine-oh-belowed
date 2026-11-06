@@ -10,6 +10,12 @@
 // needs one entry. The parameters and their ranges are those of
 // procedural.sjson. The ores (work item 0179) are the stone's ground with
 // their ore's flecks: rust red hematite, brassy chalcopyrite, black coal.
+// The looks (work item 0307) are the tiles of the grass, the sand and the
+// snow a planet with a climate lays over its topsoil, keyed look instead
+// of material, every look one entry. They are near neutral: the
+// planet's grass, sand and snow colours multiply them. Each has its
+// grain: the grass busy with blades, the sand smooth, the snow smooth
+// with a sparkle.
 materials = [
 	{material = "topsoil", ground = [124, 104, 78], fleck = [92, 76, 58], seed = 2101, share = 0.3, blob_width = 0.8, crystal_size = 1, stone_grain = 10, stone_mottle = 18, ore_grain = 8, rim_strength = 0.05}
 	{material = "stone", ground = [128, 126, 122], fleck = [104, 102, 100], seed = 2102, share = 0.25, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 6, rim_strength = 0.1}
@@ -18,4 +24,9 @@ materials = [
 	{material = "hematite_ore", ground = [128, 126, 122], fleck = [150, 62, 40], seed = 2105, share = 0.35, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 10, rim_strength = 0.15}
 	{material = "chalcopyrite_ore", ground = [128, 126, 122], fleck = [178, 150, 70], seed = 2106, share = 0.35, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 10, rim_strength = 0.15}
 	{material = "coal_ore", ground = [128, 126, 122], fleck = [32, 30, 30], seed = 2107, share = 0.4, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 6, rim_strength = 0.1}
+]
+looks = [
+	{look = "grass", ground = [134, 134, 130], fleck = [100, 104, 96], seed = 2108, share = 0.35, blob_width = 0.5, crystal_size = 1, stone_grain = 14, stone_mottle = 16, ore_grain = 10, rim_strength = 0.1}
+	{look = "sand", ground = [134, 132, 128], fleck = [112, 108, 102], seed = 2109, share = 0.2, blob_width = 0.4, crystal_size = 1, stone_grain = 6, stone_mottle = 8, ore_grain = 4, rim_strength = 0}
+	{look = "snow", ground = [130, 130, 132], fleck = [146, 146, 150], seed = 2110, share = 0.12, blob_width = 0.35, crystal_size = 1, stone_grain = 3, stone_mottle = 10, ore_grain = 6, rim_strength = 0}
 ]

@@ -87,6 +87,12 @@ Planet_Generation :: struct {
 	// The relief's bound from the radius (planet_relief_bounds).
 	relief_lowest:       i64,
 	relief_highest:      i64,
+	// The climate's field (0307, generation_planet_climate.odin), off at
+	// the zero value, and its seed; the ground look's seed
+	// (world_field_ground_look.odin).
+	climate:             Planet_Climate_Field,
+	climate_seed:        u64,
+	ground_look_seed:    u64,
 }
 
 // The starter veins lie round the planet's home (the pod's, 0179,
@@ -113,6 +119,9 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		landform_home = fixed_scale(planet_home_direction(planet.home), radius),
 		relief_lowest = bounds.lowest,
 		relief_highest = bounds.highest,
+		climate = planet_climate_field(planet.climate),
+		climate_seed = seeds[.Planet_Climate],
+		ground_look_seed = seeds[.Planet_Ground_Look],
 	}
 	generation.crater = make_crater_term(generation, planet.crater, planet_home_direction(planet.home))
 	generation.trees = make_planet_tree_term(seed, planet.trees, planet.home, radius)

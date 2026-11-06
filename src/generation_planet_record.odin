@@ -46,6 +46,9 @@ Planet_Generation_Record :: struct {
 	trees_recorded:                                 bool,
 	// Zero in a file written before them (0306): the relief of before.
 	landforms:                                      Planet_Landforms,
+	// The climate's field (0307); zero in a file written before it, whose
+	// ground keeps the look without a climate (make_recorded_planet).
+	climate:                                        Planet_Climate_Field,
 }
 
 // Borrows the planet's springs.
@@ -68,6 +71,7 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		trees = planet_tree_placement(planet.trees),
 		trees_recorded = true,
 		landforms = planet.landforms,
+		climate = planet_climate_field(planet.climate),
 	}
 }
 
@@ -93,6 +97,13 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	result.relief_shape = record.relief_shape
 	// Set even when zero: the data's landforms never reach an old world.
 	result.landforms = record.landforms
+	// The recorded field with the data's look, both on; a world recorded
+	// without a climate, or a planet whose data has none, keeps the look
+	// without one.
+	result.climate = {}
+	if record.climate != {} && planet.climate != {} {
+		result.climate = with_climate_field(planet.climate, record.climate)
+	}
 	result.springs = slice.clone(record.springs, allocator)
 	if record.home_recorded {
 		result.home = record.home
@@ -197,7 +208,10 @@ planet_generation_record_problem :: proc(record: Planet_Generation_Record) -> st
 		palette = {{0, 0, 0}},
 		trees   = {species = {PLANET_TREE_STAND_IN_SPECIES}},
 	}
-	return planet_problem(make_recorded_planet(stand_in, record, context.temp_allocator))
+	if problem := planet_problem(make_recorded_planet(stand_in, record, context.temp_allocator)); problem != "" {
+		return problem
+	}
+	return climate_field_problem(record.climate)
 }
 
 // The home's direction from the centre, a unit vector, as a spring's
@@ -309,6 +323,21 @@ recorded_landforms_note :: proc(recorded: Planet_Generation_Record, planet: Plan
 	return "world: the world file records no landforms, it keeps the relief it was made with"
 }
 
+// The log line of a world file whose recorded climate (0307) and the
+// data's disagree on being on, or "": either way its ground keeps the
+// look without a climate (make_recorded_planet).
+recorded_climate_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
+	switch {
+	case !planet_generation_is_recorded(recorded):
+		return ""
+	case recorded.climate == {} && planet.climate != {}:
+		return "world: the world file records no climate, its ground keeps the look without one"
+	case recorded.climate != {} && planet.climate == {}:
+		return fmt.tprintf("world: the world file records a climate but %q in %s has none, its ground keeps the look without one", planet.id, PLANETS_FILE_NAME)
+	}
+	return ""
+}
+
 // The planet a world generates on, against the data's planets: the
 // settings' planet, or with a log line the default one when the data has
 // no planet of that id (a loaded world keeps its id in the settings, so
@@ -346,6 +375,9 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 		record.crater, record.crater_recorded = planet.crater, true
 	}
 	if note := recorded_landforms_note(recorded, planet); note != "" {
+		platform.log_printf("%s", note)
+	}
+	if note := recorded_climate_note(recorded, planet); note != "" {
 		platform.log_printf("%s", note)
 	}
 	if planet_generation_is_recorded(recorded) && !recorded.trees_recorded {

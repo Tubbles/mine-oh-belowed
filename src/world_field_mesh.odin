@@ -29,8 +29,8 @@ FIELD_VERTEX_CELL_COUNT :: FIELD_VERTEX_CELL_SIZE * FIELD_VERTEX_CELL_SIZE * FIE
 // so the positions convert to floats exactly.
 FIELD_MESH_POSITION_UNITS :: 256
 // The material slots of a vertex, every material but air in enum order
-// (field_material_slot), one weight each, which the renderer binds to a
-// texture each (render_field.odin), the ores of the veins' outcrops
+// (field_material_slot), one weight each, each a tile of the renderer's
+// ground atlas (render_field.odin), the ores of the veins' outcrops
 // (0179) included.
 FIELD_TEXTURED_MATERIAL_COUNT :: len(Field_Material) - 1
 
@@ -64,14 +64,17 @@ Field_Grid :: struct {
 // central difference at the cell's centre; the surface faces against it.
 // weights is the share of the cell's ground corners per material slot,
 // Topsoil first (field_material_slot), summing to about 255; color is the mean
-// palette colour of the ground corners; light is the mean block light and
-// sky light of the air corners (field_vertex_light).
+// palette colour of the ground corners, or with a climate the strata
+// tint (write_field_ground_look, 0307); light is the mean block light and
+// sky light of the air corners (field_vertex_light); look is the ground's
+// look with a climate, zero without one.
 Field_Surface_Vertex :: struct {
 	position: [3]i32,
 	gradient: [3]i32,
 	weights:  [FIELD_TEXTURED_MATERIAL_COUNT]u8,
 	color:    [3]u8,
 	light:    [Field_Light_Channel]u8,
+	look:     Field_Vertex_Look,
 }
 
 // Triangles as index triples. The skirts (world_field_lod.odin) come after
@@ -85,24 +88,25 @@ Field_Surface :: struct {
 // What render_field.odin uploads: positions in metres from the node's
 // origin; colors carry the tint in red, green and blue and the sky light
 // in alpha; the material weights run from 0 to 1. raylib's attributes
-// the field leaves free carry the weights: weights (the first four
+// the field leaves free carry the rest: weights (the first four
 // materials, topsoil to bedrock) go up as the tangent attribute, lights
 // as the texture coordinate attribute with the block light (0 to 1)
-// first and the fifth material's weight (hematite ore) second, and
-// ore_weights (the sixth and seventh, chalcopyrite and coal ore) as the
-// second texture coordinate attribute. Every float uploaded is read by
-// field.vs.
+// first and the three ores' weights second, as bytes packed into one
+// float (field_pack_bytes: hematite, chalcopyrite, coal), and looks (the
+// ground's look, 0307) as the second texture coordinate attribute, the
+// grass colour packed first and the snow, the sand and the natural share
+// packed second. field.vs unpacks them.
 Field_Mesh_Data :: struct {
-	positions:   [dynamic][3]f32,
-	normals:     [dynamic][3]f32,
-	colors:      [dynamic][4]u8,
-	lights:      [dynamic][2]f32,
-	weights:     [dynamic][4]f32,
-	ore_weights: [dynamic][2]f32,
-	indices:     [dynamic]u16,
+	positions: [dynamic][3]f32,
+	normals:   [dynamic][3]f32,
+	colors:    [dynamic][4]u8,
+	lights:    [dynamic][2]f32,
+	weights:   [dynamic][4]f32,
+	looks:     [dynamic][2]f32,
+	indices:   [dynamic]u16,
 }
 
-#assert(FIELD_TEXTURED_MATERIAL_COUNT == 7, "the material weights travel in the tangent, the second texture coordinate and the first's second component")
+#assert(FIELD_TEXTURED_MATERIAL_COUNT == 7, "the material weights travel in the tangent and three bytes of the texture coordinate's second component")
 
 // Local from -1 to FIELD_GRID_CELLS on every axis.
 field_grid_index :: proc(local: [3]i32) -> int {
@@ -371,6 +375,12 @@ mesh_field_surface :: proc(grid: ^Field_Grid, palette: [][3]int, allocator := co
 	return surface
 }
 
+// Three bytes in one float, the first lowest: at most 2^24 - 1, which an
+// f32 holds exactly, so field.vs's unpack_bytes gives them back whole.
+field_pack_bytes :: proc(bytes: [3]u8) -> f32 {
+	return f32(bytes[0]) + 256 * f32(bytes[1]) + 65536 * f32(bytes[2])
+}
+
 // Outward is against the gradient; a cell whose differences cancel faces
 // up the grid's y.
 field_vertex_normal :: proc(gradient: [3]i32) -> [3]f32 {
@@ -388,13 +398,12 @@ field_mesh_from_surface :: proc(surface: Field_Surface, step: i32, spacing_milli
 		append(&data.positions, [3]f32{f32(vertex.position.x), f32(vertex.position.y), f32(vertex.position.z)} * metres_per_unit)
 		append(&data.normals, field_vertex_normal(vertex.gradient))
 		append(&data.colors, [4]u8{vertex.color.r, vertex.color.g, vertex.color.b, vertex.light[.Sky]})
-		weights: [FIELD_TEXTURED_MATERIAL_COUNT]f32
-		for weight, slot in vertex.weights {
-			weights[slot] = f32(weight) / 255
-		}
-		append(&data.lights, [2]f32{f32(vertex.light[.Block]) / FIELD_LIGHT_FULL, weights[4]})
-		append(&data.weights, [4]f32{weights[0], weights[1], weights[2], weights[3]})
-		append(&data.ore_weights, [2]f32{weights[5], weights[6]})
+		weights := vertex.weights
+		ores := field_pack_bytes({weights[4], weights[5], weights[6]})
+		append(&data.lights, [2]f32{f32(vertex.light[.Block]) / FIELD_LIGHT_FULL, ores})
+		append(&data.weights, [4]f32{f32(weights[0]) / 255, f32(weights[1]) / 255, f32(weights[2]) / 255, f32(weights[3]) / 255})
+		look := vertex.look
+		append(&data.looks, [2]f32{field_pack_bytes(look.grass), field_pack_bytes({look.snow, look.sand, look.natural})})
 	}
 	append(&data.indices, ..surface.indices[:])
 	return data
@@ -407,16 +416,18 @@ make_field_mesh_data :: proc(allocator := context.allocator) -> Field_Mesh_Data 
 		colors = make([dynamic][4]u8, allocator),
 		lights = make([dynamic][2]f32, allocator),
 		weights = make([dynamic][4]f32, allocator),
-		ore_weights = make([dynamic][2]f32, allocator),
+		looks = make([dynamic][2]f32, allocator),
 		indices = make([dynamic]u16, allocator),
 	}
 }
 
-// The worker's job for one node's terrain: the surface, its skirts on
-// skirt_faces (field_node_skirt_faces), the vertex arrays. The surface is
-// temporary.
-mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, skirt_faces: Field_Faces, allocator := context.allocator) -> Field_Mesh_Data {
+// The worker's job for one node's terrain: the surface, the ground's look
+// with a climate (write_field_ground_look, 0307; measure_cuts for a grid
+// holding loaded samples), its skirts on skirt_faces
+// (field_node_skirt_faces), the vertex arrays. The surface is temporary.
+mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, skirt_faces: Field_Faces, allocator := context.allocator, look: Field_Ground_Look = {}, measure_cuts := false) -> Field_Mesh_Data {
 	surface := mesh_field_surface(grid, palette, context.temp_allocator)
+	write_field_ground_look(&surface, grid, look, spacing_millimetres, measure_cuts)
 	append_field_skirts(&surface, skirt_faces)
 	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
 }
@@ -442,6 +453,6 @@ destroy_field_mesh_data :: proc(data: Field_Mesh_Data) {
 	delete(data.colors)
 	delete(data.lights)
 	delete(data.weights)
-	delete(data.ore_weights)
+	delete(data.looks)
 	delete(data.indices)
 }

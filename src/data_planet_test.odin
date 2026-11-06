@@ -47,6 +47,59 @@ test_the_shipped_planets_file_loads :: proc(t: ^testing.T) {
 	// the ledges.
 	testing.expect(t, home.relief_shape.ledge_amplitude_millimetres > 0 && home.relief_shape.terrace_rise_millimetres == 0 && home.relief_shape.basin_depth_metres == 0, "the shipped home shapes its relief with the ledges")
 	testing.expect(t, home.landforms != {}, "the shipped home has landforms")
+	testing.expect(t, home.climate != {}, "the shipped home has a climate")
+}
+
+// The shipped home's climate (0307), as data/planets.sjson holds it.
+SHIPPED_TEST_CLIMATE :: Planet_Climate {
+	temperature_wavelength_metres = 1600,
+	moisture_wavelength_metres    = 1100,
+	sea_level_celsius             = 13,
+	temperature_spread_celsius    = 14,
+	lapse_millicelsius_per_metre  = 120,
+	moisture_percent              = 55,
+	moisture_spread_percent       = 70,
+	grass_colors                  = {{146, 150, 104}, {80, 124, 78}, {44, 98, 70}, {190, 182, 82}, {96, 166, 58}, {52, 140, 58}, {220, 180, 90}, {158, 180, 56}, {60, 160, 50}},
+	grass_cold_celsius            = 2,
+	grass_hot_celsius             = 26,
+	snow_celsius                  = 0,
+	snow_fade_celsius             = 3,
+	snow_color                    = {210, 218, 232},
+	sand_metres                   = 1,
+	sand_fade_metres              = 2,
+	sand_color                    = {208, 188, 142},
+}
+
+// The climate (0307) is optional, off at zero without it; given, every
+// key of it is required and bounded.
+@(test)
+test_a_planet_record_takes_an_optional_climate :: proc(t: ^testing.T) {
+	record := string(TEST_PLANET_RECORD)
+	planets, problem := parse_planets_file(transmute([]byte)record, PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, planets[0].climate, Planet_Climate{})
+	climate_line := "\tclimate = {temperature_wavelength_metres = 1600, moisture_wavelength_metres = 1100, sea_level_celsius = 13, temperature_spread_celsius = 14, lapse_millicelsius_per_metre = 120, moisture_percent = 55, moisture_spread_percent = 70, grass_colors = [[146, 150, 104], [80, 124, 78], [44, 98, 70], [190, 182, 82], [96, 166, 58], [52, 140, 58], [220, 180, 90], [158, 180, 56], [60, 160, 50]], grass_cold_celsius = 2, grass_hot_celsius = 26, snow_celsius = 0, snow_fade_celsius = 3, snow_color = [210, 218, 232], sand_metres = 1, sand_fade_metres = 2, sand_color = [208, 188, 142]}\n"
+	climate, _ := strings.replace(record, "\tpalette", strings.concatenate({climate_line, "\tpalette"}, context.temp_allocator), 1, context.temp_allocator)
+	planets, problem = parse_planets_file(transmute([]byte)climate, PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, planets[0].climate, SHIPPED_TEST_CLIMATE)
+	testing.expect_value(t, default_planet(shipped_test_planets()).climate, SHIPPED_TEST_CLIMATE)
+	replace :: proc(record, old, new: string) -> string {
+		replaced, _ := strings.replace(record, old, new, 1, context.temp_allocator)
+		return replaced
+	}
+	expect_planets_problem(t, replace(climate, ", snow_color = [210, 218, 232]", ""), "planets[0].climate is missing snow_color")
+	expect_planets_problem(t, replace(climate, "temperature_wavelength_metres = 1600", "temperature_wavelength_metres = 0"), "climate.temperature_wavelength_metres 0 is outside 64 to 100000")
+	expect_planets_problem(t, replace(climate, "snow_fade_celsius = 3", "snow_fade_celsius = 0"), "climate.snow_fade_celsius 0 is outside 1 to 50")
+	expect_planets_problem(t, replace(climate, "grass_hot_celsius = 26", "grass_hot_celsius = 2"), "climate.grass_hot_celsius 2 is not above grass_cold_celsius 2")
+	expect_planets_problem(t, replace(climate, "[96, 166, 58]", "[96, 256, 58]"), "climate.grass_colors[4] has 256, outside 0 to 255")
+	expect_planets_problem(t, replace(climate, "sand_color = [208, 188, 142]", "sand_color = [208, 188, 256]"), "climate.sand_color has 256, outside 0 to 255")
+	expect_planets_problem(t, replace(climate, "sand_metres = 1,", "sand_metres = 1, height = 1,"), "unknown key planets[0].climate.height")
+	expect_planets_problem(t, replace(climate, "lapse_millicelsius_per_metre = 120", "lapse_millicelsius_per_metre = 1001"), "climate.lapse_millicelsius_per_metre 1001 is outside 0 to 1000")
+	// A present climate is on: its field is held to its bounds even when
+	// every field key is zero.
+	field_zero := replace(replace(replace(climate, "temperature_wavelength_metres = 1600", "temperature_wavelength_metres = 0"), "moisture_wavelength_metres = 1100", "moisture_wavelength_metres = 0"), "sea_level_celsius = 13, temperature_spread_celsius = 14, lapse_millicelsius_per_metre = 120, moisture_percent = 55, moisture_spread_percent = 70", "sea_level_celsius = 0, temperature_spread_celsius = 0, lapse_millicelsius_per_metre = 0, moisture_percent = 0, moisture_spread_percent = 0")
+	expect_planets_problem(t, field_zero, "climate.temperature_wavelength_metres 0 is outside 64 to 100000")
 }
 
 // The relief's shape (0189) is optional, off at zero without it; given,

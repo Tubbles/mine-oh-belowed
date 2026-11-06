@@ -162,20 +162,45 @@ stream_field_session :: proc(session: ^Session, selection: []Field_Node) {
 // shader or tiles do not load, and the session then draws only its UI.
 start_field_presentation :: proc(state: ^Frame_State) -> bool {
 	session := state.session
-	tiles, problem := load_field_material_tiles(state.data_directory)
-	if problem != "" {
-		platform.log_printf("error: %s", problem)
-		return false
-	}
 	distances := state.config.field_view.level_distances_metres
-	renderer, ok := init_field_renderer(state.data_directory, tiles, session.planet, session.simulation.field.spacing_millimetres, f32(distances[FIELD_COARSEST_LEVEL]))
-	if !ok {
+	renderer, problem := load_field_presentation_or_without_edits(load_field_presentation, state.data_directory, session.planet, session.simulation.field.spacing_millimetres, f32(distances[FIELD_COARSEST_LEVEL]))
+	if problem != "" {
 		return false
 	}
 	state.presentation.field_renderer = renderer
 	state.presentation.field_renderer_ready = true
 	state.presentation.arrival = init_arrival_presentation(state.data_directory, state.config)
 	return true
+}
+
+// The ground tiles and the field renderer; the problem is the tiles' or
+// the last error line the renderer logged, "" when both loaded.
+load_field_presentation :: proc(data_directory: string, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, problem: string) {
+	tiles: Field_Ground_Tiles
+	if tiles, problem = load_field_material_tiles(data_directory); problem != "" {
+		platform.log_printf("error: %s", problem)
+		return {}, problem
+	}
+	capture: platform.Log_Capture
+	platform.begin_log_capture(&capture)
+	ok: bool
+	renderer, ok = init_field_renderer(data_directory, tiles, planet, spacing_millimetres, fog_end)
+	problem = platform.end_log_capture(&capture, "the field shaders did not load")
+	return renderer, ok ? "" : problem
+}
+
+Field_Presentation_Load :: #type proc(data_directory: string, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, problem: string)
+
+// Loaded again without the data edits overlay when it failed with it, as
+// init_chunk_renderer_or_without_edits does: an overlay copy of the
+// materials file or a field shader written before the looks (0307) fails.
+// load is load_field_presentation, a stand-in without GL under test.
+load_field_presentation_or_without_edits :: proc(load: Field_Presentation_Load, data_directory: string, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, problem: string) {
+	renderer, problem = load(data_directory, planet, spacing_millimetres, fog_end)
+	if problem != "" && turn_data_edits_off(problem) {
+		renderer, problem = load(data_directory, planet, spacing_millimetres, fog_end)
+	}
+	return
 }
 
 stop_field_presentation :: proc(presentation: ^Frame_Presentation) {

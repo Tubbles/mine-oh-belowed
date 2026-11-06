@@ -1,7 +1,9 @@
 package game
 
+import "core:math"
 import "core:math/linalg"
 import "core:testing"
+import "generation_seed"
 
 // A field read at a sample: no captures, so each test field is a proc.
 Test_Field_Density :: proc(sample: [3]i64) -> i8
@@ -193,20 +195,21 @@ test_the_vertex_arrays_are_in_metres :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(data.lights), len(data.positions))
 	testing.expect_value(t, data.weights[0], [4]f32{0, 1, 0, 0})
 	testing.expect_value(t, data.lights[0].y, 0)
-	testing.expect_value(t, data.ore_weights[0], [2]f32{0, 0})
+	// No climate: the look is zero (0307).
+	testing.expect_value(t, len(data.looks), len(data.positions))
+	testing.expect_value(t, data.looks[0], [2]f32{0, 0})
 }
 
 // Each ore's ground carries its own weight to the vertex arrays, so the
-// shader samples its tile: hematite in the texture coordinate's second
-// component, chalcopyrite and coal in the second texture coordinate.
+// shader reads its tile: the three ores' weights are bytes packed into the
+// texture coordinate's second component, hematite lowest (0307).
 @(test)
 test_an_ores_ground_meshes_with_its_own_weight :: proc(t: ^testing.T) {
 	Expected :: struct {
 		material: Field_Material,
-		light:    f32,
-		ores:     [2]f32,
+		ores:     [3]u8,
 	}
-	cases := [3]Expected{{.Hematite_Ore, 1, {0, 0}}, {.Chalcopyrite_Ore, 0, {1, 0}}, {.Coal_Ore, 0, {0, 1}}}
+	cases := [3]Expected{{.Hematite_Ore, {255, 0, 0}}, {.Chalcopyrite_Ore, {0, 255, 0}}, {.Coal_Ore, {0, 0, 255}}}
 	for expected in cases {
 		grid := fill_test_field_grid({0, 0, 0}, 1, test_plane_density)
 		for &material in grid.material {
@@ -217,8 +220,8 @@ test_an_ores_ground_meshes_with_its_own_weight :: proc(t: ^testing.T) {
 		surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
 		data := field_mesh_from_surface(surface, 1, 1000, context.temp_allocator)
 		testing.expect(t, len(data.positions) > 0)
-		testing.expect_value(t, len(data.ore_weights), len(data.positions))
-		testing.expectf(t, data.weights[0] == {} && data.lights[0].y == expected.light && data.ore_weights[0] == expected.ores, "%v: %v %v %v", expected.material, data.weights[0], data.lights[0], data.ore_weights[0])
+		testing.expect_value(t, len(data.lights), len(data.positions))
+		testing.expectf(t, data.weights[0] == {} && data.lights[0].y == field_pack_bytes(expected.ores), "%v: %v %v", expected.material, data.weights[0], data.lights[0])
 	}
 }
 
@@ -257,5 +260,41 @@ test_the_vertex_light_is_the_mean_of_the_air_corners :: proc(t: ^testing.T) {
 	for color, index in water.colors {
 		testing.expect_value(t, color.a, 90)
 		testing.expect_value(t, water.lights[index].x, f32(200) / FIELD_LIGHT_FULL)
+	}
+}
+
+// field.vs's unpack_bytes in f32, as the shader runs it.
+unpack_test_bytes :: proc(packed: f32) -> [3]f32 {
+	highest := math.floor(packed / 65536.0)
+	rest := packed - highest * 65536.0
+	middle := math.floor(rest / 256.0)
+	lowest := rest - middle * 256.0
+	return [3]f32{lowest, middle, highest} / 255.0
+}
+
+// Work item 0307: three bytes packed into one float come back whole
+// through the shader's unpacking, at every value of each byte and for
+// hashed triples.
+@(test)
+test_the_packed_bytes_unpack_exactly :: proc(t: ^testing.T) {
+	round_trips :: proc(bytes: [3]u8) -> bool {
+		unpacked := unpack_test_bytes(field_pack_bytes(bytes))
+		expected := [3]f32{f32(bytes[0]), f32(bytes[1]), f32(bytes[2])} / 255.0
+		return unpacked == expected
+	}
+	for value in 0 ..= 255 {
+		for position in 0 ..< 3 {
+			bytes: [3]u8
+			bytes[position] = u8(value)
+			testing.expectf(t, round_trips(bytes), "%v", bytes)
+			bytes = {255, 255, 255}
+			bytes[position] = u8(value)
+			testing.expectf(t, round_trips(bytes), "%v", bytes)
+		}
+	}
+	for index in u64(0) ..< 1000 {
+		hash := generation_seed.hash_u64(index)
+		bytes := [3]u8{u8(hash), u8(hash >> 8), u8(hash >> 16)}
+		testing.expectf(t, round_trips(bytes), "%v", bytes)
 	}
 }

@@ -2,15 +2,17 @@ package game
 
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
+import "platform"
 import "render_frustum"
 
 // The terrain field's renderer (work item 0169, doc/presentation.md, Chunk
 // meshes): one raylib mesh per selected octree node (world_field_lod.odin),
 // drawn with the triplanar shader (data/shaders/field.vs and field.fs) and
-// the seven material tiles (texture_field_materials.odin), and the globe, a
-// sphere in the palette's first colour drawn every frame below the lowest
-// ground the relief can make, so the meshed nodes cover it where they
-// exist and it fills the planet's silhouette beyond the last distance.
+// the ground atlas of the materials' and the looks' tiles
+// (texture_field_materials.odin), and the globe, a sphere in the ground's
+// colour (field_globe_color) drawn every frame below the lowest ground
+// the relief can make, so the meshed nodes cover it where they exist and
+// it fills the planet's silhouette beyond the last distance.
 // Each node also carries the water's mesh (0172), drawn after every
 // node's terrain through the same shader with water_color set:
 // translucent, alpha blended and without depth writes, so the terrain
@@ -33,22 +35,11 @@ FIELD_GLOBE_MARGIN_METRES :: 8
 // terrain pass sets an opacity of 0.
 FIELD_WATER_COLOR :: [4]f32{0.16, 0.36, 0.52, 0.62}
 
-// The material slots' sampler names, bound to the material's first seven
-// maps (DrawMesh binds map i to the shader location MAP_ALBEDO + i; maps
-// 0 to 6 are two dimensional, the cube maps start at 7).
-@(rodata)
-field_material_sampler_names := [FIELD_TEXTURED_MATERIAL_COUNT]cstring {
-	"material_texture_topsoil",
-	"material_texture_stone",
-	"material_texture_deep_stone",
-	"material_texture_bedrock",
-	"material_texture_hematite_ore",
-	"material_texture_chalcopyrite_ore",
-	"material_texture_coal_ore",
-}
+// The ground atlas's sampler, bound to the material's map 0 (DrawMesh
+// binds map i to the shader location MAP_ALBEDO + i).
+FIELD_GROUND_ATLAS_SAMPLER :: "ground_atlas"
 
-#assert(FIELD_MATERIAL_TILE_COUNT == FIELD_TEXTURED_MATERIAL_COUNT, "every generated material tile is bound and sampled")
-#assert(FIELD_TEXTURED_MATERIAL_COUNT <= int(rl.MaterialMapIndex.CUBEMAP), "the material tiles take two dimensional maps only")
+#assert(FIELD_MATERIAL_TILE_COUNT == FIELD_TEXTURED_MATERIAL_COUNT, "every generated material tile is a tile of the atlas")
 
 // origin is the node's first sample in metres. A node with no water has
 // has_water false and no water mesh.
@@ -101,29 +92,38 @@ tile_mean_color :: proc(tile: Tile_Pixels) -> [3]f32 {
 	return {f32(mean.r), f32(mean.g), f32(mean.b)}
 }
 
-// Bilinear with mipmaps and repeating, so the tile wraps and stays calm at
-// a distance.
-upload_field_material_tile :: proc(tile: Tile_Pixels) -> rl.Texture2D {
-	tile := tile
+// The ground atlas (field_ground_atlas_pixels), trilinear with mipmaps
+// and clamped: the shader wraps each tile itself inside its cell and reads
+// it by level (textureLod), so no read crosses a cell.
+upload_field_ground_atlas :: proc(tiles: Field_Ground_Tiles) -> rl.Texture2D {
+	pixels := field_ground_atlas_pixels(tiles, context.temp_allocator)
 	image := rl.Image {
-		data    = raw_data(tile[:]),
-		width   = ATLAS_TILE_SIZE,
-		height  = ATLAS_TILE_SIZE,
+		data    = raw_data(pixels),
+		width   = FIELD_GROUND_ATLAS_TEXELS,
+		height  = FIELD_GROUND_ATLAS_TEXELS,
 		mipmaps = 1,
 		format  = .UNCOMPRESSED_R8G8B8A8,
 	}
 	texture := load_rgba_texture(image)
 	rl.GenTextureMipmaps(&texture)
 	rl.SetTextureFilter(texture, .TRILINEAR)
-	rl.SetTextureWrap(texture, .REPEAT)
+	rl.SetTextureWrap(texture, .CLAMP)
 	return texture
+}
+
+// The look's uniforms (0307): on with a climate, and the sand's and the
+// snow's colours from 0 to 1; the grass colour comes per vertex.
+set_field_ground_look_uniforms :: proc(shader: rl.Shader, planet: Planet) {
+	set_shader_float(shader, "ground_look_on", planet.climate != {} ? 1 : 0)
+	sand := field_color_float(planet.climate.sand_color) / 255
+	snow := field_color_float(planet.climate.snow_color) / 255
+	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "sand_color"), &sand, .VEC3)
+	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "snow_color"), &snow, .VEC3)
 }
 
 // fog_end is the last level of detail distance in metres.
 use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: f32) {
-	for name, slot in field_material_sampler_names {
-		shader.locs[int(rl.ShaderLocationIndex.MAP_ALBEDO) + slot] = rl.GetShaderLocation(shader, name)
-	}
+	shader.locs[int(rl.ShaderLocationIndex.MAP_ALBEDO)] = rl.GetShaderLocation(shader, FIELD_GROUND_ATLAS_SAMPLER)
 	fog := color_to_vector3(FIELD_FOG_COLOR)
 	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "fog_color"), &fog, .VEC3)
 	set_shader_float(shader, "fog_start", fog_end * FOG_START_SHARE)
@@ -143,22 +143,38 @@ field_globe_radius_metres :: proc(planet: Planet) -> f32 {
 	return f32(planet.radius_metres - relief_depth_metres(planet_relief_bounds(planet)) - FIELD_GLOBE_MARGIN_METRES)
 }
 
-field_globe_color :: proc(palette: [][3]int) -> rl.Color {
-	color := palette[0]
-	return {u8(color.r), u8(color.g), u8(color.b), 255}
+// With a climate the temperate moderate grass anchor as the grass tile
+// shows it (its mean times the shader's tint_scale), so the far planet
+// reads green; without one the palette's first colour.
+field_globe_color :: proc(planet: Planet, grass_mean: [3]f32) -> rl.Color {
+	if planet.climate == {} {
+		color := planet.palette[0]
+		return {u8(color.r), u8(color.g), u8(color.b), 255}
+	}
+	color := field_color_bytes(field_color_float(planet.climate.grass_colors[4]) * grass_mean * 2)
+	return {color.r, color.g, color.b, 255}
 }
 
-init_field_renderer :: proc(data_directory: string, tiles: Field_Material_Tiles, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, ok: bool) {
+// False with an error line when the shaders do not load or the fragment
+// shader has no ground atlas: a copy older than the looks (0307) links
+// with today's vertex shader, so the load alone does not catch it.
+init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, ok: bool) {
 	shader := load_shader_pair(data_directory, FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, "field") or_return
+	if rl.GetShaderLocation(shader, FIELD_GROUND_ATLAS_SAMPLER) < 0 {
+		platform.log_printf("error: the field shader from %s and %s has no %s, a copy older than the ground's looks", FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, FIELD_GROUND_ATLAS_SAMPLER)
+		rl.UnloadShader(shader)
+		return {}, false
+	}
 	renderer.material = rl.LoadMaterialDefault()
 	use_field_shader(&renderer, shader, fog_end)
-	for tile, slot in tiles {
-		rl.SetMaterialTexture(&renderer.material, rl.MaterialMapIndex(slot), upload_field_material_tile(tile))
-		renderer.material_colors[slot] = tile_mean_color(tile)
+	set_field_ground_look_uniforms(shader, planet)
+	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_field_ground_atlas(tiles))
+	for slot in 0 ..< FIELD_MATERIAL_TILE_COUNT {
+		renderer.material_colors[slot] = tile_mean_color(tiles[slot])
 	}
 	renderer.globe = rl.GenMeshSphere(field_globe_radius_metres(planet), FIELD_GLOBE_RINGS, FIELD_GLOBE_SLICES)
 	renderer.globe_material = rl.LoadMaterialDefault()
-	renderer.globe_material.maps[rl.MaterialMapIndex.ALBEDO].color = field_globe_color(planet.palette)
+	renderer.globe_material.maps[rl.MaterialMapIndex.ALBEDO].color = field_globe_color(planet, tile_mean_color(tiles[field_look_tile(.Grass)]))
 	renderer.spacing_millimetres = spacing_millimetres
 	renderer.daylight = 1
 	return renderer, true
@@ -175,7 +191,7 @@ upload_field_mesh :: proc(data: Field_Mesh_Data) -> rl.Mesh {
 		normals       = cast([^]f32)clone_for_raylib(data.normals[:]),
 		colors        = cast([^]u8)clone_for_raylib(data.colors[:]),
 		texcoords     = cast([^]f32)clone_for_raylib(data.lights[:]),
-		texcoords2    = cast([^]f32)clone_for_raylib(data.ore_weights[:]),
+		texcoords2    = cast([^]f32)clone_for_raylib(data.looks[:]),
 		tangents      = cast([^]f32)clone_for_raylib(data.weights[:]),
 		indices       = clone_for_raylib(data.indices[:]),
 	}
@@ -331,7 +347,7 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	draw_field_water(renderer, visible[:])
 }
 
-// UnloadMaterial also unloads the shader and the material tiles.
+// UnloadMaterial also unloads the shader and the ground atlas.
 destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 	for _, render in renderer.meshes {
 		unload_field_node_render(render)

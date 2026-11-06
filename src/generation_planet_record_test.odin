@@ -402,3 +402,66 @@ test_a_world_file_without_the_impact_key_bakes_its_crater :: proc(t: ^testing.T)
 	_, _, reloaded := resolve_world_planet(kept.settings, kept.planet_generation, planets, true)
 	testing.expect(t, reloaded.crater_at_impact, "a loaded new world keeps its flag")
 }
+
+// Work item 0307: a world file written before the climate keeps the
+// ground's old look (the record's zero field), with one log line.
+@(test)
+test_a_world_file_before_the_climate_keeps_the_old_look :: proc(t: ^testing.T) {
+	planets := shipped_test_planets()
+	planet := default_planet(planets)
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = planet.id},
+		planet_generation = planet_generation_record(planet),
+	}
+	text := string(encode_world_file(file, context.temp_allocator))
+	start := strings.index(text, "climate")
+	testing.expect(t, start >= 0, "the world file records the climate")
+	end := start + strings.index_byte(text[start:], '}') + 1
+	older := strings.concatenate({text[:start], text[end:]}, context.temp_allocator)
+	testing.expect(t, !strings.contains(older, "climate"), "the old text holds no climate")
+	parsed, problem := parse_world_file(transmute([]byte)older, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.climate, Planet_Climate_Field{})
+	testing.expect(t, strings.contains(recorded_climate_note(parsed.planet_generation, planet), "records no climate"), "the old file's note")
+	testing.expect_value(t, recorded_climate_note(planet_generation_record(planet), planet), "")
+	_, resolved_planet, record := resolve_world_planet(parsed.settings, parsed.planet_generation, planets, true)
+	recorded := make_recorded_planet(resolved_planet, record, context.temp_allocator)
+	testing.expect_value(t, recorded.climate, Planet_Climate{})
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, recorded, 1000)
+	testing.expect_value(t, generation.climate, Planet_Climate_Field{})
+	testing.expect(t, !make_field_ground_look(generation, recorded).on, "the old world's ground has no look")
+	// A recorded climate on a planet the data gives none keeps the old
+	// look too, with its own note.
+	bare := planet
+	bare.climate = {}
+	testing.expect(t, strings.contains(recorded_climate_note(planet_generation_record(planet), bare), "records a climate but"), "the bare planet's note")
+	testing.expect_value(t, make_recorded_planet(bare, planet_generation_record(planet), context.temp_allocator).climate, Planet_Climate{})
+}
+
+// Work item 0307: a world records the climate's field, which the data's
+// later edits leave, and takes the data's look.
+@(test)
+test_the_world_file_records_the_climate_field :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	record := planet_generation_record(planet)
+	testing.expect_value(t, record.climate, planet_climate_field(planet.climate))
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = planet.id},
+		planet_generation = record,
+	}
+	parsed, problem := parse_world_file(encode_world_file(file, context.temp_allocator), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.climate, record.climate)
+	testing.expect_value(t, make_recorded_planet(planet, parsed.planet_generation, context.temp_allocator).climate, planet.climate)
+	edited := planet
+	edited.climate.sea_level_celsius = 30
+	edited.climate.grass_colors[4] = {1, 2, 3}
+	recorded := make_recorded_planet(edited, parsed.planet_generation, context.temp_allocator)
+	testing.expect_value(t, recorded.climate.sea_level_celsius, planet.climate.sea_level_celsius)
+	testing.expect_value(t, recorded.climate.grass_colors[4], [3]int{1, 2, 3})
+	malformed := record
+	malformed.climate.temperature_wavelength_metres = 10
+	testing.expect_value(t, planet_generation_record_problem(malformed), "climate.temperature_wavelength_metres 10 is outside 64 to 100000")
+}
