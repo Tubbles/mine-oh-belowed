@@ -16,11 +16,15 @@ starting_items = [
 	{item = "torch", count = 4}
 ]
 // The water tech demo's hotbar (work item 0291): one entry per slot in
-// order. Dirt is one full stack since the demo never debits it; 0295 adds
-// its bucket, drain bucket and pump before the torch.
+// order. Dirt is one full stack since the demo never debits it; the water
+// bucket, the drain bucket and ten pumps (work item 0295) come before the
+// torch.
 tech_demo_items = [
 	{item = "iron_pickaxe", count = 1}
 	{item = "dirt", count = 50}
+	{item = "water_bucket", count = 1}
+	{item = "drain_bucket", count = 1}
+	{item = "water_pump", count = 10}
 	{item = "torch", count = 20}
 ]
 // World setting "all recipes unlocked at start", for repeat playthroughs:
@@ -111,6 +115,11 @@ field_brushes = [
 // it stands weir_dead_band fill or less over the sill's volume (8 is 1/32
 // sample); a flood visits flood_visit_budget samples a tick at most and
 // rises flood_rise_samples samples above its floor at most.
+// The demo's buckets (work item 0295): a press pours or takes
+// bucket_fill_per_press fill (1 to 16256; 254 is one sample, a cubic metre
+// at 1 m spacing) over the brush round the aimed sample, nearest first,
+// and a held Place does it again every bucket_repeat_ticks ticks (1 to
+// 255; 6 is ten times a second).
 field_water = {
 	fill_rate_per_tick = 64
 	still_ticks_to_sleep = 20
@@ -126,6 +135,8 @@ field_water = {
 	weir_dead_band = 8
 	flood_visit_budget = 4000
 	flood_rise_samples = 64
+	bucket_fill_per_press = 254
+	bucket_repeat_ticks = 6
 }
 // The chunks every machine of a session simulates: this many chunks
 // around each player's chunk across and up and down (work item 0177).

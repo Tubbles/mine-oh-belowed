@@ -91,6 +91,10 @@ Field_Held_Tool :: enum u8 {
 	Torch,
 	Hand,
 	Tool,
+	// The water tech demo's buckets (0295, field_water_tools.odin): Place
+	// pours water where it is aimed, or takes it away.
+	Water,
+	Drain,
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]
@@ -231,6 +235,13 @@ Field_Player :: struct {
 	// A run tool's first endpoint, chosen by the first Place (0176).
 	run_started:       bool,
 	run_start:         Belt_Run_Candidate,
+	// The water tech demo's buckets (0295, field_water_tools.odin): the
+	// ticks since the last pour while Place is held, and the fill poured
+	// and drained in all, the HUD's counters. Saved by name; a save from
+	// before 0295 loads zeros.
+	water_tool_ticks:  u8,
+	poured_fill:       i64,
+	drained_fill:      i64,
 	// In the pod's chair (0223, seat_field_player): the look turns, the
 	// body stays. A save from before 0223 loads Standing.
 	seat:              Field_Seat,

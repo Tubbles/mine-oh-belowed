@@ -510,21 +510,27 @@ apply_foundation_block :: proc(state: ^Simulation_State, content: Simulation_Con
 
 // A queued placement that field_placement_refusal let through: a
 // foundation block, a machine on bare ground on a frame of its own
-// (0201), a drill with its vein, any other machine on its frame. Each
+// (0201), a drill with its vein, any other machine on its frame, a water
+// pump then settled on the water (0295, settle_water_pump). Each
 // placed machine counts for the quests (record_placed). Returns the
 // machines placed, one item each.
 apply_field_placement :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) -> (placed: int) {
 	entities := &state.world.entities
 	placed = 1
+	handle := NO_ENTITY
 	switch {
 	case content.machines.machines[placement.machine].kind == .Foundation:
 		placed = apply_foundation_block(state, content, placement)
 	case placement.new_frame:
-		place_on_bare_ground(state, content, placement)
+		handle = place_on_bare_ground(state, content, placement)
 	case content.machines.machines[placement.machine].kind == .Drill:
 		place_drill_on_frame(entities, content.machines, state.world.veins[:], placement.machine, placement.frame, placement.cell, placement.rotation)
 	case:
-		place_on_frame(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
+		handle, _ = place_on_frame(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
+	}
+	// The demo's pump finds its intake and outlet (0295).
+	if content.machines.machines[placement.machine].kind == .Water_Pump {
+		settle_water_pump(state, content, handle)
 	}
 	for _ in 0 ..< placed {
 		record_placed(&state.records.statistics, placement.machine)

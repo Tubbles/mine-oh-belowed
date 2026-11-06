@@ -287,6 +287,13 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 		}
 	case .Hydro_Turbine:
 		return validate_hydro_turbine_definition(definition)
+	case .Water_Pump:
+		if definition.fluid_litres_per_second < 1 || definition.fluid_litres_per_second > MAXIMUM_WATER_PUMP_LITRES_PER_SECOND {
+			return fmt.tprintf("water pump %q needs fluid_litres_per_second from 1 to %d", definition.id, MAXIMUM_WATER_PUMP_LITRES_PER_SECOND)
+		}
+		if definition_lists_slots_power_or_ports(definition) {
+			return fmt.tprintf("water pump %q may not list slots, power or fluid ports", definition.id)
+		}
 	case .Tar_Pit_Pump:
 		if definition.fluid_litres_per_minute <= 0 || definition.electric_power_kilowatts <= 0 {
 			return fmt.tprintf("tar pit pump %q needs a positive fluid_litres_per_minute and electric_power_kilowatts", definition.id)

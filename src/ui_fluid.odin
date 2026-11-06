@@ -147,13 +147,21 @@ fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_ma
 	return result
 }
 
-// The HUD line: the machine's state, or a pipe's fluid and level.
+// The HUD line: the machine's state, or a pipe's fluid and level, or a
+// water pump's mode, state and litres (0295).
 fluid_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, handle: Entity_Handle, name: string) -> string {
 	if pipe := pool_get(&world.entities.pipes, handle); pipe != nil {
 		return fmt.tprintf("%s  %s %s", name, fluid_name(fluids, pipe.buffer.level > 0 ? pipe.buffer.fluid : NO_FLUID), format_volume(f32(pipe.buffer.level)))
 	}
 	fluid_machine := pool_get(&world.entities.fluid_machines, handle)
-	if fluid_machine == nil || !fluid_machine_shows_state(machines.machines[fluid_machine.machine].kind) {
+	if fluid_machine == nil {
+		return name
+	}
+	// The demo's pump (0295): its mode, state and litres moved.
+	if machines.machines[fluid_machine.machine].kind == .Water_Pump {
+		return water_pump_status_text(fluid_machine^, name)
+	}
+	if !fluid_machine_shows_state(machines.machines[fluid_machine.machine].kind) {
 		return name
 	}
 	return fmt.tprintf("%s  %s", name, text(fluid_machine_state_keys[fluid_machine.state]))

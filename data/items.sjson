@@ -67,7 +67,9 @@
 // tool of tool_tier 1 or more: on the terrain field the tool digs the
 // materials whose dug_with names its role up to its tool_tier
 // (materials.sjson), or fells trees (the axe), only while selected on the
-// hotbar.
+// hotbar. water_bucket and drain_bucket (work item 0295) are the water
+// tech demo's field tools of the water: Place pours or takes water where
+// it is aimed; no material digs with them.
 // price (required, positive, work item 0041) is the venture credit one
 // item fetches when a shipment sells it as free trade. The values are
 // guesses from the recipe depth: raw material and ore 1, plates 2, steel
@@ -156,6 +158,8 @@ items = [
 	{id = "wooden_axe", name_key = "item_wooden_axe", description_key = "describe_item_wooden_axe", category = "tool", stack_size = 50, tool_tier = 1, tool_role = "axe", price = 5}
 	{id = "stone_axe", name_key = "item_stone_axe", description_key = "describe_item_stone_axe", category = "tool", stack_size = 50, tool_tier = 2, tool_role = "axe", price = 5}
 	{id = "iron_axe", name_key = "item_iron_axe", description_key = "describe_item_iron_axe", category = "tool", stack_size = 50, tool_tier = 3, tool_role = "axe", price = 8}
+	{id = "water_bucket", name_key = "item_water_bucket", description_key = "describe_item_water_bucket", category = "tool", stack_size = 50, tool_tier = 1, tool_role = "water_bucket", price = 5}
+	{id = "drain_bucket", name_key = "item_drain_bucket", description_key = "describe_item_drain_bucket", category = "tool", stack_size = 50, tool_tier = 1, tool_role = "drain_bucket", price = 5}
 	{id = "geologists_hammer", name_key = "item_geologists_hammer", description_key = "describe_item_geologists_hammer", category = "tool", stack_size = 50, usable = true, use = "assay", price = 6, tool_tier = 2}
 	{id = "magnetometer", name_key = "item_magnetometer", description_key = "describe_item_magnetometer", category = "tool", stack_size = 50, usable = true, use = "magnetometer", detects = "hematite", use_range = 30, price = 35}
 	{id = "thumper_charge", name_key = "item_thumper_charge", description_key = "describe_item_thumper_charge", category = "tool", stack_size = 50, usable = true, use = "seismic_shot", use_range = 32, cannot_recycle = true, price = 5}
@@ -208,6 +212,7 @@ items = [
 	{id = "flare_stack", name_key = "item_flare_stack", description_key = "describe_item_flare_stack", category = "machine", stack_size = 50, price = 85}
 	{id = "combustion_generator", name_key = "item_combustion_generator", description_key = "describe_item_combustion_generator", category = "machine", stack_size = 50, price = 210}
 	{id = "hydro_turbine", name_key = "item_hydro_turbine", description_key = "describe_item_hydro_turbine", category = "machine", stack_size = 50, price = 200}
+	{id = "water_pump", name_key = "item_water_pump", description_key = "describe_item_water_pump", category = "machine", stack_size = 50, price = 30}
 	{id = "chemical_plant", name_key = "item_chemical_plant", description_key = "describe_item_chemical_plant", category = "machine", stack_size = 50, price = 120}
 	{id = "wood_gasifier", name_key = "item_wood_gasifier", description_key = "describe_item_wood_gasifier", category = "machine", stack_size = 50, price = 60}
 	{id = "bore_drill", name_key = "item_bore_drill", description_key = "describe_item_bore_drill", category = "machine", stack_size = 50, price = 460}

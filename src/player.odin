@@ -480,11 +480,12 @@ update_jump_double_tap :: proc(player: ^Player, input: Input_Frame) {
 	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
-// Whether Interact acts on the entity: a power switch it turns or a
-// schematic crate it takes (resolve_use_item). On such a target the X
-// press is Interact's alone (route_open_inventory_press, 0233).
+// Whether Interact acts on the entity: a power switch it turns, a
+// schematic crate it takes (resolve_use_item) or a water pump whose mode it
+// cycles (0295). On such a target the X press is Interact's alone
+// (route_open_inventory_press, 0233).
 entity_takes_interact :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
-	return entity_is_power_switch(entities, machines, handle) || schematic_crate_takes_interact(entities, handle)
+	return entity_is_power_switch(entities, machines, handle) || schematic_crate_takes_interact(entities, handle) || entity_is_water_pump(entities, machines, handle)
 }
 
 // The entity the player aims at as the HUD shows it: on the field the

@@ -14,7 +14,7 @@ test_shipped_game_config_parses_and_validates :: proc(t: ^testing.T) {
 	testing.expect_value(t, validate_starting_items(config.starting_items, make_test_items()), "")
 	// The tech demo's kit (0291), validated like the starter kit.
 	testing.expect_value(t, validate_starting_items(config.tech_demo_items, make_test_items(), "tech demo item"), "")
-	testing.expect_value(t, len(config.tech_demo_items), 3)
+	testing.expect_value(t, len(config.tech_demo_items), 6)
 }
 
 @(test)
@@ -225,6 +225,33 @@ test_field_water_body_values_are_bounded :: proc(t: ^testing.T) {
 		{proc(water: ^Field_Water_Config) {water.weir_dead_band = 255}, "field_water.weir_dead_band "},
 		{proc(water: ^Field_Water_Config) {water.flood_visit_budget = 0}, "field_water.flood_visit_budget "},
 		{proc(water: ^Field_Water_Config) {water.flood_rise_samples = 257}, "field_water.flood_rise_samples "},
+	}
+	for entry in cases {
+		changed := water
+		entry.change(&changed)
+		problem := field_water_problem(changed)
+		testing.expectf(t, strings.has_prefix(problem, entry.key), "%q: %q", entry.key, problem)
+	}
+}
+
+// Work item 0295: the demo's bucket keys of field_water are bounded and a
+// value outside its bound is named; the shipped block passes.
+@(test)
+test_field_water_bucket_values_are_bounded :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	water := config.field_water
+	testing.expect_value(t, water.bucket_fill_per_press, 254)
+	testing.expect_value(t, water.bucket_repeat_ticks, 6)
+	testing.expect_value(t, field_water_problem(water), "")
+	cases := [?]struct {
+		change: proc(water: ^Field_Water_Config),
+		key:    string,
+	} {
+		{proc(water: ^Field_Water_Config) {water.bucket_fill_per_press = 0}, "field_water.bucket_fill_per_press "},
+		{proc(water: ^Field_Water_Config) {water.bucket_fill_per_press = 16257}, "field_water.bucket_fill_per_press "},
+		{proc(water: ^Field_Water_Config) {water.bucket_repeat_ticks = 0}, "field_water.bucket_repeat_ticks "},
+		{proc(water: ^Field_Water_Config) {water.bucket_repeat_ticks = 256}, "field_water.bucket_repeat_ticks "},
 	}
 	for entry in cases {
 		changed := water

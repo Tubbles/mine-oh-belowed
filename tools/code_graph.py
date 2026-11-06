@@ -95,6 +95,8 @@ FILE_CLUSTERS = {
     "lockstep.odin": "loop",
     "field_mining.odin": "simulation",
     "field_trees.odin": "simulation",
+    "field_water_tools.odin": "simulation",
+    "field_water_pump.odin": "simulation",
     "viewport.odin": "loop",
 }
 

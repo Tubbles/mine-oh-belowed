@@ -79,6 +79,10 @@ Item_Tool_Role :: enum u8 {
 	Shovel,
 	Pickaxe,
 	Axe,
+	// The water tech demo's buckets (0295): field tools of the water, no
+	// material digs with them.
+	Water_Bucket,
+	Drain_Bucket,
 }
 
 @(rodata)
@@ -87,6 +91,8 @@ item_tool_role_names := [Item_Tool_Role]string {
 	.Shovel  = "shovel",
 	.Pickaxe = "pickaxe",
 	.Axe     = "axe",
+	.Water_Bucket = "water_bucket",
+	.Drain_Bucket = "drain_bucket",
 }
 
 // As written in the file, before references are resolved.

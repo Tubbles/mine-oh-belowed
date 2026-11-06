@@ -138,12 +138,20 @@ field_tick_input :: proc(frame: Input_Frame, tick_rate: int) -> Field_Player_Inp
 
 // What an item held in the hotbar lets Place do (Field_Held_Tool), with
 // the material or the machine it names. An item with a tool_role is the
-// Tool (0265); a role-less tool (the hammer) is the hand.
+// Tool (0265), the buckets' roles the Water and the Drain (0295); a
+// role-less tool (the hammer) is the hand.
 field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool: Field_Held_Tool, material: Field_Material, machine: Machine_Id) {
 	if item == NO_ITEM {
 		return .Hand, .Air, NO_MACHINE
 	}
-	if content.items.items[item].tool_role != .None {
+	// The demo's buckets (0295) are tools of the water, not the Tool.
+	#partial switch content.items.items[item].tool_role {
+	case .None:
+	case .Water_Bucket:
+		return .Water, .Air, NO_MACHINE
+	case .Drain_Bucket:
+		return .Drain, .Air, NO_MACHINE
+	case:
 		return .Tool, .Air, NO_MACHINE
 	}
 	for record, candidate in content.field.materials {
@@ -328,7 +336,8 @@ drain_field_torch_removal :: proc(state: ^Simulation_State, content: Simulation_
 // Open_Aimed on a frame cell whose machine has a panel opens it, as the
 // block world's does (resolve_interact, 0194); Interact turns a power
 // switch there (a hatch takes no Interact since 0231, a launch pad
-// launches from its panel since 0233).
+// launches from its panel since 0233) or cycles a water pump's mode
+// (0295).
 interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
 	entities, machines := &state.world.entities, content.machines
@@ -338,6 +347,11 @@ interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content,
 		return {.Open_Machine}
 	}
 	if .Interact in frame.just_pressed && toggle_power_switch(entities, machines, handle) {
+		return {.Toggled_Switch}
+	}
+	// The demo's pump cycles its mode (0295), with the switch's event: the
+	// click and the world action count.
+	if .Interact in frame.just_pressed && cycle_water_pump_mode(entities, machines, handle) {
 		return {.Toggled_Switch}
 	}
 	return {}
@@ -420,6 +434,7 @@ tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_
 		input.just_pressed -= {.Dig}
 	}
 	queue_field_player_edit(state, content, index, input)
+	queue_field_water_edit(state, content, index, input)
 	if finished, finished_free := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, state.tick_rate, state.free_crafting); finished != NO_RECIPE {
 		record_produced_stacks(&state.records.statistics, content.recipes.recipes[finished].outputs)
 		if !finished_free {

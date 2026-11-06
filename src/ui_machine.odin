@@ -136,7 +136,7 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 		return launch_pad_area_width()
 	case .Oxygen_Generator:
 		return oxygen_generator_area_size().x
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench:
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench, .Water_Pump:
 	}
 	return 0
 }
@@ -168,7 +168,7 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 		return launch_pad_area_height(machine, width)
 	case .Oxygen_Generator:
 		return oxygen_generator_area_size().y
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench:
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench, .Water_Pump:
 	}
 	return 0
 }

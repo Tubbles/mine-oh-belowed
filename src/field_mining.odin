@@ -157,6 +157,10 @@ Field_Simulation :: struct {
 	// The place commands (foundations, machines, runs), drained after the
 	// edits; empty between ticks.
 	placements:          [dynamic]Queued_Field_Placement,
+	// The demo's bucket edits (0295, field_water_tools.odin): filled by the
+	// players' ticks, drained after the placements. Not saved; empty
+	// between ticks.
+	water_edits:         [dynamic]Queued_Field_Water_Edit,
 	// Per player index, the needed and held counts of its latest
 	// Too_Few_Foundations refusal (0193), read when the tick tells it.
 	// Not saved.
@@ -251,6 +255,7 @@ destroy_field_content :: proc(content: ^Field_Content) {
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
 	delete(simulation.edits)
 	delete(simulation.placements)
+	delete(simulation.water_edits)
 	delete(simulation.refused_foundation_counts)
 	delete(simulation.torches)
 	destroy_field_chunk_set(&simulation.chunk_set)
@@ -302,7 +307,7 @@ field_material_record :: proc(definition: Field_Material_Definition, items: Item
 		}
 	}
 	found: bool
-	if record.dug_with, found = parse_named_enum(item_tool_role_names, definition.dug_with); !found || record.dug_with == .Axe {
+	if record.dug_with, found = parse_named_enum(item_tool_role_names, definition.dug_with); !found || (record.dug_with != .None && record.dug_with != .Shovel && record.dug_with != .Pickaxe) {
 		return {}, fmt.tprintf("dug_with %q is not shovel, pickaxe or empty", definition.dug_with)
 	}
 	if (record.item == NO_ITEM) != (record.dug_with == .None) {
@@ -628,12 +633,18 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 	}
 }
 
-// The edits, the placements, then the water (0172), so a hole dug this
-// tick floods on the next, then the light (0173) within its budget. Runs
-// after every player queued its edits (simulation_field.odin).
+// The edits, the placements, the buckets and the pumps (0295), then the
+// water (0172), so a hole dug or a pour made this tick moves on the next,
+// then the light (0173) within its budget. The tick's water events (0294)
+// are dropped first, so the digs, the pours and the pumps' intakes reach
+// the surface waves beside the step's own. Runs after every player queued
+// its edits (simulation_field.odin).
 finish_field_tick :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	clear(&state.field.world.water_events)
 	drain_field_edits(state, content)
 	drain_field_placements(state, content)
-	step_field_water(&state.field.world, content.field.water, state.tick)
+	drain_field_water_edits(state, content)
+	tick_water_pumps(state, content)
+	step_field_water_keeping_events(&state.field.world, content.field.water, state.tick)
 	tick_field_light(&state.field.world, content.field.light)
 }

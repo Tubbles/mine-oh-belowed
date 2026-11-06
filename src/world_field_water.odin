@@ -119,6 +119,10 @@ Field_Water_Tuning :: struct {
 	weir_dead_band:                 i32,
 	flood_visit_budget:             i64,
 	flood_rise_samples:             i32,
+	// The demo's buckets (0295): the fill a press pours or takes and the
+	// ticks between pours while Place is held.
+	bucket_fill_per_press:          i32,
+	bucket_repeat_ticks:            u8,
 }
 
 // The last tick's pressure pulls (Field_World.water_pressure): the
@@ -194,6 +198,8 @@ make_field_water_tuning :: proc(config: Field_Water_Config) -> Field_Water_Tunin
 		weir_dead_band = i32(config.weir_dead_band),
 		flood_visit_budget = i64(config.flood_visit_budget),
 		flood_rise_samples = i32(config.flood_rise_samples),
+		bucket_fill_per_press = i32(config.bucket_fill_per_press),
+		bucket_repeat_ticks = u8(config.bucket_repeat_ticks),
 	}
 }
 
@@ -984,11 +990,18 @@ field_sample_before :: proc(first, second: Sample_Coordinate) -> bool {
 	return field_chunk_coordinate_before(Field_Chunk_Coordinate(first), Field_Chunk_Coordinate(second))
 }
 
-// The water's tick (in tick_field_simulation, after the edits), by the
-// world's model: teleport (0292's rule) or bodies (0293,
-// step_field_water_bodies). The last tick's events are dropped first.
+// The water's tick, by the world's model: teleport (0292's rule) or
+// bodies (0293, step_field_water_bodies). The last tick's events are
+// dropped first.
 step_field_water :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
 	clear(&world.water_events)
+	step_field_water_keeping_events(world, tuning, tick)
+}
+
+// The step without dropping the events: finish_field_tick drops them at
+// the top of the tick, before the edits, the buckets and the pumps push
+// theirs (0295).
+step_field_water_keeping_events :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
 	switch world.water_model {
 	case .Teleport:
 		step_field_water_teleport(world, tuning, tick)

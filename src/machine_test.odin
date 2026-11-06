@@ -56,7 +56,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 62)
+	testing.expect_value(t, len(machines.machines), 63)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -818,4 +818,38 @@ test_a_machine_lights_clip_is_true_unless_it_says_false :: proc(t: ^testing.T) {
 	testing.expect_value(t, count, 2)
 	testing.expect(t, lights[0].clip, "a lamp without clip clips")
 	testing.expect(t, !lights[1].clip, "a lamp with clip = false does not")
+}
+
+// Work item 0295: the demo's water pump loads with its kind, stands on
+// the ground and pumps 300 litres a second; a record without a rate, with
+// a fluid port or with power is refused naming the pump.
+@(test)
+test_the_water_pump_record_is_bounded :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pump := machines.machines[test_machine(machines, "water_pump")]
+	testing.expect_value(t, pump.kind, Machine_Kind.Water_Pump)
+	testing.expect(t, pump.stands_on_ground, "the pump stands on the ground")
+	testing.expect_value(t, pump.fluid_litres_per_second, 300)
+	testing.expect(t, !machine_touches_power(pump), "the pump has no power")
+	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	shipped: Machine_Definition
+	for definition in file.machines {
+		if definition.id == "water_pump" {
+			shipped = definition
+		}
+	}
+	testing.expect_value(t, validate_machine_kind_fields(shipped, .Water_Pump), "")
+	dry := shipped
+	dry.fluid_litres_per_second = 0
+	torrent := shipped
+	torrent.fluid_litres_per_second = MAXIMUM_WATER_PUMP_LITRES_PER_SECOND + 1
+	ported := shipped
+	ported.fluid_ports = {{cell = {0, 0, 0}, face = "negative_x", direction = "output", fluid = "water", buffer_litres = 200}}
+	powered := shipped
+	powered.electric_power_kilowatts = 1
+	for definition in ([4]Machine_Definition{dry, torrent, ported, powered}) {
+		problem := validate_machine_kind_fields(definition, .Water_Pump)
+		testing.expectf(t, strings.contains(problem, "water pump \"water_pump\""), "%v: %q", definition, problem)
+	}
 }

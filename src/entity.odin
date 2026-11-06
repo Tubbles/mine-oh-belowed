@@ -314,7 +314,8 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	return nil
 }
 
-// Belts, foundations, the pod, its hatches and belt poles have no panel:
+// Belts, foundations, the pod, its hatches, belt poles and the water pump
+// (0295) have no panel:
 // Open_Aimed does nothing on them (the inventory opens instead, 0194).
 // In the foundations' pool a crafting station (work item 0196), the pod's
 // crafting bench and its oxygen generator (work item 0198) have one.
@@ -327,6 +328,11 @@ entity_has_panel :: proc(entities: ^Entities, machines: Machine_Registry, handle
 		}
 		kind := machines.machines[common.machine].kind
 		return kind == .Crafting_Station || kind == .Crafting_Bench || kind == .Oxygen_Generator
+	}
+	// The demo's water pump (0295) has no ports and no slots: nothing to
+	// show.
+	if entity_is_water_pump(entities, machines, handle) {
+		return false
 	}
 	return handle.kind != .Belt && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
 }
@@ -663,7 +669,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		return add_splitter(entities, machines, machine, origin, rotation, frame)
 	case .Pipe:
 		handle = pool_add(&entities.pipes, .Pipe, make_pipe(common))
-	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
+	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine, .Water_Pump:
 		handle = pool_add(&entities.fluid_machines, .Fluid_Machine, make_fluid_machine(common, machines.machines[machine]))
 	case .Pole, .Power_Switch:
 		handle = pool_add(&entities.poles, .Pole, make_pole(common))

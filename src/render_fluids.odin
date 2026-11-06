@@ -44,6 +44,7 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Flare_Stack   = {120, 110, 100, 255},
 	.Combustion_Generator = {110, 100, 80, 255},
 	.Hydro_Turbine = {90, 120, 140, 255},
+	.Water_Pump    = {70, 120, 160, 255},
 	.Pole          = {},
 	.Power_Switch  = {},
 	.Lamp          = {},

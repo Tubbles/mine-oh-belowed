@@ -30,12 +30,14 @@ make_test_field_state :: proc(world: Field_World, spacing_millimetres: int) -> S
 }
 
 // The field's part of a tick on field inputs with the tools the test set
-// (the hotbar is not read): each player moves and queues, then the queues
-// drain, the water steps and the light spreads.
+// (the hotbar is not read): each player moves and queues (the buckets'
+// edits too, 0295), then the queues drain, the pumps run, the water steps
+// and the light spreads.
 tick_field_simulation :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Field_Player_Input) {
 	state.tick += 1
 	for index in 0 ..< len(state.players) {
 		queue_field_player_edit(state, content, index, index < len(inputs) ? inputs[index] : Field_Player_Input{})
+		queue_field_water_edit(state, content, index, index < len(inputs) ? inputs[index] : Field_Player_Input{})
 	}
 	finish_field_tick(state, content)
 }
@@ -375,7 +377,8 @@ test_the_pickaxe_digs_stone_and_not_topsoil :: proc(t: ^testing.T) {
 }
 
 // An item with a tool_role is the Tool with its role and tier (0265); a
-// role-less item, the geologist's hammer included, is the hand.
+// role-less item, the geologist's hammer included, is the hand; the
+// demo's buckets are the Water and the Drain (0295).
 @(test)
 test_field_tool_for_item_reads_the_role :: proc(t: ^testing.T) {
 	items := make_test_items()
@@ -399,6 +402,10 @@ test_field_tool_for_item_reads_the_role :: proc(t: ^testing.T) {
 		{"stone", .Material, .None, 0},
 		{"torch", .Torch, .None, 0},
 		{"wooden_chest", .Machine, .None, 0},
+		// The demo's buckets and pump (0295).
+		{"water_bucket", .Water, .None, 0},
+		{"drain_bucket", .Drain, .None, 0},
+		{"water_pump", .Machine, .None, 0},
 	}
 	for entry in cases {
 		item := test_item(items, entry.item)
@@ -436,6 +443,7 @@ test_the_material_table_needs_a_digging_role :: proc(t: ^testing.T) {
 		problem:    string,
 	}{
 		{{id = "stone", item = "stone", dug_with = "axe", tool_tier = 1, dig_rate_percent = 100}, "dug_with \"axe\" is not shovel, pickaxe or empty"},
+		{{id = "stone", item = "stone", dug_with = "water_bucket", tool_tier = 1, dig_rate_percent = 100}, "dug_with \"water_bucket\" is not shovel, pickaxe or empty"},
 		{{id = "stone", item = "stone", dug_with = "", tool_tier = 1, dig_rate_percent = 100}, "dug_with \"\" needs an item"},
 		{{id = "bedrock", item = "", dug_with = "shovel", tool_tier = 0, dig_rate_percent = 100}, "dug_with \"shovel\" needs an item"},
 		{{id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 0, dig_rate_percent = 100}, "tool_tier 0 is outside 1 to 3"},
@@ -447,8 +455,9 @@ test_the_material_table_needs_a_digging_role :: proc(t: ^testing.T) {
 }
 
 // The hotbar's stack decides the tool (0179): stone places stone, a
-// foundation the foundation, the torch the torch, a pickaxe the Tool (0265);
-// the brush key cycles the brushes, and turns a held machine instead.
+// foundation the foundation, the torch the torch, a pickaxe the Tool (0265),
+// the water bucket the Water (0295); the brush key cycles the brushes, and
+// turns a held machine instead.
 @(test)
 test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	items := make_test_items()
@@ -463,7 +472,7 @@ test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	cases := [?]struct {
 		item: string,
 		tool: Field_Held_Tool,
-	}{{"stone", .Material}, {"wooden_foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Tool}, {"wooden_chest", .Machine}}
+	}{{"stone", .Material}, {"wooden_foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Tool}, {"water_bucket", .Water}, {"wooden_chest", .Machine}}
 	for entry, slot in cases {
 		inventory_add(player.inventory, items, test_item(items, entry.item), 1)
 		player.selected_hotbar_slot = slot
@@ -477,6 +486,11 @@ test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	update_field_held_tool(&player, content, {just_pressed = {.Next_Brush}})
 	testing.expect_value(t, player.field.held_material, Field_Material.Stone)
 	testing.expect_value(t, player.field.brush, 1)
+	// Next_Brush with a bucket cycles the brush as with a material (0295).
+	player.selected_hotbar_slot = 4
+	update_field_held_tool(&player, content, {just_pressed = {.Next_Brush}})
+	testing.expect_value(t, player.field.tool, Field_Held_Tool.Water)
+	testing.expect_value(t, player.field.brush, 0)
 }
 
 // The inventory view's Foundation_Block_Command (0193) sets the field

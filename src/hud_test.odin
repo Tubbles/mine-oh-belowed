@@ -37,15 +37,15 @@ test_the_fell_hint_shows_on_an_aimed_tree :: proc(t: ^testing.T) {
 }
 
 // Work item 0219: Place for every tool but the hand and a shovel, pickaxe
-// or axe (0265), Turn for a machine alone, Brush for a material, the hand
-// or a shovel, pickaxe or axe; outside a field session a held
+// or axe (0265), Turn for a machine alone, Brush for a material, the hand,
+// a shovel, pickaxe or axe or a bucket (0295); outside a field session a held
 // furnace adds no held hints.
 @(test)
 test_the_held_hints_follow_the_tool :: proc(t: ^testing.T) {
 	for tool in Field_Held_Tool {
 		testing.expectf(t, field_held_tool_places(tool) == (tool != .Hand && tool != .Tool), "%v places", tool)
 		testing.expectf(t, field_held_tool_turns(tool) == (tool == .Machine), "%v turns", tool)
-		testing.expectf(t, field_held_tool_cycles_brush(tool) == (tool == .Material || tool == .Hand || tool == .Tool), "%v cycles the brush", tool)
+		testing.expectf(t, field_held_tool_cycles_brush(tool) == (tool == .Material || tool == .Hand || tool == .Tool || tool == .Water || tool == .Drain), "%v cycles the brush", tool)
 	}
 	use_shipped_strings()
 	defer thread_string_table = nil
@@ -314,4 +314,49 @@ test_the_torchlight_hint_shows_while_it_is_on :: proc(t: ^testing.T) {
 	testing.expect(t, slice.equal(hint_buttons(lit), []Glyph_Button{.Sprint, .Torchlight, .Inventory, .Pause}), "Sprint, Torch on, Inventory, Pause")
 	testing.expect_value(t, lit[1].label, "Torch on")
 	testing.expect_value(t, lit_kept, kept)
+}
+
+// Work item 0295: a bucket's tool line counts the litres it poured or
+// drained at the field's spacing; 0 spacing reads 0 L.
+@(test)
+test_the_bucket_tool_line_counts_the_litres :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	player := Field_Player{tool = .Water, poured_fill = 254, drained_fill = 127}
+	line, shown := field_tool_line(player, {}, .None, 1000)
+	testing.expect(t, shown)
+	testing.expect_value(t, line, "Water bucket, 1000 L poured")
+	player.tool = .Drain
+	line, _ = field_tool_line(player, {}, .None, 1000)
+	testing.expect_value(t, line, "Drain bucket, 500 L drained")
+	line, _ = field_tool_line(player, {}, .None, 0)
+	testing.expect_value(t, line, "Drain bucket, 0 L drained")
+}
+
+// Work item 0295: the crosshair's lines are fitted to the screen's width;
+// a water pump's longest line at 960 by 540 with the largest text stays
+// inside it.
+@(test)
+test_the_pump_line_fits_the_quarter_screen_at_the_largest_text :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	pump := Fluid_Machine{state = .Output_Full, water_pump = {mode = .Source, sample_millilitres = 1_000_000, moved_fill = 274_320}}
+	line := water_pump_status_text(pump, "Water pump")
+	testing.expect_value(t, line, "Water pump  Source  Output full  1080000 L moved")
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	accessibility := DEFAULT_UI_ACCESSIBILITY
+	accessibility.text_scale = 1.6
+	ui_begin(&state, {}, {960, 540}, 1.0 / 60, 1, 1, accessibility)
+	testing.expect_value(t, draw_target_status(&state, line, 0), 1)
+	drawn := 0
+	for command in state.draw_list {
+		if command.kind != .Text {
+			continue
+		}
+		drawn += 1
+		testing.expect(t, command.rectangle.x >= 0 && command.rectangle.x + command.rectangle.width <= state.screen_units.x, "the line's area is on the screen")
+		testing.expectf(t, ui_text_width(&state, command.text, UI_BODY_TEXT_SIZE) <= command.rectangle.width, "%q fits %v", command.text, command.rectangle.width)
+	}
+	testing.expect_value(t, drawn, 1)
 }

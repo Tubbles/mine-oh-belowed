@@ -530,6 +530,10 @@ field_held_name :: proc(player: Field_Player) -> string {
 		return "hand"
 	case .Tool:
 		return fmt.tprintf("%s tier %d", item_tool_role_names[player.held_tool_role], player.held_tool_tier)
+	case .Water:
+		return "water bucket"
+	case .Drain:
+		return "drain bucket"
 	}
 	return ""
 }

@@ -100,6 +100,9 @@ Hud_Context :: struct {
 	field_session:            bool,
 	// The viewport's torchlight is on (0297): the glyph bar says so.
 	torchlight:               bool,
+	// The field's sample spacing (0295), for the buckets' litres on the
+	// tool line; 0 (no field) reads 0 L.
+	field_spacing_millimetres: int,
 }
 
 // The field player the tool line describes.
@@ -600,14 +603,15 @@ hud_target_line_top :: proc(screen_units: [2]f32, line: int) -> f32 {
 	return screen_units.y / 2 + CROSSHAIR_SIZE + UI_GAP + f32(line) * UI_ROW_HEIGHT
 }
 
-// Below the crosshair on the line after the last one drawn; an empty
+// Below the crosshair on the line after the last one drawn, fitted to the
+// screen's width (a water pump's line, 0295, is the longest); an empty
 // status takes no line. Returns the next line.
 draw_target_status :: proc(state: ^Ui_State, status: string, line: int, color := UI_TEXT_COLOR) -> int {
 	if status == "" {
 		return line
 	}
-	area := Ui_Rectangle{0, hud_target_line_top(state.screen_units, line), state.screen_units.x, UI_ROW_HEIGHT}
-	draw_text(state, area, status, UI_BODY_TEXT_SIZE, .Centre, color)
+	area := Ui_Rectangle{UI_PADDING, hud_target_line_top(state.screen_units, line), state.screen_units.x - 2 * UI_PADDING, UI_ROW_HEIGHT}
+	draw_text_fitted(state, area, status, UI_BODY_TEXT_SIZE, .Centre, color)
 	return line + 1
 }
 
@@ -689,7 +693,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	draw_discovery_card(state, items, hud.discovery_card_clearance)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.records, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
-	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content, hud.bare_ground); shown {
+	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content, hud.bare_ground, hud.field_spacing_millimetres); shown {
 		tool_status = line
 	}
 	tool_color := UI_TEXT_COLOR
@@ -776,9 +780,13 @@ aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> [
 	case field_fell_hint_shown(screen_context, hud):
 		append(&list, Glyph_Hint{.Mine, text("hint_fell")})
 	case field_pick_up_hint_shown(screen_context, hud):
-		// Interact turns a power switch on the field too (0194).
+		// Interact turns a power switch on the field too (0194), and cycles
+		// a water pump's mode (0295).
 		if field_target_is_power_switch(screen_context, hud) {
 			append(&list, Glyph_Hint{.Interact, text("hint_toggle")})
+		}
+		if field_target_is_water_pump(screen_context, hud) {
+			append(&list, Glyph_Hint{.Interact, text("hint_pump_mode")})
 		}
 		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
 		append(&list, Glyph_Hint{.Mine, text(pick_up)})
@@ -823,10 +831,10 @@ field_held_tool_turns :: proc(tool: Field_Held_Tool) -> bool {
 	return tool == .Machine
 }
 
-// Next_Brush cycles the brush with a material, the hand or a shovel,
-// pickaxe or axe (0265).
+// Next_Brush cycles the brush with a material, the hand, a shovel,
+// pickaxe or axe (0265) or a bucket (0295).
 field_held_tool_cycles_brush :: proc(tool: Field_Held_Tool) -> bool {
-	return tool == .Material || tool == .Hand || tool == .Tool
+	return tool == .Material || tool == .Hand || tool == .Tool || tool == .Water || tool == .Drain
 }
 
 // Where the HUD's glyph bar stands (0219): rows bottom first, right
@@ -949,6 +957,13 @@ field_target_is_power_switch :: proc(screen_context: Screen_Context, hud: Hud_Co
 	return target.hit && entity_is_power_switch(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
 }
 
+// The aimed frame cell holds a water pump, whose mode Interact cycles
+// (0295).
+field_target_is_water_pump :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	target := hud_field_player(screen_context, hud).frame_target
+	return target.hit && entity_is_water_pump(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
+}
+
 // The aimed frame cell holds a broken machine (0201): its pick up hint
 // says to tear it down.
 field_target_is_broken :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
@@ -1065,8 +1080,9 @@ target_status_lines :: proc(world: ^World, records: ^Game_Records, machines: Mac
 // On the field (0187): a machine other than a foundation over bare ground
 // (0201, bare_ground_line) says how long it lasts there, or the refusal
 // Place would toast where the ground is too steep; a held foundation
-// names its block (0193, field_foundation_block).
-field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare: Bare_Ground_Line) -> (line: string, shown: bool) {
+// names its block (0193, field_foundation_block); a bucket counts the
+// litres it poured or drained (0295) at the field's spacing.
+field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare: Bare_Ground_Line, spacing_millimetres: int) -> (line: string, shown: bool) {
 	switch bare {
 	case .None:
 	case .Wears_Out:
@@ -1075,10 +1091,22 @@ field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare:
 	case .Too_Steep:
 		return text(field_refusal_keys[.Too_Steep]), true
 	}
-	if player.tool == .Foundation {
+	#partial switch player.tool {
+	case .Foundation:
 		return foundation_block_line(field_foundation_block(player, content.field)), true
+	case .Water:
+		return bucket_litres_line("field_tool_water_bucket", player.poured_fill, spacing_millimetres), true
+	case .Drain:
+		return bucket_litres_line("field_tool_drain_bucket", player.drained_fill, spacing_millimetres), true
 	}
 	return "", false
+}
+
+// "Water bucket, 1000 L poured": the fill in litres at the spacing (0 L
+// without one). In the temp allocator.
+bucket_litres_line :: proc(key: string, fill: i64, spacing_millimetres: int) -> string {
+	litres := field_water_fill_litres(fill, field_sample_millilitres(spacing_millimetres))
+	return replace_message_mark(text(key), "{litres}", fmt.tprint(litres))
 }
 
 // "On bare ground, wears out in 60 min". In the temp allocator.

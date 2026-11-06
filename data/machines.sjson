@@ -51,7 +51,7 @@
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
-// combustion_generator, hydro_turbine, pole, power_switch, lamp,
+// combustion_generator, hydro_turbine, water_pump, pole, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
 // launch_pad, foundation, belt_pole, pod, crafting_station, tree, hatch,
 // locker, crafting_bench or oxygen_generator.
@@ -350,12 +350,18 @@
 // bare ground): stands_on_ground (optional, default false) marks a
 // machine that stands on the ground without a foundation for good: it is
 // never refused for slope and never wears. Set on the belts, the pipe,
-// the electric poles, the belt pole, the pod and the stone cutting table
-// (a crafting station never operates, so it never wears either way).
+// the electric poles, the belt pole, the pod, the stone cutting table
+// (a crafting station never operates, so it never wears either way) and
+// the water pump.
 // Every other machine placed on bare ground breaks down after
 // bare_ground_life_minutes of operation (game.sjson) unless it stands
 // on foundations; bare_ground_life_minutes (optional, 1 to 10080)
 // overrides that for the machine.
+// Water pump (work item 0295, kind water_pump, doc/content.md, Water
+// pumps): the water tech demo's pump into or out of the water field,
+// standing on the ground or a lake bed. fluid_litres_per_second (1 to
+// 1000000) is its rate; no slots, power or fluid ports. It reuses the
+// offshore pump's model, so its footprint is that model's 2 by 1 by 1.
 // Belt pole (work item 0176, kind belt_pole): a 1 by 1 by 1 footprint and
 // height_millimetres (250 to 4000), how high over its bottom a belt or
 // pipe run ends on it (doc/content.md, Belt poles and runs). Placed free
@@ -801,6 +807,18 @@ machines = [
 		dispatch_order = 0
 		hydro_kilowatts_per_water_level = 10
 		hydro_minimum_water_level = 3
+	}
+	{
+		id = "water_pump"
+		name_key = "machine_water_pump"
+		description_key = "describe_machine_water_pump"
+		model = "offshore_pump"
+		motion = {kind = "bob", axis = "y", amplitude = 0.05, period_seconds = 0.8}
+		item = "water_pump"
+		kind = "water_pump"
+		stands_on_ground = true
+		footprint = {width = 2, depth = 1, height = 1}
+		fluid_litres_per_second = 300
 	}
 	{
 		id = "small_pole"

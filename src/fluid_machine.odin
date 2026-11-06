@@ -2,7 +2,9 @@ package game
 
 // Pipes and the fluid machines of doc/fluids.md: offshore pump, boiler,
 // steam engine, storage tank, pump, tar pit pump, flare stack,
-// combustion generator and hydro turbine (which has no ports). They share one pool; the machine's kind decides
+// combustion generator and hydro turbine (which has no ports), and the
+// water tech demo's water pump (0295, field_water_pump.odin: no ports, its
+// tick in the field's). They share one pool; the machine's kind decides
 // what the tick does. Each fluid port has its own litre
 // buffer, which is a segment of the fluid network on its side
 // (fluid_network.odin). Picking a machine up loses the fluid in it.
@@ -81,6 +83,10 @@ Fluid_Machine :: struct {
 	litre_remainder:  u32,
 	lets_water_through: bool,
 	still_water_ticks:  u32,
+	// The water tech demo's pump (0295, field_water_pump.odin); zero for
+	// every other kind. Saved by name as a nested struct: a save from
+	// before 0295 reads zeros.
+	water_pump:         Water_Pump,
 }
 
 make_pipe :: proc(common: Entity_Common) -> Pipe {

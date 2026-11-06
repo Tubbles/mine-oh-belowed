@@ -41,6 +41,9 @@ MAXIMUM_POD_SHEATH_RADIUS_CELLS :: 4
 // quads, each this wide and tall in cells at least.
 MAXIMUM_MACHINE_FLAMES :: 8
 MINIMUM_MACHINE_FLAME_SIZE_CELLS :: 0.1
+// The water tech demo's pump's rate at most (work item 0295): its credit
+// then stays far inside an i64 (field_water_pump.odin).
+MAXIMUM_WATER_PUMP_LITRES_PER_SECOND :: 1_000_000
 
 // Dense index into Machine_Registry.machines.
 Machine_Id :: distinct u16
@@ -83,6 +86,9 @@ Machine_Kind :: enum u8 {
 	// A generator without fuel or ports, driven by the flowing water in
 	// its footprint, which keeps flowing through it (power_machine.odin).
 	Hydro_Turbine,
+	// The water tech demo's pump into or out of the water field (work item
+	// 0295, field_water_pump.odin): no ports, no power, no slots.
+	Water_Pump,
 	// Power (power_network.odin): a pole carries wires to other poles
 	// within reach and powers the machines in its supply volume, a power
 	// switch is a pole without a supply volume that can be turned off,
@@ -159,6 +165,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Flare_Stack   = "flare_stack",
 	.Combustion_Generator = "combustion_generator",
 	.Hydro_Turbine = "hydro_turbine",
+	.Water_Pump    = "water_pump",
 	.Pole          = "pole",
 	.Power_Switch  = "power_switch",
 	.Lamp          = "lamp",
@@ -587,7 +594,7 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_drill_definition(definition)
 	case .Splitter:
 		return validate_splitter_definition(definition)
-	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine, .Water_Pump:
 		return validate_fluid_machine_definition(definition, kind)
 	case .Pole, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)

@@ -308,6 +308,10 @@ Field_Water_Config :: struct {
 	weir_dead_band:                 int,
 	flood_visit_budget:             int,
 	flood_rise_samples:             int,
+	// The demo's buckets (0295): the fill a press pours or takes, and the
+	// ticks between pours while Place is held.
+	bucket_fill_per_press:          int,
+	bucket_repeat_ticks:            int,
 }
 
 // A full water sample's fill: FIELD_WATER_FULL - MAXIMUM_DENSITY maps the
@@ -330,6 +334,8 @@ MAXIMUM_FIELD_WATER_WEIR_RATE :: 4064
 // The flood's visits a tick at most, and its rise cap in samples.
 MAXIMUM_FIELD_WATER_FLOOD_VISITS :: 1_000_000
 MAXIMUM_FIELD_WATER_FLOOD_RISE :: 256
+// A bucket press's fill at most, 64 full samples (0295).
+MAXIMUM_FIELD_WATER_BUCKET_FILL :: 64 * FIELD_WATER_FULL
 
 // The shapes of a field brush (work item 0171, world_field_edit.odin): a
 // sphere round the hit, or the level mode, which flattens the sphere
@@ -1209,6 +1215,8 @@ field_water_problem :: proc(water: Field_Water_Config) -> string {
 		{"weir_dead_band", water.weir_dead_band, 0, FIELD_WATER_FULL},
 		{"flood_visit_budget", water.flood_visit_budget, 1, MAXIMUM_FIELD_WATER_FLOOD_VISITS},
 		{"flood_rise_samples", water.flood_rise_samples, 1, MAXIMUM_FIELD_WATER_FLOOD_RISE},
+		{"bucket_fill_per_press", water.bucket_fill_per_press, 1, MAXIMUM_FIELD_WATER_BUCKET_FILL},
+		{"bucket_repeat_ticks", water.bucket_repeat_ticks, 1, 255},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {

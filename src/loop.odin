@@ -1393,6 +1393,7 @@ make_hud_context :: proc(state: ^Frame_State, index: int) -> Hud_Context {
 		field_view_set     = true,
 		field_session      = session.simulation.field.enabled,
 		torchlight         = viewport.presentation.torchlight,
+		field_spacing_millimetres = session.simulation.field.spacing_millimetres,
 	}
 	view_player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
 	hud.field_view = view_player.field

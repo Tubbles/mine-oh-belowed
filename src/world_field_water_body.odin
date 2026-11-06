@@ -1053,7 +1053,9 @@ merge_water_bodies :: proc(world: ^Field_World, survivor, absorbed: Water_Body_I
 
 // 0295's intake: takes up to amount from the body (the level and the
 // bytes follow); returns what was taken. intake is the sample the pump
-// draws at: the surface waves' pump event (0294) and 0295 read it.
+// draws at: the surface waves' pump event (0294) and 0295 read it. The
+// demo's pump and drain bucket call it (world_field_water_tool.odin), and
+// credit_water_body_volume is its counterpart for a pour and an outlet.
 displace_water_body_volume :: proc(world: ^Field_World, id: Water_Body_Id, intake: Sample_Coordinate, amount: i64) -> i64 {
 	body := &world.water_bodies[id]
 	if body.sea || !body.alive || amount <= 0 {
@@ -1066,6 +1068,22 @@ displace_water_body_volume :: proc(world: ^Field_World, id: Water_Body_Id, intak
 		push_field_water_event(world, .Pump, intake, i32(min(taken, i64(max(i32)))))
 	}
 	return taken
+}
+
+// 0295's pour and outlet: amount added to the body's volume (the level
+// and the bytes follow; a sealed basin over full holds the excess as
+// volume), the splash an impact event at sample for the surface waves
+// (0294); returns what was added. Never the sea's: the caller sends that
+// to water_to_sea.
+credit_water_body_volume :: proc(world: ^Field_World, id: Water_Body_Id, sample: Sample_Coordinate, amount: i64) -> i64 {
+	body := &world.water_bodies[id]
+	if body.sea || !body.alive || amount <= 0 {
+		return 0
+	}
+	body.volume += amount
+	relevel_water_body(world, id)
+	push_field_water_event(world, .Impact, sample, i32(min(amount, FIELD_WATER_FULL)))
+	return amount
 }
 
 // The sea.

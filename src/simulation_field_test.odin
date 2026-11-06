@@ -192,7 +192,11 @@ test_the_tech_demo_starts_at_the_spring_without_a_save_or_a_fall :: proc(t: ^tes
 	slots := player.inventory.slots
 	testing.expect_value(t, slots[0], Item_Stack{test_item(content.items, "iron_pickaxe"), 1})
 	testing.expect_value(t, slots[1], Item_Stack{test_item(content.items, "dirt"), 50})
-	testing.expect_value(t, slots[2], Item_Stack{test_item(content.items, "torch"), 20})
+	// The buckets and the pumps before the torch (0295).
+	testing.expect_value(t, slots[2], Item_Stack{test_item(content.items, "water_bucket"), 1})
+	testing.expect_value(t, slots[3], Item_Stack{test_item(content.items, "drain_bucket"), 1})
+	testing.expect_value(t, slots[4], Item_Stack{test_item(content.items, "water_pump"), 10})
+	testing.expect_value(t, slots[5], Item_Stack{test_item(content.items, "torch"), 20})
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "wooden_foundation")), 0)
 	testing.expect_value(t, player.selected_hotbar_slot, 0)
 
@@ -1487,7 +1491,7 @@ test_a_machine_on_bare_ground_stands_centred_on_its_frame :: proc(t: ^testing.T)
 	size := rotated_footprint_size(simulation_content.machines.machines[furnace].footprint, placement.rotation)
 	flat := bare_ground_is_flat(&state.field.world, state.field.spacing_millimetres, frame, size, simulation_content.field.bare_ground.flatness_millimetres, cell)
 	testing.expect_value(t, flat, refusal != .Too_Steep)
-	line, shown := field_tool_line(player.field, simulation_content, reading)
+	line, shown := field_tool_line(player.field, simulation_content, reading, state.field.spacing_millimetres)
 	testing.expect(t, shown)
 	expected := reading == .Too_Steep ? text("field_refused_too_steep") : bare_ground_wear_line(config.bare_ground_life_minutes)
 	testing.expect_value(t, line, expected)
