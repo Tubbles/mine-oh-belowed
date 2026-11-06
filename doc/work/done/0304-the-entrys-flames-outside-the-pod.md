@@ -1,6 +1,6 @@
 # 0304: The entry's flames outside the pod
 
-Status: verified (2026-11-06)
+Status: landed (2026-11-06, b2584ae)
 
 Milestone: the entry's look (0273, 0286, 0288, 0290), 0303 folded in. The user (2026-11-06), on a Kerbal Space Program reentry seen from outside (`work/reference/0303/ksp_reentry_outside.jpg`): the flames are straight and long, and they do not lick the cone's slanted walls but run straight aft from the heat shield's widest rim; doing the real flames on the outside might straighten out the visuals, and is interesting for multiplayer. Today the plasma (0288) and the flakes (0290) are drawn only on the portholes, so the pod falls without a flame from any other view, and the flakes do not read from the chair (0303).
 
