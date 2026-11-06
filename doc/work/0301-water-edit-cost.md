@@ -6,7 +6,7 @@ Milestone: the water tech demo (0291); the bench 0293 asked for, run after 0300 
 
 ## Goal
 
-An edit at a lake costs under 2 ms in the tick, the target 0293 set, measured in the build the couch runs; idle settled water stays near zero (it does). The bench on main ab75b9d (unoptimised test build, 4 cores, a 4000 m tech demo planet, a poured lake of 3438 wet samples owning 7247 across 4 chunks):
+An edit at a lake costs under 2 ms in the tick, the target 0293 set, measured in the build the couch runs; idle settled water stays near zero (it does). The bench on main e16d45b (unoptimised test build, 4 cores, a 4000 m tech demo planet, a poured lake of 3438 wet samples owning 7247 across 4 chunks):
 
 | Case | Bodies, worst tick | Teleport, worst tick |
 |---|---|---|

@@ -1,6 +1,6 @@
 # 0300: Bodies joined under water merge
 
-Status: landed (2026-11-06, 709edfe)
+Status: landed (2026-11-06, 6663686)
 
 Milestone: the water tech demo (0291); found by 0299's design, a follow-up to 0293.
 
@@ -24,7 +24,7 @@ None.
 
 ## Root cause
 
-Reproduced in scratch copies of item/0298 and of `main` at 286aee5 (0299 landed), with the verifier's scenario and a variant of 0293's trough lakes. Two defects in `world_field_water_body.odin`, each enough to keep joined water two records:
+Reproduced in scratch copies of item/0298 and of `main` at 871fc40 (0299 landed), with the verifier's scenario and a variant of 0293's trough lakes. Two defects in `world_field_water_body.odin`, each enough to keep joined water two records:
 
 1. **The weir's merge waits for the upper body to drain.** `emit_water_body_weirs` merges only when the receiving body reached the sill *and* `excess - flow <= weir_dead_band`, the browser demo's rule plus a clause it does not have (`bodies-waves.html`, the merge loop of `tick`: `o.L >= b.spill.S && b.V >= b.capSpill`). Once the lower body's level also passes the sill, its own flood finds its spill in the upper one, and the two weirs trade water both ways: in the scenario cave 1 (body 3, level 813179, excess 14658) and cave 2 (body 5, level 813176, excess 16526) each hand the other 48 a tick for good (computed from their heads, 244 and 241). Neither excess ever falls within the band, so the merge never fires.
 2. **A flood stops at a saddle under its own water.** `run_water_body_flood` takes every sample whose slab lies wholly under the running sill as the spill, the body's own released samples included. A body that spans a saddle under its level, the union of a merge above all, is cut at that saddle by its next flood, and the part beyond goes to the front as a split. So a merge across a saddle, by the weir or by a seeding flood, is undone at once. In the trough variant (lake A poured to y 13, B to y 4, trough dug), the old weir merge does fire at step 1773, after A has drained, and the survivor's reflood then splits the union. After 3000 ticks that leaves 100 live bodies, 93161 fill of front and seeds and merges every tick. In the scenario, the seed at tick 205 above the floor merges cave 1's lake and stops at the hole's saddle. That is how 0299's 23 seeds of tick 361 begin.
@@ -33,7 +33,7 @@ The demo hides the second defect only by accident: `mergeKeep` relabels the abso
 
 ## Specification (design, 2026-11-06)
 
-Designed against `main` at 286aee5 (0298 and 0299 landed). Prototyped there in a scratch copy:
+Designed against `main` at 871fc40 (0298 and 0299 landed). Prototyped there in a scratch copy:
 - The 0299 scenario becomes one body at tick 225 (178 ticks after the carve). 0299's test reports its last seed, merge or flood visit 179 ticks after the carve, against about 1049 before.
 - The trough variant becomes one body through the new merge pass at step 1044 (pour to y 13), 1028 (y 14) and 1028 (y 16), quiet from the next tick.
 - The pump and part tests below hold.
