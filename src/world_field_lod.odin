@@ -265,7 +265,8 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // The node's grid from the generation, every step-th sample; a sample the
 // grid took from a loaded chunk (loaded set) goes through
 // coarse_field_sample. The water of a sample not loaded is the sea level
-// rule (planet_sea_density), of a loaded one its fill through
+// rule (planet_sea_density), of a loaded one its owner's plane as the
+// gather wrote it (water_exact, 0294) or its fill through
 // coarse_field_water_density, so the sea shows at every level. The light
 // of a loaded sample is its own; a sample not loaded is generated air
 // under the sky or ground, so it has full sky light in air and none in
@@ -284,7 +285,7 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 				index := field_grid_index({x, y, z})
 				if grid.loaded[index] {
 					value = coarse_field_sample({grid.density[index], grid.material[index], grid.tint[index]}, value, grid.step)
-					water = coarse_field_water_density(grid.water[index], water, grid.step)
+					water = grid.water_exact[index] ? grid.water[index] : coarse_field_water_density(grid.water[index], water, grid.step)
 				} else {
 					grid.block_light[index], grid.sky_light[index] = 0, field_sample_is_ground(value.density) ? 0 : FIELD_LIGHT_FULL
 				}
@@ -317,7 +318,9 @@ field_node_touches_loaded_chunks :: proc(world: ^Field_World, node: Field_Node) 
 // A coarser node's grid with the samples of the loaded chunks it reads,
 // copied on the main thread (loaded set), for generate_field_grid to
 // complete on a worker; nil when it reads no loaded chunk, so the worker
-// generates it whole. The edits then show at every level of detail.
+// generates it whole. The edits then show at every level of detail. The
+// water is the look's base in the grid's spacing (field_water_look_base,
+// 0294): no sheet and no waves, which lie under a coarse cell.
 gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocator := context.allocator) -> ^Field_Grid {
 	if !field_node_touches_loaded_chunks(world, node) {
 		return nil
@@ -343,7 +346,7 @@ gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocato
 				index := field_grid_index({x, y, z})
 				source := sample_to_field_index(sample)
 				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
-				grid.water[index] = field_water_density(chunk.density[source], chunk.water[source], sample)
+				grid.water[index], grid.water_exact[index] = field_water_look_base(world, chunk, source, sample, grid.step)
 				grid.block_light[index], grid.sky_light[index] = chunk.block_light[source], chunk.sky_light[source]
 				grid.loaded[index] = true
 			}

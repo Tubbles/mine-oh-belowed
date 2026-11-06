@@ -43,6 +43,9 @@ start_server :: proc(server: ^Server_State, session: ^Session, content: Game_Con
 	destroy_lockstep(&session.lockstep)
 	session.lockstep = make_server_lockstep(session)
 	session.streaming.mesh_chunks = false
+	// Nothing meshes on a server, so no surface waves step (0294).
+	session.field_waves.tuning.on = false
+	clear_field_waves(&session.field_waves)
 	server^ = Server_State{session = session, content = content, autosave_minutes = autosave_minutes}
 	if problem := start_hosting(&session.network, plan); problem != "" {
 		return problem

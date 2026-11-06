@@ -302,7 +302,7 @@ read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool
 	world.water_flood = {}
 	world.water_sea_seeds = {}
 	for record in bodies {
-		append(&world.water_bodies, Water_Body{alive = record.alive, sea = record.sea, dirty = record.dirty, spill_to_sea = record.spill_to_sea, volume = record.volume, level = record.level, written_level = record.written_level, spill_level = record.spill_level, spill_volume = record.spill_volume, flood_visits = record.flood_visits, base = record.base, seed = record.seed, spill = record.spill})
+		append(&world.water_bodies, Water_Body{alive = record.alive, sea = record.sea, dirty = record.dirty, spill_to_sea = record.spill_to_sea, volume = record.volume, level = record.level, written_level = record.written_level, meshed_level = min(i64), spill_level = record.spill_level, spill_volume = record.spill_volume, flood_visits = record.flood_visits, base = record.base, seed = record.seed, spill = record.spill})
 	}
 	for band in bands {
 		body := &world.water_bodies[band.body]
@@ -479,7 +479,7 @@ restore_field_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 // The terrain and the water of a chunk: density, material, fill, still
 // ticks, the awake and the source bits, the water owners (0293) and the
 // pressure pull's failed bits (0292, hashed since 0293); not the tint,
-// the light or the flow. Kept on the chunk until a write of the tick
+// the light, the flow or the moving stamp (water_moved, 0294). Kept on the chunk until a write of the tick
 // (note_field_chunk_change) makes it stale.
 field_chunk_state_hash :: proc(chunk: ^Field_Chunk) -> u64 {
 	if chunk.hash_current {

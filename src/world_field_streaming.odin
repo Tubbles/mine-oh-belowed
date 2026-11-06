@@ -2,6 +2,7 @@ package game
 
 import "base:runtime"
 import "core:container/queue"
+import "core:slice"
 import "core:sync"
 import "core:thread"
 
@@ -29,6 +30,9 @@ MAXIMUM_FIELD_GENERATED_PER_FRAME :: 16
 // A finest level mesh job copies a chunk and its shell on the main thread.
 MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME :: 8
 MAXIMUM_FIELD_MESH_RESULTS_PER_FRAME :: 8
+// Finest meshes a frame for the surface waves alone (0294), after every
+// unmeshed or edited node, within the frame's cap (schedule_field_jobs).
+MAXIMUM_FIELD_WAVE_REMESHES_PER_FRAME :: 2
 
 Field_Job_Kind :: enum u8 {
 	Generate,
@@ -339,8 +343,10 @@ field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node,
 // reads (finest_generated), again when an edit beside it marks it or its
 // skirt faces change, and from its chunks once they are all simulated; a
 // node meshed from its chunks keeps that mesh when they leave the set.
-// Returns whether a job went out.
-schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node, faces: Field_Faces) -> bool {
+// The surface waves' heights go into the grid at the gather (0294); a
+// chunk the waves alone marked (wave_dirty) waits for
+// schedule_field_wave_remeshes. Returns whether a job went out.
+schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node, faces: Field_Faces, waves: Field_Wave_Heights = nil) -> bool {
 	if node in streaming.in_flight {
 		return false
 	}
@@ -352,8 +358,8 @@ schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_Wo
 		if !chunk.dirty && meshed && node not_in streaming.finest_generated && !faces_changed {
 			return false
 		}
-		submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate), false, faces)
-		chunk.dirty = false
+		submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate, waves), false, faces)
+		chunk.dirty, chunk.wave_dirty = false, false
 		delete_key(&streaming.finest_generated, node)
 		delete_key(&streaming.remesh, node)
 		return true
@@ -372,23 +378,81 @@ schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_Wo
 	return true
 }
 
+// A finest node meshed from its chunks whose chunk the waves alone marked
+// (wave_dirty) and that can mesh again now; nil when it cannot.
+field_wave_remesh_chunk :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node) -> ^Field_Chunk {
+	if node.level != 0 {
+		return nil
+	}
+	coordinate := field_node_chunk(node)
+	chunk := world.chunks[coordinate] or_else nil
+	if chunk == nil || !chunk.wave_dirty || node in streaming.in_flight || node not_in streaming.mesh_revisions || node in streaming.finest_generated || !field_chunk_neighbours_loaded(world, coordinate) {
+		return nil
+	}
+	return chunk
+}
+
+Field_Wave_Remesh :: struct {
+	tick:     u64,
+	position: int,
+}
+
+// The waves' pass: of the selection's chunks the waves alone marked, the
+// oldest marks first (wave_dirty_tick), nearest first among marks of one
+// tick, at most `limit`, each meshed again with the current heights.
+// Oldest first, a node marked every frame can never hold the budget from
+// one marked once: a mark waits at most the marked nodes over the budget
+// in frames, while nothing else takes the frame's cap. Returns the jobs
+// sent.
+schedule_field_wave_remeshes :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node, index: Field_Selection_Index, waves: Field_Wave_Heights, limit: int) -> int {
+	if limit <= 0 {
+		return 0
+	}
+	waiting := make([dynamic]Field_Wave_Remesh, context.temp_allocator)
+	for node, position in selection {
+		if chunk := field_wave_remesh_chunk(streaming, world, node); chunk != nil {
+			append(&waiting, Field_Wave_Remesh{chunk.wave_dirty_tick, position})
+		}
+	}
+	slice.sort_by(waiting[:], proc(first, second: Field_Wave_Remesh) -> bool {
+		return first.tick != second.tick ? first.tick < second.tick : first.position < second.position
+	})
+	sent := 0
+	for remesh in waiting {
+		if sent >= limit {
+			break
+		}
+		node := selection[remesh.position]
+		chunk := world.chunks[field_node_chunk(node)]
+		submit_field_mesh_job(streaming, node, gather_field_grid(world, chunk.coordinate, waves), false, field_node_skirt_faces(index, node))
+		chunk.dirty, chunk.wave_dirty = false, false
+		sent += 1
+	}
+	return sent
+}
+
 // Nearest first within each pass: the finest nodes' chunks and meshes take
 // the budget before any coarser node, since the ground under the camera
 // waits on 27 chunks a node and a coarse node on one job. A node whose
-// skirt faces changed meshes again.
-schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node) {
+// skirt faces changed meshes again. The waves' remeshes come last, at most
+// MAXIMUM_FIELD_WAVE_REMESHES_PER_FRAME of what the frame's cap leaves, so
+// a moving surface never holds back a node still unmeshed or edited.
+schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node, waves: Field_Wave_Heights = nil) {
 	index := make_field_selection_index(selection, context.temp_allocator)
 	submissions := 0
+	full :: proc(streaming: ^Field_Streaming, submissions: int) -> bool {
+		return streaming.pending_jobs >= MAXIMUM_FIELD_PENDING_JOBS || submissions >= MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME
+	}
 	for node in selection {
 		if node.level != 0 {
 			continue
 		}
-		if streaming.pending_jobs < MAXIMUM_FIELD_PENDING_JOBS && submissions < MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME {
-			submissions += schedule_finest_field_mesh(streaming, world, node, field_node_skirt_faces(index, node)) ? 1 : 0
+		if !full(streaming, submissions) {
+			submissions += schedule_finest_field_mesh(streaming, world, node, field_node_skirt_faces(index, node), waves) ? 1 : 0
 		}
 	}
 	for node in selection {
-		if streaming.pending_jobs >= MAXIMUM_FIELD_PENDING_JOBS || submissions >= MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME {
+		if full(streaming, submissions) {
 			return
 		}
 		if node.level == 0 || node in streaming.in_flight {
@@ -401,6 +465,8 @@ schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, se
 			submissions += 1
 		}
 	}
+	room := min(MAXIMUM_FIELD_WAVE_REMESHES_PER_FRAME, MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME - submissions, MAXIMUM_FIELD_PENDING_JOBS - streaming.pending_jobs)
+	schedule_field_wave_remeshes(streaming, world, selection, index, waves, room)
 }
 
 // The meshed coarser nodes whose grid reads a chunk an edit changed (the
@@ -445,13 +511,15 @@ Field_Stream_Frame :: struct {
 
 // Main thread, once per frame, before take_current_field_meshes. The
 // generated chunks the tick may take go to arrivals; the generation goes
-// out before the meshing, so the tick waits on as little as it can.
-update_field_streaming :: proc(streaming: ^Field_Streaming, world: ^Field_World, frame: Field_Stream_Frame, arrivals: ^[dynamic]^Field_Chunk) {
+// out before the meshing, so the tick waits on as little as it can. waves
+// are the surface waves' heights the finest meshes take (0294), nil for
+// none.
+update_field_streaming :: proc(streaming: ^Field_Streaming, world: ^Field_World, frame: Field_Stream_Frame, arrivals: ^[dynamic]^Field_Chunk, waves: Field_Wave_Heights = nil) {
 	mark_edited_coarse_nodes(streaming, world)
 	receive_field_chunks(streaming, world, frame, arrivals)
 	drop_unselected_field_nodes(streaming, frame.selection)
 	schedule_field_chunk_generation(streaming, world, frame)
-	schedule_field_jobs(streaming, world, frame.selection)
+	schedule_field_jobs(streaming, world, frame.selection, waves)
 }
 
 // Mesh results still current for a selected node. Stale ones are freed

@@ -56,6 +56,10 @@ Session :: struct {
 	// session.
 	field_streaming:    Field_Streaming,
 	field_content:      Field_Content,
+	// The water's surface waves (0294, render_field_waves.odin): frame
+	// side, never in the simulation, the save or the hash; made and
+	// destroyed with the field streaming.
+	field_waves:        Field_Waves,
 }
 
 // What a session starts from: a new world's seed and settings, or a save.
@@ -127,6 +131,7 @@ start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Co
 		clear_trees_of_an_old_save(simulation, content.machines, session.field_content)
 	}
 	session.field_streaming = start_field_streaming(seed, session.planet, field.spacing_millimetres, default_worker_count())
+	session.field_waves = Field_Waves{tuning = make_field_wave_tuning(config.water_look), last_tick = simulation.tick}
 	return ""
 }
 
@@ -222,6 +227,7 @@ start_session :: proc(requested_plan: Session_Plan, config: Game_Config, content
 		if session.field_streaming.shared != nil {
 			stop_field_streaming(&session.field_streaming)
 		}
+		destroy_field_waves(&session.field_waves)
 		destroy_field_content(&session.field_content)
 		destroy_simulation(&session.simulation)
 		delete(session.technologies.technologies)
@@ -298,6 +304,7 @@ end_session :: proc(session: ^Session) {
 	if session.field_streaming.shared != nil {
 		stop_field_streaming(&session.field_streaming)
 	}
+	destroy_field_waves(&session.field_waves)
 	destroy_field_content(&session.field_content)
 	destroy_session_network(&session.network)
 	destroy_lockstep(&session.lockstep)

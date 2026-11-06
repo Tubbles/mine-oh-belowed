@@ -39,8 +39,11 @@ FIELD_TEXTURED_MATERIAL_COUNT :: len(Field_Material) - 1
 // (gather_field_grid) and from the generation for the coarser ones
 // (generate_field_grid), which keeps the samples a coarser grid took from
 // loaded chunks (gather_coarse_field_grid, loaded set). water is the water
-// field as a density (field_water_density), meshed as a second surface
-// (0172, mesh_field_water_grid).
+// field as a density, meshed as a second surface (0172,
+// mesh_field_water_grid): since 0294 the water's look
+// (world_field_water_look.odin), still water a body or the sea owns as its
+// level's plane, the front as its slab (field_water_density), and at full
+// resolution the sheet and the surface waves over them.
 Field_Grid :: struct {
 	origin:   Sample_Coordinate,
 	step:     i32,
@@ -51,6 +54,9 @@ Field_Grid :: struct {
 	block_light: [FIELD_GRID_SAMPLE_COUNT]u8,
 	sky_light:   [FIELD_GRID_SAMPLE_COUNT]u8,
 	loaded:      [FIELD_GRID_SAMPLE_COUNT]bool,
+	// The water value is already a distance in the grid's spacing, a
+	// body's plane (0294): generate_field_grid keeps it as it is.
+	water_exact: [FIELD_GRID_SAMPLE_COUNT]bool,
 }
 
 // position is in 1/FIELD_MESH_POSITION_UNITS of a grid cell from the
@@ -128,8 +134,9 @@ field_shell_range :: proc(offset: i32) -> (first, last: i32) {
 	return 0, FIELD_GRID_CELLS - 1
 }
 
-// One chunk's part of the grid; a missing chunk reads as air under the
-// sky, as field_world_get_sample and the generation make it.
+// One chunk's part of the grid's terrain and light; a missing chunk reads
+// as air under the sky, as field_world_get_sample and the generation make
+// it. The water follows from every part at once (write_field_water_look).
 copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]i32) {
 	first, last: [3]i32
 	for axis in 0 ..< 3 {
@@ -141,13 +148,11 @@ copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]
 				index := field_grid_index({x, y, z})
 				if chunk == nil {
 					grid.density[index], grid.material[index], grid.tint[index] = FIELD_AIR_SAMPLE.density, FIELD_AIR_SAMPLE.material, FIELD_AIR_SAMPLE.tint
-					grid.water[index] = -MAXIMUM_DENSITY
 					grid.block_light[index], grid.sky_light[index] = 0, FIELD_LIGHT_FULL
 					continue
 				}
 				source := field_local_to_index({x %% FIELD_CHUNK_SIZE, y %% FIELD_CHUNK_SIZE, z %% FIELD_CHUNK_SIZE})
 				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
-				grid.water[index] = field_water_density(chunk.density[source], chunk.water[source], grid.origin + Sample_Coordinate([3]i32{x, y, z}))
 				grid.block_light[index], grid.sky_light[index] = chunk.block_light[source], chunk.sky_light[source]
 			}
 		}
@@ -156,8 +161,10 @@ copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]
 
 // The chunk and a one sample shell from its 26 neighbours, copied on the
 // main thread as the block mesher's border is (world_mesh_border.odin), so
-// a worker never reads the Field_World.
-gather_field_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, allocator := context.allocator) -> ^Field_Grid {
+// a worker never reads the Field_World or the waves; then the water's look
+// (write_field_water_look, 0294), which reads up to FIELD_LOOK_REACH
+// samples beyond the node.
+gather_field_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, waves: Field_Wave_Heights = nil, allocator := context.allocator) -> ^Field_Grid {
 	grid := new(Field_Grid, allocator)
 	grid.origin = field_chunk_origin(coordinate)
 	grid.step = 1
@@ -168,6 +175,7 @@ gather_field_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinat
 			}
 		}
 	}
+	write_field_water_look(grid, world, waves)
 	return grid
 }
 

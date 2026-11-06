@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:math"
 import "core:testing"
 
@@ -342,4 +343,91 @@ test_the_skirt_faces_follow_the_neighbours_levels :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_node_skirt_faces(index, fine), Field_Faces{.Negative_X, .Negative_Y, .Positive_Y, .Negative_Z})
 	// The coarse node's +x face borders the finer nodes.
 	testing.expect(t, .Positive_X not_in field_node_skirt_faces(index, coarse))
+}
+
+// The sea's free surface lies at the sea level within 0.05 sample at
+// latitude 0, 45 and 90 and at the steps 1, 2 and 4 (0294): the sea's
+// samples draw its level as a plane, a signed distance in each grid's
+// spacing, so no level of detail draws the staircase.
+@(test)
+test_the_seas_surface_residual_is_small_at_every_latitude_and_level :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	planet.radius_metres = 1000
+	planet.sea_level_metres = MAXIMUM_RELIEF_METRES + 8
+	spacing := 1000
+	generation := make_planet_generation(TEST_PLANET_SEED, planet, spacing)
+	sea_level := field_sea_level(planet, spacing)
+	sea_radius := f64(sea_level) / FIELD_WATER_FULL
+	half := math.SQRT_TWO / 2
+	directions := [3][3]f64{{1, 0, 0}, {half, half, 0}, {0, 1, 0}}
+	for direction, latitude in directions {
+		world: Field_World
+		defer destroy_field_world(&world)
+		world.water_planet = make_field_water_planet(TEST_PLANET_SEED, planet, spacing)
+		// Half a chunk along the two tangents, so the surface crosses the
+		// finest chunk's middle rather than its corner.
+		tangent := [3]f64{-direction.y, direction.x, 0}
+		centre := direction * sea_radius + tangent * FIELD_CHUNK_SIZE / 2 + {0, 0, FIELD_CHUNK_SIZE / 2}
+		point := Sample_Coordinate{i32(math.round(centre.x)), i32(math.round(centre.y)), i32(math.round(centre.z))}
+		finest := sample_to_field_chunk_coordinate(point)
+		load :: proc(world: ^Field_World, planet: Planet, spacing: int, coordinate: Field_Chunk_Coordinate) {
+			if coordinate in world.chunks {
+				return
+			}
+			chunk := new(Field_Chunk)
+			generate_field_chunk(TEST_PLANET_SEED, planet, spacing, coordinate, chunk)
+			field_world_insert_chunk(world, chunk)
+		}
+		for level in i32(0) ..= 2 {
+			grid: ^Field_Grid
+			if level == 0 {
+				for z in i32(-1) ..= 1 {
+					for y in i32(-1) ..= 1 {
+						for x in i32(-1) ..= 1 {
+							load(&world, planet, spacing, finest + {x, y, z})
+						}
+					}
+				}
+				grid = gather_field_grid(&world, finest, nil, context.temp_allocator)
+			} else {
+				width := i32(1) << uint(level)
+				node := Field_Node{level, {floor_divide(finest.x, width), floor_divide(finest.y, width), floor_divide(finest.z, width)}}
+				for z in i32(0) ..< width {
+					for y in i32(0) ..< width {
+						for x in i32(0) ..< width {
+							load(&world, planet, spacing, Field_Chunk_Coordinate(node.coordinate * width) + {x, y, z})
+						}
+					}
+				}
+				grid = gather_coarse_field_grid(&world, node, context.temp_allocator)
+				generate_field_grid(generation, node, grid)
+			}
+			water := new(Field_Grid, context.temp_allocator)
+			water.origin, water.step, water.density = grid.origin, grid.step, grid.water
+			surface := mesh_field_surface(water, TEST_FIELD_PALETTE[:], context.temp_allocator)
+			worst: f64 = 0
+			counted := 0
+			vertices: for vertex in surface.vertices {
+				cell: [3]i32
+				for axis in 0 ..< 3 {
+					cell[axis] = floor_divide(vertex.position[axis], FIELD_MESH_POSITION_UNITS)
+					if cell[axis] < 0 || cell[axis] >= FIELD_GRID_CELLS - 1 {
+						continue vertices
+					}
+				}
+				for corner in 0 ..< 8 {
+					if grid.density[field_grid_index(cell + field_corner_offset(corner))] > 0 {
+						continue vertices
+					}
+				}
+				point := test_grid_vertex_samples(grid, vertex)
+				residual := abs(math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z) - sea_radius)
+				worst = max(worst, residual)
+				counted += 1
+			}
+			fmt.printfln("0294: the sea at latitude %d, step %d: %d free surface vertices, the largest residual %v samples", latitude * 45, grid.step, counted, worst)
+			testing.expectf(t, counted >= 100, "latitude %d, step %d: %d free surface vertices", latitude * 45, grid.step, counted)
+			testing.expectf(t, worst < 0.05, "latitude %d, step %d: the surface lies %v samples off the sea level", latitude * 45, grid.step, worst)
+		}
+	}
 }

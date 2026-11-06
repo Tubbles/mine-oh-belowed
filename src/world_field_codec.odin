@@ -15,7 +15,9 @@ import "run_length"
 //   u32 run count, run count times (u8 value, u32 count).
 // A chunk equal to its generation writes nothing and regenerates from the
 // seed; a changed chunk is written whole. The water's flow is measured
-// again each tick and not written. Version 4 (before 0293) had no owner
+// again each tick and not written, nor is its moving stamp (water_moved,
+// 0294), which the mesher's look derives and a decoded chunk starts
+// without. Version 4 (before 0293) had no owner
 // and no failed planes and is still read: both read zero, and the caller
 // learns it (decode_field_chunk), since under the bodies model such a
 // chunk's water settles into bodies again (insert_field_chunk_arrival).
@@ -42,7 +44,8 @@ FIELD_CHUNK_PLANE_COUNT_WITHOUT_OWNERS :: 9
 
 // The terrain and the water alike: what a tick changes and generation
 // makes. The light is left out, since an arrival seeds it and the
-// generation leaves it dark (0179, unload_left_field_chunks).
+// generation leaves it dark (0179, unload_left_field_chunks); so are the
+// water's flow and moving stamp (water_moved, 0294), which are derived.
 field_chunk_terrain_and_water_equal :: proc(first, second: ^Field_Chunk) -> bool {
 	return(
 		slice.equal(first.density[:], second.density[:]) &&

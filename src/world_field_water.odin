@@ -62,6 +62,15 @@ import "core:slice"
 // for the still ticks in no body's basin seeds a body. No pressure pull and
 // no sea edge refill run under bodies: the bodies level and the sea's claim
 // owns its samples.
+//
+// The look (0294, world_field_water_look.odin): every change of a fill
+// through set_field_water stamps the sample as moving for
+// FIELD_WATER_MOVED_TICKS (water_moved, counted down by
+// expire_field_water_moved while awake), so the mesher draws it as a
+// sheet; a body's derived bytes are not movement. The step records the
+// tick's arrivals into standing water (impacts, stream mouths), digs and
+// pump intakes as events (Field_World.water_events) for the surface
+// waves, which never feed back into the water.
 
 FIELD_SAMPLE_BIT_WORDS :: FIELD_CHUNK_SAMPLE_COUNT / 64
 // One bit per sample, by sample index.
@@ -492,10 +501,11 @@ force_wake_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, 
 }
 
 // Sleeping leaves the still ticks at zero, so a settled chunk equals its
-// generation again.
+// generation again, and ends the moving stamp (0294).
 sleep_field_water_sample :: proc(chunk: ^Field_Chunk, index: int) {
 	clear_field_sample_bit(&chunk.water_awake, index)
 	chunk.water_still[index] = 0
+	chunk.water_moved[index] = 0
 	note_field_chunk_change(chunk)
 }
 
@@ -512,10 +522,12 @@ wake_field_water_around :: proc(world: ^Field_World, chunk: ^Field_Chunk, index:
 // Every change of a fill goes through here: the chunks that mesh the
 // sample are marked, and the sample and its neighbours wake.
 set_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, fill: i32) {
+	if i32(chunk.water[index]) != fill {
+		chunk.water_moved[index] = FIELD_WATER_MOVED_TICKS
+	}
 	chunk.water[index] = u8(fill)
 	note_field_chunk_change(chunk)
-	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
-	world.edited_chunks[chunk.coordinate] = {}
+	mark_field_look_dirty(world, chunk.coordinate, sample)
 	wake_field_water_around(world, chunk, index, sample)
 }
 
@@ -527,8 +539,7 @@ write_field_water_quiet :: proc(world: ^Field_World, chunk: ^Field_Chunk, index:
 	}
 	chunk.water[index] = u8(fill)
 	note_field_chunk_change(chunk)
-	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
-	world.edited_chunks[chunk.coordinate] = {}
+	mark_field_look_dirty(world, chunk.coordinate, sample)
 }
 
 // Front water under bodies (0293): the byte as set_field_water writes it,
@@ -586,8 +597,16 @@ displace_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: in
 
 // After a terrain set (field_world_set_sample): ground pushes the water
 // out, and the sample and its neighbours wake, so a dug hole floods on
-// the next tick.
-follow_field_terrain_with_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate) {
+// the next tick. A wet sample turned ground, or ground turned air beside
+// water, is a dig event for the surface waves (0294).
+follow_field_terrain_with_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, was_ground: bool) {
+	if chunk.density[index] > 0 {
+		if chunk.water[index] > 0 {
+			push_field_water_event(world, .Dig, sample, i32(chunk.water[index]))
+		}
+	} else if was_ground && field_sample_has_wet_face_neighbour(world, chunk, sample) {
+		push_field_water_event(world, .Dig, sample, FIELD_WATER_FULL)
+	}
 	if world.water_model == .Bodies {
 		follow_field_terrain_with_bodies(world, chunk, index, sample)
 		return
@@ -687,8 +706,7 @@ field_water_is_film :: proc(fill: i32, span: Field_Water_Span, neighbours: [6]Fi
 dry_field_water_film :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate) {
 	chunk.water[index] -= 1
 	note_field_chunk_change(chunk)
-	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
-	world.edited_chunks[chunk.coordinate] = {}
+	mark_field_look_dirty(world, chunk.coordinate, sample)
 }
 
 move_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, neighbour: Field_Water_Neighbour, amount: i32) {
@@ -733,7 +751,9 @@ field_water_share_from :: proc(span: Field_Water_Span, fill: i32, neighbour_span
 }
 
 // To the neighbours nearer the centre first, then to the others, at most
-// budget in all; returns the fill moved out.
+// budget in all; returns the fill moved out. A move into standing water
+// (more than a film, or resting on full water) is an impact from above
+// or a stream mouth from the side (0294).
 spread_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, span: Field_Water_Span, neighbours: [6]Field_Water_Neighbour, tuning: Field_Water_Tuning, budget: i32) -> i32 {
 	allowed := min(budget, i32(chunk.water[index]))
 	left := allowed
@@ -743,6 +763,9 @@ spread_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int,
 				continue
 			}
 			if amount := field_water_share(chunk, index, span, neighbour, tuning, left); amount > 0 {
+				if field_water_neighbour_fill(neighbour) > tuning.minimum_fill || field_water_rests_on_full(neighbour.span, field_water_neighbours(world, neighbour.chunk, neighbour.sample)) {
+					push_field_water_event(world, nearer ? .Impact : .Stream_Mouth, neighbour.sample, amount)
+				}
 				move_field_water(world, chunk, index, sample, neighbour, amount)
 				left -= amount
 			}
@@ -857,12 +880,13 @@ pull_field_water_pressure :: proc(world: ^Field_World, chunk: ^Field_Chunk, inde
 
 // One awake sample's tick; start is its fill when the tick began.
 step_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, tuning: Field_Water_Tuning, tick: u64, start: u8, search: ^Field_Water_Search) {
+	sample := field_chunk_sample(chunk, index)
+	expire_field_water_moved(world, chunk, index, sample)
 	if chunk.density[index] > 0 {
 		chunk.water_flow[index] = 0
 		sleep_field_water_sample(chunk, index)
 		return
 	}
-	sample := field_chunk_sample(chunk, index)
 	span := field_water_span(sample)
 	neighbours := field_water_neighbours(world, chunk, sample)
 	before := chunk.water[index]
@@ -962,8 +986,9 @@ field_sample_before :: proc(first, second: Sample_Coordinate) -> bool {
 
 // The water's tick (in tick_field_simulation, after the edits), by the
 // world's model: teleport (0292's rule) or bodies (0293,
-// step_field_water_bodies).
+// step_field_water_bodies). The last tick's events are dropped first.
 step_field_water :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
+	clear(&world.water_events)
 	switch world.water_model {
 	case .Teleport:
 		step_field_water_teleport(world, tuning, tick)
@@ -1074,16 +1099,19 @@ refill_field_water_front_springs :: proc(world: ^Field_World, front: ^Field_Wate
 // plans its moves to its six neighbours, nearer the centre first, each the
 // share of the levels the tick began with, at most what it has left and
 // the receiver's room after what others promised it. A move into a body's
-// water or the sea's counts against the room and goes to the volume.
+// water or the sea's counts against the room and goes to the volume, and
+// is an impact (from above) or a stream mouth (from the side) for the
+// surface waves (0294).
 plan_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, pass: ^Field_Water_Front_Pass, index: int, tuning: Field_Water_Tuning, tick: u64) {
 	chunk := pass.chunk
+	sample := field_chunk_sample(chunk, index)
+	expire_field_water_moved(world, chunk, index, sample)
 	if chunk.density[index] > 0 {
 		chunk.water_flow[index] = 0
 		sleep_field_water_sample(chunk, index)
 		return
 	}
 	source := field_sample_bit(&chunk.water_source, index)
-	sample := field_chunk_sample(chunk, index)
 	span := field_water_span(sample)
 	if chunk.water_owner[index] == WATER_OWNER_SEA {
 		chunk.water_flow[index] = 0
@@ -1151,6 +1179,7 @@ plan_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, p
 				} else {
 					front.inflow[body] += i64(amount)
 				}
+				push_field_water_event(world, nearer ? .Impact : .Stream_Mouth, neighbour.sample, amount)
 			}
 		}
 	}
@@ -1233,7 +1262,11 @@ absorb_front_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int,
 		chunk.water_owner[index] = new_owner
 		note_field_chunk_change(chunk)
 	}
+	// Front water turns a body's still water: the mesher's plane from now
+	// (0294), whether or not the owner changed.
+	note_water_owner_change(world, chunk, sample)
 	write_field_water_quiet(world, chunk, index, sample, field_sea_fill(level, span))
+	chunk.water_moved[index] = 0
 	if !field_sample_bit(&chunk.water_source, index) {
 		sleep_field_water_sample(chunk, index)
 	}

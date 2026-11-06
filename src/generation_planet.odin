@@ -1,5 +1,6 @@
 package game
 
+import "base:intrinsics"
 import "generation_seed"
 import "platform"
 
@@ -125,24 +126,22 @@ make_crater_term :: proc(generation: Planet_Generation, crater: Planet_Crater, h
 	}
 }
 
-// The floor of the square root, bit by bit.
+// The floor of the square root, by Newton's method in integers from a
+// power of two at or above the root, which falls to the floor in a few
+// steps (the water's look takes one a sample of every full resolution
+// grid, 0294).
 integer_square_root :: proc(value: u64) -> u64 {
-	remainder := value
-	root: u64 = 0
-	bit: u64 = 1 << 62
-	for bit > value {
-		bit >>= 2
+	if value < 2 {
+		return value
 	}
-	for bit != 0 {
-		if remainder >= root + bit {
-			remainder -= root + bit
-			root = (root >> 1) + bit
-		} else {
-			root >>= 1
+	root := u64(1) << ((64 - intrinsics.count_leading_zeros(value) + 1) / 2)
+	for {
+		next := (root + value / root) / 2
+		if next >= root {
+			return root
 		}
-		bit >>= 2
+		root = next
 	}
-	return root
 }
 
 hash_lattice :: proc(seed: u64, cell: [3]i64) -> u64 {

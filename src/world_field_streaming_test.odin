@@ -1,6 +1,7 @@
 package game
 
 import "core:container/queue"
+import "core:fmt"
 import "core:slice"
 import "core:testing"
 
@@ -241,5 +242,141 @@ test_one_selection_serves_two_viewports :: proc(t: ^testing.T) {
 			inside := Field_Node{coarse.level, {fine.coordinate.x >> shift, fine.coordinate.y >> shift, fine.coordinate.z >> shift}} == coarse
 			testing.expectf(t, !inside, "%v overlaps %v", node, other)
 		}
+	}
+}
+
+// The waves' budget (0294 fix round, 2026-11-06): 64 meshed nodes whose
+// chunks only the waves marked and ten nodes never meshed, farther in the
+// selection. The unmeshed take the frame's cap first; the waves' remeshes
+// take at most two a frame of what is left, and every chunk marked meshes
+// in time.
+@(test)
+test_the_waves_remesh_after_unmeshed_nodes_two_a_frame :: proc(t: ^testing.T) {
+	streaming := start_field_streaming(TEST_PLANET_SEED, make_test_planet(), DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
+	defer stop_field_streaming(&streaming)
+	world: Field_World
+	defer destroy_field_world(&world)
+	selection := make([dynamic]Field_Node, context.temp_allocator)
+	for z in i32(0) ..< 6 {
+		for y in i32(0) ..< 6 {
+			for x in i32(0) ..< 6 {
+				chunk := new(Field_Chunk)
+				chunk.coordinate = {x, y, z}
+				field_world_insert_chunk(&world, chunk)
+				chunk.dirty = false
+				if x >= 1 && x <= 4 && y >= 1 && y <= 4 && z >= 1 && z <= 4 {
+					chunk.wave_dirty = true
+					node := field_chunk_node(chunk.coordinate)
+					streaming.mesh_revisions[node] = 1
+					append(&selection, node)
+				}
+			}
+		}
+	}
+	testing.expect_value(t, len(selection), 64)
+	unmeshed := make([dynamic]Field_Node, context.temp_allocator)
+	for index in i32(0) ..< 10 {
+		node := field_chunk_node({100 + 2 * index, 0, 0})
+		append(&selection, node)
+		append(&unmeshed, node)
+	}
+	waiting :: proc(world: ^Field_World) -> int {
+		count := 0
+		for _, chunk in world.chunks {
+			count += chunk.wave_dirty ? 1 : 0
+		}
+		return count
+	}
+	submitted :: proc(streaming: ^Field_Streaming, nodes: []Field_Node) -> int {
+		count := 0
+		for node in nodes {
+			count += node in streaming.in_flight ? 1 : 0
+		}
+		return count
+	}
+	expected := [?][2]int{{8, 0}, {10, 2}, {10, 4}}
+	for counts, frame in expected {
+		schedule_field_jobs(&streaming, &world, selection[:])
+		testing.expectf(t, submitted(&streaming, unmeshed[:]) == counts[0], "frame %d: %d unmeshed nodes out", frame, submitted(&streaming, unmeshed[:]))
+		testing.expectf(t, 64 - waiting(&world) == counts[1], "frame %d: %d wave remeshes out", frame, 64 - waiting(&world))
+	}
+	for _ in 0 ..< 64 {
+		schedule_field_jobs(&streaming, &world, selection[:])
+		run_queued_field_jobs(&streaming)
+		for result in take_current_field_meshes(&streaming, context.temp_allocator) {
+			destroy_field_mesh_data(result.mesh)
+			destroy_field_mesh_data(result.water_mesh)
+		}
+		if waiting(&world) == 0 {
+			break
+		}
+	}
+	testing.expect_value(t, waiting(&world), 0)
+	free_all(context.temp_allocator)
+}
+
+// Oldest mark first (0294's second fix round): six meshed nodes in a row,
+// the five nearest marked by the waves every frame (as a stream's mouth
+// keeps them), the sixth once. With the jobs run every frame, two wave
+// remeshes a frame and six nodes marked, no mark waits more than three
+// frames (six over two), the sixth's included.
+@(test)
+test_the_waves_remesh_the_oldest_mark_first :: proc(t: ^testing.T) {
+	streaming := start_field_streaming(TEST_PLANET_SEED, make_test_planet(), DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
+	defer stop_field_streaming(&streaming)
+	world: Field_World
+	defer destroy_field_world(&world)
+	for z in i32(0) ..< 3 {
+		for y in i32(0) ..< 3 {
+			for x in i32(0) ..< 8 {
+				chunk := new(Field_Chunk)
+				chunk.coordinate = {x, y, z}
+				field_world_insert_chunk(&world, chunk)
+				chunk.dirty = false
+			}
+		}
+	}
+	selection: [6]Field_Node
+	chunks: [6]^Field_Chunk
+	for slot in 0 ..< 6 {
+		coordinate := Field_Chunk_Coordinate{i32(slot) + 1, 1, 1}
+		selection[slot] = field_chunk_node(coordinate)
+		chunks[slot] = world.chunks[coordinate]
+		streaming.mesh_revisions[selection[slot]] = 1
+	}
+	BOUND :: 3
+	marked_at: [6]int
+	longest: [6]int
+	sixth_meshed := -1
+	for frame in 1 ..= 200 {
+		for slot in 0 ..< 6 {
+			if (slot < 5 || frame == 1) && !chunks[slot].wave_dirty {
+				chunks[slot].wave_dirty, chunks[slot].wave_dirty_tick = true, u64(frame)
+				marked_at[slot] = frame
+			}
+		}
+		schedule_field_jobs(&streaming, &world, selection[:])
+		run_queued_field_jobs(&streaming)
+		for result in take_current_field_meshes(&streaming, context.temp_allocator) {
+			destroy_field_mesh_data(result.mesh)
+			destroy_field_mesh_data(result.water_mesh)
+		}
+		for slot in 0 ..< 6 {
+			if chunks[slot].wave_dirty {
+				testing.expectf(t, frame - marked_at[slot] < BOUND, "frame %d: node %d waits since frame %d", frame, slot, marked_at[slot])
+			} else if marked_at[slot] > 0 {
+				longest[slot] = max(longest[slot], frame - marked_at[slot] + 1)
+				if slot == 5 && sixth_meshed < 0 {
+					sixth_meshed = frame
+				}
+				marked_at[slot] = 0
+			}
+		}
+		free_all(context.temp_allocator)
+	}
+	fmt.printfln("0294: the longest wave waits in frames, nearest first: %v; the sixth meshed in frame %d", longest, sixth_meshed)
+	testing.expect(t, sixth_meshed >= 1 && sixth_meshed <= BOUND, "the node marked once is meshed in time")
+	for slot in 0 ..< 6 {
+		testing.expect(t, longest[slot] >= 1 && longest[slot] <= BOUND)
 	}
 }

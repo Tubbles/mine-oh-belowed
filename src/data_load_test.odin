@@ -275,3 +275,28 @@ test_sun_and_torchlight_is_range_checked :: proc(t: ^testing.T) {
 	testing.expect(t, strings.has_prefix(validate_game_config(config), "sun_and_torchlight.sky_ambient_percent "))
 	testing.expect(t, sun_and_torchlight_problem({}) != "", "a missing table fails")
 }
+
+// The water's look (0294): the shipped table passes, and each percent
+// past its bound is refused by name.
+@(test)
+test_water_look_values_are_bounded :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, config.water_look, SHIPPED_WATER_LOOK)
+	testing.expect_value(t, water_look_problem(config.water_look), "")
+	fast := config.water_look
+	fast.wave_speed_percent = 51
+	testing.expect(t, strings.has_prefix(water_look_problem(fast), "water_look.wave_speed_percent "))
+	endless := config.water_look
+	endless.wave_damping_percent = 100
+	testing.expect(t, strings.has_prefix(water_look_problem(endless), "water_look.wave_damping_percent "))
+	flat := config.water_look
+	flat.wave_clamp_percent = 0
+	testing.expect(t, strings.has_prefix(water_look_problem(flat), "water_look.wave_clamp_percent "))
+	hard := config.water_look
+	hard.wave_kick_percent = 101
+	testing.expect(t, strings.has_prefix(water_look_problem(hard), "water_look.wave_kick_percent "))
+	config.water_look = hard
+	testing.expect(t, strings.has_prefix(validate_game_config(config), "water_look.wave_kick_percent "))
+	testing.expect(t, water_look_problem({}) != "", "a missing table fails")
+}

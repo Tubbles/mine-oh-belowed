@@ -139,16 +139,20 @@ frame_field_selection :: proc(state: ^Frame_State) -> []Field_Node {
 // need to the workers, the generated ones back as chunk ready commands
 // (NO_PLAYER, kept on this machine as the block chunks are), and the
 // selection's nodes meshed. A server passes no selection and meshes
-// nothing; the edited chunks are taken either way.
+// nothing; the edited chunks are taken either way. The surface waves step
+// first (advance_field_waves, 0294), so this frame's gather reads this
+// frame's heights; with the waves off (a server, the planet preview) the
+// gather takes none (field_waves_drawn).
 stream_field_session :: proc(session: ^Session, selection: []Field_Node) {
 	simulation := &session.simulation
+	advance_field_waves(&session.field_waves, &simulation.field.world, simulation.tick)
 	frame := Field_Stream_Frame {
 		requested = field_chunk_requests(simulation),
 		held      = held_field_chunk_arrivals(simulation),
 		selection = selection,
 	}
 	arrivals := make([dynamic]^Field_Chunk, context.temp_allocator)
-	update_field_streaming(&session.field_streaming, &simulation.field.world, frame, &arrivals)
+	update_field_streaming(&session.field_streaming, &simulation.field.world, frame, &arrivals, field_waves_drawn(&session.field_waves))
 	for chunk in arrivals {
 		queue_player_command(&simulation.player_commands, NO_PLAYER, Field_Chunk_Ready_Command{chunk = chunk})
 	}

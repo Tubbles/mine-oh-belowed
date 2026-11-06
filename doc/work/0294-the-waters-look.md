@@ -1,6 +1,6 @@
 # 0294: The water's look: sheet, radial plane, waves
 
-Status: implementing (2026-11-05)
+Status: verified (2026-11-06)
 
 Milestone: the water tech demo (0291); the water stream after 0293, needed by both models.
 
@@ -144,3 +144,7 @@ water_look = {
 1. `displace_water_body_volume` takes the intake sample from the start: 0293's implementer writes the stub with that signature, so 0294 changes nothing there.
 2. The planet preview passes nil waves and does not ripple.
 - Approved.
+
+### Main agent's notes at landing (2026-11-06)
+
+The implementation left the specification where it named a `tuning` parameter on `gather_field_grid` and `update_field_streaming` (no rule reads it; the streaming takes `waves`, nil by default) and the drained-basin test's x/z bounds (2.5 to 12.5: the plane reaches one sample into the surrounding ground, where the terrain covers it). The two review rounds added the look's mark reach (3 samples), the per-sample baked-offset marks, the wave remesh budget of 2 a frame taken oldest mark first, the flat-array gather and the integer Newton square root; `doc/presentation.md` (The water's look) is the description.

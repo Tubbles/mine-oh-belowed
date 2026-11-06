@@ -731,7 +731,7 @@ test_a_settled_lake_off_the_axis_meshes_at_one_radius :: proc(t: ^testing.T) {
 	tick: u64 = 0
 	testing.expect(t, settle_test_water(&world, tuning, &tick, 20000) < 20000)
 
-	grid := gather_field_grid(&world, coordinate, context.temp_allocator)
+	grid := gather_field_grid(&world, coordinate, nil, context.temp_allocator)
 	water := new(Field_Grid, context.temp_allocator)
 	water.origin, water.step, water.density = grid.origin, grid.step, grid.water
 	surface := mesh_field_surface(water, make_test_planet().palette, context.temp_allocator)

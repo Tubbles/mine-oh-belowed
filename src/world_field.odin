@@ -82,6 +82,12 @@ Field_Chunk :: struct {
 	water:        [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	water_still:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	water_flow:   [FIELD_CHUNK_SAMPLE_COUNT]u8,
+	// The ticks of moving left (0294, world_field_water_look.odin,
+	// FIELD_WATER_MOVED_TICKS when the fill changed, counted down while
+	// awake): the mesher's sheet draws the sample as moving water while
+	// it is above zero. Derived, never saved or hashed, zero on a fresh or
+	// decoded chunk.
+	water_moved:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	water_awake:  Field_Sample_Bits,
 	water_source: Field_Sample_Bits,
 	// The body each sample belongs to under the bodies model (0293,
@@ -97,6 +103,12 @@ Field_Chunk :: struct {
 	block_light:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	sky_light:    [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	dirty:        bool,
+	// The surface waves changed what the chunk's finest mesh reads (0294,
+	// mark_field_wave_changes): it meshes again on the waves' own budget,
+	// after every dirty chunk (schedule_field_jobs), oldest mark first: the
+	// tick of the mark it waits on (mark_field_wave_reach). Never saved.
+	wave_dirty:      bool,
+	wave_dirty_tick: u64,
 	// A tick wrote the chunk since it was generated (note_field_chunk_change):
 	// the save writes it whole (0179). The hash of its terrain and water
 	// (field_chunk_state_hash), current while hash_current.
@@ -159,6 +171,10 @@ Field_World :: struct {
 	water_sea_seeds:    [dynamic]Sample_Coordinate,
 	water_to_sea:       i64,
 	water_body_counts:  Water_Body_Counts,
+	// The tick's water events for the surface waves (0294,
+	// push_field_water_event): cleared at the top of step_field_water,
+	// capped at MAXIMUM_FIELD_WATER_EVENTS; not saved, not hashed.
+	water_events:       [dynamic]Field_Water_Event,
 }
 
 sample_spacing_is_valid :: proc(millimetres: int) -> bool {
@@ -265,7 +281,8 @@ field_world_get_sample :: proc(world: ^Field_World, sample: Sample_Coordinate) -
 }
 
 // Sets a sample in a loaded chunk and marks every chunk whose mesh can
-// read it dirty. Returns false when the chunk is not loaded.
+// read it dirty (its water's look reads three samples deep,
+// mark_field_look_dirty). Returns false when the chunk is not loaded.
 field_world_set_sample :: proc(world: ^Field_World, sample: Sample_Coordinate, value: Field_Sample) -> bool {
 	chunk := world.chunks[sample_to_field_chunk_coordinate(sample)] or_else nil
 	if chunk == nil {
@@ -274,9 +291,8 @@ field_world_set_sample :: proc(world: ^Field_World, sample: Sample_Coordinate, v
 	index := sample_to_field_index(sample)
 	was_ground := chunk.density[index] > 0
 	field_chunk_set_sample(chunk, index, value)
-	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
-	world.edited_chunks[chunk.coordinate] = {}
-	follow_field_terrain_with_water(world, chunk, index, sample)
+	mark_field_look_dirty(world, chunk.coordinate, sample)
+	follow_field_terrain_with_water(world, chunk, index, sample, was_ground)
 	follow_field_terrain_with_light(world, chunk, index, sample, was_ground)
 	return true
 }
@@ -357,6 +373,7 @@ destroy_field_world :: proc(world: ^Field_World) {
 	delete(world.chunks)
 	delete(world.edited_chunks)
 	delete(world.water_awake_chunks)
+	delete(world.water_events)
 	destroy_field_lighting(&world.light)
 	destroy_water_bodies(world)
 	world^ = {}

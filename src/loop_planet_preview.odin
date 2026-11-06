@@ -732,8 +732,10 @@ start_planet_preview_session :: proc(config: Game_Config, content: Game_Content,
 		return nil, "the data has no planet to preview"
 	}
 	if problem == "" {
-		// The preview's walk has no fall (0200).
+		// The preview's walk has no fall (0200) and its water no surface
+		// waves (0294).
 		session.simulation.field.arrival = {}
+		session.field_waves.tuning.on = false
 	}
 	return session, problem
 }

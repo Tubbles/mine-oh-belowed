@@ -125,12 +125,18 @@ test_a_server_ticks_without_a_window :: proc(t: ^testing.T) {
 	defer free(session)
 	defer destroy_lockstep(&session.lockstep)
 	defer destroy_session_network(&session.network)
+	// A server meshes nothing, so its waves are off and its streaming
+	// gathers none (0294), whatever the data says.
+	session.field_waves.tuning.on = true
+	defer destroy_field_waves(&session.field_waves)
 	server: Server_State
 	if !testing.expect_value(t, start_server(&server, session, Game_Content{simulation_content = content}, 0, LOOPBACK_HOSTING_PLAN), "") {
 		return
 	}
 	testing.expect_value(t, session.network.role, Network_Role.Host)
 	testing.expect_value(t, lockstep_local_player(session.lockstep), NO_PLAYER)
+	testing.expect(t, !session.field_waves.tuning.on)
+	testing.expect(t, field_waves_drawn(&session.field_waves) == nil)
 	start_tick := session.simulation.tick
 	ran := 0
 	for _ in 0 ..< 30 {

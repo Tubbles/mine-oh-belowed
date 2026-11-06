@@ -127,6 +127,9 @@ Game_Config :: struct {
 	// The sun and the torchlight on the field (0297,
 	// render_point_lights.odin, sun_and_torchlight_problem).
 	sun_and_torchlight:               Sun_And_Torchlight_Config,
+	// The water's surface waves (0294, render_field_waves.odin,
+	// water_look_problem).
+	water_look:                       Water_Look_Config,
 }
 
 // A footprint in cells: width along the model's x, depth along its z,
@@ -167,6 +170,19 @@ Sun_And_Torchlight_Config :: struct {
 	torchlight_inner_cone_degrees: int,
 	torchlight_outer_cone_degrees: int,
 	torchlight_range_metres:       int,
+}
+
+// The water's look (work item 0294, doc/presentation.md, The water's
+// look): the surface waves on or off, and in percent the wave equation's
+// c²dt²/dx², the damping a tick, the height clamp of a sample and the
+// kick a full sample of arriving water gives, in percent of a sample a
+// tick. waves reads false (off) when missing.
+Water_Look_Config :: struct {
+	waves:                bool,
+	wave_speed_percent:   int,
+	wave_damping_percent: int,
+	wave_clamp_percent:   int,
+	wave_kick_percent:    int,
 }
 
 // The atmosphere the pod falls through (work item 0269,
@@ -805,6 +821,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := sun_and_torchlight_problem(config.sun_and_torchlight); problem != "" {
 		return problem
 	}
+	if problem := water_look_problem(config.water_look); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
 }
 
@@ -991,6 +1010,25 @@ sun_and_torchlight_problem :: proc(config: Sun_And_Torchlight_Config) -> string 
 	}
 	if config.torchlight_outer_cone_degrees <= config.torchlight_inner_cone_degrees {
 		return fmt.tprintf("sun_and_torchlight.torchlight_outer_cone_degrees %d is not above torchlight_inner_cone_degrees %d", config.torchlight_outer_cone_degrees, config.torchlight_inner_cone_degrees)
+	}
+	return ""
+}
+
+// Every water_look percent inside its bound (0294): the speed to the wave
+// equation's stability limit (50), the damping short of 100 (which would
+// never rest), the clamp to half a sample, the kick to a sample a tick. A
+// missing table reads as zeros and fails on the speed.
+water_look_problem :: proc(config: Water_Look_Config) -> string {
+	bounds := [?]Config_Bound {
+		{"water_look.wave_speed_percent", config.wave_speed_percent, 1, 50},
+		{"water_look.wave_damping_percent", config.wave_damping_percent, 50, 99},
+		{"water_look.wave_clamp_percent", config.wave_clamp_percent, 1, 50},
+		{"water_look.wave_kick_percent", config.wave_kick_percent, 1, 100},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
 	}
 	return ""
 }

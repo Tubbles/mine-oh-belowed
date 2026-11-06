@@ -279,3 +279,17 @@ sun_and_torchlight = {
 	torchlight_outer_cone_degrees = 36
 	torchlight_range_metres = 40
 }
+// The water's look (0294, doc/presentation.md, The water's look): the
+// surface wave layer, presentation only, never in the simulation or the
+// hash. waves turns it off; the others are percents: the wave equation's
+// c²dt²/dx² (1 to 50, 50 is the stability limit), the damping a tick (50
+// to 99; 100 would never rest), the height clamp in percent of a sample
+// (1 to 50) and the kick a full sample of arriving water gives the
+// velocity (1 to 100, in percent of a sample a tick).
+water_look = {
+	waves = true
+	wave_speed_percent = 25
+	wave_damping_percent = 98
+	wave_clamp_percent = 15
+	wave_kick_percent = 20
+}

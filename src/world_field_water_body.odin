@@ -88,6 +88,10 @@ Water_Body :: struct {
 	level:         i64,
 	// The level the bytes were last written for (write_water_body_fills).
 	written_level: i64,
+	// The level the body's chunks were last marked to mesh at (0294,
+	// write_water_body_fills, FIELD_WATER_LOOK_LEVEL_STEP); min(i64) on a
+	// fresh or loaded body. Derived, not saved.
+	meshed_level:  i64,
 	seed, spill:   Sample_Coordinate,
 	// The sill; max(i64) when sealed or capped (no spill).
 	spill_level:   i64,
@@ -170,7 +174,7 @@ make_sea_water_body :: proc(world: ^Field_World) {
 	if world.water_model != .Bodies || len(world.water_bodies) > 0 {
 		return
 	}
-	append(&world.water_bodies, Water_Body{alive = true, sea = true, level = world.water_planet.sea_level, spill_level = max(i64), spill_volume = max(i64)})
+	append(&world.water_bodies, Water_Body{alive = true, sea = true, level = world.water_planet.sea_level, meshed_level = world.water_planet.sea_level, spill_level = max(i64), spill_volume = max(i64)})
 }
 
 // The lowest dead slot above the sea, else a new one; false when the
@@ -386,16 +390,29 @@ relevel_water_body :: proc(world: ^Field_World, id: Water_Body_Id) {
 
 // The bytes of the body's still samples (asleep, or a spring) to the fill
 // under its level, the sea's expression, when the level crossed a band or
-// with force. Front water in its air (awake) is left alone.
+// with force. Front water in its air (awake) is left alone. The mesher
+// draws the body's plane from the level itself (0294), so its chunks are
+// marked to mesh again whenever the level moved a look step since they
+// last were, whatever the bands do.
 write_water_body_fills :: proc(world: ^Field_World, id: Water_Body_Id, force: bool) {
 	body := &world.water_bodies[id]
 	if body.sea {
 		return
 	}
+	owner := water_owner_of(id)
+	if body.meshed_level == min(i64) || abs(body.level - body.meshed_level) >= FIELD_WATER_LOOK_LEVEL_STEP {
+		for coordinate in body.chunks {
+			bits := FIELD_LOOK_REACH_SELF
+			if chunk := world.chunks[coordinate] or_else nil; chunk != nil {
+				bits |= field_look_owned_reach(chunk, owner)
+			}
+			mark_field_look_reach(world, coordinate, bits)
+		}
+		body.meshed_level = body.level
+	}
 	if !force && floor_divide_i64(body.level, WATER_BODY_BAND) == floor_divide_i64(body.written_level, WATER_BODY_BAND) {
 		return
 	}
-	owner := water_owner_of(id)
 	for coordinate in body.chunks {
 		chunk := world.chunks[coordinate] or_else nil
 		if chunk == nil {
@@ -572,6 +589,8 @@ release_water_body_samples :: proc(world: ^Field_World, id: Water_Body_Id) {
 		if chunk == nil {
 			continue
 		}
+		// The released samples draw the flood's plane (0294).
+		mark_field_look_reach(world, coordinate, FIELD_LOOK_REACH_SELF | field_look_owned_reach(chunk, owner))
 		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 			if chunk.water_owner[index] == owner {
 				chunk.water_owner[index] = WATER_OWNER_RELEASED
@@ -704,6 +723,7 @@ claim_water_flood_sample :: proc(world: ^Field_World, id: Water_Body_Id, chunk: 
 	}
 	chunk.water_owner[index] = water_owner_of(id)
 	note_field_chunk_change(chunk)
+	note_water_owner_change(world, chunk, field_chunk_sample(chunk, index))
 	body := &world.water_bodies[id]
 	add_water_body_cell(body, &body.loaded, span)
 	insert_sorted_field_chunk(&body.chunks, chunk.coordinate)
@@ -799,6 +819,7 @@ finish_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning)
 			}
 			chunk.water_owner[index] = WATER_OWNER_NONE
 			note_field_chunk_change(chunk)
+			note_water_owner_change(world, chunk, field_chunk_sample(chunk, index))
 			if chunk.water[index] > 0 && !field_sample_bit(&chunk.water_awake, index) {
 				world.water_bodies[id].volume -= i64(chunk.water[index])
 				force_wake_field_water_sample(world, chunk, index)
@@ -918,6 +939,7 @@ seed_water_body :: proc(world: ^Field_World, sample: Sample_Coordinate, tuning: 
 		seed         = sample,
 		spill_level  = max(i64),
 		spill_volume = max(i64),
+		meshed_level = min(i64),
 	}
 	world.water_body_counts.seeded += 1
 	if !start_water_body_flood(world, id, tuning, true) {
@@ -1008,10 +1030,13 @@ merge_water_bodies :: proc(world: ^Field_World, survivor, absorbed: Water_Body_I
 	from, to := water_owner_of(absorbed), water_owner_of(survivor)
 	for coordinate in gone.chunks {
 		insert_sorted_field_chunk(&kept.chunks, coordinate)
+		// The absorbed samples take the survivor's plane (0294).
 		chunk := world.chunks[coordinate] or_else nil
 		if chunk == nil {
+			world.edited_chunks[coordinate] = {}
 			continue
 		}
+		mark_field_look_reach(world, coordinate, FIELD_LOOK_REACH_SELF | field_look_owned_reach(chunk, from))
 		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 			if chunk.water_owner[index] == from {
 				chunk.water_owner[index] = to
@@ -1028,7 +1053,7 @@ merge_water_bodies :: proc(world: ^Field_World, survivor, absorbed: Water_Body_I
 
 // 0295's intake: takes up to amount from the body (the level and the
 // bytes follow); returns what was taken. intake is the sample the pump
-// draws at (0294 and 0295 read it).
+// draws at: the surface waves' pump event (0294) and 0295 read it.
 displace_water_body_volume :: proc(world: ^Field_World, id: Water_Body_Id, intake: Sample_Coordinate, amount: i64) -> i64 {
 	body := &world.water_bodies[id]
 	if body.sea || !body.alive || amount <= 0 {
@@ -1037,6 +1062,9 @@ displace_water_body_volume :: proc(world: ^Field_World, id: Water_Body_Id, intak
 	taken := min(amount, max(body.volume, 0))
 	body.volume -= taken
 	relevel_water_body(world, id)
+	if taken > 0 {
+		push_field_water_event(world, .Pump, intake, i32(min(taken, i64(max(i32)))))
+	}
 	return taken
 }
 
@@ -1102,6 +1130,7 @@ claim_sea :: proc(world: ^Field_World) {
 		}
 		chunk.water_owner[index] = WATER_OWNER_SEA
 		note_field_chunk_change(chunk)
+		note_water_owner_change(world, chunk, sample)
 		write_field_water_quiet(world, chunk, index, sample, field_sea_fill(world.water_planet.sea_level, span))
 		if !field_sample_bit(&chunk.water_source, index) && field_sample_bit(&chunk.water_awake, index) {
 			sleep_field_water_sample(chunk, index)
