@@ -1,6 +1,6 @@
 # 0298: A thin lake settles under bodies
 
-Status: todo (2026-11-06)
+Status: designing (2026-11-06)
 
 Milestone: the water tech demo (0291); found while implementing 0295, a follow-up to 0293.
 
