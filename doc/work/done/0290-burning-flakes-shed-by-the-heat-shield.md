@@ -1,6 +1,6 @@
 # 0290: Burning flakes shed by the heat shield
 
-Status: verified (2026-11-06)
+Status: landed (2026-11-06, 6bd9804)
 
 ## Goal
 
