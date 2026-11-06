@@ -236,7 +236,7 @@ arrival_flake_vertex_color :: proc(flake: Arrival_Flake) -> [4]u8 {
 // either: they draw in slot order, so where two flakes overlap a plate
 // drawn later darkens a nearer flake's light, which the flakes'
 // sparseness keeps rare. Nothing without flakes or the shader.
-draw_arrival_flakes :: proc(presentation: ^Arrival_Presentation, flakes: []Arrival_Flake, body: matrix[4, 4]f32, pitch_metres: f32, eye: [3]f32, haze, ablator: [3]f32) {
+draw_arrival_flakes :: proc(presentation: ^Arrival_Presentation, flakes: []Arrival_Flake, body: matrix[4, 4]f32, pitch_metres: f32, eye: [3]f32, haze, ablator, core: [3]f32) {
 	if len(flakes) == 0 || !presentation.flake_ready {
 		return
 	}
@@ -250,6 +250,7 @@ draw_arrival_flakes :: proc(presentation: ^Arrival_Presentation, flakes: []Arriv
 	rl.BeginShaderMode(shader)
 	set_shader_vector3(shader, "haze_color", haze)
 	set_shader_vector3(shader, "ablator_color", ablator)
+	set_shader_vector3(shader, "core_color", core)
 	rlgl.SetTexture(rlgl.GetTextureIdDefault())
 	rlgl.Begin(rlgl.QUADS)
 	for flake in flakes {

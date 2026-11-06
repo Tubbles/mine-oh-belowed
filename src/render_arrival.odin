@@ -45,14 +45,13 @@ ARRIVAL_BUFFET_HERTZ :: 7.3
 // Each porthole's light (0273): the ablator's share of its colour, its
 // brightness at heat 1 and flicker 1, its reach and how far into the
 // cabin it sits from the outer pane, in cells (0.35 from the lining,
-// where 0273 put it, 0288).
-ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE :: 0.3
+// where 0273 put it, 0288). The ablator's share of the light's colour is
+// the wake's ramp at ARRIVAL_WAKE_REFERENCE_INTENSITY, the colour the
+// chair's porthole shows (0305).
+ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE :: 0.77
 ARRIVAL_WINDOW_LIGHT_GAIN :: 0.7
 ARRIVAL_WINDOW_LIGHT_RADIUS_CELLS :: 5.0
 ARRIVAL_WINDOW_LIGHT_INSET_CELLS :: 0.73
-// The white a flare whitens the window light towards: arrival_wake.fs's
-// WHITE_CORE.
-ARRIVAL_WINDOW_WHITE_LIGHT :: [3]f32{1.0, 0.97, 0.92}
 ARRIVAL_ROAR_SOUND :: "arrival_roar"
 ARRIVAL_CRASH_SOUND :: "arrival_crash"
 HATCH_SLIDE_SOUND :: "hatch_slide"
@@ -303,14 +302,14 @@ arrival_window_flickers :: proc(seconds: f32, count: int, salt: u64, reduced_mot
 	return
 }
 
-// A window light's colour whitened by its flicker (0286): towards
-// ARRIVAL_WINDOW_WHITE_LIGHT by half the flicker's share of the way from
-// FIRE_FLICKER_MEAN to FIRE_FLICKER_HIGHEST, so a flare that whitens the
-// glass whitens the cabin's light. At or below the mean the colour stays
-// as it is.
-arrival_window_light_color :: proc(color: [3]f32, flicker: f32) -> [3]f32 {
+// A window light's colour turned by its flicker (0286, 0305): towards
+// core by half the flicker's share of the way from FIRE_FLICKER_MEAN to
+// FIRE_FLICKER_HIGHEST, so a flare that drives the wake up its ramp
+// turns the cabin's light towards the core colour. At or below the mean
+// the colour stays as it is.
+arrival_window_light_color :: proc(color, core: [3]f32, flicker: f32) -> [3]f32 {
 	share := clamp((flicker - FIRE_FLICKER_MEAN) / (FIRE_FLICKER_HIGHEST - FIRE_FLICKER_MEAN), 0, 1) * 0.5
-	return color + (ARRIVAL_WINDOW_WHITE_LIGHT - color) * share
+	return color + (core - color) * share
 }
 
 // A data colour, 0 to 255 per channel, as 0 to 1.
@@ -321,25 +320,26 @@ arrival_plasma_color :: proc(color: [3]int) -> [3]f32 {
 // Each porthole a point light in the plasma's colour while the pod
 // descends (0273): ARRIVAL_WINDOW_LIGHT_INSET_CELLS into the cabin from
 // the outer pane's centre, its colour the haze mixed with the ablator's
-// share and whitened by a flare (arrival_window_light_color, 0286)
-// times the heat, the window's flicker and the gain, clipped to the
-// pod's box (clip_box), so the cabin is lit and the hull's outside and
-// the terrain are not. None outside the descent or at heat 0. body and
-// pitch_millimetres are the pod's (entity_body_matrix); the caller
-// moves
-// the lights with the lamps (moved_point_light).
+// share and turned towards the core colour by a flare
+// (arrival_window_light_color, 0286) times the heat, the window's
+// flicker and the gain, clipped to the pod's box (clip_box), so the
+// cabin is lit and the hull's outside and the terrain are not. None
+// outside the descent or at heat 0. body and pitch_millimetres are the
+// pod's (entity_body_matrix); the caller moves the lights with the
+// lamps (moved_point_light).
 arrival_window_lights :: proc(view: Arrival_View, body: matrix[4, 4]f32, pitch_millimetres: int, machine: Machine, clip_box: matrix[4, 4]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32) -> (lights: [MAXIMUM_POD_WINDOWS]Point_Light, count: int) {
 	if view.phase != .Descent || view.heat <= 0 {
 		return
 	}
 	haze, ablator := arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color)
 	color := haze + (ablator - haze) * ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE
+	core := arrival_plasma_color(plasma.core_color)
 	radius := ARRIVAL_WINDOW_LIGHT_RADIUS_CELLS * f32(f64(pitch_millimetres) / MILLIMETRES_PER_METRE)
 	for index in 0 ..< min(machine.window_count, MAXIMUM_POD_WINDOWS) {
 		window := machine.windows[index]
 		lights[count] = Point_Light {
 			position = transform_point(body, window.centre + window.normal * ARRIVAL_WINDOW_LIGHT_INSET_CELLS),
-			color    = arrival_window_light_color(color, flickers[index]) * view.heat * flickers[index] * ARRIVAL_WINDOW_LIGHT_GAIN,
+			color    = arrival_window_light_color(color, core, flickers[index]) * view.heat * flickers[index] * ARRIVAL_WINDOW_LIGHT_GAIN,
 			radius   = radius,
 			clip_box = clip_box,
 		}
@@ -533,7 +533,7 @@ draw_arrival_entry :: proc(presentation: ^Arrival_Presentation, view: Arrival_Vi
 		draw_arrival_windows(presentation, view, entities, pod, machine, plasma, salt)
 	}
 	draw_arrival_wake(presentation, view, body, transform, shape, eye_cells, eye, plasma, arrival_wake_flicker(view.seconds, salt, reduced_motion), salt, reduced_motion)
-	draw_arrival_flakes(presentation, flakes, body, pitch_metres, eye, arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color))
+	draw_arrival_flakes(presentation, flakes, body, pitch_metres, eye, arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color), arrival_plasma_color(plasma.core_color))
 	if inside {
 		draw_arrival_windows(presentation, view, entities, pod, machine, plasma, salt)
 	}

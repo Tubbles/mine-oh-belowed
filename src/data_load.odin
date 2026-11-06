@@ -195,17 +195,17 @@ Atmosphere_Config :: struct {
 	top_metres, scale_height_metres: int,
 }
 
-// The entry's plasma on the pod (work items 0273 and 0304,
+// The entry's plasma on the pod (work items 0273, 0304 and 0305,
 // render_arrival.odin, render_arrival_wake.odin, data/shaders/arrival.fs,
-// data/shaders/arrival_wake.fs): the air's glow and the heat shield's,
-// 0 to 255 per channel, the soot's opacity at the glass's rim once the
-// heating is over, in percent, and the wake's.
+// data/shaders/arrival_wake.fs): the air's glow, the heat shield's and
+// the hottest colour (0305), 0 to 255 per channel, the soot's opacity at
+// the glass's rim once the heating is over, in percent, and the wake's.
 Arrival_Plasma_Config :: struct {
-	haze_color, ablator_color: [3]int,
-	soot_percent:              int,
+	haze_color, ablator_color, core_color: [3]int,
+	soot_percent:                          int,
 	// The wake's opacity face on where the chair's porthole looks at the
 	// peak, in percent (0304).
-	wake_opacity_percent:      int,
+	wake_opacity_percent:                  int,
 }
 
 // A field chunk is about 270 KiB with its water and light: radius 3 is
@@ -906,7 +906,7 @@ MINIMUM_ARRIVAL_WAKE_OPACITY_PERCENT :: 5
 MAXIMUM_ARRIVAL_WAKE_OPACITY_PERCENT :: 95
 
 // Every arrival value inside its bound; arrival_ticks 0 is no fall, else
-// it holds the hit and one tick of descent; neither plasma colour is
+// it holds the hit and one tick of descent; no plasma colour is
 // black (a missing key reads as black). Then the atmosphere leaves
 // the ground's sky clear and the start lies above its top wherever the
 // crater lies; then the curve (build_arrival_curve): it reaches the
@@ -939,6 +939,9 @@ arrival_problem :: proc(config: Game_Config) -> string {
 		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[0], 0, MAXIMUM_COLOR_COMPONENT},
 		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[1], 0, MAXIMUM_COLOR_COMPONENT},
 		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[2], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.core_color", config.arrival_plasma.core_color[0], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.core_color", config.arrival_plasma.core_color[1], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.core_color", config.arrival_plasma.core_color[2], 0, MAXIMUM_COLOR_COMPONENT},
 		{"arrival_plasma.soot_percent", config.arrival_plasma.soot_percent, 0, MAXIMUM_ARRIVAL_SOOT_PERCENT},
 		{"arrival_plasma.wake_opacity_percent", config.arrival_plasma.wake_opacity_percent, MINIMUM_ARRIVAL_WAKE_OPACITY_PERCENT, MAXIMUM_ARRIVAL_WAKE_OPACITY_PERCENT},
 	}
@@ -950,7 +953,7 @@ arrival_problem :: proc(config: Game_Config) -> string {
 	plasma_colors := [?]struct {
 		name:  string,
 		color: [3]int,
-	}{{"haze_color", config.arrival_plasma.haze_color}, {"ablator_color", config.arrival_plasma.ablator_color}}
+	}{{"haze_color", config.arrival_plasma.haze_color}, {"ablator_color", config.arrival_plasma.ablator_color}, {"core_color", config.arrival_plasma.core_color}}
 	for entry in plasma_colors {
 		if entry.color == {0, 0, 0} {
 			return fmt.tprintf("arrival_plasma.%s is black", entry.name)

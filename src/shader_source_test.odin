@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:strconv"
 import "core:strings"
@@ -245,18 +246,33 @@ test_the_flame_shaders_read_the_fire_flicker_bounds :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(fragment, mean), "flame.fs does not hold %s", mean)
 }
 
-// Work items 0290 and 0304: the flake shader's white is the wake's, and
-// its vertex shader decodes the brightness over ARRIVAL_FLAKE_BRIGHTEST.
+// Work items 0290, 0304 and 0305: the wake's and the flakes' hottest
+// colour is the data's core colour, no fixed white or violet, and the
+// flake's vertex shader decodes the brightness over
+// ARRIVAL_FLAKE_BRIGHTEST.
 @(test)
-test_the_flake_shaders_share_the_white_core_and_the_brightest :: proc(t: ^testing.T) {
+test_the_flake_shaders_take_the_core_colour_and_the_brightest :: proc(t: ^testing.T) {
 	vertex := #load("../data/shaders/arrival_flake.vs", string)
 	fragment := #load("../data/shaders/arrival_flake.fs", string)
 	plasma := #load("../data/shaders/arrival_wake.fs", string)
-	white := "const vec3 WHITE_CORE = vec3(1.0, 0.97, 0.92);"
 	brightest := fmt.tprintf("const float flake_brightest = %.1f;", ARRIVAL_FLAKE_BRIGHTEST)
-	testing.expectf(t, strings.contains(plasma, white), "arrival_wake.fs does not hold %s", white)
-	testing.expectf(t, strings.contains(fragment, white), "arrival_flake.fs does not hold %s", white)
+	testing.expect(t, !strings.contains(plasma, "WHITE_CORE"), "arrival_wake.fs still holds WHITE_CORE")
+	testing.expect(t, !strings.contains(fragment, "WHITE_CORE"), "arrival_flake.fs still holds WHITE_CORE")
+	testing.expect(t, !strings.contains(plasma, "VIOLET_SHADE"), "arrival_wake.fs still holds VIOLET_SHADE")
+	testing.expect(t, strings.contains(fragment, "\nuniform vec3 core_color;\n"), "arrival_flake.fs does not declare uniform vec3 core_color;")
 	testing.expectf(t, strings.contains(vertex, brightest), "arrival_flake.vs does not hold %s", brightest)
+}
+
+// Work item 0305: the porthole's light is the wake's colour where the
+// chair's porthole looks, the ramp's share of the ablator at the
+// reference intensity.
+@(test)
+test_the_window_light_is_the_wake_at_the_porthole :: proc(t: ^testing.T) {
+	source := #load("../data/shaders/arrival_wake.fs", string)
+	scale, found := shader_float_constant(source, "RAMP_ORANGE_SCALE")
+	testing.expect(t, found, "arrival_wake.fs does not hold RAMP_ORANGE_SCALE")
+	share := 1 - math.exp(-f32(ARRIVAL_WAKE_REFERENCE_INTENSITY) / scale)
+	testing.expectf(t, abs(share - ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE) < 0.01, "the ramp reads %v of the ablator at the reference intensity, the light %v", share, ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE)
 }
 
 // A shader's float constant: the text after `const float <name> = ` up
@@ -281,7 +297,7 @@ shader_float_constant :: proc(source, name: string) -> (value: f32, found: bool)
 test_the_wake_shader_takes_its_uniforms :: proc(t: ^testing.T) {
 	source := #load("../data/shaders/arrival_wake.fs", string)
 	floats := [?]string{"heat", "seconds", "flicker", "calm", "flame_seed", "layer", "opacity_scale", "circumference_cells", "half_light_cells", "length_cells"}
-	vectors := [?]string{"eye_position", "wake_origin", "wake_axis", "haze_color", "ablator_color"}
+	vectors := [?]string{"eye_position", "wake_origin", "wake_axis", "haze_color", "ablator_color", "hot_color", "core_color"}
 	for name in floats {
 		declaration := fmt.tprintf("\nuniform float %s;\n", name)
 		testing.expectf(t, strings.contains(source, declaration), "arrival_wake.fs does not declare %s", strings.trim_space(declaration))

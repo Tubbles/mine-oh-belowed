@@ -245,17 +245,22 @@ atmosphere = {
 	top_metres = 650
 	scale_height_metres = 145
 }
-// The entry's plasma on the pod (0273, 0304): haze_color is the air's
-// glow (pink violet, nitrogen), ablator_color the heat shield's
-// (orange), 0 to 255 per channel, never black, the heat drives their
-// brightness, never their hue. soot_percent (0 to 60) is the soot's
-// opacity at the glass's rim once the heating is over, kept after the
-// landing. wake_opacity_percent (5 to 95) is the wake's opacity face on
-// where the chair's porthole looks at the peak; lower shows the pod
-// through its flames from outside and the sky through the porthole.
+// The entry's plasma on the pod (0273, 0304): its colours are Kerbal
+// Space Program's reentry (0305). haze_color is the air's glow (red, the
+// wake where its light is faint), ablator_color the heat shield's
+// (orange, its rim and the wake's bright body), core_color the hottest
+// (yellow white, the shield's face, the sparks and the flakes' rims), 0
+// to 255 per channel, never black; the heat drives the wake's opacity
+// and its place between them, never their hue. soot_percent (0 to 60)
+// is the soot's opacity at the glass's rim once the heating is over,
+// kept after the landing. wake_opacity_percent (5 to 95) is the wake's
+// opacity face on where the chair's porthole looks at the peak; lower
+// shows the pod through its flames from outside and the sky through the
+// porthole.
 arrival_plasma = {
-	haze_color = [240, 118, 200]
-	ablator_color = [255, 142, 56]
+	haze_color = [255, 28, 6]
+	ablator_color = [255, 92, 30]
+	core_color = [255, 248, 150]
 	soot_percent = 35
 	wake_opacity_percent = 60
 }

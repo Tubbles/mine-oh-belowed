@@ -247,7 +247,7 @@ test_a_moved_light_keeps_its_clip_box :: proc(t: ^testing.T) {
 // at heat 0 or once settled), in the haze mixed with the ablator's share
 // times the flicker and the gain, inset into the cabin along the normal
 // and clipped to the pod. At the flicker's mean its hue is that mix, at
-// the highest half way to white.
+// the highest half way to the core colour.
 @(test)
 test_the_window_light_follows_the_heat :: proc(t: ^testing.T) {
 	machine: Machine
@@ -285,8 +285,9 @@ test_the_window_light_follows_the_heat :: proc(t: ^testing.T) {
 		flicker = FIRE_FLICKER_HIGHEST
 	}
 	flare, _ := arrival_window_lights({phase = .Descent, heat = 1}, body, 1000, machine, clip_box, plasma, flickers)
-	whitened := (mixed + ARRIVAL_WINDOW_WHITE_LIGHT) * 0.5
-	testing.expectf(t, linalg.length(flare[0].color - whitened * FIRE_FLICKER_HIGHEST * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "the flare's light is %v", flare[0].color)
+	core := arrival_plasma_color(plasma.core_color)
+	turned := (mixed + core) * 0.5
+	testing.expectf(t, linalg.length(flare[0].color - turned * FIRE_FLICKER_HIGHEST * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "the flare's light is %v", flare[0].color)
 }
 
 // Work items 0273 and 0286: each porthole's flicker is the shared fire

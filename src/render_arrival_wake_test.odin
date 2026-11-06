@@ -153,6 +153,28 @@ test_the_wake_light_and_opacity :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0305: the wake's colours stay warm, KSP's red, orange, gold
+// and yellow white. Every stop has red the largest, at 0.95 or more, and
+// green over blue (a hue of 0 to 60, so never pink, lilac or violet,
+// which need blue over green), saturated 0.35 or more (never grey or
+// white), green rising against red from stop to stop. The stops suffice:
+// a mix of two neighbours keeps red the largest and green over blue, its
+// saturation near the lesser's.
+@(test)
+test_the_wake_ramp_stays_warm :: proc(t: ^testing.T) {
+	stops := arrival_wake_ramp_stops(shipped_arrival_config().arrival_plasma)
+	previous_green_share: f32 = -1
+	for stop, index in stops {
+		testing.expectf(t, stop.r >= 0.95, "stop %d's red is %v", index, stop.r)
+		testing.expectf(t, stop.r >= stop.g && stop.g >= stop.b, "stop %d is %v, not red over green over blue", index, stop)
+		saturation := 1 - stop.b / stop.r
+		testing.expectf(t, saturation >= 0.35, "stop %d's saturation is %v", index, saturation)
+		green_share := stop.g / stop.r
+		testing.expectf(t, green_share > previous_green_share, "stop %d's green share %v does not rise past %v", index, green_share, previous_green_share)
+		previous_green_share = green_share
+	}
+}
+
 // The eye, the origin and the axis the shader reads are in the moved
 // space: kept under the identity, turned and moved by a transform alike,
 // the axis unit.

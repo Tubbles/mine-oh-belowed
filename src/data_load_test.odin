@@ -129,6 +129,14 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 	black := config
 	black.arrival_plasma.ablator_color = {0, 0, 0}
 	testing.expect(t, strings.contains(arrival_problem(black), "is black"), "a black colour is named")
+	// Work item 0305: the core colour, bounded and never black as the
+	// others.
+	hot := config
+	hot.arrival_plasma.core_color[2] = 256
+	testing.expect(t, strings.contains(arrival_problem(hot), "arrival_plasma.core_color"), "a core channel of 256 is named")
+	unlit := config
+	unlit.arrival_plasma.core_color = {0, 0, 0}
+	testing.expect(t, strings.contains(arrival_problem(unlit), "arrival_plasma.core_color is black"), "a black core colour is named")
 	sooty := config
 	sooty.arrival_plasma.soot_percent = MAXIMUM_ARRIVAL_SOOT_PERCENT + 1
 	testing.expect(t, strings.contains(arrival_problem(sooty), "arrival_plasma.soot_percent"), "soot of 61 percent is named")

@@ -16,10 +16,11 @@
 // Following DESIGN.md, Fire, the look is 0288's sheath carried onto the
 // tube in cells: the tongues (a slow and a fast layer crossfaded by the
 // heat), the haze, the chemistry and the sparks streaming aft, the
-// colour a fixed ramp of the two data colours read by the local
-// intensity (plasma_ramp), the flicker (fire_flicker, one for the wake)
-// raising the brightness, the tongues' reach and the sparks' rate
-// together. Round the tube every noise wraps a whole number of its cells
+// colour a ramp of the data colours read by the local intensity at full
+// value, so the light falls by the opacity alone (plasma_ramp, 0305),
+// the flicker (fire_flicker, one for the wake) raising the brightness,
+// the tongues' reach and the sparks' rate together. Round the tube
+// every noise wraps a whole number of its cells
 // (wrapped_noise), so the seam never shows, and the finer octaves and
 // the sparks fade where a noise cell would cover under 3 px (detail), so
 // the tube seen from afar does not shimmer. Under reduced motion (calm
@@ -49,15 +50,22 @@ uniform vec3 wake_origin;
 uniform vec3 wake_axis;
 uniform vec3 haze_color;
 uniform vec3 ablator_color;
+uniform vec3 hot_color;
+uniform vec3 core_color;
 
 out vec4 final_color;
 
 // The flicker's mean, FIRE_FLICKER_MEAN in render_flames.odin.
 const float FLICKER_MEAN = 0.85;
-const vec3 WHITE_CORE = vec3(1.0, 0.97, 0.92);
-// The dim haze: the haze colour times this, darker and bluer (the
-// ionised nitrogen's blue lines).
-const vec3 VIOLET_SHADE = vec3(0.42, 0.30, 0.66);
+// The ramp by the light (KSP's trail, 0305): the hue at each light as
+// KSP's on its dark sky, from the haze's red towards the ablator's
+// orange by 1 - exp(-intensity / RAMP_ORANGE_SCALE), so the porthole's
+// 0.8 reads 0.77 of the way to orange (ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE
+// in render_arrival.odin), then towards the hot gold from RAMP_HOT_FROM
+// to RAMP_HOT_FULL, which only the root's silhouettes reach.
+const float RAMP_ORANGE_SCALE = 0.55;
+const float RAMP_HOT_FROM = 2.5;
+const float RAMP_HOT_FULL = 6.0;
 // The flow's speeds aft in cells a second, 0288's in glass radii times
 // the 0.385 cells a glass radius spans on the wall the chair's porthole
 // frames (0304), from Orion's window footage, where a streak never shows
@@ -181,8 +189,8 @@ float streak_noise(float share, float along, float speed, vec3 seed, float pace,
 // and its tail towards the rim, faded over the last 0.15 of the cell on
 // each side along it so no spark is cut at a cell's edge, appearing and
 // burning out over its life. Returns the spark's value and writes its
-// colour's white share.
-float spark_layer(vec2 point, uint period, float rate, float life_rate, vec2 seed, float pace, out float white_share)
+// colour's core share.
+float spark_layer(vec2 point, uint period, float rate, float life_rate, vec2 seed, float pace, out float core_share)
 {
     vec2 shifted = point + seed + vec2(4.0, 0.0);
     vec2 base = floor(shifted);
@@ -192,7 +200,7 @@ float spark_layer(vec2 point, uint period, float rate, float life_rate, vec2 see
     uint epoch = uint(int(floor(age)));
     float life = fract(age);
     float lit = cell_hash(uvec3(cell, epoch * 4u));
-    white_share = cell_hash(uvec3(cell, epoch * 4u + 1u));
+    core_share = cell_hash(uvec3(cell, epoch * 4u + 1u));
     if (lit >= rate)
     {
         return 0.0;
@@ -205,24 +213,21 @@ float spark_layer(vec2 point, uint period, float rate, float life_rate, vec2 see
     return exp(-offset.x * offset.x * 90.0) * trail * edge_fade * envelope;
 }
 
-// The fire's ramp by the local intensity: dim violet, the haze's pink,
-// salmon, the ablator's orange, white.
+// The fire's ramp by the local intensity (0305, KSP's trail): the haze's
+// red, the ablator's orange, the hot gold, every stop at full value.
 vec3 plasma_ramp(float intensity)
 {
-    vec3 dim = haze_color * VIOLET_SHADE;
-    vec3 salmon = mix(haze_color, ablator_color, 0.55);
-    vec3 c = mix(dim, haze_color, smoothstep(0.05, 0.4, intensity));
-    c = mix(c, salmon, smoothstep(0.4, 0.75, intensity));
-    c = mix(c, ablator_color, smoothstep(0.7, 1.0, intensity));
-    return mix(c, WHITE_CORE, smoothstep(1.05, 1.6, intensity));
+    vec3 c = mix(haze_color, ablator_color, 1.0 - exp(-max(intensity, 0.0) / RAMP_ORANGE_SCALE));
+    return mix(c, hot_color, smoothstep(RAMP_HOT_FROM, RAMP_HOT_FULL, intensity));
 }
 
 // The shell's colour and opacity at the intensity on the view's path,
 // patches richer in the ablator's products running higher on the ramp;
-// not premultiplied.
+// not premultiplied. The colour keeps its full value, so the light
+// falls by the opacity alone and the wake fades to clear on a bright sky.
 vec4 shell(float intensity, float chemistry)
 {
-    vec3 c = plasma_ramp(intensity + 0.18 * (chemistry - 0.5)) * clamp(0.35 + 0.75 * intensity, 0.0, 1.15);
+    vec3 c = plasma_ramp(intensity + 0.18 * (chemistry - 0.5));
     float alpha = 1.0 - exp(-opacity_scale * intensity);
     return vec4(c, alpha);
 }
@@ -240,12 +245,16 @@ void main()
     float heat_light = flicker * (0.55 + 0.6 * heat);
 
     // The shield's glow under the base: brightest at the centre, seen
-    // through the disc's thickness along the axis.
+    // through the disc's thickness along the axis, its face turned
+    // towards the core colour inside an orange rim as the heat rises
+    // (0305, KSP's ring about the outer tenth of the radius).
     if (layer > 0.5)
     {
         float glow = wrapped_noise(vec3(round_tube(share, 1.0), along * 3.0, seconds * 2.3 * pace) + seed3, wake_period(1.0));
         float face = (1.25 - 0.35 * along * along + 0.2 * (glow - 0.5)) * smoothstep(0.0, 0.35, heat) * heat_light;
         vec4 shield = shell(face / max(abs(dot(view, wake_axis)), COS_FLOOR), glow);
+        float core_share = (1.0 - smoothstep(0.78, 0.95, along)) * smoothstep(0.3, 0.8, heat);
+        shield.rgb = mix(shield.rgb, core_color, core_share);
         final_color = vec4(shield.rgb * shield.a, shield.a);
         return;
     }
@@ -301,13 +310,13 @@ void main()
     float spark_fast_life = calm > 0.5 ? 6.5 : SPARK_FAST_LIFE;
     uint first_period = wake_period(28.6);
     uint second_period = wake_period(44.2);
-    float first_white;
-    float second_white;
-    float first = spark_layer(vec2(share * float(first_period), (along - seconds * spark_speed * pace) * 2.6), first_period, 0.22 * spark_rate, spark_life, seed3.xy + vec2(3.3, 8.9), pace, first_white) * detail(footprint, 28.6);
-    float second = spark_layer(vec2(share * float(second_period), (along - seconds * spark_fast_speed * pace) * 3.25), second_period, 0.14 * spark_rate, spark_fast_life, seed3.xy + vec2(21.1, 5.7), pace, second_white) * detail(footprint, 44.2);
+    float first_core;
+    float second_core;
+    float first = spark_layer(vec2(share * float(first_period), (along - seconds * spark_speed * pace) * 2.6), first_period, 0.22 * spark_rate, spark_life, seed3.xy + vec2(3.3, 8.9), pace, first_core) * detail(footprint, 28.6);
+    float second = spark_layer(vec2(share * float(second_period), (along - seconds * spark_fast_speed * pace) * 3.25), second_period, 0.14 * spark_rate, spark_fast_life, seed3.xy + vec2(21.1, 5.7), pace, second_core) * detail(footprint, 44.2);
     float spark = max(first, second);
-    float white_share = first >= second ? first_white : second_white;
-    vec3 spark_color = mix(ablator_color, WHITE_CORE, 0.35 + 0.5 * white_share) * (0.8 + 0.3 * flicker);
+    float spark_core = first >= second ? first_core : second_core;
+    vec3 spark_color = mix(ablator_color, core_color, 0.35 + 0.5 * spark_core) * (0.8 + 0.3 * flicker);
     vec3 c = min(mix(wake.rgb, spark_color, spark), vec3(1.0));
     float alpha = max(wake.a, spark);
     final_color = vec4(c * alpha, alpha);

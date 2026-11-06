@@ -33,6 +33,12 @@ ARRIVAL_WAKE_SHIELD_DROP_CELLS :: 0.03
 // The mean intensity 0288's sheath showed on the chair's glass at the
 // peak, so wake_opacity_percent is the mean opacity there.
 ARRIVAL_WAKE_REFERENCE_INTENSITY :: 0.8
+// The hot stop's share of the way from the ablator to the core colour:
+// the gold where KSP's trail leaves the rim (0305).
+ARRIVAL_WAKE_HOT_SHARE :: 0.3
+// The colours the wake's shader mixes: the haze, the ablator and the hot
+// gold (the ramp's three), then the core (the disc and the sparks).
+ARRIVAL_WAKE_RAMP_STOPS :: 4
 
 // The wake's shape in cells: the tube's vertex radius (its flats
 // ARRIVAL_WAKE_RIM_CLEARANCE_CELLS outside the rim), its length and the
@@ -149,6 +155,15 @@ arrival_wake_flicker :: proc(seconds: f32, salt: u64, reduced_motion: bool) -> f
 	return fire_flicker(f64(seconds), salt + 60, reduced_motion)
 }
 
+// The wake's colours from the data (0305): the haze, the ablator, the
+// hot gold (the ablator ARRIVAL_WAKE_HOT_SHARE of the way to the core
+// colour) and the core, each 0 to 1. The single source of what the
+// shader mixes.
+arrival_wake_ramp_stops :: proc(plasma: Arrival_Plasma_Config) -> [ARRIVAL_WAKE_RAMP_STOPS][3]f32 {
+	ablator, core := arrival_plasma_color(plasma.ablator_color), arrival_plasma_color(plasma.core_color)
+	return {arrival_plasma_color(plasma.haze_color), ablator, ablator + (core - ablator) * ARRIVAL_WAKE_HOT_SHARE, core}
+}
+
 // The shell's opacity scale for wake_opacity_percent: that opacity at
 // ARRIVAL_WAKE_REFERENCE_INTENSITY (2.01 at 80).
 arrival_wake_opacity_scale :: proc(percent: int) -> f32 {
@@ -241,8 +256,11 @@ draw_arrival_wake :: proc(presentation: ^Arrival_Presentation, view: Arrival_Vie
 	set_shader_vector3(shader, "eye_position", eye_position)
 	set_shader_vector3(shader, "wake_origin", origin)
 	set_shader_vector3(shader, "wake_axis", axis)
-	set_shader_vector3(shader, "haze_color", arrival_plasma_color(plasma.haze_color))
-	set_shader_vector3(shader, "ablator_color", arrival_plasma_color(plasma.ablator_color))
+	stops := arrival_wake_ramp_stops(plasma)
+	set_shader_vector3(shader, "haze_color", stops[0])
+	set_shader_vector3(shader, "ablator_color", stops[1])
+	set_shader_vector3(shader, "hot_color", stops[2])
+	set_shader_vector3(shader, "core_color", stops[3])
 	set_shader_float(shader, "layer", 0)
 	draw_arrival_wake_quads(shape, order[:far_count], body, texture)
 	set_shader_float(shader, "layer", 1)

@@ -1,6 +1,6 @@
 # 0305: The wake's colours from KSP
 
-Status: implementing (2026-11-06)
+Status: verified (2026-11-06)
 
 Milestone: the entry's look, after 0304. The user (2026-11-06), on 0304's captures: "For the color, let's take it from KSP" (`work/reference/0303/ksp_reentry_outside.jpg`). Those captures showed the shield and the wake's root burned to plain white, hiding the pod's lower half, and the wake above its orange band turning a grey lilac that reads as smoke, the porthole paler than 0288's.
 
