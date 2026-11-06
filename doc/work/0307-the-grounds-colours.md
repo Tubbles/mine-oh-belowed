@@ -1,6 +1,6 @@
 # 0307: The ground's colours: grass, rock, sand and snow
 
-Status: designed (2026-11-06)
+Status: implementing (2026-11-06)
 
 Milestone: the world generation series 0306 to 0313, built on 0306's relief. The user (2026-11-06): "better visuals because right now it is very bland and depressing to look at", "varied textures". The research is `work/world_generation_research.md`.
 
