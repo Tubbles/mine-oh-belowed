@@ -1,6 +1,6 @@
 # 0302: Tech demos on the title, the shim retired
 
-Status: verified (2026-11-06)
+Status: landed (2026-11-06, 87e8b79)
 
 Milestone: the water tech demo (0291). The user (2026-11-06): the tech demos move into the real game as a main menu option called "tech demos", instead of being reached through their own `update-and-run.sh` shim.
 
