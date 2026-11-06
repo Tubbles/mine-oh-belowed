@@ -48,8 +48,8 @@ Field_Box :: struct {
 }
 
 // What choosing the nodes reads, in World_Position units. The shell holds
-// every surface the generation can make: the radius plus or minus the
-// relief and a node's margin.
+// every surface the generation can make: the radius plus the planet's
+// relief bound (planet_relief_bounds, 0306) widened by a node's margin.
 // more_cameras are the other viewports' eyes (0179): a node's distance is
 // its nearest camera's, so one selection serves every viewport without
 // two nodes covering one place.
@@ -131,11 +131,12 @@ field_box_in_shell :: proc(box: Field_Box, inner, outer: i64) -> bool {
 
 make_field_view :: proc(camera: World_Position, planet: Planet, spacing_millimetres: int, level_distances_metres: [FIELD_LEVEL_COUNT]int) -> Field_View {
 	radius := metres_to_position_units(i64(planet.radius_metres))
-	margin := metres_to_position_units(MAXIMUM_RELIEF_METRES) + 2 * sample_axis_to_position(1, spacing_millimetres)
+	bounds := planet_relief_bounds(planet)
+	margin := 2 * sample_axis_to_position(1, spacing_millimetres)
 	view := Field_View {
 		camera              = camera,
-		shell_inner         = radius - margin,
-		shell_outer         = radius + margin,
+		shell_inner         = radius + bounds.lowest - margin,
+		shell_outer         = radius + bounds.highest + margin,
 		spacing_millimetres = spacing_millimetres,
 	}
 	for distance, level in level_distances_metres {

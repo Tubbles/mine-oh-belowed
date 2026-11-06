@@ -198,8 +198,9 @@ salvage_percent = 80
 // hatches closed (the airlock opens them as a player comes,
 // pod_airlock). The hit comes arrival_settle_ticks (0 to 300) before
 // that. The fall is an atmospheric entry: the pod leaves
-// arrival_start_metres (20 to 4096, at least 34 m above atmosphere's
-// top_metres) above the crater's floor at
+// arrival_start_metres (20 to 4096, at least 128 m, the deepest relief
+// a planet may have, above atmosphere's top_metres) above the crater's
+// floor at
 // arrival_entry_speed_metres_per_second (1 to 1000),
 // arrival_entry_angle_degrees (5 to 85) below the horizontal towards
 // its chair's facing. Gravity and a drag of the air's density times the

@@ -37,6 +37,8 @@ Generation_Purpose :: enum u8 {
 	// The groves and the trees on the sphere of work item 0197.
 	Planet_Groves,
 	Planet_Trees,
+	// The landforms of work item 0306.
+	Planet_Landforms,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

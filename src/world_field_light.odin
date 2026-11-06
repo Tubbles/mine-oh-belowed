@@ -320,7 +320,7 @@ light_generated_field_chunk :: proc(chunk: ^Field_Chunk) {
 
 // The top of the relief's shell: no ground lies farther from the centre.
 field_relief_top :: proc(generation: Planet_Generation) -> i64 {
-	return generation.radius + metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
+	return generation.radius + generation.relief_highest + generation.spacing
 }
 
 // Whether an air sample sees the sky: the samples nearest the points

@@ -142,8 +142,9 @@ test_new_worlds_generate_each_preset_radius :: proc(t: ^testing.T) {
 		testing.expect(t, file.field_world)
 		feet := session.simulation.players[0].field.position
 		distance := vector_length(cast([3]i64)feet)
-		relief := metres_to_position_units(MAXIMUM_RELIEF_METRES) + millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)
-		testing.expectf(t, abs(distance - metres_to_position_units(i64(radius))) <= relief, "radius %d: the feet are %d units from the centre", radius, distance)
+		bounds := planet_relief_bounds(session.planet)
+		above := distance - metres_to_position_units(i64(radius))
+		testing.expectf(t, above >= bounds.lowest && above <= bounds.highest + millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES), "radius %d: the feet are %d units from the centre", radius, distance)
 	}
 }
 
@@ -1925,10 +1926,14 @@ test_two_sessions_hash_alike_walking_round_and_into_a_pod_with_volumes :: proc(t
 	testing.expect(t, simulation_state_hash(&sessions[0].simulation) != simulation_state_hash(&sessions[2].simulation), "the still session hashes alike")
 }
 
-// The shipped planet at its default preset and its first seed whose home
-// lies under the sea (first_wet_home_seed, 0180).
-wet_home_test_seed :: proc(t: ^testing.T, content: Game_Content) -> (planet: Planet, seed: u64) {
-	planet = default_planet(content.planets)
+// The home planet of before the landforms (0306, whose planet check keeps
+// the home dry for every seed) as the content's only planet, and its first
+// seed whose home lies under the sea (first_wet_home_seed, 0180).
+wet_home_test_seed :: proc(t: ^testing.T, content: ^Game_Content) -> (planet: Planet, seed: u64) {
+	planets := make([]Planet, 1, context.temp_allocator)
+	planets[0] = pre_0306_test_home_at(8000)
+	content.planets = planets
+	planet = planets[0]
 	found: bool
 	seed, found = first_wet_home_seed(planet)
 	testing.expect(t, found, "a seed puts the shipped home under the sea")
@@ -1948,7 +1953,7 @@ test_pod_frame_base :: proc(frame: Frame) -> World_Position {
 test_a_new_world_on_a_wet_seed_lands_dry_and_records_its_home :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
-	planet, seed := wet_home_test_seed(t, content)
+	planet, seed := wet_home_test_seed(t, &content)
 	session := start_field_test_session(config, content, 0, seed)
 	state := &session.simulation
 	chosen, _ := find_dry_planet_home(seed, planet)
@@ -1997,7 +2002,7 @@ test_a_new_world_on_a_wet_seed_lands_dry_and_records_its_home :: proc(t: ^testin
 test_two_machines_spawn_alike_on_a_wet_seed :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
-	_, seed := wet_home_test_seed(t, content)
+	_, seed := wet_home_test_seed(t, &content)
 	first := start_field_test_session(config, content, 0, seed)
 	defer end_session(first)
 	second := start_field_test_session(config, content, 0, seed)
@@ -2054,7 +2059,9 @@ test_a_joiner_drops_into_a_pit_dug_under_the_cabin :: proc(t: ^testing.T) {
 	joiner := state.players[1].field
 	below := -fixed_dot(cast([3]i64)(joiner.position - floor), up)
 	testing.expect(t, joiner.on_ground, "the joiner stands on the pit's bottom")
-	testing.expectf(t, below >= metres_to_position_units(2) && below <= millimetres_to_position_units(3100), "the joiner's feet stand %d units below the floor", below)
+	// The sphere's bottom lies 3 m below the floor; the dug surface lies
+	// within half a sample of it, as the lattice falls at the pod's site.
+	testing.expectf(t, below >= metres_to_position_units(2) && below <= millimetres_to_position_units(3500), "the joiner's feet stand %d units below the floor", below)
 }
 
 // A place that would raise ground into the empty cabin, where the next

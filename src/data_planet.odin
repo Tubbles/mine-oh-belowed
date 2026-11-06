@@ -23,23 +23,31 @@ MAXIMUM_PLANET_ID_LENGTH :: 32
 // The relief is three octaves of value noise (generation_planet.odin).
 RELIEF_OCTAVE_COUNT :: 3
 // The most the octaves' amplitudes, the ledges' amplitude and the
-// basins' depth may add up to (0189): the local surface lies within this of the
-// radius, which the generation's shortcuts, the field's level of detail
-// and its light bound the relief by.
-MAXIMUM_RELIEF_METRES :: 34
+// basins' depth may add up to (0189), and the relief's bound both ways on
+// a planet without landforms (0306, relief_bounds).
+OCTAVE_RELIEF_LIMIT_METRES :: 34
 MAXIMUM_RELIEF_WAVELENGTH_METRES :: 100_000
 // The ledges' profile raises 1 - |noise| to the sharpness (0189).
 MAXIMUM_LEDGE_SHARPNESS :: 256
-MAXIMUM_RELIEF_MILLIMETRES :: MAXIMUM_RELIEF_METRES * MILLIMETRES_PER_METRE
-// A planet record may leave out the relief's shape (0189): its terms are
-// off at zero, so a planet without it generates as before.
-OPTIONAL_PLANET_KEY :: "relief_shape"
+OCTAVE_RELIEF_LIMIT_MILLIMETRES :: OCTAVE_RELIEF_LIMIT_METRES * MILLIMETRES_PER_METRE
+// The most any planet's relief reaches below and above its radius (0306):
+// the caps of a planet's own bound (relief_bounds), which the
+// generation's shortcuts, the field's level of detail, its light, the
+// globe and the edits bound the relief by.
+MAXIMUM_RELIEF_DEPTH_METRES :: 128
+MAXIMUM_RELIEF_HEIGHT_METRES :: 256
+// The landforms' bounds (0306, Planet_Landforms): the knots of the
+// region's curves, the warp's reach and the edge of the wild ground.
+LANDFORM_KNOT_COUNT :: 9
+MAXIMUM_LANDFORM_WARP_METRES :: 10_000
+MAXIMUM_LANDFORM_WILD_METRES :: 8192
+// A planet record may leave these out: the relief's shape (0189) and the
+// landforms (0306), each off at zero, so a planet without them generates
+// as before.
+OPTIONAL_PLANET_KEYS :: [2]string{"relief_shape", "landforms"}
 MAXIMUM_SURFACE_GRAVITY_CENTIMETRES_PER_SECOND_SQUARED :: 5000
 MINIMUM_ROTATION_PERIOD_SECONDS :: 60
 MAXIMUM_ROTATION_PERIOD_SECONDS :: 86_400
-// Bedrock lies below every local surface's deep stone, so a valley at the
-// lowest relief never shows bedrock in place of topsoil.
-MINIMUM_BEDROCK_DEPTH_METRES :: int(MAXIMUM_RELIEF_METRES + DEEP_STONE_DEPTH_METRES)
 MAXIMUM_PALETTE_LENGTH :: 256
 MAXIMUM_SPRING_COUNT :: 64
 // A sample's fill a minute (work item 0172), a whole sample at most.
@@ -99,6 +107,42 @@ Relief_Shape :: struct {
 	terrace_riser_permille:      int,
 	basin_depth_metres:          int,
 	basin_threshold_percent:     int,
+}
+
+// The landforms (work item 0306, generation_planet_landforms.odin), off
+// at the zero value: a region noise of region_wavelength_metres, its input
+// warped by up to warp_metres by a noise of warp_wavelength_metres, read
+// through three curves of LANDFORM_KNOT_COUNT knots at the noise's -0.6 to
+// 0.6: the ground's height over the radius, the share of the ranges and
+// the share of the hills there. The ranges are ridges of range_metres
+// along the zero lines of a noise of range_wavelength_metres, notched by
+// spurs of spur_wavelength_metres by spur_percent; the hills a noise of
+// hill_wavelength_metres and hill_metres. Within calm_metres of the home
+// the ground is home_metres high, the terms fading in out to wild_metres.
+// Fixed arrays, so the zero value compares with {} and a world records
+// them without allocation.
+Planet_Landforms :: struct {
+	warp_wavelength_metres:   int,
+	warp_metres:              int,
+	region_wavelength_metres: int,
+	region_heights_metres:    [LANDFORM_KNOT_COUNT]int,
+	region_ranges_percent:    [LANDFORM_KNOT_COUNT]int,
+	region_hills_percent:     [LANDFORM_KNOT_COUNT]int,
+	range_wavelength_metres:  int,
+	range_metres:             int,
+	spur_wavelength_metres:   int,
+	spur_percent:             int,
+	hill_wavelength_metres:   int,
+	hill_metres:              int,
+	home_metres:              int,
+	calm_metres:              int,
+	wild_metres:              int,
+}
+
+// A planet's relief bound (0306, relief_bounds): the lowest and the
+// highest local surface, in position units from the radius.
+Relief_Bounds :: struct {
+	lowest, highest: i64,
 }
 
 // A spring of the water field (work item 0172): the generator makes the
@@ -205,8 +249,10 @@ Planet :: struct {
 	rotation_period_seconds:                        int,
 	// The surface is the radius plus their sum, read on the sphere.
 	relief_octaves:                                 [RELIEF_OCTAVE_COUNT]Relief_Octave,
-	// Optional in the file (OPTIONAL_PLANET_KEY), off at zero (0189).
+	// Optional in the file (OPTIONAL_PLANET_KEYS), off at zero (0189).
 	relief_shape:                                   Relief_Shape,
+	// Optional in the file, off at zero (0306).
+	landforms:                                      Planet_Landforms,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
 	// The arrival's hit digs the crater (0271): set only by
@@ -218,13 +264,13 @@ Planets_File :: struct {
 	planets: []Planet,
 }
 
-// The first of type's keys that object lacks, but the optional one and a
+// The first of type's keys that object lacks, but the optional ones and a
 // field tagged json:"-", which no file sets.
-missing_struct_key :: proc(type: typeid, object: json.Object, optional := "") -> (key: string, missing: bool) {
+missing_struct_key :: proc(type: typeid, object: json.Object, optional: []string = nil) -> (key: string, missing: bool) {
 	for index in 0 ..< reflect.struct_field_count(type) {
 		field := reflect.struct_field_at(type, index)
 		key = configuration_key(field.name, field.tag)
-		if key not_in object && key != optional && key != "-" {
+		if key not_in object && !slice.contains(optional, key) && key != "-" {
 			return key, true
 		}
 	}
@@ -236,13 +282,19 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 	if key, missing := missing_struct_key(Planets_File, tree); missing {
 		return fmt.tprintf("%s: missing key %s", source, key)
 	}
+	optional := OPTIONAL_PLANET_KEYS
 	for record, index in tree["planets"].(json.Array) {
-		if key, missing := missing_struct_key(Planet, record.(json.Object), OPTIONAL_PLANET_KEY); missing {
+		if key, missing := missing_struct_key(Planet, record.(json.Object), optional[:]); missing {
 			return fmt.tprintf("%s: planets[%d] is missing %s", source, index, key)
 		}
-		if shape, is_object := record.(json.Object)[OPTIONAL_PLANET_KEY].(json.Object); is_object {
+		if shape, is_object := record.(json.Object)["relief_shape"].(json.Object); is_object {
 			if key, missing := missing_struct_key(Relief_Shape, shape); missing {
 				return fmt.tprintf("%s: planets[%d].relief_shape is missing %s", source, index, key)
+			}
+		}
+		if landforms, is_object := record.(json.Object)["landforms"].(json.Object); is_object {
+			if key, missing := missing_struct_key(Planet_Landforms, landforms); missing {
+				return fmt.tprintf("%s: planets[%d].landforms is missing %s", source, index, key)
 			}
 		}
 		for spring, spring_index in record.(json.Object)["springs"].(json.Array) {
@@ -312,13 +364,13 @@ relief_problem :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave, shape: Relie
 		if octave.wavelength_metres < 1 || octave.wavelength_metres > MAXIMUM_RELIEF_WAVELENGTH_METRES {
 			return fmt.tprintf("relief_octaves[%d].wavelength_metres %d is outside 1 to %d", index, octave.wavelength_metres, MAXIMUM_RELIEF_WAVELENGTH_METRES)
 		}
-		if octave.amplitude_metres < 0 || octave.amplitude_metres > MAXIMUM_RELIEF_METRES {
-			return fmt.tprintf("relief_octaves[%d].amplitude_metres %d is outside 0 to %d", index, octave.amplitude_metres, MAXIMUM_RELIEF_METRES)
+		if octave.amplitude_metres < 0 || octave.amplitude_metres > OCTAVE_RELIEF_LIMIT_METRES {
+			return fmt.tprintf("relief_octaves[%d].amplitude_metres %d is outside 0 to %d", index, octave.amplitude_metres, OCTAVE_RELIEF_LIMIT_METRES)
 		}
 		total += octave.amplitude_metres * MILLIMETRES_PER_METRE
 	}
-	if total > MAXIMUM_RELIEF_MILLIMETRES {
-		return fmt.tprintf("relief_octaves with the ledges and the basins add up to %d mm, more than %d", total, MAXIMUM_RELIEF_MILLIMETRES)
+	if total > OCTAVE_RELIEF_LIMIT_MILLIMETRES {
+		return fmt.tprintf("relief_octaves with the ledges and the basins add up to %d mm, more than %d", total, OCTAVE_RELIEF_LIMIT_MILLIMETRES)
 	}
 	return ""
 }
@@ -327,22 +379,150 @@ relief_problem :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave, shape: Relie
 // shape (a planet or a world file without it) passes.
 relief_shape_problem :: proc(shape: Relief_Shape) -> string {
 	switch {
-	case shape.ledge_amplitude_millimetres < 0 || shape.ledge_amplitude_millimetres > MAXIMUM_RELIEF_MILLIMETRES:
-		return fmt.tprintf("relief_shape.ledge_amplitude_millimetres %d is outside 0 to %d", shape.ledge_amplitude_millimetres, MAXIMUM_RELIEF_MILLIMETRES)
+	case shape.ledge_amplitude_millimetres < 0 || shape.ledge_amplitude_millimetres > OCTAVE_RELIEF_LIMIT_MILLIMETRES:
+		return fmt.tprintf("relief_shape.ledge_amplitude_millimetres %d is outside 0 to %d", shape.ledge_amplitude_millimetres, OCTAVE_RELIEF_LIMIT_MILLIMETRES)
 	case shape.ledge_amplitude_millimetres > 0 && (shape.ledge_wavelength_metres < 1 || shape.ledge_wavelength_metres > MAXIMUM_RELIEF_WAVELENGTH_METRES):
 		return fmt.tprintf("relief_shape.ledge_wavelength_metres %d is outside 1 to %d", shape.ledge_wavelength_metres, MAXIMUM_RELIEF_WAVELENGTH_METRES)
 	case shape.ledge_amplitude_millimetres > 0 && (shape.ledge_sharpness < 1 || shape.ledge_sharpness > MAXIMUM_LEDGE_SHARPNESS):
 		return fmt.tprintf("relief_shape.ledge_sharpness %d is outside 1 to %d", shape.ledge_sharpness, MAXIMUM_LEDGE_SHARPNESS)
-	case shape.terrace_rise_millimetres < 0 || shape.terrace_rise_millimetres > MAXIMUM_RELIEF_MILLIMETRES:
-		return fmt.tprintf("relief_shape.terrace_rise_millimetres %d is outside 0 to %d", shape.terrace_rise_millimetres, MAXIMUM_RELIEF_MILLIMETRES)
+	case shape.terrace_rise_millimetres < 0 || shape.terrace_rise_millimetres > OCTAVE_RELIEF_LIMIT_MILLIMETRES:
+		return fmt.tprintf("relief_shape.terrace_rise_millimetres %d is outside 0 to %d", shape.terrace_rise_millimetres, OCTAVE_RELIEF_LIMIT_MILLIMETRES)
 	case shape.terrace_rise_millimetres > 0 && (shape.terrace_riser_permille < 1 || shape.terrace_riser_permille > 1000):
 		return fmt.tprintf("relief_shape.terrace_riser_permille %d is outside 1 to 1000", shape.terrace_riser_permille)
-	case shape.basin_depth_metres < 0 || shape.basin_depth_metres > MAXIMUM_RELIEF_METRES:
-		return fmt.tprintf("relief_shape.basin_depth_metres %d is outside 0 to %d", shape.basin_depth_metres, MAXIMUM_RELIEF_METRES)
+	case shape.basin_depth_metres < 0 || shape.basin_depth_metres > OCTAVE_RELIEF_LIMIT_METRES:
+		return fmt.tprintf("relief_shape.basin_depth_metres %d is outside 0 to %d", shape.basin_depth_metres, OCTAVE_RELIEF_LIMIT_METRES)
 	case shape.basin_depth_metres > 0 && (shape.basin_threshold_percent < -99 || shape.basin_threshold_percent > 100):
 		return fmt.tprintf("relief_shape.basin_threshold_percent %d is outside -99 to 100", shape.basin_threshold_percent)
 	}
 	return ""
+}
+
+// The zero value (off: a planet or a world file without them) passes;
+// otherwise every key within its bound, a knot named with its index.
+landforms_problem :: proc(landforms: Planet_Landforms) -> string {
+	if landforms == {} {
+		return ""
+	}
+	bounds := [?]Config_Bound {
+		{"warp_wavelength_metres", landforms.warp_wavelength_metres, 1, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"warp_metres", landforms.warp_metres, 0, MAXIMUM_LANDFORM_WARP_METRES},
+		{"region_wavelength_metres", landforms.region_wavelength_metres, 1, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"range_wavelength_metres", landforms.range_wavelength_metres, 1, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"range_metres", landforms.range_metres, 0, MAXIMUM_RELIEF_HEIGHT_METRES},
+		{"spur_wavelength_metres", landforms.spur_wavelength_metres, 1, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"spur_percent", landforms.spur_percent, 0, 100},
+		{"hill_wavelength_metres", landforms.hill_wavelength_metres, 1, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"hill_metres", landforms.hill_metres, 0, MAXIMUM_RELIEF_HEIGHT_METRES},
+		{"home_metres", landforms.home_metres, -MAXIMUM_RELIEF_DEPTH_METRES, MAXIMUM_RELIEF_HEIGHT_METRES},
+		{"wild_metres", landforms.wild_metres, 1, MAXIMUM_LANDFORM_WILD_METRES},
+		{"calm_metres", landforms.calm_metres, 0, landforms.wild_metres - 1},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("landforms.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	curves := [?]struct {
+		name:             string,
+		knots:            [LANDFORM_KNOT_COUNT]int,
+		minimum, maximum: int,
+	} {
+		{"region_heights_metres", landforms.region_heights_metres, -MAXIMUM_RELIEF_DEPTH_METRES, MAXIMUM_RELIEF_HEIGHT_METRES},
+		{"region_ranges_percent", landforms.region_ranges_percent, 0, 100},
+		{"region_hills_percent", landforms.region_hills_percent, 0, 100},
+	}
+	for curve in curves {
+		for knot, index in curve.knots {
+			if knot < curve.minimum || knot > curve.maximum {
+				return fmt.tprintf("landforms.%s[%d] %d is outside %d to %d", curve.name, index, knot, curve.minimum, curve.maximum)
+			}
+		}
+	}
+	return ""
+}
+
+// A planet with landforms keeps its bound within the caps, the crater on
+// the calm plain and the home's crater floor dry for every seed (the
+// region blends to home_metres there, so only the detail below it varies),
+// so find_dry_planet_home keeps the record's home and the landforms'
+// centre is the home the world records.
+landforms_planet_problem :: proc(planet: Planet) -> string {
+	landforms := planet.landforms
+	if landforms == {} {
+		return ""
+	}
+	bounds := planet_relief_bounds(planet)
+	reach := crater_reach_metres(planet.crater)
+	floor := metres_to_position_units(i64(landforms.home_metres)) - relief_detail_below(planet.relief_octaves, planet.relief_shape) - metres_to_position_units(i64(planet.crater.depth_metres))
+	dry := metres_to_position_units(i64(planet.sea_level_metres)) + millimetres_to_position_units(HOME_DRY_MARGIN_MILLIMETRES)
+	switch {
+	case -bounds.lowest > metres_to_position_units(MAXIMUM_RELIEF_DEPTH_METRES):
+		return fmt.tprintf("the relief with the landforms reaches %d m below the radius, more than %d", relief_depth_metres(bounds), MAXIMUM_RELIEF_DEPTH_METRES)
+	case bounds.highest > metres_to_position_units(MAXIMUM_RELIEF_HEIGHT_METRES):
+		return fmt.tprintf("the relief with the landforms reaches %d m above the radius, more than %d", ceiling_divide_i64(bounds.highest, POSITION_UNITS_PER_METRE), MAXIMUM_RELIEF_HEIGHT_METRES)
+	case landforms.calm_metres < reach:
+		return fmt.tprintf("landforms.calm_metres %d is inside the crater's reach of %d m", landforms.calm_metres, reach)
+	case floor < dry:
+		return fmt.tprintf("landforms.home_metres %d can put the crater's floor %d mm under the sea level's dry margin", landforms.home_metres, (dry - floor) * MILLIMETRES_PER_METRE / POSITION_UNITS_PER_METRE)
+	}
+	return ""
+}
+
+// The most the octaves and the ledges raise the ground (0306), in
+// position units: each amplitude truncated no further than the term's own
+// bound, so no relief leaves it.
+relief_detail_above :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave, shape: Relief_Shape) -> i64 {
+	above := millimetres_to_position_units(shape.ledge_amplitude_millimetres)
+	for octave in octaves {
+		above += metres_to_position_units(i64(octave.amplitude_metres))
+	}
+	return above
+}
+
+// The most the octaves, the ledges and the basins lower the ground.
+relief_detail_below :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave, shape: Relief_Shape) -> i64 {
+	return relief_detail_above(octaves, shape) + metres_to_position_units(i64(shape.basin_depth_metres))
+}
+
+// The relief's bound (0306): without landforms OCTAVE_RELIEF_LIMIT_METRES
+// both ways, whatever the octaves add up to, so an old world's shortcuts
+// and crater clamps stay bit for bit; with them the knots' extremes, the
+// strongest ranges and hills and the detail, each truncated toward zero no
+// further than its term (landform_relief), so no relief leaves it.
+relief_bounds :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave, shape: Relief_Shape, landforms: Planet_Landforms) -> Relief_Bounds {
+	if landforms == {} {
+		limit := metres_to_position_units(OCTAVE_RELIEF_LIMIT_METRES)
+		return {-limit, limit}
+	}
+	lowest, highest := landforms.home_metres, landforms.home_metres
+	most_ranges, most_hills := 0, 0
+	for index in 0 ..< LANDFORM_KNOT_COUNT {
+		lowest = min(lowest, landforms.region_heights_metres[index])
+		highest = max(highest, landforms.region_heights_metres[index])
+		most_ranges = max(most_ranges, landforms.region_ranges_percent[index])
+		most_hills = max(most_hills, landforms.region_hills_percent[index])
+	}
+	hills := metres_to_position_units(i64(landforms.hill_metres)) * i64(most_hills) / 100
+	ranges := metres_to_position_units(i64(landforms.range_metres)) * i64(most_ranges) / 100
+	return Relief_Bounds {
+		lowest = metres_to_position_units(i64(lowest)) - hills - relief_detail_below(octaves, shape),
+		highest = metres_to_position_units(i64(highest)) + ranges + hills + relief_detail_above(octaves, shape),
+	}
+}
+
+planet_relief_bounds :: proc(planet: Planet) -> Relief_Bounds {
+	return relief_bounds(planet.relief_octaves, planet.relief_shape, planet.landforms)
+}
+
+// The bound's depth below the radius in whole metres, rounded up, for the
+// readers in metres (the globe, the bedrock's minimum).
+relief_depth_metres :: proc(bounds: Relief_Bounds) -> int {
+	return int(ceiling_divide_i64(-bounds.lowest, POSITION_UNITS_PER_METRE))
+}
+
+// Below every local surface's deep stone (planet_problem).
+minimum_bedrock_depth_metres :: proc(planet: Planet) -> int {
+	return relief_depth_metres(planet_relief_bounds(planet)) + DEEP_STONE_DEPTH_METRES
 }
 
 // Each preset must make a valid record (the bedrock and the sea inside
@@ -377,8 +557,6 @@ planet_problem :: proc(planet: Planet) -> string {
 		return fmt.tprintf("radius_metres %d is outside 1 to %d", planet.radius_metres, MAXIMUM_PLANET_RADIUS_METRES)
 	case planet.surface_gravity_centimetres_per_second_squared < 1 || planet.surface_gravity_centimetres_per_second_squared > MAXIMUM_SURFACE_GRAVITY_CENTIMETRES_PER_SECOND_SQUARED:
 		return fmt.tprintf("surface_gravity_centimetres_per_second_squared %d is outside 1 to %d", planet.surface_gravity_centimetres_per_second_squared, MAXIMUM_SURFACE_GRAVITY_CENTIMETRES_PER_SECOND_SQUARED)
-	case planet.bedrock_depth_metres < MINIMUM_BEDROCK_DEPTH_METRES || planet.bedrock_depth_metres >= planet.radius_metres:
-		return fmt.tprintf("bedrock_depth_metres %d is outside %d to %d", planet.bedrock_depth_metres, MINIMUM_BEDROCK_DEPTH_METRES, planet.radius_metres - 1)
 	case abs(planet.sea_level_metres) >= planet.radius_metres:
 		return fmt.tprintf("sea_level_metres %d is not within the radius %d", planet.sea_level_metres, planet.radius_metres)
 	case planet.rotation_period_seconds < MINIMUM_ROTATION_PERIOD_SECONDS || planet.rotation_period_seconds > MAXIMUM_ROTATION_PERIOD_SECONDS:
@@ -398,6 +576,18 @@ planet_problem :: proc(planet: Planet) -> string {
 	}
 	if problem := relief_problem(planet.relief_octaves, planet.relief_shape); problem != "" {
 		return problem
+	}
+	if problem := landforms_problem(planet.landforms); problem != "" {
+		return problem
+	}
+	if problem := landforms_planet_problem(planet); problem != "" {
+		return problem
+	}
+	// Bedrock lies below every local surface's deep stone, so a valley at
+	// the lowest relief never shows bedrock in place of topsoil.
+	minimum_bedrock := minimum_bedrock_depth_metres(planet)
+	if planet.bedrock_depth_metres < minimum_bedrock || planet.bedrock_depth_metres >= planet.radius_metres {
+		return fmt.tprintf("bedrock_depth_metres %d is outside %d to %d", planet.bedrock_depth_metres, minimum_bedrock, planet.radius_metres - 1)
 	}
 	if planet.rain_fill_per_minute < 0 || planet.rain_fill_per_minute > MAXIMUM_RAIN_FILL_PER_MINUTE {
 		return fmt.tprintf("rain_fill_per_minute %d is outside 0 to %d", planet.rain_fill_per_minute, MAXIMUM_RAIN_FILL_PER_MINUTE)

@@ -743,7 +743,10 @@ test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^test
 	tuning := simulation_content.field.tuning
 	wall_radius := metres_to_position_units(1)
 	behind := -field_player_heading(player)
-	wall_distance := tuning.capsule_radius + wall_radius
+	// A quarter spacing nearer than touching the capsule, so the wall the
+	// sample lattice makes of the sphere is in reach of the three ticks'
+	// walk wherever the pod stands (0306 moved it).
+	wall_distance := tuning.capsule_radius + wall_radius - sample_axis_to_position(1, state.field.spacing_millimetres) / 4
 	wall := Field_Edit {
 		mode     = .Place,
 		brush    = Field_Brush{shape = .Sphere, radius = wall_radius, rate = 127},

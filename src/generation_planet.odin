@@ -15,10 +15,14 @@ import "platform"
 // The veins' outcrops replace the strata near the surface within their
 // discs (0179, generation_planet_veins.odin).
 // The relief's octaves are the planet record's (data/planets.sjson), at
-// most MAXIMUM_RELIEF_METRES in all (data_planet.odin). The crater at the
-// home (0199, crater_relief) is the relief's last term: its floor is
-// clamped to at least -MAXIMUM_RELIEF_METRES and its result to at most
-// +MAXIMUM_RELIEF_METRES, so the bound holds with it. A world whose
+// most OCTAVE_RELIEF_LIMIT_METRES in all (data_planet.odin), and its
+// landforms (0306, generation_planet_landforms.odin) add the plains, the
+// hills and the ranges. The relief lies within the planet's bound
+// (planet_relief_bounds), which the generation holds as relief_lowest and
+// relief_highest. The crater at the home (0199, crater_relief) is the
+// relief's last term: its floor is clamped to at least the bound's lowest
+// and its result to at most its highest, so the bound holds with it. A
+// world whose
 // arrival digs the crater (0271, Planet.crater_at_impact) generates
 // without the term (crater_baked false); the hit writes the baked
 // generation into the field (dig_impact_crater).
@@ -49,6 +53,8 @@ Crater_Term :: struct {
 	reach:        i64,
 	depth:        i64,
 	rim:          i64,
+	// The relief bound's highest (0306), which the result stays under.
+	ceiling:      i64,
 }
 
 // What every sample of one generation reads, in position units.
@@ -73,6 +79,14 @@ Planet_Generation :: struct {
 	crater_baked:        bool,
 	// The trees on the sphere (0197, generation_planet_trees.odin).
 	trees:               Planet_Tree_Term,
+	// The landforms (0306, generation_planet_landforms.odin): off at the
+	// zero value; their seed and their centre, the home on the sphere.
+	landforms:           Planet_Landforms,
+	landform_seed:       u64,
+	landform_home:       [3]i64,
+	// The relief's bound from the radius (planet_relief_bounds).
+	relief_lowest:       i64,
+	relief_highest:      i64,
 }
 
 // The starter veins lie round the planet's home (the pod's, 0179,
@@ -80,6 +94,7 @@ Planet_Generation :: struct {
 make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Planet_Generation {
 	seeds := generation_seed.derive_purpose_seeds(seed)
 	radius := metres_to_position_units(i64(planet.radius_metres))
+	bounds := planet_relief_bounds(planet)
 	generation := Planet_Generation {
 		surface_seed = seeds[.Planet_Surface],
 		tint_seed = seeds[.Planet_Tint],
@@ -93,6 +108,11 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		relief_shape = planet.relief_shape,
 		veins = plan_planet_veins(seed, planet_home_direction(planet.home), radius),
 		crater_baked = !planet.crater_at_impact,
+		landforms = planet.landforms,
+		landform_seed = seeds[.Planet_Landforms],
+		landform_home = fixed_scale(planet_home_direction(planet.home), radius),
+		relief_lowest = bounds.lowest,
+		relief_highest = bounds.highest,
 	}
 	generation.crater = make_crater_term(generation, planet.crater, planet_home_direction(planet.home))
 	generation.trees = make_planet_tree_term(seed, planet.trees, planet.home, radius)
@@ -117,12 +137,13 @@ make_crater_term :: proc(generation: Planet_Generation, crater: Planet_Crater, h
 	depth := metres_to_position_units(i64(crater.depth_metres))
 	return Crater_Term {
 		home = home,
-		floor_height = max(uncratered_relief(generation, home) - depth, -metres_to_position_units(MAXIMUM_RELIEF_METRES)),
+		floor_height = max(uncratered_relief(generation, home) - depth, generation.relief_lowest),
 		floor_radius = metres_to_position_units(i64(crater.floor_radius_metres)),
 		radius = metres_to_position_units(i64(crater.radius_metres)),
 		reach = metres_to_position_units(i64(crater.radius_metres + CRATER_RIM_FALL_PER_HEIGHT * crater.rim_metres)),
 		depth = depth,
 		rim = metres_to_position_units(i64(crater.rim_metres)),
+		ceiling = generation.relief_highest,
 	}
 }
 
@@ -194,8 +215,9 @@ surface_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 }
 
 // The relief without the crater: the octaves, the first shaped by the
-// basins and the terraces, and the ledges (0189, Relief_Shape). With the
-// zero shape it is the octaves' sum.
+// basins and the terraces, the ledges (0189, Relief_Shape) and the
+// landforms (0306). With the zero shape and no landforms it is the
+// octaves' sum.
 uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 	relief: i64 = 0
 	for octave, index in generation.relief_octaves {
@@ -206,7 +228,7 @@ uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 			relief += metres_to_position_units(i64(octave.amplitude_metres)) * noise / NOISE_ONE
 		}
 	}
-	return relief + ledge_relief(generation, point)
+	return relief + ledge_relief(generation, point) + landform_relief(generation, point)
 }
 
 // The ledges' noise takes the seed after the octaves'.
@@ -294,7 +316,8 @@ crater_smoothstep :: proc(fraction: i64) -> i64 {
 // The relief with the crater at the distance from its home: the floor's
 // height out to the floor radius, a smooth blend of it into the relief
 // plus the rim out to the crest, the rim falling back to the relief out
-// to the reach, the relief past it. At most +MAXIMUM_RELIEF_METRES.
+// to the reach, the relief past it. At most the term's ceiling, the
+// relief bound's highest.
 crater_relief :: proc(term: Crater_Term, distance, relief: i64) -> i64 {
 	if term.reach == 0 || distance >= term.reach {
 		return relief
@@ -307,7 +330,7 @@ crater_relief :: proc(term: Crater_Term, distance, relief: i64) -> i64 {
 		share := crater_smoothstep((distance - term.radius) * CRATER_ONE / (term.reach - term.radius))
 		result = relief + term.rim * (CRATER_ONE - share) / CRATER_ONE
 	}
-	return min(result, metres_to_position_units(MAXIMUM_RELIEF_METRES))
+	return min(result, term.ceiling)
 }
 
 // Within the ledge's amplitude either side; no noise is read while it is
@@ -363,8 +386,8 @@ planet_sample :: proc(generation: Planet_Generation, position: World_Position) -
 }
 
 // Far outside and deep inside skip the noise: the local surface lies
-// within MAXIMUM_RELIEF_METRES of the radius, and a density saturates one
-// spacing from it. Otherwise needs_relief, with the distance from the
+// within the planet's relief bound (relief_lowest to relief_highest from
+// the radius), and a density saturates one spacing from it. Otherwise needs_relief, with the distance from the
 // centre and the position projected onto the sphere.
 planet_sample_shortcut :: proc(generation: Planet_Generation, position: World_Position) -> (sample: Field_Sample, distance: i64, on_sphere: [3]i64, needs_relief: bool) {
 	for axis in 0 ..< 3 {
@@ -374,11 +397,10 @@ planet_sample_shortcut :: proc(generation: Planet_Generation, position: World_Po
 	}
 	squared := position.x * position.x + position.y * position.y + position.z * position.z
 	distance = i64(integer_square_root(u64(squared)))
-	relief_reach := metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
-	if distance >= generation.radius + relief_reach {
+	if distance >= generation.radius + generation.relief_highest + generation.spacing {
 		return FIELD_AIR_SAMPLE, distance, {}, false
 	}
-	if distance < generation.radius - relief_reach - metres_to_position_units(DEEP_STONE_DEPTH_METRES) {
+	if distance < generation.radius + generation.relief_lowest - generation.spacing - metres_to_position_units(DEEP_STONE_DEPTH_METRES) {
 		material := distance <= generation.bedrock_radius ? Field_Material.Bedrock : Field_Material.Deep_Stone
 		return {MAXIMUM_DENSITY, material, planet_tint(generation, position)}, distance, {}, false
 	}
@@ -478,7 +500,7 @@ planet_direction_at :: proc(latitude, longitude: i32) -> [3]i64 {
 planet_spring_sample :: proc(generation: Planet_Generation, spring: Planet_Spring) -> (sample: Sample_Coordinate, found: bool) {
 	direction := planet_spring_direction(spring)
 	surface := generation.radius + surface_relief(generation, fixed_scale(direction, generation.radius))
-	highest := generation.radius + metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
+	highest := generation.radius + generation.relief_highest + generation.spacing
 	half := generation.spacing / 2
 	for height := surface; height <= highest; height += generation.spacing / 4 {
 		point := World_Position(fixed_scale(direction, height))

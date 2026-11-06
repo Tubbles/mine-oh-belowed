@@ -90,6 +90,8 @@ test_a_surface_chunk_has_air_outside_the_radius_band_and_ground_inside :: proc(t
 		generate_field_chunk(TEST_PLANET_SEED, make_test_planet(), 1000, {x, 0, 0}, chunk)
 		field_world_insert_chunk(&world, chunk)
 	}
+	bounds := planet_relief_bounds(make_test_planet())
+	highest, lowest := i32(ceiling_divide_i64(bounds.highest, POSITION_UNITS_PER_METRE)), i32(ceiling_divide_i64(-bounds.lowest, POSITION_UNITS_PER_METRE))
 	previous_density := i8(MAXIMUM_DENSITY)
 	air_count, ground_count := 0, 0
 	outermost_ground := Field_Material.Air
@@ -98,10 +100,10 @@ test_a_surface_chunk_has_air_outside_the_radius_band_and_ground_inside :: proc(t
 		testing.expect(t, sample.density <= previous_density)
 		previous_density = sample.density
 		testing.expect_value(t, sample.material == .Air, sample.density <= 0)
-		if x > 8000 + i32(MAXIMUM_RELIEF_METRES) {
+		if x > 8000 + highest {
 			testing.expect_value(t, sample.material, Field_Material.Air)
 		}
-		if x < 8000 - i32(MAXIMUM_RELIEF_METRES) {
+		if x < 8000 - lowest {
 			testing.expect(t, sample.material != .Air && sample.density == MAXIMUM_DENSITY)
 		}
 		air_count += sample.material == .Air ? 1 : 0
@@ -160,10 +162,10 @@ test_density_is_the_depth_in_steps_of_the_spacing :: proc(t: ^testing.T) {
 @(test)
 test_bedrock_at_the_minimum_depth_comes_from_the_full_computation :: proc(t: ^testing.T) {
 	planet := make_test_planet()
-	planet.bedrock_depth_metres = MINIMUM_BEDROCK_DEPTH_METRES
+	planet.bedrock_depth_metres = minimum_bedrock_depth_metres(planet)
 	generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
 	bedrock_metres := i64(planet.radius_metres - planet.bedrock_depth_metres)
-	deep_path_below := generation.radius - metres_to_position_units(MAXIMUM_RELIEF_METRES + DEEP_STONE_DEPTH_METRES) - generation.spacing
+	deep_path_below := generation.radius + generation.relief_lowest - metres_to_position_units(DEEP_STONE_DEPTH_METRES) - generation.spacing
 	position := World_Position{metres_to_position_units(bedrock_metres), 0, 0}
 	testing.expect(t, position.x >= deep_path_below)
 	testing.expect_value(t, planet_sample(generation, position).material, Field_Material.Bedrock)
@@ -214,6 +216,37 @@ shipped_test_home_at :: proc(radius_metres: int) -> Planet {
 	planet := default_planet(shipped_test_planets())
 	planet.radius_metres = radius_metres
 	return planet
+}
+
+// The home planet as data/planets.sjson held it before the landforms
+// (0306), at a radius: the 0189 terms, the spring at (83, 144) and no
+// landforms, so the tests of that ground outlive later data edits.
+pre_0306_test_home_at :: proc(radius_metres: int) -> Planet {
+	palette := make([][3]int, 4, context.temp_allocator)
+	palette[0], palette[1], palette[2], palette[3] = {142, 118, 86}, {124, 108, 92}, {156, 128, 96}, {112, 100, 88}
+	springs := make([]Planet_Spring, 1, context.temp_allocator)
+	springs[0] = {latitude_degrees = 83, longitude_degrees = 144}
+	presets := make([]int, 3, context.temp_allocator)
+	presets[0], presets[1], presets[2] = 4000, 8000, 16000
+	species := make([]Planet_Tree_Species, 1, context.temp_allocator)
+	species[0] = {id = "pine", machine = "pine_tree", tint = {236, 232, 214}, item = "log", count = 4, hand_felling_scale_percent = 100, hand_felling_milliseconds = 10000, axe_felling_milliseconds = {6000, 4000, 2500}, trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}
+	return Planet {
+		id = "home",
+		radius_metres = radius_metres,
+		radius_presets_metres = presets,
+		surface_gravity_centimetres_per_second_squared = 981,
+		bedrock_depth_metres = 256,
+		sea_level_metres = -11,
+		springs = springs,
+		home = {latitude_degrees = 83, longitude_degrees = 132},
+		crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1},
+		trees = {grove_spacing_metres = 40, grove_share_percent = 50, grove_radius_metres = 14, tree_spacing_metres = 4, density_percent = 80, clearing_metres = 24, maximum_slope_percent = 70, species = species},
+		rain_fill_per_minute = 2,
+		rotation_period_seconds = 1200,
+		relief_octaves = {{512, 10}, {128, 5}, {32, 2}},
+		relief_shape = {32, 700, 128, 1200, 10, 16, -30},
+		palette = palette,
+	}
 }
 
 // A point on the sphere of the generation's radius, offset in metres
@@ -276,14 +309,15 @@ test_the_ledges_make_a_slope_above_the_walkable_angle_within_a_chunk :: proc(t: 
 	testing.expect(t, steepest(flat) > walkable_cosine, "the unsharpened ledges stay walkable")
 }
 
-// At every preset radius with the default seed: a hollow below the sea
-// level within 200 m of the home that the basin term made, the pod's site,
-// the spawn and the spring above the sea, so the spring's water runs down
-// into a pool rather than rising in the sea.
+// At every preset radius with the default seed, on the ground of before
+// the landforms (0306): a hollow below the sea level within 200 m of the
+// home that the basin term made, the pod's site, the spawn and the spring
+// above the sea, so the spring's water runs down into a pool rather than
+// rising in the sea.
 @(test)
 test_the_basins_hold_the_sea_near_a_dry_home :: proc(t: ^testing.T) {
-	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
-		planet := shipped_test_home_at(radius)
+	for radius in pre_0306_test_home_at(8000).radius_presets_metres {
+		planet := pre_0306_test_home_at(radius)
 		generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
 		home := planet_home_direction(planet.home)
 		forward := tangent_of(home, {UNIT_VECTOR_ONE, 0, 0})
@@ -312,20 +346,23 @@ test_the_basins_hold_the_sea_near_a_dry_home :: proc(t: ^testing.T) {
 	}
 }
 
-// The relief stays within MAXIMUM_RELIEF_METRES with every term at its
-// strongest and the amplitudes using the whole bound.
+// The relief of a planet without landforms stays within
+// OCTAVE_RELIEF_LIMIT_METRES, its bound both ways, with every term at its
+// strongest and the amplitudes using the whole bound, and on the ground of
+// before the landforms (0306).
 @(test)
 test_the_shaped_relief_stays_within_the_bound :: proc(t: ^testing.T) {
 	planet := make_test_planet()
 	planet.relief_octaves = {{512, 10}, {128, 5}, {32, 2}}
 	planet.relief_shape = {ledge_wavelength_metres = 16, ledge_amplitude_millimetres = 1000, ledge_sharpness = MAXIMUM_LEDGE_SHARPNESS, terrace_rise_millimetres = 1300, terrace_riser_permille = 1, basin_depth_metres = 16, basin_threshold_percent = 100}
 	testing.expect_value(t, planet_problem(planet), "")
-	bound := metres_to_position_units(MAXIMUM_RELIEF_METRES)
+	bound := metres_to_position_units(OCTAVE_RELIEF_LIMIT_METRES)
 	for shipped in ([2]bool{false, true}) {
 		if shipped {
-			planet = shipped_test_home_at(8000)
+			planet = pre_0306_test_home_at(8000)
 		}
 		generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
+		testing.expect_value(t, Relief_Bounds{generation.relief_lowest, generation.relief_highest}, Relief_Bounds{-bound, bound})
 		lowest, highest := bound, -bound
 		for index in i64(0) ..< 20_000 {
 			point := project_onto_sphere({index * 977 - 9_000_000, generation.radius, index * 1531 - 15_000_000}, generation.radius, generation.radius)
@@ -395,6 +432,7 @@ shipped_test_crater_term :: proc() -> Crater_Term {
 		reach = metres_to_position_units(18),
 		depth = metres_to_position_units(3),
 		rim = metres_to_position_units(1),
+		ceiling = metres_to_position_units(OCTAVE_RELIEF_LIMIT_METRES),
 	}
 }
 
@@ -550,20 +588,21 @@ test_the_crater_shows_at_every_level :: proc(t: ^testing.T) {
 }
 
 // With the default seed the shipped floor lies at least 1 m over the sea
-// at every preset, and neither of the crater's clamps engages.
+// at every preset, and neither of the crater's clamps engages, on the
+// shipped ground and on the ground of before the landforms (0306).
 @(test)
 test_the_shipped_crater_floor_lies_above_the_sea :: proc(t: ^testing.T) {
-	bound := metres_to_position_units(MAXIMUM_RELIEF_METRES)
 	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
-		planet := shipped_test_home_at(radius)
-		generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
-		term := generation.crater
-		sea := metres_to_position_units(i64(planet.sea_level_metres))
-		testing.expectf(t, term.floor_height - sea >= metres_to_position_units(1), "%d m: the floor lies %d units over the sea", radius, term.floor_height - sea)
-		testing.expectf(t, uncratered_relief(generation, term.home) - term.depth > -bound, "%d m: the floor's clamp engages", radius)
-		for bearing := 0; bearing < 360; bearing += 45 {
-			crest := test_crater_point(generation, bearing, term.radius)
-			testing.expectf(t, uncratered_relief(generation, crest) + term.rim < bound, "%d m: the rim's clamp engages", radius)
+		for planet in ([2]Planet{shipped_test_home_at(radius), pre_0306_test_home_at(radius)}) {
+			generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+			term := generation.crater
+			sea := metres_to_position_units(i64(planet.sea_level_metres))
+			testing.expectf(t, term.floor_height - sea >= metres_to_position_units(1), "%d m: the floor lies %d units over the sea", radius, term.floor_height - sea)
+			testing.expectf(t, uncratered_relief(generation, term.home) - term.depth > generation.relief_lowest, "%d m: the floor's clamp engages", radius)
+			for bearing := 0; bearing < 360; bearing += 45 {
+				crest := test_crater_point(generation, bearing, term.radius)
+				testing.expectf(t, uncratered_relief(generation, crest) + term.rim < generation.relief_highest, "%d m: the rim's clamp engages", radius)
+			}
 		}
 	}
 }
@@ -580,10 +619,12 @@ first_wet_home_seed :: proc(planet: Planet) -> (seed: u64, found: bool) {
 	return 0, false
 }
 
+// On the ground of before the landforms (0306): with them the planet
+// check keeps the home dry for every seed.
 @(test)
 test_a_wet_home_moves_to_the_nearest_dry_whole_degree :: proc(t: ^testing.T) {
 	for radius in ([?]int{4000, 8000, 16000}) {
-		planet := shipped_test_home_at(radius)
+		planet := pre_0306_test_home_at(radius)
 		seed, wet := first_wet_home_seed(planet)
 		testing.expectf(t, wet, "a wet seed at %d m", radius)
 		moved, found := find_dry_planet_home(seed, planet)
@@ -627,7 +668,7 @@ test_the_shipped_home_stays_dry_with_the_default_seed :: proc(t: ^testing.T) {
 @(test)
 test_no_dry_ground_keeps_the_records_home :: proc(t: ^testing.T) {
 	planet := default_planet(shipped_test_planets())
-	planet.sea_level_metres = MAXIMUM_RELIEF_METRES + 1
+	planet.sea_level_metres = int(ceiling_divide_i64(planet_relief_bounds(planet).highest, POSITION_UNITS_PER_METRE)) + 1
 	_, found := find_dry_planet_home(DEFAULT_WORLD_SEED, planet)
 	testing.expect(t, !found, "nothing is dry under a sea above every relief")
 	testing.expect_value(t, new_world_home(DEFAULT_WORLD_SEED, planet), planet.home)

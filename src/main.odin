@@ -68,6 +68,9 @@ Command_Line :: struct {
 	model_check:     string `usage:"<machine|all>: check the machine's model (all: every OBJ model and the arm) in the game's mesher and motion, one line per problem, exit 1 on any; no window"`,
 	model_preview:   string `usage:"<machine>[,<machine>]: render each machine's model from five cameras at rest and at three phases into --model-preview-directory, then exit"`,
 	model_preview_directory: string `usage:"<path>: where --model-preview writes <machine>_<camera>_<phase>.png"`,
+	// Work item 0306: the relief map.
+	relief_map:      string `usage:"<latitude>,<longitude>,<size_metres>[,<radius_metres>]: write a shaded relief map of the square round the point on the default planet (seed from --seed) to --relief-map-file, then exit; no window"`,
+	relief_map_file: string `usage:"<path>: the PNG --relief-map writes"`,
 	// Work item 0177: lockstep multiplayer.
 	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,
 	port:            int `usage:"the one port --server listens on (default: the first free of 47317 to 47326)"`,
@@ -358,6 +361,10 @@ main :: proc() {
 	}
 	if command_line.model_preview != "" {
 		os.exit(run_model_preview(command_line.model_preview, command_line.model_preview_directory, content.machines, config.foundation_pitch_millimetres, data_directory))
+	}
+	if command_line.relief_map != "" {
+		seed, _ := command_line_seed(command_line)
+		os.exit(run_relief_map(command_line.relief_map, command_line.relief_map_file, seed, content.planets))
 	}
 	if command_line.benchmark > 0 {
 		os.exit(run_command_line_benchmark(command_line.benchmark, data_directory, config, game_data))
@@ -672,6 +679,9 @@ command_line_conflict :: proc(command_line: Command_Line) -> string {
 	if problem := workbench_conflict(command_line); problem != "" {
 		return problem
 	}
+	if problem := relief_map_conflict(command_line); problem != "" {
+		return problem
+	}
 	if problem := tech_demo_conflict(command_line); problem != "" {
 		return problem
 	}
@@ -734,10 +744,57 @@ workbench_conflict :: proc(command_line: Command_Line) -> string {
 	planet_preview := command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk
 	planet_preview ||= command_line.planet_preview_daylight != 100 || command_line.planet_preview_pitch != PLANET_PREVIEW_PIT_PITCH_DEGREES || command_line.planet_preview_yaw != 0
 	world := command_line.benchmark > 0 || command_line.server || command_line.join_address != "" || command_line_starts_world(command_line)
-	if planet_preview || world {
-		return fmt.tprintf("%s runs no world, so it cannot be combined with --benchmark, --planet-preview, --server, --join or a world's flags", checking ? "--model-check" : "--model-preview")
+	if planet_preview || world || command_line.relief_map != "" {
+		return fmt.tprintf("%s runs no world, so it cannot be combined with --benchmark, --planet-preview, --server, --join, --relief-map or a world's flags", checking ? "--model-check" : "--model-preview")
 	}
 	return ""
+}
+
+// The relief map (0306) runs no world either: the map with its file, and
+// none of the flags that start, load, host, join or preview one, the
+// developer requests or the model workbench. --seed combines.
+relief_map_conflict :: proc(command_line: Command_Line) -> string {
+	mapping := command_line.relief_map != ""
+	switch {
+	case mapping && command_line.relief_map_file == "":
+		return "--relief-map needs --relief-map-file"
+	case !mapping && command_line.relief_map_file != "":
+		return "--relief-map-file needs --relief-map"
+	case !mapping:
+		return ""
+	}
+	other := ""
+	switch {
+	case command_line.model_check != "":
+		other = "--model-check"
+	case command_line.model_preview != "":
+		other = "--model-preview"
+	case command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk:
+		other = "--planet-preview"
+	case command_line.planet_preview_daylight != 100 || command_line.planet_preview_pitch != PLANET_PREVIEW_PIT_PITCH_DEGREES || command_line.planet_preview_yaw != 0:
+		other = "--planet-preview"
+	case command_line.benchmark > 0:
+		other = "--benchmark"
+	case command_line.server:
+		other = "--server"
+	case command_line.join_address != "":
+		other = "--join"
+	case command_line.tech_demo != "":
+		other = "--tech-demo"
+	case command_line.load_name != "":
+		other = "--load"
+	case command_line.world_name != "":
+		other = "--name"
+	case command_line.debug_terrain:
+		other = "--debug-terrain"
+	case command_line.chapter > 0:
+		other = "--chapter"
+	case len(command_line.give_arguments) > 0:
+		other = "--give"
+	case:
+		return ""
+	}
+	return fmt.tprintf("--relief-map and %s cannot be combined (the map runs no world)", other)
 }
 
 // The tech demo (0291) builds its own world: the flags that start,
@@ -776,6 +833,8 @@ tech_demo_conflict :: proc(command_line: Command_Line) -> string {
 		other = "--model-check"
 	case command_line.model_preview != "":
 		other = "--model-preview"
+	case command_line.relief_map != "":
+		other = "--relief-map"
 	case:
 		return ""
 	}

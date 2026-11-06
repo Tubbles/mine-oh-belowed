@@ -207,7 +207,8 @@ test_removing_the_torch_returns_every_sample_to_dark :: proc(t: ^testing.T) {
 light_test_sky_planet :: proc() -> Field_Water_Planet {
 	spacing := sample_axis_to_position(1, 1000)
 	top := sample_axis_to_position(light_test_origin().y + FIELD_CHUNK_SIZE - 1, 1000)
-	return Field_Water_Planet{generation = Planet_Generation{radius = top - metres_to_position_units(MAXIMUM_RELIEF_METRES) - spacing, spacing_millimetres = 1000, spacing = spacing}}
+	relief := metres_to_position_units(OCTAVE_RELIEF_LIMIT_METRES)
+	return Field_Water_Planet{generation = Planet_Generation{radius = top - relief - spacing, spacing_millimetres = 1000, spacing = spacing, relief_lowest = -relief, relief_highest = relief}}
 }
 
 // Ground up to floor (local y), air above it under full sky, as the

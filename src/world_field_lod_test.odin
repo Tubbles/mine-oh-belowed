@@ -353,7 +353,7 @@ test_the_skirt_faces_follow_the_neighbours_levels :: proc(t: ^testing.T) {
 test_the_seas_surface_residual_is_small_at_every_latitude_and_level :: proc(t: ^testing.T) {
 	planet := make_test_planet()
 	planet.radius_metres = 1000
-	planet.sea_level_metres = MAXIMUM_RELIEF_METRES + 8
+	planet.sea_level_metres = int(planet_relief_bounds(planet).highest / POSITION_UNITS_PER_METRE) + 8
 	spacing := 1000
 	generation := make_planet_generation(TEST_PLANET_SEED, planet, spacing)
 	sea_level := field_sea_level(planet, spacing)

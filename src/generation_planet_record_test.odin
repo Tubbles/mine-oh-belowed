@@ -115,7 +115,7 @@ test_the_world_file_records_the_planet_generation :: proc(t: ^testing.T) {
 	testing.expect_value(t, problem, "")
 	expect_records_equal(t, parsed.planet_generation, record)
 	testing.expect_value(t, parsed.planet_generation.relief_octaves, planet.relief_octaves)
-	testing.expect_value(t, len(parsed.planet_generation.springs), 1)
+	testing.expect_value(t, len(parsed.planet_generation.springs), 2)
 	edited := edited_test_planets(4000)
 	palette := make([][3]int, 2, context.temp_allocator)
 	palette[0], palette[1] = {1, 2, 3}, {4, 5, 6}
@@ -135,7 +135,7 @@ test_the_world_file_records_the_planet_generation :: proc(t: ^testing.T) {
 	testing.expect_value(t, loaded.rotation_period_seconds, planet.rotation_period_seconds)
 	expect_records_equal(t, planet_generation_record(loaded), record)
 	testing.expect_value(t, loaded.relief_octaves, planet.relief_octaves)
-	testing.expect_value(t, len(loaded.springs), 1)
+	testing.expect_value(t, len(loaded.springs), 2)
 	testing.expect_value(t, len(loaded.palette), len(planet.palette))
 	testing.expect_value(t, loaded.palette[2], [3]int{1, 2, 3})
 	original := make_planet_generation(TEST_PLANET_SEED, recorded, 1000)

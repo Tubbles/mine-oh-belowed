@@ -964,8 +964,8 @@ arrival_problem :: proc(config: Game_Config) -> string {
 	if clear < ATMOSPHERE_CLEAR_GROUND_METRES {
 		return fmt.tprintf("atmosphere.top_metres %d less two scale heights of %d m leaves %d m, below %d", atmosphere.top_metres, atmosphere.scale_height_metres, clear, ATMOSPHERE_CLEAR_GROUND_METRES)
 	}
-	if config.arrival_start_metres < atmosphere.top_metres + MAXIMUM_RELIEF_METRES {
-		return fmt.tprintf("arrival_start_metres %d is not %d m above atmosphere.top_metres %d", config.arrival_start_metres, MAXIMUM_RELIEF_METRES, atmosphere.top_metres)
+	if config.arrival_start_metres < atmosphere.top_metres + MAXIMUM_RELIEF_DEPTH_METRES {
+		return fmt.tprintf("arrival_start_metres %d is not %d m above atmosphere.top_metres %d", config.arrival_start_metres, MAXIMUM_RELIEF_DEPTH_METRES, atmosphere.top_metres)
 	}
 	curve := build_arrival_curve(config)
 	if !curve.reached_floor {

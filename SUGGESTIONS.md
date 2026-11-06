@@ -181,3 +181,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 - KSP's brighter body: its trail keeps full light for about a third of a shield diameter and then halves every 0.35 diameters, where ours halves every quarter from the rim (0305's measurement). Matching it is two constants and a new gain for the porthole, which then reads brighter.
 - A pod for every joiner: today a joiner after the landing spawns in the landed pod's cabin, so nobody sees another player arrive; the wake is drawn on any falling pod, so a pod per joiner would show it to the players on the ground. A gameplay feature, not a look one.
 - The wake's sparks keep 0304's flicker factor and can clamp to a pale yellow at a flare (never white), and no test catches a brightness factor coming back into the shell (0305's review).
+
+## Suggestions from the relief (0306, 2026-11-06)
+
+- `ATMOSPHERE_CLEAR_GROUND_METRES` (64 m, `src/data_arrival_curve.odin`) dates from relief within 34 m. A planet may now reach 256 m, and `game.sjson` is checked without the planets, so valid data could dim the day sky over a peak. The shipped data has 360 m of clear sky over peaks of 126 m. A check of the clear sky against the planets' highest relief at load would catch it.
+- An old world logs that it keeps its relief on every load, also after this build saved it, since a zero `landforms` object reads like an absent one.

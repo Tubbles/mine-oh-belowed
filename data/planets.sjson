@@ -1,5 +1,6 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
-// required but relief_shape (0189), whose terms are off without it; the
+// required but relief_shape (0189) and landforms (0306), whose terms are
+// off without them; the
 // trees are doc/content.md, Trees (0197); the
 // terrain field generates a planet from its record, the
 // world seed and the sample spacing (generation_planet.odin). A world
@@ -16,33 +17,36 @@ planets = [
 		radius_presets_metres = [4000, 8000, 16000]
 		// 981 is Earth's.
 		surface_gravity_centimetres_per_second_squared = 981
-		// Below the radius, where bedrock starts.
+		// Below the radius, where bedrock starts: at least the relief's
+		// depth (76 m with the landforms below) and the deep stone's 40 m.
 		bedrock_depth_metres = 256
 		// Above the radius. Every sample below it that is not ground is
-		// sea, full and static outside the simulated chunks. At 11 m below
-		// the radius the basins (relief_shape) fill: outside them the
-		// first octave lies at most 3.6 m below the radius (3 m at the
-		// basins' threshold, a terrace's rise less), and the other octaves
-		// and the ledges take it 7.7 m lower at most, so dry ground
-		// reaches the sea only where all of them are near their lowest.
+		// sea, full and static outside the simulated chunks. The
+		// landforms' lowland knots lie below it, so about a quarter of the
+		// planet is sea, its floor down to about 55 m under the surface.
 		sea_level_metres = -11
 		// Sources of the water field: the first air sample above the
 		// surface under each point. The pole is latitude 90 on +y. With
-		// the default seed this one lies 204 m from the home at 8 km
-		// (102 m at 4 km, 408 m at 16 km), above the sea at every preset,
-		// and its water runs down into a hollow below the sea about 30 m
-		// from it at 8 km.
+		// the default seed the first lies 688 m from the home at 8 km
+		// (344 m at 4 km, 1377 m at 16 km) on a range's slope over a
+		// valley, the tech demo's spring start and the pod's heading: its
+		// stream runs about 400 m down and drops 65 m at 8 km (170 m at
+		// 16 km, 90 m at 4 km). The second lies 310 m from the home at
+		// 8 km on the foot of a range: its stream runs about 220 m down
+		// and drops 30 m into the home's plain.
 		springs = [
-			{latitude_degrees = 83, longitude_degrees = 144}
+			{latitude_degrees = 79, longitude_degrees = 151}
+			{latitude_degrees = 81, longitude_degrees = 139}
 		]
 		// Where the pod lies, its door to the first spring (work item 0179):
 		// the surface under the point, in whole degrees; the players spawn
-		// in its cabin (0199).
-		// With the default seed it stands about 6 to 9 m above the sea at every
-		// preset on ground flat within 0.6 m over 4 m, a basin 86 to 144 m
-		// from it (0189). A seed that puts the crater's floor less than 1 m
-		// above the sea moves a new world's home to the nearest dry whole
-		// degree point within 5 degrees (0180).
+		// in its cabin (0199). The landforms keep a plain of home_metres
+		// round it for every seed, so its crater's floor lies 9.5, 8.7 and
+		// 9.1 m over the sea at 4, 8 and 16 km with the default seed, and
+		// the planet's check keeps it dry for every seed. A planet without
+		// landforms whose seed puts the crater's floor less than 1 m above
+		// the sea moves a new world's home to the nearest dry whole degree
+		// point within 5 degrees (0180).
 		home = {latitude_degrees = 83, longitude_degrees = 132}
 		// The impact crater the pod lies in (work item 0199), round the
 		// home: a flat floor of floor_radius_metres at depth_metres below
@@ -91,14 +95,15 @@ planets = [
 		// the weather (M15).
 		rain_fill_per_minute = 2
 		rotation_period_seconds = 1200
-		// The surface is the radius plus three octaves of value noise read
-		// on the sphere, each its lattice spacing and the most it raises or
-		// lowers the ground; the amplitudes, the ledges' amplitude and the
-		// basins' depth add up to 34 m at most (33.7 here).
+		// The surface is the radius plus the landforms below and three
+		// octaves of value noise read on the sphere, each its lattice
+		// spacing and the most it raises or lowers the ground: the small
+		// detail on the landforms. The amplitudes, the ledges' amplitude
+		// and the basins' depth add up to 34 m at most (7.7 here).
 		relief_octaves = [
-			{wavelength_metres = 512, amplitude_metres = 10}
-			{wavelength_metres = 128, amplitude_metres = 5}
+			{wavelength_metres = 96, amplitude_metres = 4}
 			{wavelength_metres = 32, amplitude_metres = 2}
+			{wavelength_metres = 12, amplitude_metres = 1}
 		]
 		// The relief's shape (0189), each term off at zero. The ledges:
 		// one more octave of value noise read through 1 - (1 - |noise|)
@@ -111,15 +116,58 @@ planets = [
 		// and the rest a flat tread. The basins: where the first octave's
 		// noise lies below the threshold (percent of its range), the
 		// ground drops by up to the depth with the square of the share
-		// below it, so water gathers in a few hollows.
+		// below it. The terraces and the basins are off here: the
+		// landforms make the basins, and the terraces stepped only the
+		// old long octave.
 		relief_shape = {
 			ledge_wavelength_metres = 32
 			ledge_amplitude_millimetres = 700
 			ledge_sharpness = 128
-			terrace_rise_millimetres = 1200
+			terrace_rise_millimetres = 0
 			terrace_riser_permille = 10
-			basin_depth_metres = 16
+			basin_depth_metres = 0
 			basin_threshold_percent = -30
+		}
+		// The landforms (work item 0306, doc/content.md, Planets): plains,
+		// hills, ridged ranges and the valleys between them, fading in
+		// from the home. The relief reaches 75.7 m below and 125.7 m above
+		// the radius at most; the highest peaks stand about 100 m over the
+		// sea.
+		landforms = {
+			// A noise of this wavelength moves the large terms' input by
+			// up to warp_metres on each axis, which hides the lattice.
+			warp_wavelength_metres = 1200
+			warp_metres = 300
+			// The region noise's wavelength: plains, hills and ranges
+			// alternate over a few kilometres.
+			region_wavelength_metres = 2400
+			// The ground's height over the radius at the region noise's
+			// -0.6, -0.45 ... 0.6 (a Catmull-Rom curve through them, flat
+			// beyond): sea floor, coast, lowland, plain, hill, highland.
+			region_heights_metres = [-60, -46, -26, -9, -5, -1, 5, 16, 30]
+			// The share of the ranges at the same knots: none on the
+			// lowlands, all of them on the highlands.
+			region_ranges_percent = [0, 0, 0, 0, 15, 45, 80, 100, 100]
+			// The share of the hills at the same knots.
+			region_hills_percent = [0, 10, 30, 60, 80, 100, 100, 100, 100]
+			// The ranges: crests of range_metres along the zero lines of
+			// a noise of this wavelength.
+			range_wavelength_metres = 800
+			range_metres = 80
+			// The spurs notch the crests into peaks and saddles: a crest
+			// keeps 100 less spur_percent of its height between them.
+			spur_wavelength_metres = 300
+			spur_percent = 35
+			// The hills: a noise of this wavelength raising or lowering
+			// the ground by up to hill_metres.
+			hill_wavelength_metres = 180
+			hill_metres = 8
+			// The plain round the home: home_metres over the radius within
+			// calm_metres of it (the crater's reach at least), the terms
+			// fading in out to wild_metres.
+			home_metres = 2
+			calm_metres = 120
+			wild_metres = 600
 		}
 		// The tints of the ground, red, green and blue from 0 to 255.
 		palette = [

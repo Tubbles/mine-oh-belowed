@@ -44,6 +44,8 @@ Planet_Generation_Record :: struct {
 	// (resolve_world_planet).
 	trees:                                          Planet_Tree_Placement,
 	trees_recorded:                                 bool,
+	// Zero in a file written before them (0306): the relief of before.
+	landforms:                                      Planet_Landforms,
 }
 
 // Borrows the planet's springs.
@@ -65,6 +67,7 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		crater_at_impact = planet.crater_at_impact,
 		trees = planet_tree_placement(planet.trees),
 		trees_recorded = true,
+		landforms = planet.landforms,
 	}
 }
 
@@ -88,6 +91,8 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	result.rotation_period_seconds = record.rotation_period_seconds
 	result.relief_octaves = record.relief_octaves
 	result.relief_shape = record.relief_shape
+	// Set even when zero: the data's landforms never reach an old world.
+	result.landforms = record.landforms
 	result.springs = slice.clone(record.springs, allocator)
 	if record.home_recorded {
 		result.home = record.home
@@ -294,6 +299,16 @@ planet_preset_radius :: proc(planet: Planet, radius_metres: int) -> int {
 	return radius_metres
 }
 
+// The log line of a world file recorded before the landforms (0306) on a
+// planet whose data has them, or "": zero is off, so nothing is remapped
+// and the world keeps the relief it was made with.
+recorded_landforms_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
+	if !planet_generation_is_recorded(recorded) || recorded.landforms != {} || planet.landforms == {} {
+		return ""
+	}
+	return "world: the world file records no landforms, it keeps the relief it was made with"
+}
+
 // The planet a world generates on, against the data's planets: the
 // settings' planet, or with a log line the default one when the data has
 // no planet of that id (a loaded world keeps its id in the settings, so
@@ -329,6 +344,9 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 	if planet_generation_is_recorded(recorded) && !recorded.crater_recorded {
 		platform.log_printf("world: the world file records no crater, it takes the crater of %q from %s", planet.id, PLANETS_FILE_NAME)
 		record.crater, record.crater_recorded = planet.crater, true
+	}
+	if note := recorded_landforms_note(recorded, planet); note != "" {
+		platform.log_printf("%s", note)
 	}
 	if planet_generation_is_recorded(recorded) && !recorded.trees_recorded {
 		platform.log_printf("world: the world file records no trees, it takes the trees of %q from %s", planet.id, PLANETS_FILE_NAME)

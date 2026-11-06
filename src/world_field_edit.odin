@@ -280,7 +280,7 @@ field_ground_sample_at :: proc(world: ^Field_World, spacing_millimetres: int, po
 impact_crater_axis :: proc(generation: Planet_Generation) -> (axis: [3]i64, reach: i64) {
 	term := generation.crater
 	axis, _ = normalize_fixed(term.home)
-	relief_reach := metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
+	relief_reach := generation.relief_highest + generation.spacing
 	return axis, term.reach + term.reach * relief_reach / max(generation.radius, 1) + generation.spacing
 }
 
@@ -302,9 +302,8 @@ impact_crater_reaches_box :: proc(generation: Planet_Generation, box: Field_Box)
 	if ahead <= -half || offset.x * offset.x + offset.y * offset.y + offset.z * offset.z > near * near {
 		return false
 	}
-	relief_reach := metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
 	distance := vector_length(centre)
-	return distance - half < generation.radius + relief_reach && distance + half >= generation.radius - relief_reach - metres_to_position_units(DEEP_STONE_DEPTH_METRES)
+	return distance - half < generation.radius + generation.relief_highest + generation.spacing && distance + half >= generation.radius + generation.relief_lowest - generation.spacing - metres_to_position_units(DEEP_STONE_DEPTH_METRES)
 }
 
 // Writes the chunk's crater overlay (generate_field_chunk) into the

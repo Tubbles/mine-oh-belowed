@@ -140,7 +140,7 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: 
 }
 
 field_globe_radius_metres :: proc(planet: Planet) -> f32 {
-	return f32(i64(planet.radius_metres) - MAXIMUM_RELIEF_METRES - FIELD_GLOBE_MARGIN_METRES)
+	return f32(planet.radius_metres - relief_depth_metres(planet_relief_bounds(planet)) - FIELD_GLOBE_MARGIN_METRES)
 }
 
 field_globe_color :: proc(palette: [][3]int) -> rl.Color {
