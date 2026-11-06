@@ -6,20 +6,22 @@ import rl "shared:raylib"
 import "shared:raylib/rlgl"
 import "generation_seed"
 
-// The flakes the heat shield sheds during the heating (work item 0290,
-// doc/presentation.md, The arrival): each leaves the shield's rim with
-// the pod's velocity and a hashed sideways nudge and loses its speed
-// against the air exponentially, so relative to the pod it drifts aft
-// past the portholes, a bright head with a plasma streak against the
-// air. Its path is a closed form in the pod's model frame (cells, the
-// air streaming along +y), and every value is a pure function of its
-// index, the seed and the arrival's seconds, so a joiner or a load
-// sees the same flakes. Nothing here is simulation state.
+// The flakes the heat shield sheds during the heating (work items 0290
+// and 0304, doc/presentation.md, The arrival): each leaves the shield's
+// rim with the pod's velocity and a hashed sideways nudge and loses its
+// speed against the air exponentially, so relative to the pod it drifts
+// aft through the wake past the portholes, a charred plate with a gold
+// rim and a plasma streak against the air, drawn after the wake for
+// every viewer. Its path is a closed form in the pod's model frame
+// (cells, the air streaming along +y), and every value is a pure
+// function of its index, the seed and the arrival's seconds, so a
+// joiner or a load sees the same flakes. Nothing here is simulation
+// state.
 
 ARRIVAL_FLAKE_SALT :: 0x666c616b
 // The births' time slots and the candidates each slot holds.
 ARRIVAL_FLAKE_SLOT_SECONDS :: 0.05
-ARRIVAL_FLAKE_CANDIDATES_PER_SLOT :: 5
+ARRIVAL_FLAKE_CANDIDATES_PER_SLOT :: 8
 // A flake's life, hashed between these.
 ARRIVAL_FLAKE_SHORTEST_LIFE_SECONDS :: 1.6
 ARRIVAL_FLAKE_LONGEST_LIFE_SECONDS :: 2.0
@@ -37,15 +39,14 @@ ARRIVAL_FLAKE_SLOWEST_OUTWARD :: 0.4
 ARRIVAL_FLAKE_FASTEST_OUTWARD :: 1.6
 // The nudge's sideways part, at most this either way, cells a second.
 ARRIVAL_FLAKE_SIDEWAYS :: 0.8
-// The head's half size, smallest + (largest - smallest) times a hashed
-// share squared, so most are small.
-ARRIVAL_FLAKE_SMALLEST_CELLS :: 0.025
-ARRIVAL_FLAKE_LARGEST_CELLS :: 0.07
-// A head this large or larger shows a dark core inside its glowing rim,
-// the footage's tumbling plates (0290, decision 2).
-ARRIVAL_FLAKE_DARK_CORE_CELLS :: 0.045
-// The streak's length: these seconds of the speed against the air.
-ARRIVAL_FLAKE_STREAK_SECONDS :: 0.1
+// The plate's half size, smallest + (largest - smallest) times a hashed
+// share squared, so most are small: 8 to 15 px at 720p from the chair
+// (0304).
+ARRIVAL_FLAKE_SMALLEST_CELLS :: 0.055
+ARRIVAL_FLAKE_LARGEST_CELLS :: 0.11
+// The streak's length: these seconds of the speed against the air, 4.6
+// cells at the birth (0304).
+ARRIVAL_FLAKE_STREAK_SECONDS :: 0.65
 // The fade in after the birth and out before the end.
 ARRIVAL_FLAKE_FADE_SECONDS :: 0.15
 // The vertex colour's brightness scale, flake_brightest in
@@ -80,11 +81,10 @@ Arrival_Flake_Source :: struct {
 	salt:                                                         u64,
 }
 
-// One flake: its head's centre in cells of the model's frame, the
-// streak's unit direction there, its length and the head's half size in
-// cells, its brightness, flicker and whiteness, its dark core's
-// opacity (0 for a head under ARRIVAL_FLAKE_DARK_CORE_CELLS, the fade
-// for a larger one) and whether it lives.
+// One flake: its plate's centre in cells of the model's frame, the
+// streak's unit direction there, its length and the plate's half size in
+// cells, its brightness, flicker and whiteness, its plate's opacity
+// (the fade: every flake is a charred plate, 0304) and whether it lives.
 Arrival_Flake :: struct {
 	position, streak:                                                    [3]f32,
 	streak_cells, size_cells, brightness, flicker, whiteness, dark_core: f32,
@@ -162,7 +162,7 @@ arrival_flake_on_path :: proc(hash: u64, age, life, heat, seconds: f32, source: 
 		brightness = (0.8 + 0.4 * arrival_flake_fraction(hash, .Brightness)) * (0.35 + 0.65 * decay) * (0.5 + 0.5 * heat) * fade,
 		flicker = fire_flicker(f64(seconds), hash, false),
 		whiteness = 0.3 + 0.5 * decay,
-		dark_core = size >= ARRIVAL_FLAKE_DARK_CORE_CELLS ? fade : 0,
+		dark_core = fade,
 		alive = true,
 	}
 }
@@ -219,21 +219,23 @@ arrival_flake_byte :: proc(share: f32) -> u8 {
 
 // The flake's values as its vertex colour (arrival_flake.vs decodes
 // them): the brightness times the flicker over ARRIVAL_FLAKE_BRIGHTEST
-// in red, the head's share of the quad's length in green, the whiteness
-// in blue, the dark core's opacity in alpha.
+// in red, the square root of the head's share of the quad's length in
+// green (a share as small as 0.02 within 2 percent, not 10, 0304),
+// the whiteness in blue, the plate's opacity in alpha.
 arrival_flake_vertex_color :: proc(flake: Arrival_Flake) -> [4]u8 {
 	head_share := 2 * flake.size_cells / (flake.size_cells + max(flake.streak_cells, flake.size_cells))
-	return {arrival_flake_byte(flake.brightness * flake.flicker / ARRIVAL_FLAKE_BRIGHTEST), arrival_flake_byte(head_share), arrival_flake_byte(flake.whiteness), arrival_flake_byte(flake.dark_core)}
+	return {arrival_flake_byte(flake.brightness * flake.flicker / ARRIVAL_FLAKE_BRIGHTEST), arrival_flake_byte(math.sqrt(head_share)), arrival_flake_byte(flake.whiteness), arrival_flake_byte(flake.dark_core)}
 }
 
-// Inside draw_arrival_windows (depth mask off, culling disabled), under
-// the pod's transform: every flake one quad of the flake shader in one
-// batch, premultiplied (one, one minus source alpha). The light adds
-// without sorting, and only a large flake's dark core writes alpha and
-// hides what lies behind it. The cores are not sorted either: they draw
-// in slot order, so where two flakes overlap a core drawn later darkens
-// a nearer flake's light, which the flakes' sparseness keeps rare.
-// Nothing without flakes or the shader.
+// Inside BeginMode3D under the pod's transform, after the wake
+// (draw_arrival_entry): every flake one quad of the flake shader in one
+// batch, premultiplied (one, one minus source alpha), depth tested
+// against the hull without writing depth, both sides drawn. The streaks'
+// light adds without sorting, and the plates write alpha and hide what
+// lies behind them, the wake's glow among it. The plates are not sorted
+// either: they draw in slot order, so where two flakes overlap a plate
+// drawn later darkens a nearer flake's light, which the flakes'
+// sparseness keeps rare. Nothing without flakes or the shader.
 draw_arrival_flakes :: proc(presentation: ^Arrival_Presentation, flakes: []Arrival_Flake, body: matrix[4, 4]f32, pitch_metres: f32, eye: [3]f32, haze, ablator: [3]f32) {
 	if len(flakes) == 0 || !presentation.flake_ready {
 		return
@@ -242,6 +244,8 @@ draw_arrival_flakes :: proc(presentation: ^Arrival_Presentation, flakes: []Arriv
 	linear := cast(matrix[3, 3]f32)body
 	coordinates := [4][2]f32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	rlgl.DrawRenderBatchActive()
+	rlgl.DisableDepthMask()
+	rlgl.DisableBackfaceCulling()
 	rl.BeginBlendMode(.ALPHA_PREMULTIPLY)
 	rl.BeginShaderMode(shader)
 	set_shader_vector3(shader, "haze_color", haze)
@@ -263,4 +267,6 @@ draw_arrival_flakes :: proc(presentation: ^Arrival_Presentation, flakes: []Arriv
 	rlgl.DrawRenderBatchActive()
 	rl.EndShaderMode()
 	rl.EndBlendMode()
+	rlgl.EnableBackfaceCulling()
+	rlgl.EnableDepthMask()
 }

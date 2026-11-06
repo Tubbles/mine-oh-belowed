@@ -195,13 +195,17 @@ Atmosphere_Config :: struct {
 	top_metres, scale_height_metres: int,
 }
 
-// The entry's plasma on the portholes (work item 0273,
-// render_arrival.odin, data/shaders/arrival.fs): the air's glow and the
-// heat shield's, 0 to 255 per channel, and the soot's opacity at the
-// glass's rim once the heating is over, in percent.
+// The entry's plasma on the pod (work items 0273 and 0304,
+// render_arrival.odin, render_arrival_wake.odin, data/shaders/arrival.fs,
+// data/shaders/arrival_wake.fs): the air's glow and the heat shield's,
+// 0 to 255 per channel, the soot's opacity at the glass's rim once the
+// heating is over, in percent, and the wake's.
 Arrival_Plasma_Config :: struct {
 	haze_color, ablator_color: [3]int,
 	soot_percent:              int,
+	// The wake's opacity face on where the chair's porthole looks at the
+	// peak, in percent (0304).
+	wake_opacity_percent:      int,
 }
 
 // A field chunk is about 270 KiB with its water and light: radius 3 is
@@ -889,12 +893,17 @@ MAXIMUM_ARRIVAL_DEBRIS_PIECES :: 400
 MAXIMUM_ARRIVAL_DEBRIS_REST_SECONDS :: 900
 MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 30
 MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 60
-MAXIMUM_ARRIVAL_FLAKES_PER_SECOND :: 100
+MAXIMUM_ARRIVAL_FLAKES_PER_SECOND :: 160
 MINIMUM_ATMOSPHERE_TOP_METRES :: 64
 MAXIMUM_ATMOSPHERE_METRES :: 4096
 // The soot stays under this share at the rim, so a porthole stays a
 // window (0273).
 MAXIMUM_ARRIVAL_SOOT_PERCENT :: 60
+// The wake's opacity at the chair's porthole at the peak (0304): a
+// missing key reads 0 and is refused, so a stale data edits copy falls
+// back to the data files at the start.
+MINIMUM_ARRIVAL_WAKE_OPACITY_PERCENT :: 5
+MAXIMUM_ARRIVAL_WAKE_OPACITY_PERCENT :: 95
 
 // Every arrival value inside its bound; arrival_ticks 0 is no fall, else
 // it holds the hit and one tick of descent; neither plasma colour is
@@ -931,6 +940,7 @@ arrival_problem :: proc(config: Game_Config) -> string {
 		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[1], 0, MAXIMUM_COLOR_COMPONENT},
 		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[2], 0, MAXIMUM_COLOR_COMPONENT},
 		{"arrival_plasma.soot_percent", config.arrival_plasma.soot_percent, 0, MAXIMUM_ARRIVAL_SOOT_PERCENT},
+		{"arrival_plasma.wake_opacity_percent", config.arrival_plasma.wake_opacity_percent, MINIMUM_ARRIVAL_WAKE_OPACITY_PERCENT, MAXIMUM_ARRIVAL_WAKE_OPACITY_PERCENT},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {

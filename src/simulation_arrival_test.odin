@@ -624,8 +624,9 @@ test_a_save_from_before_the_arrival_loads_landed :: proc(t: ^testing.T) {
 // Every presentation procedure called on one session each tick leaves its
 // hash equal to an untouched session's (the debris' site, pieces, poses
 // and patter and the dust's puffs on the site since 0272; the portholes'
-// flicker, lights, travel on the glass and soot past the landing since
-// 0273; the heat shield's flakes since 0290).
+// flicker, lights and soot past the landing since 0273; the heat
+// shield's flakes since 0290; the wake's shape, order, light and flicker
+// since 0304).
 @(test)
 test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -646,15 +647,21 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		machine := watched_content.machines.machines[pod.machine]
 		up, forward := unit_vector_to_f32(frame.axes[FRAME_UP]), unit_vector_to_f32(pod_travel_heading(frame, pod, machine))
 		arrival_descent_offset(view, up, forward, &curve)
-		travel := arrival_travel_direction(arrival_curve_at(&curve, view.curve_progress), up, forward)
 		arrival_pod_transform(view, frame, pod, machine, config.arrival_rest_tilt_degrees, &curve)
 		testing.expect(t, machine.window_count > 0)
 		for index in 0 ..< machine.window_count {
 			window := machine.windows[index]
 			arrival_window_corners(window.centre, window.normal, up, up, window.radius)
-			arrival_window_corners(arrival_sheath_centre(window), window.normal, up, up, window.sheath_radius)
-			arrival_travel_on_glass(window.normal, travel, up)
 		}
+		shape := arrival_wake_shape(machine.heat_shield)
+		for index in 0 ..< ARRIVAL_WAKE_SIDES {
+			arrival_wake_quad(shape, index)
+			arrival_wake_shield_triangle(shape, index)
+		}
+		arrival_wake_quad_order(shape, {0, 3, -32})
+		arrival_eye_inside_wake(shape, {0, 3, -32})
+		arrival_wake_half_light_cells(shape, view.heat)
+		arrival_wake_flicker(view.seconds, salt, false)
 		flickers := arrival_window_flickers(view.seconds, machine.window_count, salt, false)
 		body := entity_body_matrix(&state.world.entities, pod)
 		arrival_window_lights(view, body, entity_frame_pitch_millimetres(&state.world.entities, pod.frame), machine, body, config.arrival_plasma, flickers)

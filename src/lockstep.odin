@@ -593,6 +593,7 @@ session_command_context :: proc(session: ^Session, content: Simulation_Content, 
 		content          = content,
 		control          = control,
 		weather_override = &session.weather_override,
+		arrival_camera   = &session.arrival_camera,
 		now              = time.now(),
 	}
 }

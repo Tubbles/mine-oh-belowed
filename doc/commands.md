@@ -4,7 +4,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 
 - Source: `command_socket.odin` (paths, queue, command log), `command_socket_posix.odin` (the socket), `command.odin` (protocol and commands), `command_field.odin` (the field world's forms, 0183), `developer.odin` (the requests the commands serve), `loop.odin` (`save`, `reload`, ticks, screenshots).
 - Linux only, not on Windows ([build.md](build.md), What the Windows build lacks).
-- The simulation never reads the socket. A line that changes the world (`command_writes_simulation`: every command of the table below from `give` to `blueprint`, and `look`, `camera`, `crouch` and `seat`, except `weather`, which only the local session keeps) goes into the local player's next input record and runs at the start of that tick, through the same `serve_developer_request` the Developer screen uses ([developer_tools.md](developer_tools.md)); its answer comes once that tick ran, and later lines wait for it. Other lines (queries, `screenshot`, `save`, `tick`) run on the main thread after the frame's ticks.
+- The simulation never reads the socket. A line that changes the world (`command_writes_simulation`: every command of the table below from `give` to `blueprint`, and `look`, `camera`, `crouch` and `seat`, except `weather` and `arrival_camera`, which only the local session keeps) goes into the local player's next input record and runs at the start of that tick, through the same `serve_developer_request` the Developer screen uses ([developer_tools.md](developer_tools.md)); its answer comes once that tick ran, and later lines wait for it. Other lines (queries, `screenshot`, `save`, `tick`) run on the main thread after the frame's ticks.
 
 ## For the assistant
 
@@ -51,6 +51,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | `seat <stand\|sit>` | Field world only: stands up from the pod's chair (at the cabin's spawn, the look kept) or sits in the first pod's chair as Interact on it does (0223), answering `ok seat standing` or `ok seat seated`; refused `the world is falling` while the arrival falls, and `there is no seat` when sitting finds no pod with a seat. |
 | `time <dawn\|noon\|dusk\|midnight>` | Sets the time of day. |
 | `weather <clear\|overcast\|rain\|fog\|auto>` | Forces a weather kind at full intensity (0063); `auto` returns to the schedule. Kept in the session, not saved; with the Weather setting off the weather stays clear. |
+| `arrival_camera <x> <y> <z> \| arrival_camera off` | During the fall, puts the viewport's camera at the point in cells of the pod's model frame (x and z centred, y up from the base, each within 200), looking at the pod's middle and moved with the pod, for captures of the wake from outside (0304); `off` returns to the seat. Render only: kept in the session, not saved, and outside the descent the seat's camera holds. |
 | `fly <on\|off>` | Fly mode, swept against blocks unless no clip is on; on a field world the field player's (0183). |
 | `noclip <on\|off>` | Flying passes through blocks (0112). Walking ignores it. On a field world the field player's (0183). |
 | `cheat_speed <on\|off>` | Faster movement and hand mining ([developer_tools.md](developer_tools.md)). |

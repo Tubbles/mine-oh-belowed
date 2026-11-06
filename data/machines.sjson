@@ -126,19 +126,16 @@
 // "+z" or "-z", the seated look at yaw 0. A new world's players sit
 // strapped in it through the fall.
 // windows (optional, pods only, work item 0223, at most 8) lists {centre
-// = [x, y, z], normal = [x, y, z], radius, sheath_depth, sheath_radius}:
-// a porthole's outer pane in cells of the model's frame, where the soot
-// lies (0288), the centre inside the footprint with the lamps' slack,
-// the normal into the cabin of length 0.5 to 2 (normalised at load), the
-// radius 0.05 to 2 cells. The entry's sheath streams on a square quad
-// sheath_depth cells (0 to 2) out along the normal from the centre,
-// outside the hull, with a half side of sheath_radius cells (the radius
-// to 4). Presentation only.
+// = [x, y, z], normal = [x, y, z], radius}: a porthole's outer pane in
+// cells of the model's frame, where the soot lies (0288), the centre
+// inside the footprint with the lamps' slack, the normal into the cabin
+// of length 0.5 to 2 (normalised at load), the radius 0.05 to 2 cells.
+// Presentation only.
 // heat_shield (optional, pods only, work item 0290) is {radius,
 // rim_height}: the heat shield's rim in cells of the model's frame, its
 // outer face from y 0 to rim_height (0 to the height) at radius (above 0
-// to half the footprint), where the entry's flakes break off.
-// Presentation only.
+// to half the footprint), where the entry's flakes break off and the
+// wake leaves (0304). Presentation only.
 // flames (optional, furnaces only, work item 0274, at most 8) lists
 // {position = [x, y, z], width, height, yaw_degrees}: a quad of the flame
 // shader standing on its base centre at position, in cells of the model's
@@ -1199,18 +1196,16 @@ machines = [
 		// out along the normal from the lining (pod.py's wall() origin),
 		// inside the outer rim's hexagonal bore, the radius just over the
 		// bore's corners, the normal into the cabin. The soot lies on the
-		// pane. The entry's sheath streams 0.37 further out, half a cell
-		// outside the hull's skin, its quad's half side 1.2 so no cabin
-		// eye sees its edge.
+		// pane.
 		windows = [
-			{centre = [3.609, 3.886, -2.083], normal = [-0.755, -0.490, 0.436], radius = 0.40, sheath_depth = 0.37, sheath_radius = 1.2}
-			{centre = [1.071, 3.936, -3.998], normal = [-0.226, -0.490, 0.842], radius = 0.40, sheath_depth = 0.37, sheath_radius = 1.2}
-			{centre = [-2.083, 3.886, -3.609], normal = [0.436, -0.490, 0.755], radius = 0.40, sheath_depth = 0.37, sheath_radius = 1.2}
-			{centre = [-4.025, 3.886, 1.078], normal = [0.842, -0.490, -0.226], radius = 0.40, sheath_depth = 0.37, sheath_radius = 1.2}
-			{centre = [-2.069, 3.936, 3.584], normal = [0.436, -0.490, -0.755], radius = 0.40, sheath_depth = 0.37, sheath_radius = 1.2}
+			{centre = [3.609, 3.886, -2.083], normal = [-0.755, -0.490, 0.436], radius = 0.40}
+			{centre = [1.071, 3.936, -3.998], normal = [-0.226, -0.490, 0.842], radius = 0.40}
+			{centre = [-2.083, 3.886, -3.609], normal = [0.436, -0.490, 0.755], radius = 0.40}
+			{centre = [-4.025, 3.886, 1.078], normal = [0.842, -0.490, -0.226], radius = 0.40}
+			{centre = [-2.069, 3.936, 3.584], normal = [0.436, -0.490, -0.755], radius = 0.40}
 		]
 		// The heat shield's rim (0290): pod.py's rim, 5.45 out, 0 to 0.2
-		// up.
+		// up, where the flakes break off and the wake leaves (0304).
 		heat_shield = {radius = 5.45, rim_height = 0.2}
 		// The outer hatch at the drum's outer end, the inner hatch at its
 		// cabin end, then the locker facing the lane, the bench facing

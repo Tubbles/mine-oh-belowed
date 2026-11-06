@@ -1,8 +1,8 @@
 #version 330
 
-// The arrival's window flames (work item 0200, render_arrival.odin): a
-// porthole's glass, its texture coordinate passed on. Attribute and
-// matrix names are the raylib defaults.
+// The portholes' soot (work items 0200, 0304, render_arrival.odin): a
+// porthole's outer pane, its texture coordinate passed on. Attribute
+// and matrix names are the raylib defaults.
 
 in vec3 vertexPosition;
 in vec2 vertexTexCoord;

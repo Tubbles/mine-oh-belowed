@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:os"
 import "core:slice"
+import "core:strconv"
 import "core:strings"
 import "core:time"
 import "platform"
@@ -34,6 +35,9 @@ DEFAULT_VEIN_QUERY_RADIUS :: 64
 DEFAULT_ENTITY_QUERY_RADIUS :: 32
 MAXIMUM_QUERY_RADIUS :: 4096
 SCREENSHOT_DIRECTORY_NAME :: "screenshots"
+// The arrival camera's point lies at most this far from the pod's model
+// origin along each axis, in cells (0304).
+ARRIVAL_CAMERA_REACH_CELLS :: 200
 MAXIMUM_SCREENSHOT_NAME_LENGTH :: 64
 
 // What the commands ask of the frame loop. screenshot_path is owned
@@ -70,6 +74,9 @@ Command_Context :: struct {
 	// world. Render only, so it is set here and not through a developer
 	// request, and never saved.
 	weather_override:     ^Maybe(Weather_Kind),
+	// The session's arrival camera (work item 0304), nil without a world:
+	// render only like the weather, never saved.
+	arrival_camera:       ^Maybe([3]f32),
 	// The texture editor's entries (work item 0100) with their current
 	// parameters, for query textures.
 	textures:             []Texture_Editor_Entry,
@@ -109,6 +116,7 @@ command_usages := [?]Command_Usage {
 	{"seat <stand|sit>", "stand up from the pod's chair or sit in it"},
 	{"time <dawn|noon|dusk|midnight>", "set the time of day"},
 	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
+	{"arrival_camera <x> <y> <z> | arrival_camera off", "during the fall, the camera at the point in cells of the pod's model frame looking at its middle, moved with the pod; off returns to the seat"},
 	{"fly <on|off>", "fly mode, swept against blocks"},
 	{"noclip <on|off>", "flying passes through blocks"},
 	{"cheat_speed <on|off>", "fast movement and hand mining"},
@@ -332,6 +340,8 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		return command_time(command_context, arguments)
 	case "weather":
 		return command_weather(command_context, arguments)
+	case "arrival_camera":
+		return command_arrival_camera(command_context, arguments)
 	case "fly", "noclip", "cheat_speed", "free_crafting":
 		return command_toggle(command_context, name, arguments)
 	case "vein":
@@ -520,6 +530,33 @@ command_weather :: proc(command_context: Command_Context, arguments: []string) -
 		}
 	}
 	return usage_error("weather <clear|overcast|rain|fog|auto>")
+}
+
+// arrival_camera <x> <y> <z> (cells of the pod's model frame, each within
+// ARRIVAL_CAMERA_REACH_CELLS, NaN refused) or arrival_camera off (0304):
+// render only, so it is set here as the weather is.
+command_arrival_camera :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	usage :: "arrival_camera <x> <y> <z> | arrival_camera off"
+	if command_context.arrival_camera == nil {
+		return command_error("no world is loaded")
+	}
+	if len(arguments) == 1 && arguments[0] == "off" {
+		command_context.arrival_camera^ = nil
+		return command_ok("arrival_camera off")
+	}
+	if len(arguments) != 3 {
+		return usage_error(usage)
+	}
+	point: [3]f32
+	for word, axis in arguments {
+		value, parsed := strconv.parse_f32(word)
+		if !parsed || !(abs(value) <= ARRIVAL_CAMERA_REACH_CELLS) {
+			return usage_error(usage)
+		}
+		point[axis] = value
+	}
+	command_context.arrival_camera^ = point
+	return command_ok("arrival_camera %s %s %s", arguments[0], arguments[1], arguments[2])
 }
 
 // Toggles only when the state differs, so the command sets it.

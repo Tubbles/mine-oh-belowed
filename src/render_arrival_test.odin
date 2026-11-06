@@ -370,26 +370,9 @@ test_the_soot_grows_after_the_peak_and_stays :: proc(t: ^testing.T) {
 	testing.expect_value(t, arrival_view({}, 100000, 0, config, &curve).soot, 0)
 }
 
-// Work item 0273: the travel laid on the glass is unit, {0, 1} along the
-// fallback's own direction and for a travel along the normal.
-@(test)
-test_the_travel_lies_on_the_glass :: proc(t: ^testing.T) {
-	normal := linalg.normalize([3]f32{-0.755, -0.490, 0.436})
-	fallback := [3]f32{0, 1, 0}
-	slanted := arrival_travel_on_glass(normal, linalg.normalize([3]f32{0.1, -1, 0.3}), fallback)
-	testing.expectf(t, abs(linalg.length(slanted) - 1) < 1e-5, "the laid travel %v is not unit", slanted)
-	own := arrival_travel_on_glass(normal, fallback, fallback)
-	testing.expectf(t, linalg.length(own - [2]f32{0, 1}) < 1e-5, "the fallback's own direction lies at %v", own)
-	head_on := arrival_travel_on_glass(normal, normal, fallback)
-	testing.expect_value(t, head_on, [2]f32{0, 1})
-	across := linalg.cross(normal, linalg.normalize(fallback - normal * linalg.dot(fallback, normal)))
-	sideways := arrival_travel_on_glass(normal, across, fallback)
-	testing.expectf(t, linalg.length(sideways - [2]f32{1, 0}) < 1e-5, "the quad's across lies at %v", sideways)
-}
-
-// Work item 0273: a porthole facing along the pod's up lays its quad and
-// flow along the pod's forward, finite and in the glass's plane, where
-// the up alone would normalise a zero vector.
+// Work item 0273: a porthole facing along the pod's up lays its quad
+// along the pod's forward, finite and in the glass's plane, where the up
+// alone would normalise a zero vector.
 @(test)
 test_a_porthole_facing_up_lays_along_the_forward :: proc(t: ^testing.T) {
 	up, forward := [3]f32{0, 1, 0}, [3]f32{0, 0, 1}
@@ -403,8 +386,6 @@ test_a_porthole_facing_up_lays_along_the_forward :: proc(t: ^testing.T) {
 		testing.expectf(t, finite, "corner %d is %v", index, corner)
 		testing.expectf(t, abs(corner.y - 2) < 1e-5, "corner %d leaves the glass", index)
 	}
-	flow := arrival_travel_on_glass(up, linalg.normalize([3]f32{1, -1, 0}), axis)
-	testing.expectf(t, !math.is_nan(flow.x) && !math.is_nan(flow.y) && abs(linalg.length(flow) - 1) < 1e-5, "the flow is %v", flow)
 }
 
 // The shipped pod's record and its body's triangles in the model's frame,
@@ -460,101 +441,6 @@ cabin_eyes :: proc(pod: Machine, allocator := context.temp_allocator) -> [dynami
 		}
 	}
 	return eyes
-}
-
-// Work item 0288: every shipped window's sheath lies sheath_depth out
-// along the normal from the outer pane; the hull stands between the
-// sheath's plane and the lining beside the bore, and the view through
-// the bore to the plane is open.
-@(test)
-test_the_sheath_lies_outside_the_hull :: proc(t: ^testing.T) {
-	pod, triangles := shipped_pod_body()
-	testing.expect_value(t, pod.window_count, 5)
-	for index in 0 ..< pod.window_count {
-		window := pod.windows[index]
-		plane := arrival_sheath_centre(window)
-		testing.expectf(t, window.sheath_depth > 0, "window %d's sheath lies on the pane", index)
-		testing.expectf(t, linalg.length(plane - (window.centre - window.normal * window.sheath_depth)) < 1e-6, "window %d's sheath lies at %v", index, plane)
-		for direction in 0 ..< 16 {
-			angle := f32(direction) * math.TAU / 16
-			start := porthole_point(window, plane, 0.7, angle)
-			testing.expectf(t, segment_crosses_any_triangle(start, start + window.normal * (window.sheath_depth + 0.38), triangles[:]), "window %d: nothing of the hull lies beside the bore at angle %d", index, direction)
-			for radius in ([4]f32{0, 0.1, 0.2, 0.3}) {
-				inside := porthole_point(window, window.centre + window.normal * 0.405, radius, angle)
-				outside := porthole_point(window, plane + window.normal * 0.01, radius, angle)
-				testing.expectf(t, !segment_crosses_any_triangle(inside, outside, triangles[:]), "window %d: the bore is shut at r %v, angle %d", index, radius, direction)
-			}
-		}
-	}
-}
-
-// Work item 0288: from the seated eye and every standing eye of the
-// cabin's floor no point of a sheath quad's border is seen (32 points, 8
-// a side).
-@(test)
-test_the_sheaths_edge_is_never_seen_from_the_cabin :: proc(t: ^testing.T) {
-	pod, triangles := shipped_pod_body()
-	eyes := cabin_eyes(pod)
-	testing.expect_value(t, len(eyes), 13)
-	for index in 0 ..< pod.window_count {
-		window := pod.windows[index]
-		up, _ := porthole_axes(window)
-		corners := arrival_window_corners(arrival_sheath_centre(window), window.normal, up, up, window.sheath_radius)
-		for eye, eye_index in eyes {
-			for side in 0 ..< 4 {
-				for step in 0 ..< 8 {
-					point := corners[side] + (corners[(side + 1) % 4] - corners[side]) * (f32(step) / 8)
-					testing.expectf(t, segment_crosses_any_triangle(eye, point, triangles[:]), "window %d: eye %d (%v) sees the sheath's edge at %v", index, eye_index, eye, point)
-				}
-			}
-		}
-	}
-}
-
-// Work item 0288: at the fall's start and at the heat's peak the flow
-// enters every window from the side of the pod's base, as
-// draw_arrival_windows lays it (the leading edge along travel_on_glass
-// is where the flow enters).
-@(test)
-test_the_flow_enters_from_the_heat_shield :: proc(t: ^testing.T) {
-	config := shipped_arrival_config()
-	curve := build_arrival_curve(config)
-	machines := make_test_machines()
-	entities: Entities
-	defer destroy_entities(&entities)
-	place_test_pod(&entities, machines)
-	pod, frame, _ := find_pod(&entities, machines)
-	machine := machines.machines[pod.machine]
-	falling := Field_Arrival{start_tick = 0, fall_ticks = u64(config.arrival_ticks)}
-	descent := u64(config.arrival_ticks - config.arrival_settle_ticks)
-	peak_tick: u64 = 0
-	peak_heat: f32 = 0
-	for tick in 0 ..< descent {
-		if heat := arrival_view(falling, tick, 0, config, &curve).heat; heat > peak_heat {
-			peak_tick, peak_heat = tick, heat
-		}
-	}
-	body := entity_body_matrix(&entities, pod)
-	linear := cast(matrix[3, 3]f32)body
-	up := linalg.normalize(linear * [3]f32{0, 1, 0})
-	forward := linalg.normalize(linear * [3]f32{0, 0, 1})
-	pitch_metres := f32(f64(entity_frame_pitch_millimetres(&entities, pod.frame)) / MILLIMETRES_PER_METRE)
-	for tick in ([2]u64{0, peak_tick}) {
-		view := arrival_view(falling, tick, 0, config, &curve)
-		_, rotation, travel := arrival_pod_transform(view, frame, pod, machine, config.arrival_rest_tilt_degrees, &curve)
-		local := linalg.transpose(rotation) * travel
-		for index in 0 ..< machine.window_count {
-			window := machine.windows[index]
-			normal := linalg.normalize(linear * window.normal)
-			fallback := arrival_glass_axis(normal, up, forward)
-			flow := arrival_travel_on_glass(normal, local, fallback)
-			centre := transform_point(body, window.centre)
-			radius := window.radius * pitch_metres
-			reach := (linalg.cross(normal, fallback) * flow.x + fallback * flow.y) * radius
-			entry, exit := centre + reach, centre - reach
-			testing.expectf(t, linalg.dot(entry - exit, up) < -0.5 * radius, "tick %d, window %d: the flow enters %v above its exit", tick, index, linalg.dot(entry - exit, up))
-		}
-	}
 }
 
 // Work item 0288: each window's light lies where 0273 put it, 0.35 into

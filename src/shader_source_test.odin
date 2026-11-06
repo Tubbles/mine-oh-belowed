@@ -189,14 +189,14 @@ test_the_point_light_shaders_share_the_clip_and_the_sum :: proc(t: ^testing.T) {
 	testing.expect(t, field_sum != "" && field_as_model == model_sum, "point_light_sum differs between field.fs and model.fs beyond the clip line")
 }
 
-// Work item 0286: the plasma shader's flicker mean is FIRE_FLICKER_MEAN
-// (a flare is the flicker above it) and it takes the reduced motion
-// uniform.
+// Work items 0286 and 0304: the plasma's shader, the wake's, has the
+// flicker mean FIRE_FLICKER_MEAN (a flare is the flicker above it) and
+// takes the reduced motion uniform.
 @(test)
 test_the_plasma_shader_knows_the_flicker_mean :: proc(t: ^testing.T) {
-	source := #load("../data/shaders/arrival.fs", string)
-	testing.expect(t, strings.contains(source, fmt.tprintf("const float FLICKER_MEAN = %.2f;", FIRE_FLICKER_MEAN)), "arrival.fs's FLICKER_MEAN differs from FIRE_FLICKER_MEAN")
-	testing.expect(t, strings.contains(source, "\nuniform float calm;\n"), "arrival.fs does not declare calm")
+	source := #load("../data/shaders/arrival_wake.fs", string)
+	testing.expect(t, strings.contains(source, fmt.tprintf("const float FLICKER_MEAN = %.2f;", FIRE_FLICKER_MEAN)), "arrival_wake.fs's FLICKER_MEAN differs from FIRE_FLICKER_MEAN")
+	testing.expect(t, strings.contains(source, "\nuniform float calm;\n"), "arrival_wake.fs does not declare calm")
 }
 
 // The block light flicker of a shader: from `float torch_light_flicker(`
@@ -245,16 +245,16 @@ test_the_flame_shaders_read_the_fire_flicker_bounds :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(fragment, mean), "flame.fs does not hold %s", mean)
 }
 
-// Work item 0290: the flake shader's white is arrival.fs's, and its
-// vertex shader decodes the brightness over ARRIVAL_FLAKE_BRIGHTEST.
+// Work items 0290 and 0304: the flake shader's white is the wake's, and
+// its vertex shader decodes the brightness over ARRIVAL_FLAKE_BRIGHTEST.
 @(test)
 test_the_flake_shaders_share_the_white_core_and_the_brightest :: proc(t: ^testing.T) {
 	vertex := #load("../data/shaders/arrival_flake.vs", string)
 	fragment := #load("../data/shaders/arrival_flake.fs", string)
-	plasma := #load("../data/shaders/arrival.fs", string)
+	plasma := #load("../data/shaders/arrival_wake.fs", string)
 	white := "const vec3 WHITE_CORE = vec3(1.0, 0.97, 0.92);"
 	brightest := fmt.tprintf("const float flake_brightest = %.1f;", ARRIVAL_FLAKE_BRIGHTEST)
-	testing.expectf(t, strings.contains(plasma, white), "arrival.fs does not hold %s", white)
+	testing.expectf(t, strings.contains(plasma, white), "arrival_wake.fs does not hold %s", white)
 	testing.expectf(t, strings.contains(fragment, white), "arrival_flake.fs does not hold %s", white)
 	testing.expectf(t, strings.contains(vertex, brightest), "arrival_flake.vs does not hold %s", brightest)
 }
@@ -275,29 +275,21 @@ shader_float_constant :: proc(source, name: string) -> (value: f32, found: bool)
 	return strconv.parse_f32(rest[:end])
 }
 
-// Work item 0288: at the peak the flow and both spark grids cross the
-// glass (two radii) in 2 to 4 ticks at 60 Hz, at least the footage's 15
-// window widths a second and at most one radius a tick; the onset's
-// layer lies between 6 and the peak's; under reduced motion the flow
-// keeps 0286's calm pace; the shader takes the layer and the sheath's
-// scale.
+// Work item 0304: arrival_wake.fs declares every uniform
+// draw_arrival_wake sets, by type.
 @(test)
-test_the_plasma_crosses_the_glass_as_fast_as_the_footage :: proc(t: ^testing.T) {
-	source := #load("../data/shaders/arrival.fs", string)
-	fast, fast_found := shader_float_constant(source, "FAST_FLOW")
-	testing.expect(t, fast_found, "arrival.fs lacks FAST_FLOW")
-	for name in ([3]string{"FAST_FLOW", "SPARK_FLOW", "SPARK_FAST_FLOW"}) {
-		value, found := shader_float_constant(source, name)
-		testing.expectf(t, found, "arrival.fs lacks %s", name)
-		crossing := 2 * 60 / value
-		testing.expectf(t, crossing >= 2 && crossing <= 4, "%s crosses the glass in %v ticks", name, crossing)
+test_the_wake_shader_takes_its_uniforms :: proc(t: ^testing.T) {
+	source := #load("../data/shaders/arrival_wake.fs", string)
+	floats := [?]string{"heat", "seconds", "flicker", "calm", "flame_seed", "layer", "opacity_scale", "circumference_cells", "half_light_cells", "length_cells"}
+	vectors := [?]string{"eye_position", "wake_origin", "wake_axis", "haze_color", "ablator_color"}
+	for name in floats {
+		declaration := fmt.tprintf("\nuniform float %s;\n", name)
+		testing.expectf(t, strings.contains(source, declaration), "arrival_wake.fs does not declare %s", strings.trim_space(declaration))
 	}
-	slow, slow_found := shader_float_constant(source, "SLOW_FLOW")
-	testing.expectf(t, slow_found && slow >= 6 && slow <= fast, "SLOW_FLOW is %v", slow)
-	calm, calm_found := shader_float_constant(source, "CALM_FLOW")
-	testing.expectf(t, calm_found && abs(calm - 0.56) < 1e-6, "CALM_FLOW is %v", calm)
-	testing.expect(t, strings.contains(source, "\nuniform float layer;\n"), "arrival.fs does not declare layer")
-	testing.expect(t, strings.contains(source, "\nuniform float sheath_scale;\n"), "arrival.fs does not declare sheath_scale")
+	for name in vectors {
+		declaration := fmt.tprintf("\nuniform vec3 %s;\n", name)
+		testing.expectf(t, strings.contains(source, declaration), "arrival_wake.fs does not declare %s", strings.trim_space(declaration))
+	}
 }
 
 // The spot light of a shader: from `vec3 spot_light(` to its closing

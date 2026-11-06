@@ -2086,6 +2086,7 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 		command_context.player = session_local_player_index(state.session)
 		command_context.content = frame_simulation_content(state)
 		command_context.weather_override = &state.session.weather_override
+		command_context.arrival_camera = &state.session.arrival_camera
 	}
 	return command_context
 }

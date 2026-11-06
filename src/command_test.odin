@@ -580,6 +580,37 @@ test_command_tick_pause_and_screenshot :: proc(t: ^testing.T) {
 	testing.expect(t, !response.ok)
 }
 
+// Work item 0304: arrival_camera sets the point and off clears it; a
+// short line, a point past the reach and NaN fail with the usage and
+// keep it; without the session's camera no world is loaded. Render
+// only, so it never writes the simulation.
+@(test)
+test_the_arrival_camera_command_sets_and_clears :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	camera: Maybe([3]f32)
+	command_context := command_test_context(test)
+	command_context.arrival_camera = &camera
+	response, _ := execute_command_line(command_context, "arrival_camera 0 3 -32")
+	testing.expect(t, response.ok, response.text)
+	point, present := camera.?
+	testing.expect(t, present && point == {0, 3, -32}, "the camera is not at 0 3 -32")
+	for bad in ([?]string{"arrival_camera 0 3", "arrival_camera 0 3 201", "arrival_camera nan 0 0"}) {
+		response, _ = execute_command_line(command_context, bad)
+		testing.expectf(t, !response.ok && strings.contains(response.text, "usage: arrival_camera"), "%q answers %q", bad, response.text)
+		kept, still := camera.?
+		testing.expectf(t, still && kept == {0, 3, -32}, "%q moved the camera", bad)
+	}
+	response, _ = execute_command_line(command_context, "arrival_camera off")
+	testing.expect(t, response.ok, response.text)
+	_, cleared := camera.?
+	testing.expect(t, !cleared, "off kept the camera")
+	command_context.arrival_camera = nil
+	response, _ = execute_command_line(command_context, "arrival_camera 0 3 -32")
+	testing.expect(t, !response.ok && strings.contains(response.text, "no world is loaded"), response.text)
+	testing.expect(t, !command_writes_simulation("arrival_camera"))
+}
+
 @(test)
 test_command_queries :: proc(t: ^testing.T) {
 	test := make_command_test()

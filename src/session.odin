@@ -37,6 +37,10 @@ Session :: struct {
 	// The weather command's forced kind (work item 0063), nil for the
 	// schedule. Not saved.
 	weather_override:   Maybe(Weather_Kind),
+	// The arrival_camera command's point (work item 0304) in cells of the
+	// pod's model frame, nil for the seat's camera. Render only, not
+	// saved.
+	arrival_camera:     Maybe([3]f32),
 	// Who drives the simulation and when a tick runs (lockstep.odin), and
 	// the other machines of the session (session_network.odin).
 	lockstep:           Lockstep,

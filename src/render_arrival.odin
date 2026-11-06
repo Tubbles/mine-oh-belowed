@@ -13,10 +13,11 @@ import "platform"
 // descent moves the seated eye and the pod round it along the entry's
 // curve down to the resting place (arrival_descent_offset, 0223, 0269),
 // the pod drawn base first along the curve's tangent and easing into
-// the pose it rests in (arrival_pod_transform, 0270), the plasma
-// sheath streaming outside the hull past the portholes at the heat
-// (0288) and lighting the cabin (0273), flickering through fire_flicker
-// (0286), the flakes the heat shield sheds past them (0290,
+// the pose it rests in (arrival_pod_transform, 0270), the plasma's wake
+// streaming straight aft from the heat shield's rim outside the pod for
+// every viewer (0304, render_arrival_wake.odin), the portholes' light
+// lighting the cabin at the heat (0273), flickering through fire_flicker
+// (0286), the flakes the heat shield sheds through the wake (0290,
 // render_arrival_flakes.odin), the soot on the portholes' outer panes,
 // the buffeting and the roar; at the hit the pod meets the floor, the
 // cabin shakes, the dust rises along the crater's rim, the debris flies
@@ -49,7 +50,7 @@ ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE :: 0.3
 ARRIVAL_WINDOW_LIGHT_GAIN :: 0.7
 ARRIVAL_WINDOW_LIGHT_RADIUS_CELLS :: 5.0
 ARRIVAL_WINDOW_LIGHT_INSET_CELLS :: 0.73
-// The white a flare whitens the window light towards: arrival.fs's
+// The white a flare whitens the window light towards: arrival_wake.fs's
 // WHITE_CORE.
 ARRIVAL_WINDOW_WHITE_LIGHT :: [3]f32{1.0, 0.97, 0.92}
 ARRIVAL_ROAR_SOUND :: "arrival_roar"
@@ -97,15 +98,18 @@ Arrival_Sound_Memory :: struct {
 }
 
 // The window shader, loaded with the field renderer; shader_ready false
-// when it did not load, and the fall then draws without its plasma. The
+// when it did not load, and the fall then draws without its soot. The
 // curve is built before the shader loads, so it exists without it. The
-// flake shader (0290) the same way, flake_ready false without it.
+// flake shader (0290) and the wake shader (0304) the same way,
+// flake_ready and wake_ready false without them.
 Arrival_Presentation :: struct {
 	curve:        Arrival_Curve,
 	shader:       rl.Shader,
 	shader_ready: bool,
 	flake_shader: rl.Shader,
 	flake_ready:  bool,
+	wake_shader:  rl.Shader,
+	wake_ready:   bool,
 	sound_memory: Arrival_Sound_Memory,
 }
 
@@ -246,7 +250,7 @@ arrival_pod_transform :: proc(view: Arrival_View, frame: Frame, pod: Entity_Comm
 // (1, 1) and (0, 1): texture y grows along the travel laid on the glass's
 // plane (the fallback laid on it where the travel runs along the normal).
 // draw_arrival_windows passes the fallback as the travel since 0273, so
-// the quad never turns (arrival_travel_on_glass turns the flow).
+// the quad never turns.
 arrival_window_corners :: proc(centre, normal, travel, fallback: [3]f32, radius: f32) -> [4][3]f32 {
 	along := travel - normal * linalg.dot(travel, normal)
 	if linalg.length(along) < 0.1 {
@@ -257,9 +261,9 @@ arrival_window_corners :: proc(centre, normal, travel, fallback: [3]f32, radius:
 	return {centre - across - along_travel, centre + across - along_travel, centre + across + along_travel, centre - across + along_travel}
 }
 
-// The axis a porthole's quad and flow are laid along (0273), unit, on the
-// glass's plane: the pod's up laid on it, or the pod's forward where the
-// normal runs along the up.
+// The axis a porthole's quad is laid along (0273), unit, on the glass's
+// plane: the pod's up laid on it, or the pod's forward where the normal
+// runs along the up.
 arrival_glass_axis :: proc(normal, up, forward: [3]f32) -> [3]f32 {
 	laid := up - normal * linalg.dot(up, normal)
 	if linalg.length(laid) < 0.1 {
@@ -286,7 +290,7 @@ arrival_noise :: proc(seconds: f32, hertz: f64, salt: u64) -> f32 {
 
 // A porthole's flicker at seconds (0273, 0286): the shared fire flicker
 // per window (fire_flicker), 0.4 to 1.5, the mean under reduced motion.
-// One flicker per window drives its glass and its light.
+// One flicker per window drives its light.
 arrival_window_flicker :: proc(seconds: f32, index: int, salt: u64, reduced_motion: bool) -> f32 {
 	return fire_flicker(f64(seconds), salt + 20 + 2 * u64(index), reduced_motion)
 }
@@ -342,21 +346,6 @@ arrival_window_lights :: proc(view: Arrival_View, body: matrix[4, 4]f32, pitch_m
 		count += 1
 	}
 	return
-}
-
-// The travel laid on a porthole's glass in the quad's basis
-// (arrival_window_corners laid from the fallback alone, the glass's axis
-// from arrival_glass_axis): x across, y along the fallback laid on the
-// glass, unit; {0, 1} where the travel runs along the normal (or is
-// zero), as the quad's fallback does.
-arrival_travel_on_glass :: proc(normal, travel, fallback: [3]f32) -> [2]f32 {
-	along_axis := linalg.normalize(fallback - normal * linalg.dot(fallback, normal))
-	across_axis := linalg.cross(normal, along_axis)
-	laid := travel - normal * linalg.dot(travel, normal)
-	if linalg.length(laid) < 0.1 {
-		return {0, 1}
-	}
-	return linalg.normalize([2]f32{linalg.dot(laid, across_axis), linalg.dot(laid, along_axis)})
 }
 
 // The hit's shake at seconds after it: the eye's offset and the look's,
@@ -428,8 +417,9 @@ draw_arrival_dust :: proc(site: Arrival_Debris_Site, view: Arrival_View, salt: u
 	rlgl.EnableDepthMask()
 }
 
-// The entry's curve, then the window shader and the flake shader (0290);
-// on a failure a log line, and the fall still plays.
+// The entry's curve, then the window shader, the flake shader (0290)
+// and the wake shader (0304); on a failure a log line, and the fall
+// still plays.
 init_arrival_presentation :: proc(data_directory: string, config: Game_Config) -> Arrival_Presentation {
 	presentation := Arrival_Presentation{curve = build_arrival_curve(config)}
 	if shader, ok := load_shader_pair(data_directory, ARRIVAL_VERTEX_SHADER_PATH, ARRIVAL_FRAGMENT_SHADER_PATH, "arrival"); ok {
@@ -444,6 +434,12 @@ init_arrival_presentation :: proc(data_directory: string, config: Game_Config) -
 	} else {
 		platform.log_printf("arrival: the flake shader did not load; the fall draws without its flakes")
 	}
+	if shader, ok := load_shader_pair(data_directory, ARRIVAL_WAKE_VERTEX_SHADER_PATH, ARRIVAL_WAKE_FRAGMENT_SHADER_PATH, "arrival_wake"); ok {
+		presentation.wake_shader = shader
+		presentation.wake_ready = true
+	} else {
+		platform.log_printf("arrival: the wake shader did not load; the fall draws without its flames")
+	}
 	return presentation
 }
 
@@ -454,17 +450,15 @@ destroy_arrival_presentation :: proc(presentation: ^Arrival_Presentation) {
 	if presentation.flake_ready {
 		rl.UnloadShader(presentation.flake_shader)
 	}
+	if presentation.wake_ready {
+		rl.UnloadShader(presentation.wake_shader)
+	}
 	presentation.shader = {}
 	presentation.shader_ready = false
 	presentation.flake_shader = {}
 	presentation.flake_ready = false
-}
-
-// A window's sheath quad's centre in the model's frame (0288):
-// sheath_depth cells out along the normal from the outer pane, outside
-// the hull.
-arrival_sheath_centre :: proc(window: Pod_Window) -> [3]f32 {
-	return window.centre - window.normal * window.sheath_depth
+	presentation.wake_shader = {}
+	presentation.wake_ready = false
 }
 
 // One quad of the window shader with the texture coordinates (0, 0),
@@ -484,27 +478,15 @@ draw_arrival_quad :: proc(corners: [4][3]f32, texture: u32) {
 }
 
 // Inside BeginMode3D under the pod's transform (nil outside the
-// descent): each of the pod's windows (0223, 0273, 0288) in two passes,
-// the travel the pod's way along the path in the frame's unmoved space.
-// First, while the heat lasts, the sheath (layer 1): a square quad
-// outside the hull (arrival_sheath_centre, sheath_radius in half side),
-// seen only through the porthole's bore, which crops it. Then, while
-// there is soot, the soot (layer 0) on the outer pane at the window's
-// centre, in front of the sheath. Between the two passes the flakes
-// (0290, draw_arrival_flakes), whether or not the sheath drew, since
-// they outlive the heat by up to 2 s: beyond the sheath's plane but
-// drawn over it, as light through the glowing gas, and darkened by the
-// soot after them. eye is in the frame's unmoved space. Each quad is
-// laid from the glass's axis alone (arrival_glass_axis: the pod's up,
-// its forward for a porthole facing along the up), so it never turns
-// and the soot holds still; the flow turns inside it by
-// travel_on_glass.
-// Each quad is its own batch, since its uniforms are its own; depth
-// tested, without writing depth or culling. Nothing while the heat, the
-// soot and the flakes are all none. Under reduced motion calm is 1
-// (arrival.fs).
-draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32, salt: u64, reduced_motion: bool, flakes: []Arrival_Flake, eye: [3]f32) {
-	if (view.heat <= 0 && view.soot <= 0 && len(flakes) == 0) || !presentation.shader_ready || machine.window_count == 0 {
+// descent), from draw_arrival_entry: the soot (0273, 0288) on each of
+// the pod's windows' outer pane, at the window's centre, one quad of the
+// window shader each, its own batch since its flame_seed is its own.
+// Each quad is laid from the glass's axis alone (arrival_glass_axis: the
+// pod's up, its forward for a porthole facing along the up), so it never
+// turns and the soot holds still. Depth tested, without writing depth
+// or culling, the default alpha blend. Nothing without soot.
+draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, plasma: Arrival_Plasma_Config, salt: u64) {
+	if view.soot <= 0 || !presentation.shader_ready || machine.window_count == 0 {
 		return
 	}
 	shader := presentation.shader
@@ -518,42 +500,64 @@ draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_
 	rlgl.DisableDepthMask()
 	rlgl.DisableBackfaceCulling()
 	rl.BeginShaderMode(shader)
-	haze, ablator := arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color)
-	for pass in 0 ..< 2 {
-		sheath := pass == 0
-		if !sheath {
-			// The flakes between the sheath and the soot (0290).
-			rl.EndShaderMode()
-			draw_arrival_flakes(presentation, flakes, body, pitch_metres, eye, haze, ablator)
-			rl.BeginShaderMode(shader)
-		}
-		if (sheath && view.heat <= 0) || (!sheath && view.soot <= 0) {
-			continue
-		}
-		for index in 0 ..< min(machine.window_count, MAXIMUM_POD_WINDOWS) {
-			window := machine.windows[index]
-			normal := linalg.normalize(linear * window.normal)
-			fallback := arrival_glass_axis(normal, up, forward)
-			centre := transform_point(body, sheath ? arrival_sheath_centre(window) : window.centre)
-			radius := sheath ? window.sheath_radius : window.radius
-			set_shader_float(shader, "layer", sheath ? 1 : 0)
-			set_shader_float(shader, "sheath_scale", window.sheath_radius / window.radius)
-			set_shader_float(shader, "heat", view.heat)
-			set_shader_float(shader, "soot", view.soot)
-			set_shader_float(shader, "soot_opacity", f32(plasma.soot_percent) / 100)
-			set_shader_float(shader, "seconds", view.seconds)
-			set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000 + f32(index) * 0.618)
-			set_shader_float(shader, "flicker", flickers[index])
-			set_shader_float(shader, "calm", reduced_motion ? 1 : 0)
-			set_shader_vector2(shader, "travel_on_glass", arrival_travel_on_glass(normal, travel, fallback))
-			set_shader_vector3(shader, "haze_color", haze)
-			set_shader_vector3(shader, "ablator_color", ablator)
-			draw_arrival_quad(arrival_window_corners(centre, normal, fallback, fallback, radius * pitch_metres), texture)
-		}
+	for index in 0 ..< min(machine.window_count, MAXIMUM_POD_WINDOWS) {
+		window := machine.windows[index]
+		normal := linalg.normalize(linear * window.normal)
+		axis := arrival_glass_axis(normal, up, forward)
+		set_shader_float(shader, "soot", view.soot)
+		set_shader_float(shader, "soot_opacity", f32(plasma.soot_percent) / 100)
+		set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000 + f32(index) * 0.618)
+		draw_arrival_quad(arrival_window_corners(transform_point(body, window.centre), normal, axis, axis, window.radius * pitch_metres), texture)
 	}
 	rl.EndShaderMode()
 	rlgl.EnableBackfaceCulling()
 	rlgl.EnableDepthMask()
+}
+
+// Inside BeginMode3D under the pod's transform (nil outside the
+// descent), after the scene (0304): the portholes' soot, the wake
+// (draw_arrival_wake) and the flakes (draw_arrival_flakes) in the order
+// the eye needs. The soot lies on the outer pane, inside the wake's
+// tube: an eye inside the tube (the chair, the cabin) sees the wake and
+// the flakes through the pane, so they draw first and the soot over
+// them; an eye outside sees the soot through the wake, so the soot draws
+// first and the wake and the flakes over it. eye is in the frame's
+// unmoved space, transform the pod's (identity outside the descent).
+draw_arrival_entry :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, plasma: Arrival_Plasma_Config, salt: u64, reduced_motion: bool, flakes: []Arrival_Flake, eye: [3]f32, transform: matrix[4, 4]f32) {
+	body := entity_body_matrix(entities, pod)
+	pitch_metres := f32(f64(entity_frame_pitch_millimetres(entities, pod.frame)) / MILLIMETRES_PER_METRE)
+	shape := arrival_wake_shape(machine.heat_shield)
+	eye_cells := transform_point(linalg.inverse(body), eye)
+	inside := arrival_eye_inside_wake(shape, eye_cells)
+	if !inside {
+		draw_arrival_windows(presentation, view, entities, pod, machine, plasma, salt)
+	}
+	draw_arrival_wake(presentation, view, body, transform, shape, eye_cells, eye, plasma, arrival_wake_flicker(view.seconds, salt, reduced_motion), salt, reduced_motion)
+	draw_arrival_flakes(presentation, flakes, body, pitch_metres, eye, arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color))
+	if inside {
+		draw_arrival_windows(presentation, view, entities, pod, machine, plasma, salt)
+	}
+}
+
+// The arrival camera (0304, the arrival_camera command): a camera at
+// point looking at target, both in cells of the pod's model frame, moved
+// with the pod (its body, then its transform), its up and its field of
+// view kept. The camera unchanged when the two lie within 1e-3 m of each
+// other. A look along the up would leave the view's right undefined, so
+// there the pod's forward (its model +z, moved alike) stands in as the up.
+arrival_watch_camera :: proc(body, transform: matrix[4, 4]f32, point, target: [3]f32, camera: rl.Camera3D) -> rl.Camera3D {
+	position := transform_point(transform, transform_point(body, point))
+	looked_at := transform_point(transform, transform_point(body, target))
+	if linalg.length(looked_at - position) < 1e-3 {
+		return camera
+	}
+	watched := camera
+	watched.position = position
+	watched.target = looked_at
+	if abs(linalg.dot(linalg.normalize(looked_at - position), linalg.normalize(camera.up))) > 0.99 {
+		watched.up = transform_point(transform, transform_point(body, target + {0, 0, 1})) - looked_at
+	}
+	return watched
 }
 
 // The pitch of one of the arrival's sounds, varied per world.

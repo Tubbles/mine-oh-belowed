@@ -103,7 +103,8 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 	testing.expect_value(t, arrival_problem(tipped), "")
 	tipped.arrival_rest_tilt_degrees = MAXIMUM_ARRIVAL_REST_TILT_DEGREES
 	testing.expect_value(t, arrival_problem(tipped), "")
-	// Work item 0272: the debris' keys one past each bound are named.
+	// Work items 0272 and 0304: the debris' keys and the wake's opacity one
+	// past each bound are named.
 	debris := [?]struct {
 		change: proc(config: ^Game_Config),
 		key:    string,
@@ -113,6 +114,8 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 		{proc(config: ^Game_Config) {config.arrival_debris_angle_degrees = MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES - 1}, "arrival_debris_angle_degrees"},
 		{proc(config: ^Game_Config) {config.arrival_debris_angle_degrees = MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES + 1}, "arrival_debris_angle_degrees"},
 		{proc(config: ^Game_Config) {config.arrival_flakes_per_second = MAXIMUM_ARRIVAL_FLAKES_PER_SECOND + 1}, "arrival_flakes_per_second"},
+		{proc(config: ^Game_Config) {config.arrival_plasma.wake_opacity_percent = MINIMUM_ARRIVAL_WAKE_OPACITY_PERCENT - 1}, "arrival_plasma.wake_opacity_percent"},
+		{proc(config: ^Game_Config) {config.arrival_plasma.wake_opacity_percent = MAXIMUM_ARRIVAL_WAKE_OPACITY_PERCENT + 1}, "arrival_plasma.wake_opacity_percent"},
 	}
 	for entry in debris {
 		changed := config

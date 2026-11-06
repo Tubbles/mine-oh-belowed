@@ -35,8 +35,8 @@ flake_test_source :: proc(fall: ^Flake_Test_Fall, pod: Machine) -> Arrival_Flake
 	return arrival_flake_source(&fall.curve, view, fall.config, pod, FLAKE_TEST_SALT)
 }
 
-// The view's seconds at the heat's peak tick.
-flake_test_peak_seconds :: proc(fall: ^Flake_Test_Fall) -> f32 {
+// The tick of the heat's peak.
+flake_test_peak_tick :: proc(fall: ^Flake_Test_Fall) -> u64 {
 	peak_tick: u64 = 0
 	peak_heat: f32 = 0
 	for tick in 0 ..< fall.descent {
@@ -44,7 +44,12 @@ flake_test_peak_seconds :: proc(fall: ^Flake_Test_Fall) -> f32 {
 			peak_tick, peak_heat = tick, heat
 		}
 	}
-	return arrival_view(fall.falling, peak_tick, 0, fall.config, &fall.curve).seconds
+	return peak_tick
+}
+
+// The view's seconds at the heat's peak tick.
+flake_test_peak_seconds :: proc(fall: ^Flake_Test_Fall) -> f32 {
+	return arrival_view(fall.falling, flake_test_peak_tick(fall), 0, fall.config, &fall.curve).seconds
 }
 
 // A flake's slot at seconds.
@@ -217,7 +222,7 @@ test_no_flake_outside_the_heating :: proc(t: ^testing.T) {
 // candidates and draws at most that many quads.
 @(test)
 test_the_live_flakes_stay_under_the_cap :: proc(t: ^testing.T) {
-	testing.expect_value(t, MAXIMUM_ARRIVAL_FLAKES, 205)
+	testing.expect_value(t, MAXIMUM_ARRIVAL_FLAKES, 328)
 	pod, _ := shipped_pod_body()
 	fall := flake_test_fall()
 	source := flake_test_source(&fall, pod)
@@ -227,7 +232,7 @@ test_the_live_flakes_stay_under_the_cap :: proc(t: ^testing.T) {
 		testing.expectf(t, count <= MAXIMUM_ARRIVAL_FLAKES, "%d flakes at tick %d", count, tick)
 		largest = max(largest, count)
 	}
-	testing.expectf(t, largest >= 40 && largest <= 160, "at most %d flakes live at once", largest)
+	testing.expectf(t, largest >= 100 && largest <= 250, "at most %d flakes live at once", largest)
 }
 
 @(test)
@@ -289,36 +294,31 @@ test_the_flake_vertex_color_carries_its_values :: proc(t: ^testing.T) {
 	}
 	color := arrival_flake_vertex_color(flake)
 	testing.expect_value(t, color.r, 230)
-	testing.expect_value(t, color.g, 128)
+	testing.expect_value(t, color.g, 180)
 	testing.expect_value(t, color.b, 204)
 	testing.expect_value(t, color.a, 255)
 	flake.dark_core = 0
 	testing.expect_value(t, arrival_flake_vertex_color(flake).a, 0)
 }
 
-// Work item 0290, decision 2: only a head at or above
-// ARRIVAL_FLAKE_DARK_CORE_CELLS shows a dark core, faded in and out with
-// the flake, and some flakes at the peak are each.
+// Work item 0304: every flake is a dark plate, faded in and out with
+// the flake, its half size within ARRIVAL_FLAKE_SMALLEST_CELLS and
+// ARRIVAL_FLAKE_LARGEST_CELLS.
 @(test)
-test_only_the_larger_flakes_show_a_dark_core :: proc(t: ^testing.T) {
+test_every_flake_is_a_dark_plate :: proc(t: ^testing.T) {
 	pod, _ := shipped_pod_body()
 	fall := flake_test_fall()
 	source := flake_test_source(&fall, pod)
 	middle := flake_test_slot(flake_test_peak_seconds(&fall))
-	dark, bright := 0, 0
-	for index in flake_test_alive_at_age(middle - 100, middle + 99, 0.5, source) {
+	indices := flake_test_alive_at_age(middle - 100, middle + 99, 0.5, source)
+	testing.expectf(t, len(indices) > 20, "%d flakes live half a second round the peak", len(indices))
+	for index in indices {
 		flake := arrival_flake(index, arrival_flake_birth_seconds(index, source.salt) + 0.5, source)
-		if flake.size_cells >= ARRIVAL_FLAKE_DARK_CORE_CELLS {
-			testing.expect_value(t, flake.dark_core, 1)
-			dark += 1
-		} else {
-			testing.expect_value(t, flake.dark_core, 0)
-			bright += 1
-		}
+		testing.expect_value(t, flake.dark_core, 1)
+		testing.expectf(t, flake.size_cells >= ARRIVAL_FLAKE_SMALLEST_CELLS && flake.size_cells <= ARRIVAL_FLAKE_LARGEST_CELLS, "flake %d has half size %v", index, flake.size_cells)
 		born := arrival_flake(index, arrival_flake_birth_seconds(index, source.salt), source)
 		testing.expect_value(t, born.dark_core, 0)
 	}
-	testing.expectf(t, dark > 0 && bright > dark, "%d dark cored and %d bright flakes", dark, bright)
 }
 
 // Whether an eye sees a flake's head through a window: the segment
@@ -336,10 +336,17 @@ flake_test_seen_through :: proc(eye, head: [3]f32, window: Pod_Window, triangles
 	return !segment_crosses_any_triangle(eye, head, triangles)
 }
 
-// Appends to runs the length in ticks of every run of consecutive ticks
-// a flake of the source is seen from eye through window over the fall.
-flake_test_porthole_runs :: proc(fall: ^Flake_Test_Fall, source: Arrival_Flake_Source, eye: [3]f32, window: Pod_Window, triangles: []Check_Triangle, runs: ^[dynamic]int) {
-	running := make(map[int]int, context.temp_allocator)
+// A run of consecutive ticks a flake is seen: its first tick and its
+// length in ticks.
+Flake_Test_Run :: struct {
+	start:  u64,
+	length: int,
+}
+
+// Appends to runs every run of consecutive ticks a flake of the source
+// is seen from eye through window over the fall.
+flake_test_porthole_runs :: proc(fall: ^Flake_Test_Fall, source: Arrival_Flake_Source, eye: [3]f32, window: Pod_Window, triangles: []Check_Triangle, runs: ^[dynamic]Flake_Test_Run) {
+	running := make(map[int]Flake_Test_Run, context.temp_allocator)
 	seen := make(map[int]bool, context.temp_allocator)
 	for tick in 0 ..= fall.descent {
 		seconds := arrival_view(fall.falling, tick, 0, fall.config, &fall.curve).seconds
@@ -353,14 +360,19 @@ flake_test_porthole_runs :: proc(fall: ^Flake_Test_Fall, source: Arrival_Flake_S
 				}
 			}
 		}
-		for index, length in running {
+		for index, run in running {
 			if !seen[index] {
-				append(runs, length)
+				append(runs, run)
 				delete_key(&running, index)
 			}
 		}
 		for index in seen {
-			running[index] = running[index] + 1
+			run, present := running[index]
+			if !present {
+				run.start = tick
+			}
+			run.length += 1
+			running[index] = run
 		}
 	}
 }
@@ -378,7 +390,7 @@ test_the_flakes_cross_the_chairs_porthole_as_in_the_footage :: proc(t: ^testing.
 	fall := flake_test_fall()
 	eye := cabin_eyes(pod)[0]
 	window := pod.windows[2]
-	runs := make([dynamic]int, context.temp_allocator)
+	runs := make([dynamic]Flake_Test_Run, context.temp_allocator)
 	for salt in 0 ..< FLAKE_TEST_CROSSING_SALTS {
 		source := flake_test_source(&fall, pod)
 		source.salt = FLAKE_TEST_SALT + u64(salt)
@@ -388,9 +400,40 @@ test_the_flakes_cross_the_chairs_porthole_as_in_the_footage :: proc(t: ^testing.
 	if len(runs) == 0 {
 		return
 	}
-	slice.sort(runs[:])
-	median := runs[len(runs) / 2]
-	testing.expectf(t, median >= 6 && median <= 14, "the median crossing lasts %d ticks (%v)", median, runs[:])
+	lengths := make([]int, len(runs), context.temp_allocator)
+	for run, index in runs {
+		lengths[index] = run.length
+	}
+	slice.sort(lengths)
+	median := lengths[len(lengths) / 2]
+	testing.expectf(t, median >= 6 && median <= 14, "the median crossing lasts %d ticks (%v)", median, lengths)
+}
+
+// Work item 0304: within 1 s of the heat's peak (60 ticks either way)
+// the flakes start crossing the chair's porthole (window 2) 1.4 to 2.6
+// times a second per world, pooled over FLAKE_TEST_CROSSING_SALTS
+// worlds (0303's 1.5 to 2 from the footage, the model's 1.8).
+@(test)
+test_the_flakes_cross_the_chairs_porthole_most_seconds :: proc(t: ^testing.T) {
+	pod, triangles := shipped_pod_body()
+	fall := flake_test_fall()
+	eye := cabin_eyes(pod)[0]
+	window := pod.windows[2]
+	peak_tick := flake_test_peak_tick(&fall)
+	runs := make([dynamic]Flake_Test_Run, context.temp_allocator)
+	for salt in 0 ..< FLAKE_TEST_CROSSING_SALTS {
+		source := flake_test_source(&fall, pod)
+		source.salt = FLAKE_TEST_SALT + u64(salt)
+		flake_test_porthole_runs(&fall, source, eye, window, triangles[:], &runs)
+	}
+	near_peak := 0
+	for run in runs {
+		if run.start + 60 >= peak_tick && run.start <= peak_tick + 60 {
+			near_peak += 1
+		}
+	}
+	rate := f32(near_peak) / FLAKE_TEST_CROSSING_SALTS / 2
+	testing.expectf(t, rate >= 1.4 && rate <= 2.6, "%d runs start within a second of the peak, %v a second per world", near_peak, rate)
 }
 
 // The record's heat_shield radius is the body's widest corner at or

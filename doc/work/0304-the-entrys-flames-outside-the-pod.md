@@ -1,6 +1,6 @@
 # 0304: The entry's flames outside the pod
 
-Status: implementing (2026-11-06)
+Status: verified (2026-11-06)
 
 Milestone: the entry's look (0273, 0286, 0288, 0290), 0303 folded in. The user (2026-11-06), on a Kerbal Space Program reentry seen from outside (`work/reference/0303/ksp_reentry_outside.jpg`): the flames are straight and long, and they do not lick the cone's slanted walls but run straight aft from the heat shield's widest rim; doing the real flames on the outside might straighten out the visuals, and is interesting for multiplayer. Today the plasma (0288) and the flakes (0290) are drawn only on the portholes, so the pod falls without a flame from any other view, and the flakes do not read from the chair (0303).
 
@@ -329,7 +329,7 @@ Changed and removed:
 
 ### Decisions (main agent, 2026-11-06)
 
-1. `wake_opacity_percent` ships at 80 as specified. The capture takes the chair and the side camera at 80 and at 40 and the user picks; the value is data, so the pick needs no code.
+1. `wake_opacity_percent` ships at 80 as specified. The capture takes the chair and the side camera at 80 and at 40 and the user picks; the value is data, so the pick needs no code. The user picked 60 on a capture of 20, 40, 60 and 80.
 2. The developer command `arrival_camera` as specified. A player's outside view during the fall (the camera toggle reaching the strapped seat with a chase camera) is a control change and its own item, written after this one with the user.
 3. The rate ships at 90 and the streak at 0.65 s as specified; the capture settles both, as data and one constant.
 4. Accepted: the chair's read needs the order.

@@ -607,26 +607,24 @@ Arrival_Pod :: struct {
 // during the descent the seated camera's position and target moved by
 // the pod's transform (arrival_pod_transform, 0270; without a pod the
 // path's offset along the player's up and forward), its up the player's
-// (the planet's), and the transform the scene draws the pod moved by,
-// with the rotation and the travel for the windows; the camera alone
-// buffeted at the heat unless motion is reduced (arrival_buffet_offset,
-// 0269); the stored camera stays the resting one, so the HUD's
-// projections stay on the cabin. Shaken after the hit unless motion is
-// reduced, stored for the HUD as field_viewport_camera stores it.
-arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Arrival_Pod, rest_tilt_degrees: int) -> (moved: rl.Camera3D, pod_transform: Maybe(matrix[4, 4]f32), rotation: matrix[3, 3]f32, travel: [3]f32) {
+// (the planet's), and the transform the scene draws the pod moved by;
+// the camera alone buffeted at the heat unless motion is reduced
+// (arrival_buffet_offset, 0269); the stored camera stays the resting
+// one, so the HUD's projections stay on the cabin. Shaken after the hit
+// unless motion is reduced, stored for the HUD as field_viewport_camera
+// stores it.
+arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Arrival_Pod, rest_tilt_degrees: int) -> (moved: rl.Camera3D, pod_transform: Maybe(matrix[4, 4]f32)) {
 	moved = camera
-	rotation = 1
 	switch view.phase {
 	case .None:
 	case .Descent:
 		curve := &state.presentation.arrival.curve
 		transform: matrix[4, 4]f32
 		if pod.found {
-			transform, rotation, travel = arrival_pod_transform(view, pod.frame, pod.common, pod.machine, rest_tilt_degrees, curve)
+			transform, _, _ = arrival_pod_transform(view, pod.frame, pod.common, pod.machine, rest_tilt_degrees, curve)
 		} else {
 			up, forward := unit_vector_to_f32(player.field.up), unit_vector_to_f32(player.field.forward)
 			transform = linalg.matrix4_translate_f32(arrival_descent_offset(view, up, forward, curve))
-			travel = arrival_travel_direction(arrival_curve_at(curve, view.curve_progress), up, forward)
 		}
 		pod_transform = transform
 		moved.position = transform_point(transform, camera.position)
@@ -662,7 +660,13 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	pulled, body_shown := field_viewport_camera(state, viewport, player, alpha)
 	machine := pod_found ? content.machines.machines[pod_common.machine] : Machine{}
 	arrival_pod := Arrival_Pod{common = pod_common, frame = pod, machine = machine, found = pod_found}
-	camera, pod_transform, pod_rotation, travel := arrival_viewport_camera(state, viewport, player, pulled, view, arrival_pod, content.field.pod_rest.tilt_degrees)
+	camera, pod_transform := arrival_viewport_camera(state, viewport, player, pulled, view, arrival_pod, content.field.pod_rest.tilt_degrees)
+	if point, watching := session.arrival_camera.?; watching && pod_found {
+		if transform, moved := pod_transform.?; moved {
+			body := entity_body_matrix(&session.simulation.world.entities, pod_common)
+			camera = arrival_watch_camera(body, transform, point, {0, f32(machine.footprint.y) / 2, 0}, camera)
+		}
+	}
 	seed := session.simulation.world.settings.seed
 	flickers := arrival_window_flickers(view.seconds, machine.window_count, seed, state.settings.reduced_motion)
 	window_lights: [MAXIMUM_POD_WINDOWS]Point_Light
@@ -702,17 +706,15 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
 	if pod_found {
-		// The windows draw in the frame's unmoved space, under the pod's
-		// transform (nil outside the descent), so the travel goes back
-		// through its rotation. The soot stays on them after the landing.
-		// The flakes (0290) are seen from the eye in that space too.
+		// The soot, the wake (0304) and the flakes (0290) draw in the
+		// frame's unmoved space, under the pod's transform (nil outside
+		// the descent), seen from the eye in that space. The soot stays on
+		// the portholes after the landing.
 		flakes, flake_count := arrival_flakes(view, arrival_flake_source(&state.presentation.arrival.curve, view, state.config, machine, seed), state.settings.reduced_motion)
-		eye := camera.position
-		if transform, moved := pod_transform.?; moved {
-			eye = transform_point(linalg.inverse(transform), eye)
-		}
+		transform := pod_transform.? or_else linalg.MATRIX4F32_IDENTITY
+		eye := transform_point(linalg.inverse(transform), camera.position)
 		push_pod_transform(pod_transform)
-		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, linalg.transpose(pod_rotation) * travel, state.config.arrival_plasma, flickers, seed, state.settings.reduced_motion, flakes[:flake_count], eye)
+		draw_arrival_entry(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, state.config.arrival_plasma, seed, state.settings.reduced_motion, flakes[:flake_count], eye, transform)
 		pop_pod_transform(pod_transform)
 	}
 	if view.phase == .Settled {
