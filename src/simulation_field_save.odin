@@ -152,11 +152,14 @@ Water_Body_Band_Record :: struct {
 	opens, closes: i64,
 }
 
+// has_candidate and candidate (0299) read zero from an older record.
 Water_Flood_Record :: struct {
 	active, seeding, redirty: bool,
+	has_candidate:            bool,
 	body:                     u16,
 	rise_samples:             i32,
 	sill, rise_limit:         i64,
+	candidate:                Sample_Coordinate,
 }
 
 Water_Flood_Pushed_Record :: struct {
@@ -168,7 +171,7 @@ Water_Flood_Pushed_Record :: struct {
 // a nested struct takes more, with its length and schema).
 WATER_BODY_RECORD_BYTES :: 2 + 4 + 7 * 8 + 2 * 12
 WATER_BODY_BAND_RECORD_BYTES :: 2 + 1 + 12 + 2 + 4 + 2 * 8
-WATER_FLOOD_RECORD_BYTES :: 3 + 2 + 4 + 2 * 8
+WATER_FLOOD_RECORD_BYTES :: 4 + 2 + 4 + 2 * 8 + 12
 WATER_FLOOD_ENTRY_BYTES :: 8 + 12
 WATER_FLOOD_PUSHED_RECORD_BYTES :: 12 + FIELD_SAMPLE_BIT_BYTES
 
@@ -210,7 +213,7 @@ write_water_body_table :: proc(bytes: ^[dynamic]byte, world: ^Field_World) {
 	write_list(bytes, bodies[:])
 	write_list(bytes, bands[:])
 	flood := &world.water_flood
-	record := Water_Flood_Record{active = flood.active, seeding = flood.seeding, redirty = flood.redirty, body = u16(flood.body), rise_samples = flood.rise_samples, sill = flood.sill, rise_limit = flood.rise_limit}
+	record := Water_Flood_Record{active = flood.active, seeding = flood.seeding, redirty = flood.redirty, has_candidate = flood.has_candidate, body = u16(flood.body), rise_samples = flood.rise_samples, sill = flood.sill, rise_limit = flood.rise_limit, candidate = flood.candidate}
 	write_list(bytes, []Water_Flood_Record{record})
 	write_list(bytes, flood.heap[:])
 	pushed := make([dynamic]Water_Flood_Pushed_Record, 0, len(flood.pushed), context.temp_allocator)
@@ -332,6 +335,7 @@ read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool
 		target := &world.water_flood
 		target.active, target.seeding, target.redirty = true, flood.seeding, flood.redirty
 		target.body, target.rise_samples, target.sill, target.rise_limit = Water_Body_Id(flood.body), flood.rise_samples, flood.sill, flood.rise_limit
+		target.has_candidate, target.candidate = flood.has_candidate, flood.candidate
 		append(&target.heap, ..heap[:])
 		for record in pushed {
 			bits := new(Field_Sample_Bits)

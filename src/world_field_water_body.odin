@@ -128,6 +128,10 @@ Water_Flood_Entry :: struct {
 // again after.
 Water_Flood :: struct {
 	active, seeding, redirty: bool,
+	// The still front sample a seeding flood began from (seed_water_body,
+	// absorb_seed_candidate); none for a reflood.
+	has_candidate:            bool,
+	candidate:                Sample_Coordinate,
 	body:                     Water_Body_Id,
 	// The rise cap in samples, kept for a flood begun again.
 	rise_samples:             i32,
@@ -205,6 +209,40 @@ destroy_water_body :: proc(body: ^Water_Body) {
 // A body dies: its arrays freed, its slot free for the next.
 kill_water_body :: proc(world: ^Field_World, id: Water_Body_Id) {
 	destroy_water_body(&world.water_bodies[id])
+}
+
+// A body left with no cell (no loaded band, no frozen part), alive, not
+// the sea and not pending, dies where its last cell left it (0299): its
+// volume to the heir that took the cell (the sea's to water_to_sea, a
+// body's to its volume, relevelled by the caller or at the pending
+// flood's finish), with no heir as finish_water_body_flood sends its own.
+// False, and nothing done, when the body is not empty.
+free_empty_water_body :: proc(world: ^Field_World, id: Water_Body_Id, heir: Maybe(Water_Body_Id) = nil) -> bool {
+	body := &world.water_bodies[id]
+	if !body.alive || body.sea || water_body_is_pending(world, id) || len(body.loaded) > 0 || len(body.frozen) > 0 {
+		return false
+	}
+	if target, has_heir := heir.?; has_heir {
+		if target == WATER_BODY_SEA {
+			world.water_to_sea += body.volume
+		} else {
+			world.water_bodies[target].volume += body.volume
+		}
+	} else if body.spill_to_sea {
+		world.water_to_sea += body.volume
+	} else {
+		world.water_dropped += body.volume
+	}
+	kill_water_body(world, id)
+	return true
+}
+
+// The sweep at the end of a bodies tick: any empty body left (a table
+// saved before 0299) dies, in id order.
+free_empty_water_bodies :: proc(world: ^Field_World) {
+	for index in 1 ..< len(world.water_bodies) {
+		free_empty_water_body(world, Water_Body_Id(index))
+	}
 }
 
 clear_water_flood :: proc(flood: ^Water_Flood) {
@@ -615,6 +653,7 @@ start_water_body_flood :: proc(world: ^Field_World, id: Water_Body_Id, tuning: F
 		body := &world.water_bodies[id]
 		flood.seeding = body.volume == 0 && len(body.frozen) == 0
 		flood.redirty = false
+		flood.has_candidate = false
 		flood.rise_samples = tuning.flood_rise_samples
 	} else {
 		for _, bits in flood.pushed {
@@ -667,6 +706,7 @@ end_water_body_flood :: proc(world: ^Field_World) {
 	flood := &world.water_flood
 	clear_water_flood(flood)
 	flood.active, flood.seeding, flood.redirty = false, false, false
+	flood.has_candidate = false
 }
 
 // Merges body other into the flood's body, connected under its water:
@@ -716,6 +756,8 @@ claim_water_flood_sample :: proc(world: ^Field_World, id: Water_Body_Id, chunk: 
 		if other, ok := water_owner_body(world, previous); ok && other != id && other != WATER_BODY_SEA {
 			remove_water_body_cell(&world.water_bodies[other], &world.water_bodies[other].loaded, span)
 			relevel_water_body(world, other)
+			// Its last cell taken: it dies, its volume to the flood's body.
+			free_empty_water_body(world, other, id)
 		}
 	}
 	if previous == WATER_OWNER_NONE && chunk.water[index] > 0 && !field_sample_bit(&chunk.water_awake, index) {
@@ -803,8 +845,9 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 // The flood ends: the released samples it did not reach leave the body
 // (their water to the front: a split, exact in one call), the spill's
 // volume, the level (a seeding flood takes its front first,
-// absorb_seeded_front), the bytes written, and a body with no cells left
-// dies.
+// absorb_seeded_front, then its seed's sample when the flood did not
+// claim it, absorb_seed_candidate), the bytes written, and a body with no
+// cells left dies.
 finish_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 	flood := &world.water_flood
 	id := flood.body
@@ -830,6 +873,7 @@ finish_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning)
 	body.spill_volume = body.spill_level == max(i64) ? max(i64) : volume_of_water_body_level(body, body.spill_level)
 	if flood.seeding {
 		absorb_seeded_front(world, id)
+		absorb_seed_candidate(world, id)
 	}
 	body.level = body_level_of_volume(body, body.volume)
 	body.dirty = flood.redirty
@@ -893,6 +937,28 @@ absorb_seeded_front :: proc(world: ^Field_World, id: Water_Body_Id) {
 	}
 }
 
+// A seeding flood's seed sample it did not claim (the walk moved the
+// seed, and the flood stopped at a saddle first) joins the new body
+// (0299): when it is still front water no one owns (loaded, not ground,
+// awake, not a spring, fill > 0), its fill goes to the volume and it
+// sleeps empty, no one's, so it never seeds again. A candidate the flood
+// claimed is the body's already.
+absorb_seed_candidate :: proc(world: ^Field_World, id: Water_Body_Id) {
+	flood := &world.water_flood
+	if !flood.has_candidate {
+		return
+	}
+	chunk, index := field_world_cell(world, flood.candidate)
+	if chunk == nil || chunk.density[index] > 0 || chunk.water_owner[index] != WATER_OWNER_NONE || !field_sample_bit(&chunk.water_awake, index) || field_sample_bit(&chunk.water_source, index) || chunk.water[index] == 0 {
+		return
+	}
+	fill := i64(chunk.water[index])
+	world.water_bodies[id].volume += fill
+	world.water_body_counts.absorbed += fill
+	write_field_water_quiet(world, chunk, index, flood.candidate, 0)
+	sleep_field_water_sample(chunk, index)
+}
+
 // The pending flood first, then every live dirty body in id order whose
 // seed is loaded, while the budget lasts; one flood at most is left
 // pending, resumed next tick.
@@ -927,7 +993,8 @@ reflood_dirty_water_bodies :: proc(world: ^Field_World, tuning: Field_Water_Tuni
 }
 
 // A new body from a still front sample: flooded at once, or left
-// pending. False when no id is free.
+// pending. The sample is kept on the flood for its finish
+// (absorb_seed_candidate). False when no id is free.
 seed_water_body :: proc(world: ^Field_World, sample: Sample_Coordinate, tuning: Field_Water_Tuning, budget: ^i64) -> bool {
 	id, ok := allocate_water_body_id(world)
 	if !ok {
@@ -945,6 +1012,7 @@ seed_water_body :: proc(world: ^Field_World, sample: Sample_Coordinate, tuning: 
 	if !start_water_body_flood(world, id, tuning, true) {
 		return true
 	}
+	world.water_flood.has_candidate, world.water_flood.candidate = true, sample
 	if run_water_body_flood(world, tuning, budget) {
 		finish_water_body_flood(world, tuning)
 	}
@@ -1142,6 +1210,7 @@ claim_sea :: proc(world: ^Field_World) {
 		if id, owned := water_owner_body(world, owner); owned && id != WATER_BODY_SEA {
 			remove_water_body_cell(&world.water_bodies[id], &world.water_bodies[id].loaded, span)
 			mark_water_body_dirty(world, id)
+			free_empty_water_body(world, id, WATER_BODY_SEA)
 		}
 		if field_water_is_front(chunk, index) {
 			world.water_to_sea += i64(chunk.water[index])

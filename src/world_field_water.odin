@@ -1272,6 +1272,9 @@ absorb_front_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int,
 		if previous, owned := water_owner_body(world, owner); owned && previous != WATER_BODY_SEA && owner != WATER_OWNER_RELEASED {
 			remove_water_body_cell(&world.water_bodies[previous], &world.water_bodies[previous].loaded, span)
 			changed[previous] = true
+			// Its last cell taken: it dies, its volume to the target (the
+			// relevel skips the dead slot).
+			free_empty_water_body(world, previous, target)
 		}
 		if target != WATER_BODY_SEA {
 			body := &world.water_bodies[target]
@@ -1299,9 +1302,11 @@ Field_Water_Seed_Candidate :: struct {
 // Absorb and seed, over the front samples the passes ran: one whose
 // nearer neighbour is a body's water (or the sea's) joins it; one a
 // body's level rose over joins that body; one still for the still ticks
-// joins the body whose dry air it rests in, or, in no body's, is a seed.
-// Seeds flood in (bottom, sample order) while the budget lasts and no
-// flood is pending; one left over stays awake and is tried next tick. An
+// joins the body whose dry air it rests in, or, in no body's, is a seed;
+// a seed's sample its flood did not reach joins the new body
+// (absorb_seed_candidate), so it never seeds again. Seeds flood in
+// (bottom, sample order) while the budget lasts and no flood is pending;
+// one left over stays awake and is tried next tick. An
 // empty front sample still for the still ticks sleeps. A spring is neither
 // absorbed nor a seed: it pours every tick (pass one).
 settle_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, tuning: Field_Water_Tuning, budget: ^i64) {
@@ -1442,6 +1447,7 @@ step_field_water_bodies :: proc(world: ^Field_World, tuning: Field_Water_Tuning,
 			delete_key(&world.water_awake_chunks, pass.chunk.coordinate)
 		}
 	}
+	free_empty_water_bodies(world)
 	for body in world.water_bodies {
 		if body.alive {
 			world.water_body_counts.bodies += 1
@@ -1467,6 +1473,7 @@ follow_field_terrain_with_bodies :: proc(world: ^Field_World, chunk: ^Field_Chun
 					remove_water_body_cell(&world.water_bodies[id], &world.water_bodies[id].loaded, span)
 				}
 				mark_water_body_dirty(world, id)
+				free_empty_water_body(world, id)
 			}
 			chunk.water_owner[index] = WATER_OWNER_NONE
 			note_field_chunk_change(chunk)

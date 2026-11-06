@@ -122,7 +122,7 @@ water_bodies_equal :: proc(first, second: ^Field_World) -> bool {
 		}
 	}
 	a, b := &first.water_flood, &second.water_flood
-	if a.active != b.active || a.body != b.body || a.sill != b.sill || a.rise_limit != b.rise_limit || a.seeding != b.seeding || a.redirty != b.redirty || !slice.equal(a.heap[:], b.heap[:]) || len(a.pushed) != len(b.pushed) {
+	if a.active != b.active || a.body != b.body || a.sill != b.sill || a.rise_limit != b.rise_limit || a.seeding != b.seeding || a.redirty != b.redirty || a.has_candidate != b.has_candidate || a.candidate != b.candidate || !slice.equal(a.heap[:], b.heap[:]) || len(a.pushed) != len(b.pushed) {
 		return false
 	}
 	for coordinate, bits in a.pushed {
@@ -1082,4 +1082,351 @@ test_a_checkerboard_front_does_not_swap :: proc(t: ^testing.T) {
 	testing.expectf(t, ticks < THIN_POUR_TICK_BOUND, "the checkerboard settles (%d ticks)", ticks)
 	testing.expect(t, !any_water_awake(&worlds[.Bodies]))
 	expect_thin_pour_body(t, &worlds[.Bodies], i64(32 * FIELD_WATER_FULL))
+}
+
+// Work item 0299: no body outlives its last cell, and a seed's sample its
+// flood missed joins the new body.
+
+// A body alive with no cell (no loaded band, no frozen part), not the
+// sea and not pending; -1 for none.
+empty_water_body :: proc(world: ^Field_World) -> int {
+	for body, id in world.water_bodies {
+		if body.alive && !body.sea && len(body.loaded) == 0 && len(body.frozen) == 0 && !water_body_is_pending(world, Water_Body_Id(id)) {
+			return id
+		}
+	}
+	return -1
+}
+
+// A body owning the one dry sample, taken from the body that owned it,
+// at the level of its base so the cell reads dry whatever the volume.
+make_dry_water_body :: proc(world: ^Field_World, sample: Sample_Coordinate, volume: i64) -> Water_Body_Id {
+	id, _ := allocate_water_body_id(world)
+	span := field_water_span(sample)
+	base := floor_divide_i64(field_water_bottom(span), WATER_BODY_BAND) * WATER_BODY_BAND
+	world.water_bodies[id] = Water_Body {
+		alive         = true,
+		volume        = volume,
+		level         = base,
+		written_level = base,
+		base          = base,
+		seed          = sample,
+		spill_level   = max(i64),
+		spill_volume  = max(i64),
+		meshed_level  = min(i64),
+	}
+	chunk, index := field_world_cell(world, sample)
+	if previous, owned := water_owner_body(world, chunk.water_owner[index]); owned && previous != WATER_BODY_SEA {
+		remove_water_body_cell(&world.water_bodies[previous], &world.water_bodies[previous].loaded, span)
+	}
+	chunk.water_owner[index] = water_owner_of(id)
+	body := &world.water_bodies[id]
+	add_water_body_cell(body, &body.loaded, span)
+	insert_sorted_field_chunk(&body.chunks, chunk.coordinate)
+	return id
+}
+
+// The scenario 0298's verifier found: front water 4 deep drains through a
+// hole into a cave and settles, then a second cave is joined to the first
+// by a passage. Before 0299 seven bodies stayed alive with no cell, and a
+// residue above the floor's lake seeded and merged 21 times a tick for
+// good.
+@(test)
+test_a_drained_lake_joined_to_a_second_cave_comes_to_rest :: proc(t: ^testing.T) {
+	world := make_body_test_world()
+	defer destroy_field_world(&world)
+	carve_water_test_box(&world, water_test_sample(BASIN_LOW), water_test_sample(BASIN_HIGH))
+	carve_water_test_box(&world, water_test_sample({4, 0, 4}), water_test_sample({11, 1, 11}))
+	pour_test_water(&world, water_test_sample({4, 3, 4}), water_test_sample({11, 6, 11}), FIELD_WATER_FULL)
+	field_world_set_sample(&world, water_test_sample({7, 2, 7}), FIELD_AIR_SAMPLE)
+	tuning := water_body_test_tuning()
+	tick: u64 = 0
+	ticks := settle_body_test_water(&world, tuning, &tick, 400)
+	testing.expectf(t, ticks < 400, "the drained lake settles (%d ticks)", ticks)
+	carve_water_test_box(&world, water_test_sample({13, 0, 4}), water_test_sample({20, 1, 11}))
+	field_world_set_sample(&world, water_test_sample({12, 1, 7}), FIELD_AIR_SAMPLE)
+	field_world_set_sample(&world, water_test_sample({13, 1, 7}), FIELD_AIR_SAMPLE)
+	total := conserved_water(&world)
+	dropped, to_sea := world.water_dropped, world.water_to_sea
+	last_active := 0
+	for step in 1 ..= 2500 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		counts := world.water_body_counts
+		if counts.seeded != 0 || counts.merged != 0 || counts.flood_visits != 0 {
+			last_active = step
+			if step > 1500 {
+				testing.expectf(t, false, "tick %d after the carve seeds %d, merges %d, visits %d", step, counts.seeded, counts.merged, counts.flood_visits)
+				break
+			}
+		}
+		if conserved_water(&world) != total || world.water_dropped != dropped || world.water_to_sea != to_sea {
+			testing.expectf(t, false, "tick %d after the carve: %d is not %d (dropped %d, to the sea %d)", step, conserved_water(&world), total, world.water_dropped - dropped, world.water_to_sea - to_sea)
+			break
+		}
+		if empty := empty_water_body(&world); empty >= 0 {
+			testing.expectf(t, false, "tick %d after the carve: body %d is alive with no cell", step, empty)
+			break
+		}
+	}
+	fmt.printfln("0299: the joined caves' last seed, merge or flood visit was %d ticks after the carve", last_active)
+	testing.expect(t, alive_water_body_count(&world) > 0, "a body holds the water")
+	for body, id in world.water_bodies {
+		testing.expectf(t, !body.alive || body.sea || body.volume > 0, "body %d is alive with volume 0", id)
+	}
+}
+
+@(test)
+test_a_body_whose_last_cell_a_flood_claims_dies :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := settled_body_test_lake(t, 3, &tick)
+	defer destroy_field_world(&world)
+	sample := water_test_sample({7, 6, 7})
+	lake, owned := water_body_at(&world, sample)
+	testing.expect(t, owned, "the lake owns its air")
+	volume := world.water_bodies[lake].volume
+	dry := make_dry_water_body(&world, sample, 37)
+	total := conserved_water(&world)
+	mark_water_body_dirty(&world, lake)
+	tick += 1
+	step_field_water(&world, water_body_test_tuning(), tick)
+	testing.expect(t, !world.water_bodies[dry].alive, "the dry body died")
+	testing.expect_value(t, world.water_bodies[lake].volume, volume + 37)
+	owner, found := water_body_at(&world, sample)
+	testing.expect(t, found && owner == lake, "the lake owns the sample again")
+	testing.expect_value(t, conserved_water(&world), total)
+}
+
+@(test)
+test_a_body_whose_last_cell_absorption_takes_dies :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := settled_body_test_lake(t, 3, &tick)
+	defer destroy_field_world(&world)
+	sample := water_test_sample({7, 4, 7})
+	lake, owned := water_body_at(&world, sample)
+	testing.expect(t, owned, "the lake owns its air")
+	volume := world.water_bodies[lake].volume
+	dry := make_dry_water_body(&world, sample, 37)
+	chunk, index := field_world_cell(&world, sample)
+	set_front_water(&world, chunk, index, sample, 100)
+	total := conserved_water(&world)
+	changed := make([]bool, len(world.water_bodies), context.temp_allocator)
+	absorb_front_water(&world, chunk, index, sample, field_water_span(sample), lake, changed)
+	testing.expect(t, !world.water_bodies[dry].alive, "the dry body died at once")
+	testing.expect_value(t, world.water_bodies[lake].volume, volume + 137)
+	testing.expect_value(t, conserved_water(&world), total)
+}
+
+@(test)
+test_a_body_whose_last_cell_the_sea_claims_dies :: proc(t: ^testing.T) {
+	world: Field_World
+	defer destroy_field_world(&world)
+	world.water_planet = water_test_sea_planet()
+	make_bodies_world(&world)
+	chunk := make_ground_water_test_chunk(0)
+	for z in BASIN_LOW.z ..= BASIN_HIGH.z {
+		for y in BASIN_LOW.y ..= BASIN_HIGH.y {
+			for x in BASIN_LOW.x ..= BASIN_HIGH.x {
+				field_chunk_set_sample(chunk, field_local_to_index({x, y, z}), FIELD_AIR_SAMPLE)
+			}
+		}
+	}
+	for z in i32(4) ..= 6 {
+		for y in i32(5) ..= 7 {
+			for x in i32(14) ..= 16 {
+				field_chunk_set_sample(chunk, field_local_to_index({x, y, z}), FIELD_AIR_SAMPLE)
+			}
+		}
+	}
+	field_world_insert_chunk(&world, chunk)
+	tuning := water_body_test_tuning()
+	tick: u64 = 1
+	step_field_water(&world, tuning, tick)
+	dry := make_dry_water_body(&world, water_test_sample({16, 6, 6}), 37)
+	field_world_set_sample(&world, water_test_sample({12, 6, 5}), FIELD_AIR_SAMPLE)
+	field_world_set_sample(&world, water_test_sample({13, 6, 5}), FIELD_AIR_SAMPLE)
+	testing.expect(t, world.water_bodies[dry].alive, "the body lives until the sea claims its cell")
+	to_sea := world.water_to_sea
+	tick += 1
+	step_field_water(&world, tuning, tick)
+	testing.expect(t, !world.water_bodies[dry].alive, "the dry body died")
+	testing.expect_value(t, world.water_to_sea - to_sea, 37)
+}
+
+@(test)
+test_a_body_whose_last_cell_turns_ground_dies :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := settled_body_test_lake(t, 3, &tick)
+	defer destroy_field_world(&world)
+	sample := water_test_sample({7, 6, 7})
+	dry := make_dry_water_body(&world, sample, 37)
+	dropped := world.water_dropped
+	field_world_set_sample(&world, sample, Field_Sample{MAXIMUM_DENSITY, .Stone, 0})
+	testing.expect(t, !world.water_bodies[dry].alive, "the dry body died before any step")
+	testing.expect_value(t, world.water_dropped - dropped, 37)
+}
+
+@(test)
+test_a_pending_or_frozen_body_without_loaded_cells_lives :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := settled_body_test_lake(t, 3, &tick)
+	defer destroy_field_world(&world)
+	tuning := water_body_test_tuning()
+	_, lake := only_water_body(t, &world)
+	testing.expect(t, start_water_body_flood(&world, lake, tuning, true), "the flood starts")
+	testing.expect_value(t, len(world.water_bodies[lake].loaded), 0)
+	testing.expect(t, !free_empty_water_body(&world, lake), "a pending body is not freed")
+	budget := tuning.flood_visit_budget
+	testing.expect(t, run_water_body_flood(&world, tuning, &budget), "the flood ends")
+	finish_water_body_flood(&world, tuning)
+	testing.expect(t, world.water_bodies[lake].alive, "the lake lives")
+
+	id, _ := allocate_water_body_id(&world)
+	frozen_chunk := Field_Chunk_Coordinate{5, WATER_TEST_CHUNK_Y, 0}
+	seed := field_chunk_origin(frozen_chunk) + Sample_Coordinate{7, 3, 7}
+	base := floor_divide_i64(field_water_bottom(field_water_span(seed)), WATER_BODY_BAND) * WATER_BODY_BAND
+	world.water_bodies[id] = Water_Body {
+		alive         = true,
+		volume        = 254,
+		level         = base,
+		written_level = base,
+		base          = base,
+		seed          = seed,
+		spill_level   = max(i64),
+		spill_volume  = max(i64),
+		meshed_level  = min(i64),
+	}
+	bands := make([dynamic]Water_Body_Band)
+	append(&bands, Water_Body_Band{opens = 1}, Water_Body_Band{closes = 1})
+	append(&world.water_bodies[id].frozen, Water_Body_Frozen{chunk = frozen_chunk, owner = water_owner_of(id), bands = bands})
+	testing.expect(t, !free_empty_water_body(&world, id), "a frozen body is not freed")
+	tick += 1
+	step_field_water(&world, tuning, tick)
+	testing.expect(t, world.water_bodies[id].alive, "the frozen body lives")
+}
+
+// A table saved before 0299 can hold a body with no cell: the reader
+// takes it, and the first tick frees it on every machine alike.
+@(test)
+test_a_saved_empty_body_loads_and_dies_on_the_first_tick :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	first := settled_body_test_lake(t, 3, &tick)
+	defer destroy_field_world(&first)
+	_, lake := only_water_body(t, &first)
+	id, _ := allocate_water_body_id(&first)
+	base := first.water_bodies[lake].base
+	first.water_bodies[id] = Water_Body {
+		alive         = true,
+		base          = base,
+		level         = base,
+		written_level = base,
+		spill_level   = max(i64),
+		spill_volume  = max(i64),
+		meshed_level  = min(i64),
+	}
+	table := make([dynamic]byte, context.temp_allocator)
+	write_water_body_table(&table, &first)
+	second: Field_World
+	defer destroy_field_world(&second)
+	second.water_model = .Bodies
+	reader := Byte_Reader {
+		data = table[:],
+	}
+	testing.expect(t, read_water_body_table(&reader, &second))
+	for coordinate in sorted_field_chunk_coordinates(first.chunks) {
+		chunk := new(Field_Chunk)
+		testing.expect_value(t, decode_field_chunk_delta(encode_field_chunk(first.chunks[coordinate], context.temp_allocator), chunk), "")
+		restore_field_chunk(&second, chunk)
+	}
+	rebuild_water_body_chunks(&second)
+	testing.expect(t, int(id) < len(second.water_bodies) && second.water_bodies[id].alive, "the empty body loads alive")
+	tuning := water_body_test_tuning()
+	tick += 1
+	step_field_water(&first, tuning, tick)
+	step_field_water(&second, tuning, tick)
+	testing.expect(t, !first.water_bodies[id].alive, "the empty body died on the first world")
+	testing.expect(t, !second.water_bodies[id].alive, "the empty body died on the second world")
+	testing.expect_value(t, second.water_bodies[lake].volume, first.water_bodies[lake].volume)
+	testing.expect_value(t, second.water_bodies[lake].level, first.water_bodies[lake].level)
+	for coordinate, chunk in first.chunks {
+		testing.expect_value(t, field_chunk_state_hash(chunk), field_chunk_state_hash(second.chunks[coordinate]))
+	}
+}
+
+// Front water on the basin floor's far corner; with no rise the seed's
+// flood claims only samples no higher than the seed, which the walk moved
+// to the floor's lowest, so it never reaches the sample.
+seed_candidate_test_world :: proc() -> (world: Field_World, sample: Sample_Coordinate, tuning: Field_Water_Tuning) {
+	world = make_body_test_world()
+	carve_water_test_box(&world, water_test_sample(BASIN_LOW), water_test_sample(BASIN_HIGH))
+	sample = water_test_sample({11, 3, 11})
+	chunk, index := field_world_cell(&world, sample)
+	set_front_water(&world, chunk, index, sample, 100)
+	tuning = water_body_test_tuning()
+	tuning.flood_rise_samples = 0
+	return
+}
+
+@(test)
+test_a_seed_whose_flood_misses_its_sample_takes_its_fill :: proc(t: ^testing.T) {
+	world, sample, tuning := seed_candidate_test_world()
+	defer destroy_field_world(&world)
+	budget := tuning.flood_visit_budget
+	testing.expect(t, seed_water_body(&world, sample, tuning, &budget), "a body is seeded")
+	testing.expect(t, !world.water_flood.active, "no flood is pending")
+	chunk, index := field_world_cell(&world, sample)
+	testing.expect_value(t, chunk.water[index], 0)
+	testing.expect(t, !field_sample_bit(&chunk.water_awake, index), "the sample sleeps")
+	testing.expect_value(t, chunk.water_owner[index], WATER_OWNER_NONE)
+	body, _ := only_water_body(t, &world)
+	if body != nil {
+		testing.expect_value(t, body.volume, 100)
+		testing.expect(t, body.seed != sample, "the walk moved the seed")
+	}
+	testing.expect_value(t, conserved_water(&world), 100)
+	tick: u64 = 0
+	for _ in 0 ..< 100 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		testing.expect_value(t, world.water_body_counts.seeded, 0)
+		testing.expect_value(t, conserved_water(&world), 100)
+	}
+}
+
+@(test)
+test_a_pending_seed_flood_saved_takes_its_sample_alike :: proc(t: ^testing.T) {
+	first, sample, tuning := seed_candidate_test_world()
+	defer destroy_field_world(&first)
+	budget: i64 = 1
+	testing.expect(t, seed_water_body(&first, sample, tuning, &budget), "a body is seeded")
+	testing.expect(t, first.water_flood.active, "the flood is pending")
+	testing.expect(t, first.water_flood.has_candidate, "the flood keeps its sample")
+	testing.expect_value(t, first.water_flood.candidate, sample)
+	table := make([dynamic]byte, context.temp_allocator)
+	write_water_body_table(&table, &first)
+	second: Field_World
+	defer destroy_field_world(&second)
+	second.water_model = .Bodies
+	reader := Byte_Reader {
+		data = table[:],
+	}
+	testing.expect(t, read_water_body_table(&reader, &second))
+	testing.expect_value(t, bytes_left(reader), 0)
+	for coordinate in sorted_field_chunk_coordinates(first.chunks) {
+		chunk := new(Field_Chunk)
+		testing.expect_value(t, decode_field_chunk_delta(encode_field_chunk(first.chunks[coordinate], context.temp_allocator), chunk), "")
+		restore_field_chunk(&second, chunk)
+	}
+	rebuild_water_body_chunks(&second)
+	testing.expect(t, second.water_flood.has_candidate, "the loaded flood keeps its sample")
+	testing.expect_value(t, second.water_flood.candidate, sample)
+	tick: u64 = 1
+	for world in ([]^Field_World{&first, &second}) {
+		step_field_water(world, tuning, tick)
+		chunk, index := field_world_cell(world, sample)
+		testing.expect_value(t, chunk.water[index], 0)
+		testing.expect(t, !world.water_flood.active, "the flood finished")
+		testing.expect_value(t, conserved_water(world), 100)
+	}
+	testing.expect(t, water_bodies_equal(&first, &second))
 }
