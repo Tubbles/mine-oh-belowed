@@ -1,6 +1,6 @@
 # 0289: A motion filter scores our flames against footage
 
-Status: verified (2026-10-05)
+Status: landed (2026-11-06, b3ab019)
 
 ## Goal
 
