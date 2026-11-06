@@ -86,8 +86,8 @@ Player_Configuration :: struct {
 	// The edits directory is set but All files access is missing (work
 	// item 0228): the title shows one toast.
 	edits_need_access: bool,
-	// --tech-demo alone (0291): the title opens with the Tech demo screen
-	// pushed.
+	// --tech-demo alone (0291): the title opens with the Tech demos list
+	// and the Tech demo screen pushed (push_tech_demo_menu, 0302).
 	tech_demo_menu: bool,
 }
 

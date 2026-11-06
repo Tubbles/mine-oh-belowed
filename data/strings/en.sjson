@@ -147,7 +147,11 @@ title_multiplayer = "Multiplayer"
 title_settings = "Settings"
 title_quit = "Quit"
 title_world_failed = "Cannot start the world"
-title_tech_demo = "Water tech demo"
+title_tech_demos = "Tech demos"
+
+// Tech demos list (0302)
+tech_demos_title = "Tech demos"
+tech_demos_water = "Water"
 
 // Tech demo screen (0291)
 tech_demo_title = "Water tech demo"

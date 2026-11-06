@@ -287,6 +287,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		confirm_delete_screen(state, screen_context)
 	case .Multiplayer:
 		multiplayer_screen(state, screen_context)
+	case .Tech_Demos:
+		tech_demos_screen(state)
 	case .Tech_Demo:
 		tech_demo_screen(state, screen_context)
 	}

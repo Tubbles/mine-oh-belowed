@@ -1,11 +1,16 @@
 package game
 
+// The tech demos' list (work item 0302): one button per demo, today the
+// water one, then Back.
+//
 // The water tech demo's menu (work item 0291): three choices (the water
 // model, the planet radius, the start point) and Start, over the title's
 // backdrop with no world behind it. Start asks the frame loop for the
 // demo session (Session_Request_Kind.Tech_Demo), which
 // start_tech_demo_session builds from Title_State.tech_demo.
 
+// Heading, Water, Back.
+TECH_DEMOS_ROW_COUNT :: 3
 TECH_DEMO_PANEL_WIDTH :: 720
 // Heading, three rows, the button row.
 TECH_DEMO_ROW_COUNT :: 5
@@ -80,6 +85,29 @@ tech_demo_start_text :: proc(start: Tech_Demo_Start) -> string {
 // Start asks the frame loop for the demo world of the title's setup.
 start_tech_demo :: proc(title: ^Title_State) {
 	title.request = {kind = .Tech_Demo}
+}
+
+// The bare --tech-demo's screens over the title, pushed as the title's
+// buttons push them, so Back walks the same way.
+push_tech_demo_menu :: proc(screens: ^Screen_Stack) {
+	push_screen(screens, .Tech_Demos)
+	push_screen(screens, .Tech_Demo)
+}
+
+tech_demos_screen :: proc(state: ^Ui_State) {
+	panel := fitted_panel(ui_panel_area(state), TITLE_PANEL_WIDTH, panel_height(TECH_DEMOS_ROW_COUNT, -UI_GAP))
+	ui_panel_begin(state, "tech_demos", panel)
+	content := inset(panel, UI_PADDING)
+	ui_label(state, cut_row(&content), text("tech_demos_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	if ui_button(state, cut_row(&content), text("tech_demos_water")) {
+		push_screen(&state.screens, .Tech_Demo)
+	}
+	if ui_button(state, cut_row(&content), text("new_world_back")) {
+		pop_screen(&state.screens)
+	}
+	ui_panel_end(state)
+	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_back")}}
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 tech_demo_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {

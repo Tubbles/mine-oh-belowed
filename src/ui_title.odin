@@ -5,10 +5,10 @@ import "core:strings"
 import "platform"
 
 // The title screen and its screens: New world, Load and the delete
-// confirmation (Multiplayer is ui_multiplayer.odin, the water tech demo's
-// menu ui_tech_demo.odin). They run without a world behind them, over a plain
-// backdrop in the day sky colour (render_frame), since a generated view
-// would need a session.
+// confirmation (Multiplayer is ui_multiplayer.odin, the tech demos' list
+// and the water tech demo's menu ui_tech_demo.odin). They run without a
+// world behind them, over a plain backdrop in the day sky colour
+// (render_frame), since a generated view would need a session.
 
 TITLE_PANEL_WIDTH :: 560
 TITLE_NAME_TEXT_SIZE :: 72
@@ -123,8 +123,8 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		randomise_seed(&title.setup)
 		push_screen(&state.screens, .New_World)
 	}
-	if ui_button(state, cut_row(&content), text("title_tech_demo")) {
-		push_screen(&state.screens, .Tech_Demo)
+	if ui_button(state, cut_row(&content), text("title_tech_demos")) {
+		push_screen(&state.screens, .Tech_Demos)
 	}
 	if ui_button(state, cut_row(&content), text("title_load")) {
 		push_screen(&state.screens, .Load_World)

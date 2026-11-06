@@ -263,6 +263,8 @@ Screen :: enum u8 {
 	Confirm_Delete,
 	// The LAN's games to join (ui_multiplayer.odin, 0188).
 	Multiplayer,
+	// The tech demos' list (ui_tech_demo.odin, 0302).
+	Tech_Demos,
 	// The water tech demo's menu (ui_tech_demo.odin, 0291).
 	Tech_Demo,
 }
@@ -1211,7 +1213,7 @@ screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
 	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map, .Configure:
 		return false
-	case .Pause, .Settings, .Developer, .Textures, .Data_Files, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete, .Multiplayer, .Tech_Demo:
+	case .Pause, .Settings, .Developer, .Textures, .Data_Files, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete, .Multiplayer, .Tech_Demos, .Tech_Demo:
 		return true
 	}
 	return false

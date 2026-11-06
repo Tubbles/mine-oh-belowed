@@ -432,6 +432,7 @@ test_every_screen_has_a_back_button_on_touch :: proc(t: ^testing.T) {
 		{screens = {.Title, .New_World}},
 		{screens = {.Title, .Load_World}},
 		{screens = {.Title, .Load_World, .Confirm_Delete}},
+		{screens = {.Title, .Tech_Demos}},
 	}
 	for touch_case in cases {
 		state := Ui_State{theme = audit.theme}

@@ -96,7 +96,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `ui_screens.odin`: `Frame_Request` (what a screen asks of the loop), `Screen_Context` and `Developer_Context`, `handle_screen_keys`, `run_screens`, the pause menu, settings.
   - `ui_title.odin`, `ui_world_setup.odin`: `Title_State`, load and delete; the new world values.
   - `ui_multiplayer.odin`: the Multiplayer screen (0188), `Multiplayer_State` and its list of `Lan_Game` (`add_lan_answer`, `prune_lan_games`), the join request.
-  - `ui_tech_demo.odin`: the Tech demo screen (0291), `Tech_Demo_Setup` and its rows' steps, the tech demo request.
+  - `ui_tech_demo.odin`: the Tech demos list (0302) and the Tech demo screen (0291), `Tech_Demo_Setup` and its rows' steps, the tech demo request, the bare flag's screens (`push_tech_demo_menu`).
   - `ui_inventory.odin`, `quick_transfer.odin`: the inventory screen, `finish_slot_drag` and `queue_slot_command`; the quick move state machine and the transfer buttons, which queue slot commands.
   - `ui_machine.odin`: the machine panel frame, furnace, inserter, drill and splitter sections.
   - `ui_crafting_machines.odin`, `ui_fluid.odin`, `ui_power.odin`, `ui_launch_pad.odin`, `ui_prospecting.odin`, `ui_contracts.odin`: the panel sections for assemblers and labs, fluids, power, launch pads, prospecting, the venture.

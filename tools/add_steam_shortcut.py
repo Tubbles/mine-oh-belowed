@@ -2,10 +2,7 @@
 """Add or update the "Mine oh Belowed" non-Steam shortcut in a Steam user's shortcuts.vdf.
 
 Steam must be closed while this runs, otherwise Steam overwrites the file on exit.
-Usage: tools/add_steam_shortcut.py [--user-id 11963684] [--dry-run] [--tech-demo]
-
---tech-demo writes the "Mine oh Belowed: water tech demo" shortcut instead
-(work item 0291), whose target is update-and-run.sh at the repository root.
+Usage: tools/add_steam_shortcut.py [--user-id 11963684] [--dry-run]
 
 Only the standard library is used. The binary VDF format: 0x00 opens a nested
 object, 0x01 a string, 0x02 a 32 bit integer, 0x08 closes an object. Keys and
@@ -26,8 +23,6 @@ TYPE_END = 0x08
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent.parent
 APP_NAME = "Mine oh Belowed"
 EXECUTABLE = REPOSITORY_ROOT / "bin" / "mine-oh-belowed"
-TECH_DEMO_APP_NAME = "Mine oh Belowed: water tech demo"
-TECH_DEMO_EXECUTABLE = REPOSITORY_ROOT / "update-and-run.sh"
 
 
 def read_string(data: bytes, offset: int) -> tuple[str, int]:
@@ -77,12 +72,11 @@ def shortcut_app_id(executable: str, app_name: str) -> int:
     return struct.unpack("<i", struct.pack("<I", unsigned))[0]
 
 
-def build_shortcut(app_name: str, executable: pathlib.Path) -> dict:
-    """The appid hashes the executable and the name, so the two shortcuts differ."""
-    executable = f'"{executable}"'
+def build_shortcut() -> dict:
+    executable = f'"{EXECUTABLE}"'
     return {
-        "appid": shortcut_app_id(executable, app_name),
-        "AppName": app_name,
+        "appid": shortcut_app_id(executable, APP_NAME),
+        "AppName": APP_NAME,
         "Exe": executable,
         "StartDir": f'"{REPOSITORY_ROOT}"',
         "icon": "",
@@ -116,7 +110,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--user-id", default="11963684", help="Steam user id under userdata/")
     parser.add_argument("--dry-run", action="store_true", help="parse and report, write nothing")
-    parser.add_argument("--tech-demo", action="store_true", help="the water tech demo's shortcut, whose target is update-and-run.sh")
     arguments = parser.parse_args()
 
     path = pathlib.Path.home() / ".steam" / "steam" / "userdata" / arguments.user_id / "config" / "shortcuts.vdf"
@@ -126,11 +119,7 @@ def main() -> int:
         print("error: the existing shortcuts.vdf does not round trip through this parser, refusing to write", file=sys.stderr)
         return 1
 
-    if arguments.tech_demo:
-        shortcut = build_shortcut(TECH_DEMO_APP_NAME, TECH_DEMO_EXECUTABLE)
-    else:
-        shortcut = build_shortcut(APP_NAME, EXECUTABLE)
-    outcome = upsert_shortcut(root.setdefault("shortcuts", {}), shortcut)
+    outcome = upsert_shortcut(root.setdefault("shortcuts", {}), build_shortcut())
     print(outcome)
     for index, entry in root["shortcuts"].items():
         print(f"  {index}: {entry.get('AppName')}  appid={entry.get('appid')}  exe={entry.get('Exe')}")

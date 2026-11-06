@@ -1898,7 +1898,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	} else {
 		show_title(state)
 		if player_configuration.tech_demo_menu {
-			push_screen(&primary_ui(state).screens, .Tech_Demo)
+			push_tech_demo_menu(&primary_ui(state).screens)
 		}
 	}
 	defer leave_session(state)

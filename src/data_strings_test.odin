@@ -48,6 +48,8 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 		#load("ui_machine.odin", string),
 		#load("ui_developer.odin", string),
 		#load("hot_reload.odin", string),
+		#load("ui_title.odin", string),
+		#load("ui_tech_demo.odin", string),
 	}
 	key_count := 0
 	for source in sources {

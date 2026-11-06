@@ -73,7 +73,7 @@ Command_Line :: struct {
 	port:            int `usage:"the one port --server listens on (default: the first free of 47317 to 47326)"`,
 	join_address:    string `args:"name=join" usage:"join the session a --server hosts at <address>[:port] (an IP address on the phone)"`,
 	// Work item 0291: the water tech demo.
-	tech_demo:       string `args:"name=tech-demo" usage:"[=<model>,<radius>,<start>]: the water tech demo (0291): alone, the title with the Tech demo screen open; with values, straight into the demo world (model teleport or bodies, radius a preset in metres, start home or spring; an empty word keeps its default teleport, the planet's default radius, spring)"`,
+	tech_demo:       string `args:"name=tech-demo" usage:"[=<model>,<radius>,<start>]: the water tech demo (0291): alone, the title with the Tech demos list and the water screen open; with values, straight into the demo world (model teleport or bodies, radius a preset in metres, start home or spring; an empty word keeps its default teleport, the planet's default radius, spring)"`,
 }
 
 // The value --tech-demo carries when given bare: core:flags takes a value
@@ -95,7 +95,8 @@ parse_command_line :: proc(arguments: []string) -> (command_line: Command_Line, 
 	return
 }
 
-// --tech-demo alone: the title with the Tech demo screen pushed.
+// --tech-demo alone: the title with the Tech demos list and the water
+// screen open.
 tech_demo_opens_menu :: proc(command_line: Command_Line) -> bool {
 	return command_line.tech_demo == TECH_DEMO_MENU_WORD
 }
