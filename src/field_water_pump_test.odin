@@ -10,9 +10,7 @@ import "core:testing"
 
 WATER_TOOL_TEST_SPACING :: 1000
 // The lake: the basin's floor layer of 8 by 8 samples poured full and
-// settled, 16256 fill. (A thinner one, 20 full samples spread over the
-// floor, never settles under bodies: its front stands in a checkerboard
-// of full and empty samples, awake for good.)
+// settled, 16256 fill.
 WATER_TOOL_TEST_LAKE :: 64 * FIELD_WATER_FULL
 
 make_water_tool_test_state :: proc(model: Water_Model) -> (state: Simulation_State, content: Simulation_Content) {

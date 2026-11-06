@@ -985,3 +985,101 @@ test_a_stale_owner_on_an_arriving_chunk_counts_its_water_dropped :: proc(t: ^tes
 	testing.expect_value(t, arriving.water[index], 0)
 	testing.expect_value(t, world.water_dropped, 200)
 }
+
+// Work item 0298: a thin layer on the basin's floor (local y 3) settles
+// under either model. The bound is over twice the worst measured pour.
+THIN_POUR_TICK_BOUND :: 120
+
+thin_pour_test_world :: proc(model: Water_Model) -> Field_World {
+	world := model == .Bodies ? make_body_test_world() : make_water_test_world()
+	carve_water_test_box(&world, water_test_sample(BASIN_LOW), water_test_sample(BASIN_HIGH))
+	return world
+}
+
+settle_thin_pour :: proc(world: ^Field_World, model: Water_Model, tuning: Field_Water_Tuning, tick: ^u64) -> int {
+	return model == .Bodies ? settle_body_test_water(world, tuning, tick, THIN_POUR_TICK_BOUND) : settle_test_water(world, tuning, tick, THIN_POUR_TICK_BOUND)
+}
+
+// The settled thin layer under bodies: one body of the volume poured,
+// at the level its volume gives, owning the whole floor.
+expect_thin_pour_body :: proc(t: ^testing.T, world: ^Field_World, volume: i64) {
+	testing.expect_value(t, conserved_water(world), volume)
+	body, id := only_water_body(t, world)
+	if body == nil {
+		return
+	}
+	testing.expect_value(t, body.volume, volume)
+	testing.expect_value(t, body.level, body_level_of_volume(body, body.volume))
+	for z in BASIN_LOW.z ..= BASIN_HIGH.z {
+		for x in BASIN_LOW.x ..= BASIN_HIGH.x {
+			owner, owned := water_body_at(world, water_test_sample({x, BASIN_LOW.y, z}))
+			testing.expectf(t, owned && owner == id, "the floor sample (%d, %d) is the body's", x, z)
+		}
+	}
+}
+
+// 20 full samples, as the bucket pours them, come still in one body
+// under bodies and spread over the floor under teleport (before 0298 the
+// bodies front swapped a checkerboard for good and seeded a body of 5).
+@(test)
+test_a_thin_pour_on_a_flat_floor_settles_into_one_body :: proc(t: ^testing.T) {
+	tuning := water_body_test_tuning()
+	for model in Water_Model {
+		world := thin_pour_test_world(model)
+		defer destroy_field_world(&world)
+		pour_test_water(&world, water_test_sample({4, 3, 4}), water_test_sample({7, 3, 8}), FIELD_WATER_FULL)
+		tick: u64 = 0
+		ticks := settle_thin_pour(&world, model, tuning, &tick)
+		fmt.printfln("0298: 20 full samples settled under %v in %d ticks", model, ticks)
+		testing.expectf(t, ticks < THIN_POUR_TICK_BOUND, "the pour settles under %v (%d ticks)", model, ticks)
+		testing.expect(t, !any_water_awake(&world))
+		volume := i64(20 * FIELD_WATER_FULL)
+		if model == .Bodies {
+			expect_thin_pour_body(t, &world, volume)
+		} else {
+			testing.expect_value(t, total_test_water(&world), volume)
+			for z in BASIN_LOW.z ..= BASIN_HIGH.z {
+				for x in BASIN_LOW.x ..= BASIN_HIGH.x {
+					fill := water_fill_at(&world, water_test_sample({x, BASIN_LOW.y, z}))
+					testing.expectf(t, fill > tuning.minimum_fill, "the floor sample (%d, %d) holds %d", x, z, fill)
+				}
+			}
+		}
+	}
+}
+
+// Full samples on the floor's even cells: the bodies front's first tick
+// leaves teleport's bytes, and the layer then settles into one body
+// (before 0298 it moved to the odd cells every tick and never came still).
+@(test)
+test_a_checkerboard_front_does_not_swap :: proc(t: ^testing.T) {
+	tuning := water_body_test_tuning()
+	worlds: [Water_Model]Field_World
+	for model in Water_Model {
+		worlds[model] = thin_pour_test_world(model)
+		for z in BASIN_LOW.z ..= BASIN_HIGH.z {
+			for x in BASIN_LOW.x ..= BASIN_HIGH.x {
+				if (x + z) % 2 == 0 {
+					sample := water_test_sample({x, BASIN_LOW.y, z})
+					pour_test_water(&worlds[model], sample, sample, FIELD_WATER_FULL)
+				}
+			}
+		}
+		step_field_water(&worlds[model], tuning, 1)
+	}
+	defer for &world in worlds {
+		destroy_field_world(&world)
+	}
+	for z in BASIN_LOW.z ..= BASIN_HIGH.z {
+		for x in BASIN_LOW.x ..= BASIN_HIGH.x {
+			sample := water_test_sample({x, BASIN_LOW.y, z})
+			testing.expectf(t, water_fill_at(&worlds[.Bodies], sample) == water_fill_at(&worlds[.Teleport], sample), "the floor sample (%d, %d) holds %d under bodies and %d under teleport", x, z, water_fill_at(&worlds[.Bodies], sample), water_fill_at(&worlds[.Teleport], sample))
+		}
+	}
+	tick: u64 = 1
+	ticks := settle_body_test_water(&worlds[.Bodies], tuning, &tick, THIN_POUR_TICK_BOUND)
+	fmt.printfln("0298: the checkerboard settled under bodies in %d ticks after the first", ticks)
+	testing.expectf(t, ticks < THIN_POUR_TICK_BOUND, "the checkerboard settles (%d ticks)", ticks)
+	testing.expect(t, !any_water_awake(&worlds[.Bodies]))
+	expect_thin_pour_body(t, &worlds[.Bodies], i64(32 * FIELD_WATER_FULL))
+}

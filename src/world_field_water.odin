@@ -54,9 +54,12 @@ import "core:slice"
 // dispatches on the world's model. Under bodies the still water is the
 // bodies', and the rule above runs only on the front (the awake samples
 // that are no body's still water) in two passes: every front sample plans
-// its moves from the fills the tick began with, its own falling with every
-// move so it never overspends and each receiver's promised fill counted
-// against its room, then every move applies at once. A move into a body's
+// its moves in the step's order, comparing the two projected fills (the
+// tick-start fill plus the moves planned into and out of the sample so
+// far), at most its tick-start fill less what it planned out and the
+// receiver's projected room (0298: tick-start fills on both sides let a
+// thin layer swap a checkerboard every tick), then every move applies at
+// once. A move into a body's
 // water or the sea's goes to its volume. Front water resting on a body's
 // water, or that a body's level rose over, is absorbed; front water still
 // for the still ticks in no body's basin seeds a body. No pressure pull and
@@ -742,7 +745,7 @@ field_water_share :: proc(chunk: ^Field_Chunk, index: int, span: Field_Water_Spa
 }
 
 // The pure core of field_water_share: the levels from the two fills given
-// (the bodies' front gives the tick-start fills, 0293).
+// (the bodies' front gives the projected fills, 0298).
 field_water_share_from :: proc(span: Field_Water_Span, fill: i32, neighbour_span: Field_Water_Span, neighbour_fill: i32, room: i32, tuning: Field_Water_Tuning, left: i32) -> i32 {
 	if room <= 0 {
 		return 0
@@ -1110,8 +1113,9 @@ refill_field_water_front_springs :: proc(world: ^Field_World, front: ^Field_Wate
 // into the body (through the inflow, so its level follows); a spring was
 // refilled before the planning; a film dries; else the sample
 // plans its moves to its six neighbours, nearer the centre first, each the
-// share of the levels the tick began with, at most what it has left and
-// the receiver's room after what others promised it. A move into a body's
+// share of the two projected fills (the tick-start fill plus what this
+// tick's plan brought and took so far), at most what it has left of its
+// tick-start fill and the receiver's projected room. A move into a body's
 // water or the sea's counts against the room and goes to the volume, and
 // is an impact (from above) or a stream mouth (from the side) for the
 // surface waves (0294).
@@ -1177,7 +1181,9 @@ plan_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, p
 				receiver_start = 0
 			}
 			promised := receiver_pass != nil ? i32(receiver_pass.delta[neighbour.index]) : 0
-			amount := field_water_share_from(span, start, neighbour.span, receiver_start, FIELD_WATER_FULL - receiver_start - promised, tuning, left)
+			sender_fill := start + i32(pass.delta[index])
+			receiver_fill := receiver_start + promised
+			amount := field_water_share_from(span, sender_fill, neighbour.span, receiver_fill, FIELD_WATER_FULL - receiver_fill, tuning, left)
 			if amount <= 0 {
 				continue
 			}
