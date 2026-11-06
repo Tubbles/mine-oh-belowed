@@ -1,6 +1,8 @@
 # 0303: The flakes read from the chair
 
-Status: todo (2026-11-06)
+Status: cancelled (2026-11-06)
+
+Folded into 0304: the flames move outside the pod, and the flakes' look depends on where they are drawn.
 
 Milestone: the entry's look (0273, 0286, 0288, 0290). Follows 0290, whose flakes landed as specified but do not read from the chair: over the 120 ticks after the heat peak the shipped rate put no flake in the chair's porthole, and at the rate's maximum (100) three crossed, each a dark dot of about 3 pixels at 720p, its bright streak lost against the sheath (doc/log/2026-11-06.md, 0290). The user's ask (2026-10-05): pieces of burning material breaking off the shield like miniature asteroids, adding to the chaotic feel, each with a streak of bright plasma aft.
 
