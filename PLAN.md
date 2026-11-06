@@ -25,6 +25,7 @@ Alpha 2 is phases 8 to 11, the space game, defined when alpha 1 is in sight.
 - The design session over the brief ran the same day and took every recommendation; M13's items 0168 to 0179 are written (`doc/log/2026-10-02.md`, The design session over 0167).
 - 2026-10-04: the user judged the field build viable by feel after the pod, its doors and the collision volumes were played on the couch and the phone ("lets say the trial is finished", `doc/log/2026-10-04.md`, The field trial is finished). M14 is picked; its brief is [doc/work/0237-the-ground-game-on-the-smooth-world-brief.md](doc/work/0237-the-ground-game-on-the-smooth-world-brief.md) and the items are written from it.
 - Next: the M14 brief read with the user, then its items in streams. Smaller items the user meets while playing still take priority as they come.
+- 2026-11-06: the world generation series 0306 to 0313 (relief, climate colours, biomes, surface materials, forests, ground cover, springs, light) is planned, 0306 and 0307 first (`doc/log/2026-11-06.md`, The world generation series).
 
 ## Couch tests
 
