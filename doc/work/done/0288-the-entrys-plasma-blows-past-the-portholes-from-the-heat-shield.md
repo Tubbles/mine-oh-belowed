@@ -1,6 +1,6 @@
 # 0288: The entry's plasma blows past the portholes from the heat shield
 
-Status: verified (2026-10-05)
+Status: landed (2026-11-06, 188b589)
 
 ## Goal
 
