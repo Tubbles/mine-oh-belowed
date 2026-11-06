@@ -1,6 +1,6 @@
 # 0294: The water's look: sheet, radial plane, waves
 
-Status: verified (2026-11-06)
+Status: landed (2026-11-06, c7d4e82)
 
 Milestone: the water tech demo (0291); the water stream after 0293, needed by both models.
 
