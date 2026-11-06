@@ -1,6 +1,6 @@
 # 0300: Bodies joined under water merge
 
-Status: implementing (2026-11-06)
+Status: verified (2026-11-06)
 
 Milestone: the water tech demo (0291); found by 0299's design, a follow-up to 0293.
 

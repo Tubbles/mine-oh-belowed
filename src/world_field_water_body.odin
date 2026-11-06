@@ -30,12 +30,14 @@ import "core:slice"
 // The flood (run_water_body_flood) pops samples in (bottom, sample order)
 // from the seed, claims each, and stops at the first sample beyond a
 // saddle (a slab wholly under the running sill), at the sea, or past the
-// rise cap; a sealed basin floods to its rim. It is bounded per tick by
-// flood_visit_budget and resumes next tick; its heap and its pushed
-// samples are saved as they stand (simulation_field_save.odin), so a
-// loaded machine finishes it on the same tick. The sea is body 0: a fixed
-// level, no volume, its samples the generation's and those its claim
-// reaches (claim_sea), never flooded.
+// rise cap; a sealed basin floods to its rim. A saddle into the body's own
+// water under its level is passed, not a spill (0300, the demo's internal
+// saddles), so a body spans a saddle while its level stands over it. It is
+// bounded per tick by flood_visit_budget and resumes next tick; its heap
+// and its pushed samples are saved as they stand
+// (simulation_field_save.odin), so a loaded machine finishes it on the
+// same tick. The sea is body 0: a fixed level, no volume, its samples the
+// generation's and those its claim reaches (claim_sea), never flooded.
 
 Water_Body_Id :: distinct u16
 WATER_BODY_SEA :: Water_Body_Id(0)
@@ -101,6 +103,10 @@ Water_Body :: struct {
 	flood_visits:  i64,
 	// Band 0's start, a multiple of WATER_BODY_BAND.
 	base:          i64,
+	// The highest saddle its last flood passed under its water (0300, rule
+	// 1), 0 for none, since levels are never negative; the body floods
+	// again when its level falls under it.
+	joined_sill:   i64,
 	// The cells in loaded chunks.
 	loaded:        [dynamic]Water_Body_Band,
 	// Per chunk outside the set, in (coordinate, owner) order.
@@ -136,6 +142,10 @@ Water_Flood :: struct {
 	// The rise cap in samples, kept for a flood begun again.
 	rise_samples:             i32,
 	sill, rise_limit:         i64,
+	// The level under which the flood's released samples are water (the
+	// body's level at a fresh start, 0 for a seeding flood, raised by a
+	// merge), and the highest saddle passed into them (0300).
+	join_level, joined_sill:  i64,
 	heap:                     [dynamic]Water_Flood_Entry,
 	pushed:                   map[Field_Chunk_Coordinate]^Field_Sample_Bits,
 	old_chunks:               [dynamic]Field_Chunk_Coordinate,
@@ -424,6 +434,10 @@ relevel_water_body :: proc(world: ^Field_World, id: Water_Body_Id) {
 	}
 	body.level = body_level_of_volume(body, body.volume)
 	write_water_body_fills(world, id, false)
+	// Under a saddle it spans: the next flood parts it there (0300).
+	if body.level < body.joined_sill {
+		mark_water_body_dirty(world, id)
+	}
 }
 
 // The bytes of the body's still samples (asleep, or a spring) to the fill
@@ -655,6 +669,9 @@ start_water_body_flood :: proc(world: ^Field_World, id: Water_Body_Id, tuning: F
 		flood.redirty = false
 		flood.has_candidate = false
 		flood.rise_samples = tuning.flood_rise_samples
+		// A restart keeps it: the bodies merged so far are dead and their
+		// samples still released.
+		flood.join_level = flood.seeding ? 0 : body.level
 	} else {
 		for _, bits in flood.pushed {
 			free(bits)
@@ -663,6 +680,7 @@ start_water_body_flood :: proc(world: ^Field_World, id: Water_Body_Id, tuning: F
 		clear(&flood.heap)
 	}
 	flood.active, flood.body = true, id
+	flood.joined_sill = 0
 	release_water_body_samples(world, id)
 	body := &world.water_bodies[id]
 	body.flood_visits = 0
@@ -707,16 +725,18 @@ end_water_body_flood :: proc(world: ^Field_World) {
 	clear_water_flood(flood)
 	flood.active, flood.seeding, flood.redirty = false, false, false
 	flood.has_candidate = false
+	flood.join_level, flood.joined_sill = 0, 0
 }
 
 // Merges body other into the flood's body, connected under its water:
 // the volume and frozen parts taken, the bases made one, other's samples
-// released (the flood claims them again through connectivity), other
-// dead.
+// released (the flood claims them again through connectivity, and passes
+// saddles into them under the raised join level), other dead.
 merge_into_water_flood :: proc(world: ^Field_World, id, other: Water_Body_Id) {
 	body := &world.water_bodies[id]
 	absorbed := &world.water_bodies[other]
 	body.volume += absorbed.volume
+	world.water_flood.join_level = max(world.water_flood.join_level, absorbed.level)
 	lower_water_body_base(body, absorbed.base)
 	lower_water_body_base(absorbed, body.base)
 	for part in absorbed.frozen {
@@ -806,8 +826,15 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 			return true
 		}
 		if bottom + span.height <= flood.sill {
-			body.spill, body.spill_level = entry.sample, flood.sill
-			return true
+			// Beyond a saddle: the spill, unless it is the body's own water
+			// and the saddle lies under its level (0300, rule 1). Then the
+			// flood passes it and keeps the highest such saddle; the slab
+			// lies wholly under the sill, so under the level.
+			if owner != WATER_OWNER_RELEASED || flood.sill > flood.join_level {
+				body.spill, body.spill_level = entry.sample, flood.sill
+				return true
+			}
+			flood.joined_sill = max(flood.joined_sill, flood.sill)
 		}
 		if owner != WATER_OWNER_RELEASED {
 			if other, ok := water_owner_body(world, owner); ok && other != id && bottom < world.water_bodies[other].level {
@@ -847,7 +874,11 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 // volume, the level (a seeding flood takes its front first,
 // absorb_seeded_front, then its seed's sample when the flood did not
 // claim it, absorb_seed_candidate), the bytes written, and a body with no
-// cells left dies.
+// cells left dies. A flood that passed saddles into its own water keeps
+// the highest (joined_sill): the body floods again when its level is
+// under it, and from its lowest loaded sample when that lies under the
+// seed, since a flood descending through joins pops out of bottom order
+// and its spill may be too high (0300, rule 2).
 finish_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 	flood := &world.water_flood
 	id := flood.body
@@ -876,7 +907,15 @@ finish_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning)
 		absorb_seed_candidate(world, id)
 	}
 	body.level = body_level_of_volume(body, body.volume)
-	body.dirty = flood.redirty
+	body.joined_sill = flood.joined_sill
+	body.dirty = flood.redirty || body.level < body.joined_sill
+	if flood.joined_sill > 0 {
+		owner := water_owner_of(id)
+		if lowest, found := lowest_owned_water_sample(world, body.chunks[:], owner, owner); found && field_water_bottom(field_water_span(lowest)) < field_water_bottom(field_water_span(body.seed)) {
+			body.seed = lowest
+			body.dirty = true
+		}
+	}
 	body.flood_visits = 0
 	spill_to_sea := body.spill_to_sea
 	end_water_body_flood(world)
@@ -1023,8 +1062,8 @@ seed_water_body :: proc(world: ^Field_World, sample: Sample_Coordinate, tuning: 
 // weir_rate_per_head a sample of head, between weir_floor and weir_cap, at
 // most the excess, nothing while the excess is within weir_dead_band (the
 // static friction is on the head). Into the sea, into another body's
-// water (the two merge, the lower id surviving, once the lower's water
-// reached the sill and the upper sits at it), or as front water at the
+// water (two bodies joined under water merge in the pass before,
+// merge_water_bodies_joined_under_water, 0300), or as front water at the
 // spill sample, which lies beyond the saddle, so it is never re-absorbed
 // into its own body: the stream starts. A body pending, dirty, without a
 // spill or whose spill chunk is missing waits.
@@ -1053,14 +1092,10 @@ emit_water_body_weirs :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 		}
 		span := field_water_span(body.spill)
 		if other, credited := field_water_sample_credits(world, chunk, sample_index, span); credited && other != id {
-			target := &world.water_bodies[other]
-			target.volume += flow
+			world.water_bodies[other].volume += flow
 			body.volume -= flow
 			relevel_water_body(world, other)
 			relevel_water_body(world, id)
-			if !water_body_is_pending(world, other) && target.level >= body.spill_level && excess - flow <= i64(tuning.weir_dead_band) {
-				merge_water_bodies(world, min(id, other), max(id, other))
-			}
 			continue
 		}
 		base := field_water_front_fill(chunk, sample_index)
@@ -1074,13 +1109,65 @@ emit_water_body_weirs :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 	}
 }
 
+// The body's merge partner (0300, rule 3, the demo's rule): a live body,
+// not the sea, settled (not dirty, not pending), at or over a sill that is
+// not the sea's (volume at least the spill volume), whose spill sample is
+// loaded, not ground, and another live body's water (not the sea's, not
+// the pending flood's, released or claimed again) standing at or over the
+// sill, and spilling no lower than it (sealed, or a spill level at or over
+// ours). The two are one water over the saddle between them. A partner
+// spilling under our sill is not merged: the union would flood from the
+// lower seed, stop at that lower spill before our saddle, and split us to
+// the front again, every few ticks while the partner is fed.
+water_body_joined_under_water :: proc(world: ^Field_World, id: Water_Body_Id) -> (other: Water_Body_Id, joined: bool) {
+	body := &world.water_bodies[id]
+	if !body.alive || body.sea || body.dirty || water_body_is_pending(world, id) || body.spill_level == max(i64) || body.spill_to_sea || body.volume < body.spill_volume {
+		return 0, false
+	}
+	chunk, index := field_world_cell(world, body.spill)
+	if chunk == nil || chunk.density[index] > 0 {
+		return 0, false
+	}
+	owner := chunk.water_owner[index]
+	if owner == WATER_OWNER_NONE || owner == WATER_OWNER_SEA || owner == WATER_OWNER_RELEASED {
+		return 0, false
+	}
+	found, ok := water_owner_body(world, owner)
+	if !ok || found == id || found == WATER_BODY_SEA || water_body_is_pending(world, found) {
+		return 0, false
+	}
+	partner := &world.water_bodies[found]
+	if partner.sea || partner.level < body.spill_level || partner.spill_level < body.spill_level {
+		return 0, false
+	}
+	return found, true
+}
+
+// Each tick between the refloods and the weirs, in id order: every body
+// joined under water to another merges with it, the lower id surviving
+// (0300, rule 3). A body killed earlier in the loop fails the alive test.
+merge_water_bodies_joined_under_water :: proc(world: ^Field_World) {
+	for index in 1 ..< len(world.water_bodies) {
+		id := Water_Body_Id(index)
+		if other, joined := water_body_joined_under_water(world, id); joined {
+			merge_water_bodies(world, min(id, other), max(id, other))
+		}
+	}
+}
+
 // Two bodies become one, the lower id surviving: the volumes and the
-// curves added (one base), the absorbed one's samples its own, the
-// survivor flooded again (dirty).
+// curves added (one base), the higher joined saddle kept, the absorbed
+// one's samples its own, the survivor flooded again (dirty) from the
+// lower seed of the two when that seed's chunk is loaded (else its own,
+// so the reflood is not held until a chunk returns).
 merge_water_bodies :: proc(world: ^Field_World, survivor, absorbed: Water_Body_Id) {
 	kept := &world.water_bodies[survivor]
 	gone := &world.water_bodies[absorbed]
 	kept.volume += gone.volume
+	kept.joined_sill = max(kept.joined_sill, gone.joined_sill)
+	if gone_seed_chunk, _ := field_world_cell(world, gone.seed); gone_seed_chunk != nil && water_flood_entry_before({field_water_bottom(field_water_span(gone.seed)), gone.seed}, {field_water_bottom(field_water_span(kept.seed)), kept.seed}) {
+		kept.seed = gone.seed
+	}
 	lower_water_body_base(kept, gone.base)
 	lower_water_body_base(gone, kept.base)
 	if len(kept.loaded) < len(gone.loaded) {

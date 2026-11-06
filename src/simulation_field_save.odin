@@ -138,6 +138,9 @@ Water_Body_Record :: struct {
 	volume, level, written_level:   i64,
 	spill_level, spill_volume:      i64,
 	flood_visits, base:             i64,
+	// The highest saddle its last flood passed under its water (0300);
+	// an older record reads zero, none.
+	joined_sill:                    i64,
 	seed, spill:                    Sample_Coordinate,
 }
 
@@ -152,13 +155,16 @@ Water_Body_Band_Record :: struct {
 	opens, closes: i64,
 }
 
-// has_candidate and candidate (0299) read zero from an older record.
+// has_candidate and candidate (0299), join_level and joined_sill (0300)
+// read zero from an older record: no candidate, and a flood that joins
+// nothing, the behaviour before them.
 Water_Flood_Record :: struct {
 	active, seeding, redirty: bool,
 	has_candidate:            bool,
 	body:                     u16,
 	rise_samples:             i32,
 	sill, rise_limit:         i64,
+	join_level, joined_sill:  i64,
 	candidate:                Sample_Coordinate,
 }
 
@@ -169,9 +175,9 @@ Water_Flood_Pushed_Record :: struct {
 
 // The least bytes a record's body takes in a list (each field at its size;
 // a nested struct takes more, with its length and schema).
-WATER_BODY_RECORD_BYTES :: 2 + 4 + 7 * 8 + 2 * 12
+WATER_BODY_RECORD_BYTES :: 2 + 4 + 8 * 8 + 2 * 12
 WATER_BODY_BAND_RECORD_BYTES :: 2 + 1 + 12 + 2 + 4 + 2 * 8
-WATER_FLOOD_RECORD_BYTES :: 4 + 2 + 4 + 2 * 8 + 12
+WATER_FLOOD_RECORD_BYTES :: 4 + 2 + 4 + 4 * 8 + 12
 WATER_FLOOD_ENTRY_BYTES :: 8 + 12
 WATER_FLOOD_PUSHED_RECORD_BYTES :: 12 + FIELD_SAMPLE_BIT_BYTES
 
@@ -204,7 +210,7 @@ write_water_body_table :: proc(bytes: ^[dynamic]byte, world: ^Field_World) {
 	bodies := make([dynamic]Water_Body_Record, 0, len(world.water_bodies), context.temp_allocator)
 	bands := make([dynamic]Water_Body_Band_Record, context.temp_allocator)
 	for &body, id in world.water_bodies {
-		append(&bodies, Water_Body_Record{id = u16(id), alive = body.alive, sea = body.sea, dirty = body.dirty, spill_to_sea = body.spill_to_sea, volume = body.volume, level = body.level, written_level = body.written_level, spill_level = body.spill_level, spill_volume = body.spill_volume, flood_visits = body.flood_visits, base = body.base, seed = body.seed, spill = body.spill})
+		append(&bodies, Water_Body_Record{id = u16(id), alive = body.alive, sea = body.sea, dirty = body.dirty, spill_to_sea = body.spill_to_sea, volume = body.volume, level = body.level, written_level = body.written_level, spill_level = body.spill_level, spill_volume = body.spill_volume, flood_visits = body.flood_visits, base = body.base, joined_sill = body.joined_sill, seed = body.seed, spill = body.spill})
 		append_water_body_bands(&bands, id, false, {}, 0, body.loaded[:])
 		for part in body.frozen {
 			append_water_body_bands(&bands, id, true, part.chunk, part.owner, part.bands[:])
@@ -213,7 +219,7 @@ write_water_body_table :: proc(bytes: ^[dynamic]byte, world: ^Field_World) {
 	write_list(bytes, bodies[:])
 	write_list(bytes, bands[:])
 	flood := &world.water_flood
-	record := Water_Flood_Record{active = flood.active, seeding = flood.seeding, redirty = flood.redirty, has_candidate = flood.has_candidate, body = u16(flood.body), rise_samples = flood.rise_samples, sill = flood.sill, rise_limit = flood.rise_limit, candidate = flood.candidate}
+	record := Water_Flood_Record{active = flood.active, seeding = flood.seeding, redirty = flood.redirty, has_candidate = flood.has_candidate, body = u16(flood.body), rise_samples = flood.rise_samples, sill = flood.sill, rise_limit = flood.rise_limit, join_level = flood.join_level, joined_sill = flood.joined_sill, candidate = flood.candidate}
 	write_list(bytes, []Water_Flood_Record{record})
 	write_list(bytes, flood.heap[:])
 	pushed := make([dynamic]Water_Flood_Pushed_Record, 0, len(flood.pushed), context.temp_allocator)
@@ -228,11 +234,12 @@ write_water_body_table :: proc(bytes: ^[dynamic]byte, world: ^Field_World) {
 // added and the water settles into bodies over the first ticks. False for
 // malformed records: a list count beyond the bytes left, ids out of order
 // or past the owner plane's reach, a sea that is not body 0 or not alone,
-// a base off the bands or a base or level outside the far limit, a band
-// naming a dead or unknown body or past MAXIMUM_WATER_BODY_BAND, a frozen
-// band whose owner names no listed body, more band entries in all than
-// MAXIMUM_WATER_BODY_BAND_ENTRIES, a flood naming a body that is not alive
-// and dirty.
+// a base off the bands or a base, level or joined saddle outside the far
+// limit, a band naming a dead or unknown body or past
+// MAXIMUM_WATER_BODY_BAND, a frozen band whose owner names no listed
+// body, more band entries in all than MAXIMUM_WATER_BODY_BAND_ENTRIES, a
+// flood naming a body that is not alive and dirty, an active flood's join
+// level or joined saddle outside the far limit.
 read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool {
 	if bytes_left(reader^) == 0 {
 		platform.log_printf("save: written before the water bodies (0293), the water settles into bodies over the first ticks")
@@ -266,7 +273,7 @@ read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool
 		if int(record.id) != id || record.sea != (id == 0) || (id == 0 && !record.alive) {
 			return false
 		}
-		if record.base %% WATER_BODY_BAND != 0 || !in_range(record.base) || !in_range(record.level) || !in_range(record.written_level) {
+		if record.base %% WATER_BODY_BAND != 0 || !in_range(record.base) || !in_range(record.level) || !in_range(record.written_level) || !in_range(record.joined_sill) {
 			return false
 		}
 	}
@@ -297,7 +304,7 @@ read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool
 		return false
 	}
 	flood := floods[0]
-	if flood.active && (int(flood.body) >= len(bodies) || flood.body == 0 || !bodies[flood.body].alive || !bodies[flood.body].dirty || len(heap) == 0) {
+	if flood.active && (int(flood.body) >= len(bodies) || flood.body == 0 || !bodies[flood.body].alive || !bodies[flood.body].dirty || len(heap) == 0 || !in_range(flood.join_level) || !in_range(flood.joined_sill)) {
 		return false
 	}
 	destroy_water_bodies(world)
@@ -305,7 +312,7 @@ read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool
 	world.water_flood = {}
 	world.water_sea_seeds = {}
 	for record in bodies {
-		append(&world.water_bodies, Water_Body{alive = record.alive, sea = record.sea, dirty = record.dirty, spill_to_sea = record.spill_to_sea, volume = record.volume, level = record.level, written_level = record.written_level, meshed_level = min(i64), spill_level = record.spill_level, spill_volume = record.spill_volume, flood_visits = record.flood_visits, base = record.base, seed = record.seed, spill = record.spill})
+		append(&world.water_bodies, Water_Body{alive = record.alive, sea = record.sea, dirty = record.dirty, spill_to_sea = record.spill_to_sea, volume = record.volume, level = record.level, written_level = record.written_level, meshed_level = min(i64), spill_level = record.spill_level, spill_volume = record.spill_volume, flood_visits = record.flood_visits, base = record.base, joined_sill = record.joined_sill, seed = record.seed, spill = record.spill})
 	}
 	for band in bands {
 		body := &world.water_bodies[band.body]
@@ -336,6 +343,7 @@ read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool
 		target.active, target.seeding, target.redirty = true, flood.seeding, flood.redirty
 		target.body, target.rise_samples, target.sill, target.rise_limit = Water_Body_Id(flood.body), flood.rise_samples, flood.sill, flood.rise_limit
 		target.has_candidate, target.candidate = flood.has_candidate, flood.candidate
+		target.join_level, target.joined_sill = flood.join_level, flood.joined_sill
 		append(&target.heap, ..heap[:])
 		for record in pushed {
 			bits := new(Field_Sample_Bits)

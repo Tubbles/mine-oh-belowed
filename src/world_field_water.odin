@@ -1396,10 +1396,10 @@ settle_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front,
 }
 
 // The bodies model's tick: the sea's claim, the dirty bodies' floods
-// (the pending one first), the weirs; then the front's two passes, the
-// inflow into the bodies, absorption and seeding. The chunks whose front
-// went to sleep leave the awake set. Nothing here reads the pressure
-// pull.
+// (the pending one first), the merge of bodies joined under water (0300),
+// the weirs; then the front's two passes, the inflow into the bodies,
+// absorption and seeding. The chunks whose front went to sleep leave the
+// awake set. Nothing here reads the pressure pull.
 step_field_water_bodies :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: u64) {
 	world.water_body_counts = {}
 	world.water_pressure = {}
@@ -1407,6 +1407,7 @@ step_field_water_bodies :: proc(world: ^Field_World, tuning: Field_Water_Tuning,
 	claim_sea(world)
 	budget := tuning.flood_visit_budget
 	reflood_dirty_water_bodies(world, tuning, &budget)
+	merge_water_bodies_joined_under_water(world)
 	emit_water_body_weirs(world, tuning)
 	coordinates := make([dynamic]Field_Chunk_Coordinate, 0, len(world.water_awake_chunks), context.temp_allocator)
 	for coordinate in world.water_awake_chunks {

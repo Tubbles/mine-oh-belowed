@@ -115,6 +115,7 @@ water_bodies_equal :: proc(first, second: ^Field_World) -> bool {
 			body.spill_volume == other.spill_volume &&
 			body.flood_visits == other.flood_visits &&
 			body.base == other.base &&
+			body.joined_sill == other.joined_sill &&
 			slice.equal(body.loaded[:], other.loaded[:]) &&
 			water_body_frozen_equal(body.frozen[:], other.frozen[:])
 		if !same {
@@ -122,7 +123,7 @@ water_bodies_equal :: proc(first, second: ^Field_World) -> bool {
 		}
 	}
 	a, b := &first.water_flood, &second.water_flood
-	if a.active != b.active || a.body != b.body || a.sill != b.sill || a.rise_limit != b.rise_limit || a.seeding != b.seeding || a.redirty != b.redirty || a.has_candidate != b.has_candidate || a.candidate != b.candidate || !slice.equal(a.heap[:], b.heap[:]) || len(a.pushed) != len(b.pushed) {
+	if a.active != b.active || a.body != b.body || a.sill != b.sill || a.rise_limit != b.rise_limit || a.seeding != b.seeding || a.redirty != b.redirty || a.has_candidate != b.has_candidate || a.candidate != b.candidate || a.join_level != b.join_level || a.joined_sill != b.joined_sill || !slice.equal(a.heap[:], b.heap[:]) || len(a.pushed) != len(b.pushed) {
 		return false
 	}
 	for coordinate, bits in a.pushed {
@@ -1429,4 +1430,555 @@ test_a_pending_seed_flood_saved_takes_its_sample_alike :: proc(t: ^testing.T) {
 		testing.expect_value(t, conserved_water(world), 100)
 	}
 	testing.expect(t, water_bodies_equal(&first, &second))
+}
+
+// Work item 0300: bodies joined under water merge. The world is 0299's
+// scenario: a lake drained into cave 1 through a hole, then cave 2 joined
+// to it by a passage, both caves filling over the passage.
+
+TWO_CAVE_NEAR :: [3]i32{4, 0, 4}
+TWO_CAVE_FAR :: [3]i32{20, 0, 11}
+TWO_CAVE_PASSAGE :: [3]i32{12, 1, 7}
+
+// reserve_first_id keeps body 1 alive with a frozen part in a chunk that
+// never loads, so the caves' bodies take higher ids.
+joined_two_cave_world :: proc(t: ^testing.T, tick: ^u64, reserve_first_id := false) -> Field_World {
+	world := make_body_test_world()
+	if reserve_first_id {
+		id, _ := allocate_water_body_id(&world)
+		frozen_chunk := Field_Chunk_Coordinate{5, WATER_TEST_CHUNK_Y, 0}
+		seed := field_chunk_origin(frozen_chunk) + Sample_Coordinate{7, 3, 7}
+		base := floor_divide_i64(field_water_bottom(field_water_span(seed)), WATER_BODY_BAND) * WATER_BODY_BAND
+		world.water_bodies[id] = Water_Body {
+			alive         = true,
+			level         = base,
+			written_level = base,
+			base          = base,
+			seed          = seed,
+			spill_level   = max(i64),
+			spill_volume  = max(i64),
+			meshed_level  = min(i64),
+		}
+		bands := make([dynamic]Water_Body_Band)
+		append(&bands, Water_Body_Band{opens = 1}, Water_Body_Band{closes = 1})
+		append(&world.water_bodies[id].frozen, Water_Body_Frozen{chunk = frozen_chunk, owner = water_owner_of(id), bands = bands})
+	}
+	carve_water_test_box(&world, water_test_sample(BASIN_LOW), water_test_sample(BASIN_HIGH))
+	carve_water_test_box(&world, water_test_sample({4, 0, 4}), water_test_sample({11, 1, 11}))
+	pour_test_water(&world, water_test_sample({4, 3, 4}), water_test_sample({11, 6, 11}), FIELD_WATER_FULL)
+	field_world_set_sample(&world, water_test_sample({7, 2, 7}), FIELD_AIR_SAMPLE)
+	ticks := settle_body_test_water(&world, water_body_test_tuning(), tick, 400)
+	testing.expectf(t, ticks < 400, "the drained lake settles (%d ticks)", ticks)
+	carve_water_test_box(&world, water_test_sample({13, 0, 4}), water_test_sample({20, 1, 11}))
+	field_world_set_sample(&world, water_test_sample({12, 1, 7}), FIELD_AIR_SAMPLE)
+	field_world_set_sample(&world, water_test_sample({13, 1, 7}), FIELD_AIR_SAMPLE)
+	return world
+}
+
+// The bodies owning the near and the far cave's corners; joined when both
+// are found and the same.
+two_cave_bodies :: proc(world: ^Field_World) -> (near, far: Water_Body_Id, joined: bool) {
+	near_found, far_found: bool
+	near, near_found = water_body_at(world, water_test_sample(TWO_CAVE_NEAR))
+	far, far_found = water_body_at(world, water_test_sample(TWO_CAVE_FAR))
+	return near, far, near_found && far_found && near == far
+}
+
+two_cave_passage_bottom :: proc() -> i64 {
+	return field_water_bottom(field_water_span(water_test_sample(TWO_CAVE_PASSAGE)))
+}
+
+// Runs ticks, the conserved sum checked against total every tick; false
+// at the first tick it is not.
+step_two_cave_world :: proc(t: ^testing.T, world: ^Field_World, tuning: Field_Water_Tuning, tick: ^u64, ticks: int, total: i64) -> bool {
+	for _ in 0 ..< ticks {
+		tick^ += 1
+		step_field_water(world, tuning, tick^)
+		if conserved_water(world) != total {
+			testing.expectf(t, false, "tick %d: %d is not %d", tick^, conserved_water(world), total)
+			return false
+		}
+	}
+	return true
+}
+
+@(test)
+test_two_caves_joined_under_water_end_as_one_body :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := joined_two_cave_world(t, &tick)
+	defer destroy_field_world(&world)
+	tuning := water_body_test_tuning()
+	total := conserved_water(&world)
+	dropped, to_sea := world.water_dropped, world.water_to_sea
+	joined_step := 0
+	for step in 1 ..= 2500 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		if conserved_water(&world) != total || world.water_dropped != dropped || world.water_to_sea != to_sea {
+			testing.expectf(t, false, "tick %d after the carve: %d is not %d (dropped %d, to the sea %d)", step, conserved_water(&world), total, world.water_dropped - dropped, world.water_to_sea - to_sea)
+			break
+		}
+		_, _, joined := two_cave_bodies(&world)
+		if joined && joined_step == 0 {
+			joined_step = step
+		} else if !joined && joined_step > 0 {
+			testing.expectf(t, false, "tick %d after the carve: the caves joined at %d are two again", step, joined_step)
+			break
+		}
+		counts := world.water_body_counts
+		if step > 1500 && (counts.seeded != 0 || counts.merged != 0 || counts.flood_visits != 0) {
+			testing.expectf(t, false, "tick %d after the carve seeds %d, merges %d, visits %d", step, counts.seeded, counts.merged, counts.flood_visits)
+			break
+		}
+	}
+	fmt.printfln("0300: the joined caves are one body %d ticks after the carve", joined_step)
+	testing.expectf(t, joined_step > 0 && joined_step <= 1000, "the caves are one body within 1000 ticks (%d)", joined_step)
+	body, id := only_water_body(t, &world)
+	if body == nil {
+		return
+	}
+	owner := water_owner_of(id)
+	for box in ([][2][3]i32{{{4, 0, 4}, {11, 1, 11}}, {{13, 0, 4}, {20, 1, 11}}, {TWO_CAVE_PASSAGE, TWO_CAVE_PASSAGE}}) {
+		for z in box[0].z ..= box[1].z {
+			for y in box[0].y ..= box[1].y {
+				for x in box[0].x ..= box[1].x {
+					chunk, index := field_world_cell(&world, water_test_sample({x, y, z}))
+					if chunk.density[index] <= 0 {
+						testing.expectf(t, chunk.water_owner[index] == owner, "%v is the body's", [3]i32{x, y, z})
+					}
+				}
+			}
+		}
+	}
+	testing.expectf(t, body.level >= two_cave_passage_bottom(), "the level %d at or over the passage's bottom %d", body.level, two_cave_passage_bottom())
+	testing.expectf(t, body.joined_sill > 0 && body.joined_sill <= body.level, "the joined saddle %d under the level %d", body.joined_sill, body.level)
+	testing.expect_value(t, body.volume, total - front_total(&world))
+}
+
+@(test)
+test_a_pump_in_one_of_two_joined_caves_lowers_the_one_body :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := joined_two_cave_world(t, &tick)
+	defer destroy_field_world(&world)
+	tuning := water_body_test_tuning()
+	total := conserved_water(&world)
+	if !step_two_cave_world(t, &world, tuning, &tick, 1000, total) {
+		return
+	}
+	id, _, joined := two_cave_bodies(&world)
+	testing.expect(t, joined, "the caves are one body")
+	if !joined {
+		return
+	}
+	probe := water_test_sample({16, 1, 7})
+	probe_chunk, probe_index := field_world_cell(&world, probe)
+	probe_before := probe_chunk.water[probe_index]
+	level, written := world.water_bodies[id].level, world.water_bodies[id].written_level
+	testing.expect_value(t, displace_water_body_volume(&world, id, water_test_sample({7, 0, 7}), 6000), 6000)
+	body := &world.water_bodies[id]
+	fmt.printfln("0300: pumped 6000, level %d -> %d, written %d -> %d, cave 2's probe %d -> %d", level, body.level, written, body.written_level, probe_before, probe_chunk.water[probe_index])
+	testing.expect(t, body.level < level && body.written_level < written, "the one body's level fell")
+	testing.expect_value(t, i32(probe_chunk.water[probe_index]), field_sea_fill(body.written_level, field_water_span(probe)))
+	testing.expect(t, probe_chunk.water[probe_index] < probe_before, "cave 2's water fell")
+	testing.expect(t, !body.dirty, "the body is not dirty")
+	for _ in 0 ..< 100 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		near, far, still := two_cave_bodies(&world)
+		counts := world.water_body_counts
+		if !still || near != id || far != id || counts.seeded != 0 || counts.merged != 0 || counts.flood_visits != 0 {
+			testing.expectf(t, false, "tick %d: bodies %d and %d (joined %v), seeds %d, merges %d, visits %d", tick, near, far, still, counts.seeded, counts.merged, counts.flood_visits)
+			break
+		}
+	}
+	testing.expect_value(t, conserved_water(&world), total - 6000)
+}
+
+@(test)
+test_two_joined_caves_pumped_under_their_passage_part :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := joined_two_cave_world(t, &tick)
+	defer destroy_field_world(&world)
+	tuning := water_body_test_tuning()
+	total := conserved_water(&world)
+	if !step_two_cave_world(t, &world, tuning, &tick, 1000, total) {
+		return
+	}
+	id, _, joined := two_cave_bodies(&world)
+	testing.expect(t, joined, "the caves are one body")
+	if !joined {
+		return
+	}
+	testing.expect_value(t, displace_water_body_volume(&world, id, water_test_sample({7, 0, 7}), 36000), 36000)
+	body := &world.water_bodies[id]
+	testing.expectf(t, body.dirty, "the body under its joined saddle (%d under %d) floods again", body.level, body.joined_sill)
+	total -= 36000
+	parted_after := 0
+	for step in 1 ..= 200 {
+		if !step_two_cave_world(t, &world, tuning, &tick, 1, total) {
+			return
+		}
+		_, near_found := water_body_at(&world, water_test_sample(TWO_CAVE_NEAR))
+		_, far_found := water_body_at(&world, water_test_sample(TWO_CAVE_FAR))
+		if _, _, still := two_cave_bodies(&world); near_found && far_found && !still {
+			parted_after = step
+			break
+		}
+	}
+	testing.expectf(t, parted_after > 0, "the caves part within 200 ticks")
+	if parted_after == 0 {
+		return
+	}
+	near, far, _ := two_cave_bodies(&world)
+	fmt.printfln("0300: pumped under the passage, the caves part after %d ticks: cave 1 %d, cave 2 %d", parted_after, world.water_bodies[near].volume, world.water_bodies[far].volume)
+	testing.expectf(t, world.water_bodies[far].level < two_cave_passage_bottom(), "cave 2's level %d under the passage's bottom %d", world.water_bodies[far].level, two_cave_passage_bottom())
+	far_volume := world.water_bodies[far].volume
+	testing.expect_value(t, displace_water_body_volume(&world, near, water_test_sample({7, 0, 7}), 1000), 1000)
+	total -= 1000
+	if !step_two_cave_world(t, &world, tuning, &tick, 100, total) {
+		return
+	}
+	far_after, far_found := water_body_at(&world, water_test_sample(TWO_CAVE_FAR))
+	testing.expect(t, far_found, "cave 2 holds a body")
+	if far_found {
+		testing.expect_value(t, world.water_bodies[far_after].volume, far_volume)
+	}
+}
+
+@(test)
+test_a_lake_rising_to_the_sill_of_the_lake_pouring_into_it_merges_with_it :: proc(t: ^testing.T) {
+	world := make_body_test_world()
+	defer destroy_field_world(&world)
+	carve_water_test_box(&world, water_test_sample({TROUGH_LAKE_A.x, 3, 4}), water_test_sample({TROUGH_LAKE_A.y, 31, 11}))
+	carve_water_test_box(&world, water_test_sample({TROUGH_LAKE_B.x, 3, 4}), water_test_sample({TROUGH_LAKE_B.y, 31, 11}))
+	pour_test_water(&world, water_test_sample({TROUGH_LAKE_A.x, 3, 4}), water_test_sample({TROUGH_LAKE_A.y, 13, 11}), FIELD_WATER_FULL)
+	pour_test_water(&world, water_test_sample({TROUGH_LAKE_B.x, 3, 4}), water_test_sample({TROUGH_LAKE_B.y, 4, 11}), FIELD_WATER_FULL)
+	tuning := water_body_test_tuning()
+	tick: u64 = 0
+	testing.expect(t, settle_body_test_water(&world, tuning, &tick, 300) < 300, "the lakes settle")
+	total := conserved_water(&world)
+	dig_test_trough(&world, 0)
+	joined_step := 0
+	for step in 1 ..= 3000 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		if conserved_water(&world) != total {
+			testing.expectf(t, false, "step %d: %d is not %d", step, conserved_water(&world), total)
+			break
+		}
+		counts := world.water_body_counts
+		if joined_step == 0 {
+			a, a_found := water_body_at(&world, water_test_sample({5, 3, 7}))
+			b, b_found := water_body_at(&world, water_test_sample({17, 3, 7}))
+			if a_found && b_found && a == b {
+				joined_step = step
+				testing.expectf(t, counts.merged == 1 && counts.seeded == 0, "step %d: the pass merges (merges %d, seeds %d)", step, counts.merged, counts.seeded)
+			}
+		}
+		if step > 2000 && (counts.seeded != 0 || counts.merged != 0 || counts.flood_visits != 0) {
+			testing.expectf(t, false, "step %d seeds %d, merges %d, visits %d", step, counts.seeded, counts.merged, counts.flood_visits)
+			break
+		}
+	}
+	// Before 0300 this world churned: 100 bodies after 3000 ticks.
+	fmt.printfln("0300: the lake rising to the trough's sill merged at step %d", joined_step)
+	testing.expectf(t, joined_step > 0 && joined_step <= 2000, "the lakes are one body within 2000 steps (%d)", joined_step)
+	body, _ := only_water_body(t, &world)
+	if body == nil {
+		return
+	}
+	trough_bottom := field_water_bottom(field_water_span(water_test_sample({10, 9, 7})))
+	testing.expectf(t, body.level >= trough_bottom, "the level %d at or over the trough's bottom %d", body.level, trough_bottom)
+}
+
+@(test)
+test_a_joined_body_saved_and_loaded_parts_alike :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	first := joined_two_cave_world(t, &tick)
+	defer destroy_field_world(&first)
+	tuning := water_body_test_tuning()
+	if !step_two_cave_world(t, &first, tuning, &tick, 1000, conserved_water(&first)) {
+		return
+	}
+	id, _, joined := two_cave_bodies(&first)
+	testing.expect(t, joined, "the caves are one body")
+	if !joined {
+		return
+	}
+	table := make([dynamic]byte, context.temp_allocator)
+	write_water_body_table(&table, &first)
+	second: Field_World
+	defer destroy_field_world(&second)
+	second.water_model = .Bodies
+	second.water_planet = first.water_planet
+	reader := Byte_Reader {
+		data = table[:],
+	}
+	testing.expect(t, read_water_body_table(&reader, &second))
+	testing.expect_value(t, bytes_left(reader), 0)
+	for coordinate in sorted_field_chunk_coordinates(first.chunks) {
+		chunk := new(Field_Chunk)
+		testing.expect_value(t, decode_field_chunk_delta(encode_field_chunk(first.chunks[coordinate], context.temp_allocator), chunk), "")
+		restore_field_chunk(&second, chunk)
+	}
+	rebuild_water_body_chunks(&second)
+	testing.expect(t, int(id) < len(second.water_bodies), "the body loads")
+	if int(id) >= len(second.water_bodies) {
+		return
+	}
+	testing.expect(t, first.water_bodies[id].joined_sill > 0, "the body spans a saddle")
+	testing.expect_value(t, second.water_bodies[id].joined_sill, first.water_bodies[id].joined_sill)
+	for world in ([]^Field_World{&first, &second}) {
+		testing.expect_value(t, displace_water_body_volume(world, id, water_test_sample({7, 0, 7}), 36000), 36000)
+	}
+	for _ in 0 ..< 100 {
+		tick += 1
+		step_field_water(&first, tuning, tick)
+		step_field_water(&second, tuning, tick)
+	}
+	testing.expect(t, water_bodies_equal(&first, &second), "the parted bodies are alike")
+	for coordinate, chunk in first.chunks {
+		testing.expect_value(t, field_chunk_state_hash(chunk), field_chunk_state_hash(second.chunks[coordinate]))
+	}
+	for world in ([]^Field_World{&first, &second}) {
+		near, near_found := water_body_at(world, water_test_sample(TWO_CAVE_NEAR))
+		far, far_found := water_body_at(world, water_test_sample(TWO_CAVE_FAR))
+		testing.expectf(t, near_found && far_found && near != far, "the caves parted (%d, %d)", near, far)
+	}
+}
+
+// A guard, no change (0299's review): a merged body's frozen part keeps
+// the absorbed body's owner tag, and the thaw hands the tagged samples to
+// the survivor even after the absorbed id is reused.
+@(test)
+test_a_merged_bodys_frozen_part_thaws_into_the_survivor_after_its_id_is_reused :: proc(t: ^testing.T) {
+	world := make_two_chunk_water_world({0, 1})
+	defer destroy_field_world(&world)
+	make_bodies_world(&world)
+	pour_test_water(&world, water_test_sample(TWO_CHUNK_BASIN_LOW), water_test_sample({TWO_CHUNK_BASIN_HIGH.x, 8, TWO_CHUNK_BASIN_HIGH.z}), FIELD_WATER_FULL)
+	tuning := water_body_test_tuning()
+	tick: u64 = 0
+	testing.expect(t, settle_body_test_water(&world, tuning, &tick, 200) < 200)
+	body, lake := only_water_body(t, &world)
+	if body == nil {
+		return
+	}
+	returning := Field_Chunk_Coordinate{1, WATER_TEST_CHUNK_Y, 0}
+	bytes := encode_field_chunk(world.chunks[returning], context.temp_allocator)
+	field_world_remove_chunk(&world, returning)
+	testing.expect_value(t, len(world.water_bodies[lake].frozen), 1)
+	tag := water_owner_of(lake)
+	total := conserved_water(&world)
+	survivor := make_dry_water_body(&world, water_test_sample({22, 15, 7}), 0)
+	testing.expect(t, survivor != lake, "a second id")
+	merge_water_bodies(&world, survivor, lake)
+	testing.expect(t, !world.water_bodies[lake].alive, "the lake was absorbed")
+	testing.expect_value(t, len(world.water_bodies[survivor].frozen), 1)
+	if len(world.water_bodies[survivor].frozen) == 1 {
+		testing.expect_value(t, world.water_bodies[survivor].frozen[0].owner, tag)
+	}
+	reused := make_dry_water_body(&world, water_test_sample({23, 15, 7}), 0)
+	testing.expect_value(t, reused, lake)
+	arriving := new(Field_Chunk)
+	testing.expect_value(t, decode_field_chunk_delta(bytes, arriving), "")
+	field_world_insert_chunk(&world, arriving)
+	sample := water_test_sample({FIELD_CHUNK_SIZE + 5, 3, 7})
+	owner, owned := water_body_at(&world, sample)
+	testing.expect(t, owned && owner == survivor, "the thawed sample is the survivor's")
+	testing.expect_value(t, len(world.water_bodies[survivor].frozen), 0)
+	named := slice.contains(world.water_bodies[reused].chunks[:], returning)
+	testing.expect(t, !named, "the reused body does not name the returned chunk")
+	testing.expect_value(t, conserved_water(&world), total)
+	for _ in 0 ..< 50 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	owner, owned = water_body_at(&world, sample)
+	testing.expect(t, owned && owner == survivor, "the sample is still the survivor's")
+	testing.expect_value(t, conserved_water(&world), total)
+}
+
+// A settled body whose spill lies in a pending flood's claimed water
+// (the flood's own tag, not the released one) waits for the flood: the
+// merge pass never merges or kills the pending body, with the waiting
+// body's id above the flood's or below it (0300's review).
+@(test)
+test_the_merge_pass_leaves_a_pending_flood_alone :: proc(t: ^testing.T) {
+	for waiting_below in ([]bool{false, true}) {
+		pending_flood_beside_a_waiting_body(t, waiting_below)
+	}
+}
+
+pending_flood_beside_a_waiting_body :: proc(t: ^testing.T, waiting_below: bool) {
+	tick: u64 = 0
+	first := joined_two_cave_world(t, &tick, waiting_below)
+	defer destroy_field_world(&first)
+	tuning := water_body_test_tuning()
+	if !step_two_cave_world(t, &first, tuning, &tick, 1000, conserved_water(&first)) {
+		return
+	}
+	lake, _, joined := two_cave_bodies(&first)
+	testing.expect(t, joined, "the caves are one body")
+	if !joined {
+		return
+	}
+	if waiting_below {
+		kill_water_body(&first, 1)
+	}
+	waiting := make_dry_water_body(&first, water_test_sample({7, 20, 7}), 0)
+	testing.expect_value(t, waiting < lake, waiting_below)
+	tuning.flood_visit_budget = 20
+	mark_water_body_dirty(&first, lake)
+	total := conserved_water(&first)
+	tick += 1
+	step_field_water(&first, tuning, tick)
+	testing.expect(t, water_body_is_pending(&first, lake), "the lake's flood is pending")
+	seed := first.water_bodies[lake].seed
+	seed_chunk, seed_index := field_world_cell(&first, seed)
+	testing.expect_value(t, seed_chunk.water_owner[seed_index], water_owner_of(lake))
+	// Settled, at its sill, spilling into the lake's claimed seed.
+	body := &first.water_bodies[waiting]
+	body.spill, body.spill_level, body.spill_volume = seed, field_water_bottom(field_water_span(seed)), 0
+	table := make([dynamic]byte, context.temp_allocator)
+	write_water_body_table(&table, &first)
+	second: Field_World
+	defer destroy_field_world(&second)
+	second.water_model = .Bodies
+	second.water_planet = first.water_planet
+	reader := Byte_Reader {
+		data = table[:],
+	}
+	testing.expect(t, read_water_body_table(&reader, &second), "the table saved during the flood reads")
+	testing.expect_value(t, bytes_left(reader), 0)
+	for coordinate in sorted_field_chunk_coordinates(first.chunks) {
+		chunk := new(Field_Chunk)
+		testing.expect_value(t, decode_field_chunk_delta(encode_field_chunk(first.chunks[coordinate], context.temp_allocator), chunk), "")
+		restore_field_chunk(&second, chunk)
+	}
+	rebuild_water_body_chunks(&second)
+	testing.expect(t, second.water_flood.active && second.water_flood.body == lake, "the loaded flood is pending")
+	testing.expect(t, water_bodies_equal(&first, &second), "the loaded bodies are alike")
+	pending_ticks := 0
+	for _ in 0 ..< 3000 {
+		if !first.water_flood.active {
+			break
+		}
+		pending_ticks += 1
+		tick += 1
+		step_field_water(&first, tuning, tick)
+		step_field_water(&second, tuning, tick)
+		if conserved_water(&first) != total || conserved_water(&second) != total {
+			testing.expectf(t, false, "tick %d: %d and %d are not %d", tick, conserved_water(&first), conserved_water(&second), total)
+			return
+		}
+		if first.water_flood.active && (first.water_flood.body != lake || !first.water_bodies[lake].alive || first.water_body_counts.merged != 0) {
+			testing.expectf(t, false, "tick %d: the pending flood's body %d (alive %v) was merged (%d merges)", tick, first.water_flood.body, first.water_bodies[lake].alive, first.water_body_counts.merged)
+			return
+		}
+	}
+	fmt.printfln("0300: the pending lake (body %d) beside the waiting body %d finished its flood after %d ticks", lake, waiting, pending_ticks)
+	testing.expect(t, !first.water_flood.active, "the flood finishes")
+	testing.expect(t, water_bodies_equal(&first, &second), "the bodies stepped alike")
+	for coordinate, chunk in first.chunks {
+		testing.expect_value(t, field_chunk_state_hash(chunk), field_chunk_state_hash(second.chunks[coordinate]))
+	}
+}
+
+// The trough lakes with B carved deeper (from y 1, so it holds the lower
+// seed), A poured to y 13 and B to y 7, and an outlet from B at y 8, under
+// the trough's sill at y 9, along to a shaft at x 26 that opens at the
+// chunk's floor over a sea just under it. Settled before the trough is dug.
+fed_outlet_trough_world :: proc(t: ^testing.T, tick: ^u64) -> Field_World {
+	world: Field_World
+	planet := water_test_sea_planet()
+	planet.sea_level = field_water_bottom(field_water_span(water_test_sample({26, 0, 7}))) - FIELD_WATER_FULL / 2
+	world.water_planet = planet
+	make_bodies_world(&world)
+	field_world_insert_chunk(&world, make_ground_water_test_chunk(0))
+	carve_water_test_box(&world, water_test_sample({TROUGH_LAKE_A.x, 3, 4}), water_test_sample({TROUGH_LAKE_A.y, 31, 11}))
+	carve_water_test_box(&world, water_test_sample({TROUGH_LAKE_B.x, 1, 4}), water_test_sample({TROUGH_LAKE_B.y, 31, 11}))
+	carve_water_test_box(&world, water_test_sample({TROUGH_LAKE_B.y + 1, 8, 7}), water_test_sample({25, 8, 7}))
+	carve_water_test_box(&world, water_test_sample({26, 0, 7}), water_test_sample({26, 8, 7}))
+	pour_test_water(&world, water_test_sample({TROUGH_LAKE_A.x, 3, 4}), water_test_sample({TROUGH_LAKE_A.y, 13, 11}), FIELD_WATER_FULL)
+	pour_test_water(&world, water_test_sample({TROUGH_LAKE_B.x, 1, 4}), water_test_sample({TROUGH_LAKE_B.y, 7, 11}), FIELD_WATER_FULL)
+	ticks := settle_body_test_water(&world, water_body_test_tuning(), tick, 300)
+	testing.expectf(t, ticks < 300, "the lakes settle (%d ticks)", ticks)
+	return world
+}
+
+// A fed lake draining through an outlet under the sill of the lake pouring
+// into it is not merged with that lake: the union would flood from the fed
+// lake's lower seed, stop at the outlet and split the other to the front,
+// over and over (0300's review). Before the guard, at inflow 70: 196
+// seeds, 168 merges, 29448 flood visits in the 500 ticks; on main before
+// 0300 and with the guard: 1 seed, no merge, 456 visits.
+@(test)
+test_a_fed_lake_draining_under_the_sill_of_the_lake_pouring_into_it_stays_apart :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := fed_outlet_trough_world(t, &tick)
+	defer destroy_field_world(&world)
+	tuning := water_body_test_tuning()
+	trough_sill := field_water_bottom(field_water_span(water_test_sample({10, 9, 7})))
+	outlet_sill := field_water_bottom(field_water_span(water_test_sample({23, 8, 7})))
+	testing.expect(t, outlet_sill < trough_sill, "the outlet lies under the trough's sill")
+	dig_test_trough(&world, 0)
+	total := conserved_water(&world)
+	to_sea, dropped := world.water_to_sea, world.water_dropped
+	feed := water_test_sample({17, 1, 7})
+	fed, seeds, merges, visits: i64
+	for step in 1 ..= 500 {
+		if id, found := water_body_at(&world, feed); found {
+			fed += credit_water_body_volume(&world, id, feed, 70)
+		}
+		tick += 1
+		step_field_water(&world, tuning, tick)
+		counts := world.water_body_counts
+		seeds += counts.seeded
+		merges += counts.merged
+		visits += counts.flood_visits
+		if conserved_water(&world) + world.water_to_sea - to_sea + world.water_dropped - dropped != total + fed {
+			testing.expectf(t, false, "step %d: the water is not conserved", step)
+			break
+		}
+	}
+	fmt.printfln("0300: the fed lake under the trough: %d seeds, %d merges, %d flood visits, %d fed, %d to the sea", seeds, merges, visits, fed, world.water_to_sea - to_sea)
+	testing.expect_value(t, fed, 500 * 70)
+	testing.expect(t, world.water_to_sea - to_sea > 0, "the outlet runs to the sea")
+	testing.expectf(t, seeds <= 1 && merges == 0 && visits <= 456, "at most main's 1 seed, 0 merges and 456 visits")
+	a, a_found := water_body_at(&world, water_test_sample({5, 3, 7}))
+	b, b_found := water_body_at(&world, water_test_sample({17, 3, 7}))
+	testing.expect(t, a_found && b_found && a != b, "the lakes stay two")
+}
+
+// A merge takes the absorbed body's lower seed only when its chunk is
+// loaded, so the survivor's reflood is not held for a missing chunk.
+@(test)
+test_a_merge_keeps_the_survivors_seed_when_the_lower_one_is_not_loaded :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := settled_body_test_lake(t, 3, &tick)
+	defer destroy_field_world(&world)
+	_, lake := only_water_body(t, &world)
+	high := make_dry_water_body(&world, water_test_sample({7, 20, 7}), 0)
+	survivor, absorbed := min(lake, high), max(lake, high)
+	kept_seed := world.water_bodies[survivor].seed
+	// A seed far under both, in a chunk outside the set.
+	missing := field_chunk_origin({0, WATER_TEST_CHUNK_Y - 1, 0}) + Sample_Coordinate{7, 3, 7}
+	chunk, _ := field_world_cell(&world, missing)
+	testing.expect(t, chunk == nil, "the seed's chunk is not loaded")
+	world.water_bodies[absorbed].seed = missing
+	merge_water_bodies(&world, survivor, absorbed)
+	testing.expect_value(t, world.water_bodies[survivor].seed, kept_seed)
+	testing.expect(t, world.water_bodies[survivor].dirty, "the survivor floods again")
+	tick += 1
+	step_field_water(&world, water_body_test_tuning(), tick)
+	testing.expect(t, !world.water_bodies[survivor].dirty, "the survivor flooded from its own seed")
+
+	// A loaded lower seed is taken.
+	low := make_dry_water_body(&world, water_test_sample({7, 25, 7}), 0)
+	survivor, absorbed = min(survivor, low), max(survivor, low)
+	lower_seed := water_test_sample({4, 3, 4})
+	world.water_bodies[absorbed].seed = lower_seed
+	world.water_bodies[survivor].seed = water_test_sample({7, 10, 7})
+	merge_water_bodies(&world, survivor, absorbed)
+	testing.expect_value(t, world.water_bodies[survivor].seed, lower_seed)
 }
