@@ -1,6 +1,6 @@
 # 0306: Taller, varied relief: plains, hills, ranges and valleys
 
-Status: verified (2026-11-06)
+Status: landed (2026-11-06, 98b94ea)
 
 Milestone: the world generation series 0306 to 0313 (the plan in `doc/log/2026-11-06.md`, The world generation series). The user (2026-11-06): "I need better and more varied elevation for testing the water tech demos, and just generally better visuals because right now it is very bland". The research is `work/world_generation_research.md`.
 
