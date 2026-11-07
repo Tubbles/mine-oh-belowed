@@ -1,6 +1,6 @@
 # 0310: Tree species and dense forests
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, 8186138)
 
 Milestone: the world generation series 0306 to 0313, after 0306 and 0307. The user (2026-11-06): "More dense forests, varied tree types". Biomes (0308) are skipped for now (user, 2026-11-07), so the forest reads the climate (0307) and the relief (0306) directly.
 

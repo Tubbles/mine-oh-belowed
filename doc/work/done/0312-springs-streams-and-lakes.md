@@ -1,6 +1,6 @@
 # 0312: Springs, streams and lakes in the highlands
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, de88648)
 
 Milestone: the world generation series 0306 to 0313, after 0306. The user (2026-11-06): elevation "for testing the water tech demos".
 
