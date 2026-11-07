@@ -1,12 +1,12 @@
-# 0322: The ledges' rock bands
+# 0322: No more ledges
 
 Status: todo (2026-11-07)
 
-0307's captures (`tmp/shot_terrain_colours/state/mine-oh-belowed/screenshots/home_air120.png`) show every hillside striped with brown bands along its contours. The relief kept the small ledges from before 0306 as detail, and since 0307 a face steeper than 40 to 50 degrees takes the rock look, so each ledge's riser draws a band of rock across the grass. The bands repeat along every slope, which `DESIGN.md` (No perceivable repetition) rules out.
+The user (2026-11-07, a phone screenshot): "there is dirt striping that doesn't look good. Furthermore, there are weird half meter drop features snaking around the world. Feels like the height map has two frequencies or something. Get rid of the half meter features, they look artificial." Both come from the ledges of 0189 (`relief_shape.ledge_*` in `data/planets.sjson`: a 32 m wavelength, 700 mm amplitude, sharpness 128), which 0306 kept as detail. Each ledge is a step of about half a metre snaking along a contour. Since 0307 its riser is steep enough to take the rock look, so every slope is striped with brown bands (`tmp/shot_terrain_colours/state/mine-oh-belowed/screenshots/home_air120.png`).
 
 ## Goal
 
-Rock shows on cliffs and steep slopes, not on every small step of a grassy hill.
+New worlds have no ledges: no snaking steps, and no rock bands across grassy slopes.
 
 ## Controls
 
@@ -14,11 +14,12 @@ None.
 
 ## Change
 
-- Candidates, which the design weighs from captures: drop or soften the ledges in the shipped planet's data, take the rock look's steepness from a broader normal (the slope over a few metres rather than the triangle's), or require a minimum height of the steep face.
-- Old worlds keep their relief. A data change applies to new worlds through the record, as 0306's terms did.
-- Docs: `doc/content.md` (Planets) or `doc/presentation.md` (the looks), whichever the change touches.
+- The shipped planets' ledge amplitude goes to 0. The record keeps old worlds' ledges, as it keeps their other relief terms.
+- If grass slopes still show rock bands without the ledges (from the detail octaves), the design names the cause and the fix (the rock look's steepness from a broader normal, or a minimum height of a steep face).
+- The golden values of 0306's tests that pin the shipped relief are pinned again, and each re-pin is named.
+- Docs: `doc/content.md` (Planets).
 
 ## Verify
 
 - The checks and the suite.
-- 0307's captures again, with rock on the range's faces and none in bands across the grassy slopes.
+- 0307's captures again (the home and the new spring from the ground, 40 m and 120 m): no steps along the contours, no rock bands across grass, rock on the range's faces.
