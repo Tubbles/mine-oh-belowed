@@ -45,13 +45,28 @@ when ODIN_OS == .Windows {
 } else {
 	foreign import c_runtime "system:c"
 
+	// C passes a va_list by value: on x86-64 an array, which decays to a
+	// pointer, on arm64 a struct. Odin dev-2026-11's core:c/libc declares
+	// vsnprintf so, core:sys/posix brings that declaration into every
+	// build but Windows, and Odin refuses a second one of the same name
+	// with another signature (0315).
+	when ODIN_ARCH == .amd64 {
+		Va_List_Argument :: ^c.va_list
+	} else {
+		Va_List_Argument :: c.va_list
+	}
+
 	@(default_calling_convention = "c")
 	foreign c_runtime {
-		vsnprintf :: proc(buffer: [^]u8, size: c.size_t, format: cstring, arguments: ^c.va_list) -> c.int ---
+		vsnprintf :: proc(buffer: [^]u8, size: c.size_t, format: cstring, arguments: Va_List_Argument) -> c.int ---
 	}
 
 	format_trace_log :: proc "c" (buffer: []u8, text: cstring, arguments: ^c.va_list) {
-		vsnprintf(raw_data(buffer), c.size_t(len(buffer)), text, arguments)
+		when ODIN_ARCH == .amd64 {
+			vsnprintf(raw_data(buffer), c.size_t(len(buffer)), text, arguments)
+		} else {
+			vsnprintf(raw_data(buffer), c.size_t(len(buffer)), text, arguments^)
+		}
 	}
 }
 

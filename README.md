@@ -14,7 +14,7 @@ Status: pre-alpha, in a rebuild. The block world (all eight gameplay phases, fro
 
 ## Building
 
-`./build.sh` with the Odin toolchain at `~/opt/odin` (dev-2026-09), or `nix build`. Everything else is in [doc/build.md](doc/build.md).
+`./build.sh` with the Odin toolchain at `~/opt/odin` (dev-2026-11a), or `nix build`. Everything else is in [doc/build.md](doc/build.md).
 
 ## Playing
 

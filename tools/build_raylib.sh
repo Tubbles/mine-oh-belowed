@@ -23,6 +23,9 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Pinned (0315): the committed archives and windows/raylib.lib are 6.0, the
+# Android one with three patches, and the binding is the 6.0 copy, so a new
+# raylib is a rebuild of all three plus a phone test, an item of its own.
 raylib_tag="6.0"
 raylib_url="https://github.com/raysan5/raylib"
 source_directory="$repository_root/tmp/raylib-src"
@@ -31,6 +34,9 @@ android_build_directory="$repository_root/tmp/raylib-build-android"
 collection_directory="$repository_root/shared/raylib"
 container_name="mine-oh-belowed-raylib"
 android_container_name="mine-oh-belowed-android"
+# Pinned: distrobox creates the container once and keeps it, so a newer
+# Fedora comes by raising the release here, removing the container and
+# running this script again (0315).
 container_image="registry.fedoraproject.org/fedora-toolbox:44"
 container_packages="cmake gcc gcc-c++ make git wayland-devel wayland-protocols-devel libxkbcommon-devel libdecor-devel mesa-libGL-devel libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel libXext-devel"
 desktop_record_marker="<!-- build record -->"

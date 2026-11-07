@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Install the Android SDK pieces Odin's android subtarget and
-# `odin bundle android` need: the command line tools, platform-tools,
-# build-tools, one platform and the NDK, under
-# ${ODIN_ANDROID_SDK:-$HOME/opt/android/sdk}. The versions are the GitHub
-# ubuntu-24.04 runner's (tools/android_env.sh). Re-running skips what is
-# installed. Work item 0113, see doc/android.md (Toolchain).
+# `odin bundle android` need: the command line tools, platform-tools, the
+# newest stable build-tools and NDK sdkmanager lists (they float, 0315),
+# and the platform of the target SDK tools/android_env.sh pins, under
+# ${ODIN_ANDROID_SDK:-$HOME/opt/android/sdk}. Re-running skips what is
+# installed and adds a newer build-tools or NDK. Work item 0113, see
+# doc/android.md (Toolchain).
 #   tools/android_toolchain.sh          install inside the distrobox
 #                                       mine-oh-belowed-android (Fedora 44
 #                                       with a headless JDK), created on
@@ -20,15 +21,20 @@ export ODIN_ANDROID_SDK="${ODIN_ANDROID_SDK:-$HOME/opt/android/sdk}"
 . "$repository_root/tools/android_env.sh"
 
 # From https://developer.android.com/studio#command-line-tools-only
-# (read 2026-09-29).
+# (read 2026-09-29). Pinned with its SHA-256: it only bootstraps
+# sdkmanager, which installs the floating packages (0315).
 command_line_tools_zip="commandlinetools-linux-15859902_latest.zip"
 command_line_tools_sha256="4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583"
 command_line_tools_url="https://dl.google.com/android/repository/$command_line_tools_zip"
 download_directory="$repository_root/tmp/android-downloads"
 sdkmanager="$ODIN_ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager"
 container_name="mine-oh-belowed-android"
+# Pinned: distrobox creates the container once and keeps it, so a newer
+# Fedora comes by raising the release here, removing the container and
+# running this script again (0315).
 container_image="registry.fedoraproject.org/fedora-toolbox:44"
-# Fedora 44 has no java-21 package; 25 is its current long term JDK.
+# Fedora names its JDK packages by version, so the JDK follows the image.
+# Fedora 44 has no java-21 package, and 25 is its current long term JDK.
 container_packages="java-25-openjdk-headless cmake gcc gcc-c++ make git unzip"
 
 install_command_line_tools() {
@@ -57,12 +63,29 @@ accept_licenses() {
 	{ yes || true; } | "$sdkmanager" --sdk_root="$ODIN_ANDROID_SDK" --licenses > /dev/null
 }
 
+# The newest stable version of an SDK package in sdkmanager's list, such
+# as ndk or build-tools (0315). Both the package name and the version
+# column must hold a bare version: a build-tools release candidate shows
+# its rc in the name (build-tools;37.0.0-rc1), an NDK one only in the
+# version column (ndk;30.0.16138531 | 30.0.16138531 rc3).
+newest_package_version() {
+	"$sdkmanager" --sdk_root="$ODIN_ANDROID_SDK" --list \
+		| sed -n -E "s/^ *$1;([0-9]+(\.[0-9]+)*) +\| +[0-9]+(\.[0-9]+)* +\|.*/\1/p" | sort -V | tail -n 1
+}
+
 install_packages() {
+	local build_tools_version ndk_version
+	build_tools_version="$(newest_package_version build-tools)"
+	ndk_version="$(newest_package_version ndk)"
+	if [[ -z "$build_tools_version" || -z "$ndk_version" ]]; then
+		echo "sdkmanager lists no stable build-tools or ndk version (build-tools '$build_tools_version', ndk '$ndk_version')" >&2
+		exit 1
+	fi
 	local package_directories=(
 		"platform-tools"
-		"build-tools/$ANDROID_BUILD_TOOLS_VERSION"
-		"platforms/android-$ANDROID_PLATFORM_VERSION"
-		"ndk/$ANDROID_NDK_VERSION"
+		"build-tools/$build_tools_version"
+		"platforms/android-$ANDROID_TARGET_SDK_VERSION"
+		"ndk/$ndk_version"
 	)
 	local missing=()
 	local directory

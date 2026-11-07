@@ -291,8 +291,11 @@ start_input_backend :: proc(request: Input_Backend_Request) -> (backend: Input_B
 	return .Raylib, true
 }
 
-main :: proc() {
-	command_line, parse_error := parse_command_line(os.args[1:])
+game_main :: proc() {
+	// On Android os.args can be empty: Odin dev-2026-11 builds it from
+	// /proc/self/cmdline and leaves it empty when that cannot be read
+	// (main_android.odin, 0315).
+	command_line, parse_error := parse_command_line(os.args[1:] if len(os.args) > 0 else nil)
 	if _, is_help := parse_error.(flags.Help_Request); is_help {
 		write_command_line_usage(os.to_stream(os.stdout))
 		return

@@ -63,8 +63,6 @@ Balance and design numbers wait for late beta, just before the first release (us
 
 Written at the end of the Android app series (0112 to 0115), each with why it was not done then:
 
-- Upstream report to Odin: `odin bundle android` hands aapt `<dir>/lib` as a directory argument, so its contents land at the APK root (`bundle_command.cpp`); `build.sh android` works around it with `lib/lib/arm64-v8a/libmain.so`. Needs a minimal reproduction on the Odin side.
-- Upstream report to Odin: for `-subtarget:android -build-mode:shared` the link passes `-Wl,-init,'_odin_entry_point'` but the library has no INIT entry (`llvm-readelf -d`), so the runtime never starts on its own; the quotes may reach the linker literally (`linker.cpp`, not checked). The game uses `--wrap=main` instead (`src/main_android.odin`).
 - Upstream report to Odin: `core:sys/posix`'s `sigaction_t` follows glibc (handler first) while bionic's 64 bit struct puts `sa_flags` first, so `sigaction` on Android installs SIG_DFL; `install_crash_handlers` (`src/platform/logging_posix.odin`) skips Android for that reason. Also `os.make_directory_all` (`core/os/path_linux.odin`) opens `/` to walk an absolute path, which Android's SELinux policy refuses; `make_directory_path` (`src/platform/platform_paths.odin`) is the workaround.
 - Upstream report to odin-fsw: the Windows backend waits 50 ms per `get_events` and drops the subtree flag on re-issue, both patched in `shared/fsw/backend_windows.odin` (README there, 0111). Not sent because the Windows runtime behaviour was never checked on a Windows machine.
 - Android time zone: `load_local_zone` (`src/platform/local_zone_posix.odin`) finds no tz database on Android, so the title screen's dates show UTC; the system property `persist.sys.timezone` (`__system_property_get`) names the zone and `core:time/timezone` could load it from a bundled region file. Not needed for the first runs.
@@ -80,7 +78,6 @@ Written at the end of the Android app series (0112 to 0115), each with why it wa
 - Layout editor and hot reload: a data file reload while the editor shows a draft of Default keeps the old copy in the draft until the editor is reopened.
 - Target status lines in tap mode: with `touch_interaction = tap` the crosshair is not drawn, but the target's status lines (`draw_target_status`, `src/hud.odin`) still sit at the screen centre where the crosshair was.
 - Test duplication: `test_no_touch_overlay_element_covers_a_hotbar_slot` (`src/touch_overlay_test.odin`) converts the hotbar rectangles to pixels inline instead of calling `hud_hotbar_pixel_rectangles` (0119).
-- `os.args` after an Android relaunch: `core:os` builds `os.args` once at the first runtime start, so on a second `main` in the same process (0116) its `[0]` points at the first launch's `arg0` on raylib's stack. Nothing reads it (the game reads `os.args[1:]`, empty on Android); a static literal in `__wrap_main` would remove the dangling pointer.
 
 ## Follow ups from the touch inventory and misclick series (0124 to 0133)
 

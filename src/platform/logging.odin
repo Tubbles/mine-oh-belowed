@@ -140,7 +140,11 @@ Log_Capture :: struct {
 
 begin_log_capture :: proc(capture: ^Log_Capture) {
 	capture.previous = captured_log_error
-	captured_log_error = &capture.captured
+	// The caller's local stays referenced until end_log_capture puts the
+	// previous pointer back, so a capture begins and ends in one procedure
+	// with no return between. The conversion tells Odin dev-2026-11's
+	// escape analysis so (0315).
+	captured_log_error = (^string)(rawptr(&capture.captured))
 }
 
 end_log_capture :: proc(capture: ^Log_Capture, fallback: string) -> string {

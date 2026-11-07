@@ -8,17 +8,18 @@ The game as a native Android app (0114): the same `game` package built with Odin
 
 ## Toolchain
 
-The versions are the GitHub ubuntu-24.04 runner's, which ships them at `ANDROID_HOME=/usr/local/lib/android/sdk` with JDK 17.
+The tools float (0315): the build takes the newest NDK and build-tools installed under the SDK, on CI the GitHub ubuntu runner's (`ANDROID_HOME=/usr/local/lib/android/sdk`, with a JDK for apksigner), on the couch the newest `tools/android_toolchain.sh` installed. The levels are pinned in `tools/android_env.sh`, each with its reason there.
 
 | Part | Version |
 |---|---|
-| NDK | 27.3.13750724 |
-| build-tools | 34.0.0 |
-| platform | android-34 |
-| Minimum API level | 28 (Android 9), `-minimum-os-version`; raylib's archive targets the same |
+| NDK, build-tools | The newest installed |
+| platform | The newest installed, which `odin bundle android` picks itself. The installer adds `android-34` |
+| Target SDK | 34, the manifest's `targetSdkVersion`: a product target rather than a tool, it opts the app into that release's behaviour changes, which the phone was tested against |
+| Minimum API level | 29 (Android 10), `-minimum-os-version` and the manifest's `minSdkVersion`: from Odin dev-2026-11 the runtime uses ELF thread local storage, which Android loads from 29, so Android 9 phones cannot run the game |
+| Java | Any recent JDK, for `sdkmanager`, `apksigner` and `keytool` |
 
-- `tools/android_env.sh`, sourced by the build scripts or a shell (`. tools/android_env.sh`), exports `ANDROID_NDK_VERSION`, `ANDROID_BUILD_TOOLS_VERSION`, `ANDROID_PLATFORM_VERSION`, `ANDROID_API_LEVEL`, `ODIN_ANDROID_SDK` (`$ODIN_ANDROID_SDK`, else `$ANDROID_HOME`, else `~/opt/android/sdk`) and `ODIN_ANDROID_NDK` (`$ODIN_ANDROID_SDK/ndk/<version>`), and puts build-tools and platform-tools on the `PATH`. CI uses the same file.
-- `tools/android_toolchain.sh` installs the SDK under `${ODIN_ANDROID_SDK:-~/opt/android/sdk}`: the command line tools `commandlinetools-linux-15859902_latest.zip` (SHA-256 recorded in the script, checked before unpacking) into `cmdline-tools/latest/`, the licenses, then `platform-tools`, `build-tools;34.0.0`, `platforms;android-34` and `ndk;27.3.13750724` through `sdkmanager`. A re-run skips what is installed. The SDK takes 2.4 GB, mostly the NDK.
+- `tools/android_env.sh`, sourced by the build scripts or a shell (`. tools/android_env.sh`), exports `ANDROID_NDK_VERSION` and `ANDROID_BUILD_TOOLS_VERSION` (the newest installed, empty when none is), `ANDROID_TARGET_SDK_VERSION`, `ANDROID_API_LEVEL`, `ODIN_ANDROID_SDK` (`$ODIN_ANDROID_SDK`, else `$ANDROID_HOME`, else `~/opt/android/sdk`) and `ODIN_ANDROID_NDK` (`$ODIN_ANDROID_SDK/ndk/<version>`), and puts build-tools and platform-tools on the `PATH`. CI uses the same file.
+- `tools/android_toolchain.sh` installs the SDK under `${ODIN_ANDROID_SDK:-~/opt/android/sdk}`: the command line tools `commandlinetools-linux-15859902_latest.zip` (SHA-256 recorded in the script, checked before unpacking) into `cmdline-tools/latest/`, the licenses, then `platform-tools`, the newest stable `build-tools` and `ndk` that `sdkmanager --list` names, and `platforms;android-34` (the target SDK) through `sdkmanager`. The zip stays pinned with its SHA-256, since it only bootstraps `sdkmanager`, which installs the floating packages. A re-run skips what is installed and adds a newer build-tools or NDK. The SDK takes 2.4 GB, mostly the NDK.
 - `sdkmanager`, `apksigner` and `keytool` need Java, which Bazzite lacks, so by default the script runs inside the distrobox `mine-oh-belowed-android` (image `registry.fedoraproject.org/fedora-toolbox:44`, created on first use with `java-25-openjdk-headless cmake gcc gcc-c++ make git unzip`; Fedora 44 has no JDK 21). `--host` runs the steps on a machine with Java, curl and unzip. The home directory is shared, so the SDK lands under `~/opt` either way.
 - Run the Odin and SDK steps inside the container on the couch: `apksigner` needs its Java, and the NDK runs there as well as on the host.
 
@@ -28,10 +29,11 @@ The versions are the GitHub ubuntu-24.04 runner's, which ships them at `ANDROID_
 
 ```
 -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=$ODIN_ANDROID_NDK/build/cmake/android.toolchain.cmake
--DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DPLATFORM=Android -DOPENGL_VERSION="ES 3.0"
+-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$ANDROID_API_LEVEL -DPLATFORM=Android -DOPENGL_VERSION="ES 3.0"
 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF
 ```
 
+- The committed archive was built at API level 28 (its record in `shared/raylib/README.md`), which links into the game's 29. A rebuild takes the level of `tools/android_env.sh`.
 - OpenGL ES 3.0, not raylib's default ES 2.0: the game's shaders hash with `uint` arithmetic, which GLSL ES 1.00 lacks and GLSL ES 3.00 has. The cmake warning "You are overriding the suggested GRAPHICS=GRAPHICS_API_OPENGL_ES2 with GRAPHICS_API_OPENGL_ES3!" is expected.
 - Precision patch (0126): `precision mediump float;` becomes `precision highp float;` in the two OpenGL ES3 default shaders of `rlgl.h` (`rlLoadShaderDefault`). mediump is 16 bit on Mali, so without it everything raylib's batch and default shader draw (the held block, models, particles) jitters by a fraction of a block as the camera moves. The game's own shaders get highp from `shader_source_for_gles`.
 - Key queue patch (0133): the key branch of `AndroidInputCallback` in `platforms/rcore_android.c` appends every key down to the 16 entry `keyPressedQueue` without checking its count, and the IME committing a long word delivers every character's key down in one poll. The append is bounded as in `rcore_desktop_glfw.c`, so keys past the sixteenth in a frame are dropped.
@@ -41,30 +43,32 @@ The versions are the GitHub ubuntu-24.04 runner's, which ships them at `ANDROID_
 
 ## Entry point
 
-Facts checked in Odin dev-2026-09 (nightly a2fb372):
+Facts checked in Odin dev-2026-11a (nightly 9a69916):
 
-- `odin build -target:linux_arm64 -subtarget:android` refuses the executable build mode ("Unsupported -build-mode for -subtarget:android"). In shared mode the runtime exports a C `main` that returns 0 at once (`base/runtime/entry_unix.odin`), and the library has no INIT entry (`llvm-readelf -d`) although the link passes `-Wl,-init`, so the runtime never starts on its own.
+- `odin build -target:linux_arm64 -subtarget:android` refuses the executable build mode ("Unsupported -build-mode for -subtarget:android"). The shared library has an INIT and a FINI entry (`llvm-readelf -d`): `_odin_entry_point` sets `runtime.args__` and runs `_startup_runtime` when Android loads the library, and `_odin_exit_point` would clean the runtime up.
+- Odin refuses a `main` on Android that no package calls through `intrinsics.__entry_point` ("Nothing calls 'main' on Android"). So the game's entry is `game_main` (`main.odin`), and `main` lives in `main_desktop.odin` (`#+build !linux:android`), which calls it. The Android build and `check-android` pass `-no-entry-point`. Importing `core:sys/android/native_app_glue` is no way out: it defines `ANativeActivity_onCreate`, which raylib's archive defines too, and raylib's `android_main` drives the game.
 - raylib's `android_main` calls `main(1, {"raylib", NULL})` on the native activity's thread. The program builds with `-build-mode:shared -no-entry-point` and `-Wl,--wrap=main`, so that call lands in `__wrap_main`, which `src/main_android.odin` exports (`@(export, link_name = "__wrap_main")`; the link name `main` is reserved in Odin).
-- `__wrap_main` sets `runtime.args__`, then `context = runtime.default_context()`, calls `runtime._startup_runtime()` the first time only, then the game's `main`.
-- Odin compiles the NDK's `android_native_app_glue.c` into its own archive and adds `-u ANativeActivity_onCreate`, so the symbol is exported without a flag of ours; either copy of the glue satisfies it.
-- raylib's `argv` lives on `android_main`'s stack and feeds `os.args` only. The build links bionic, so `os.get_env` is bionic's `getenv` and reads the environment Android gives the app, which has no XDG variable.
+- `__wrap_main` sets `runtime.args__`, then `context = runtime.default_context()`, calls `runtime._startup_runtime()` unless the runtime has started, then `game_main`. An `@(init)` procedure of `main_android.odin` (`note_runtime_started`) marks the start, so the INIT entry's start counts and every `@(init)` runs once.
+- Odin no longer compiles the NDK's `android_native_app_glue.c` nor adds `-u ANativeActivity_onCreate` (`linker.cpp`: programs using raylib "no longer get the NDK's C glue"), and nothing else references raylib's copy in its archive. `build.sh` links with `-Wl,-u,ANativeActivity_onCreate`, which keeps raylib's copy, and fails when `llvm-nm -D --defined-only` does not list the symbol in `libmain.so`, since Android could not start the library.
+- From dev-2026-11 the INIT entry builds `os.args` from `/proc/self/cmdline` before raylib calls `main`: one argument, the package name, or none when the file cannot be read, which `game_main` takes as no arguments. raylib's `argv` (`{"raylib", NULL}` on `android_main`'s stack) reaches `runtime.args__` in `__wrap_main` only, too late for `os.args`. The build links bionic, so `os.get_env` is bionic's `getenv` and reads the environment Android gives the app, which has no XDG variable.
 
 ### One process, many launches
 
-Rule: the runtime starts once per process and is never cleaned up (0116).
+Rule: the runtime starts once per process and is never cleaned up (0116). From Odin dev-2026-11 the library's INIT entry starts it when Android loads the library. Before that `__wrap_main` did.
 
 - After Back or Home the activity ends but Android keeps the process; the next launch runs `android_main` again on a new thread in the same process. A second `_startup_runtime` would run every `@(init)` again, where `core:image`'s PNG registration asserts (a `SIGTRAP` on every other launch).
-- A second `main` runs without the global initialisers, so `main` assigns or resets every mutable global before reading it: `global_string_table`, the log and console state (`logging.odin`, `logging_posix.odin`), the touch position and the pending Shift of `input_raylib.odin` (cleared by `start_input_backend`). `apply_ui_theme` (from `run_game` in `loop.odin`) assigns the `UI_*` colours of `ui_widgets.odin` before any drawing. The previous run's allocations stay.
-- `_cleanup_runtime` is never called: Android ends the process without notice, and the `@(fini)` procedures only free memory and restore a terminal the app does not have.
-- Quit returns from `main` while the activity lives, and raylib resets its own state for the next launch only when the activity is being destroyed (`ClosePlatform` checks `destroyRequested`). So after `main` returns, `__wrap_main` ends the process with `os.exit(0)` when `destroyRequested` is 0; a system destroyed activity returns normally and keeps the process.
+- A second `game_main` runs without the global initialisers, so `game_main` assigns or resets every mutable global before reading it: `global_string_table`, the log and console state (`logging.odin`, `logging_posix.odin`), the touch position and the pending Shift of `input_raylib.odin` (cleared by `start_input_backend`). `apply_ui_theme` (from `run_game` in `loop.odin`) assigns the `UI_*` colours of `ui_widgets.odin` before any drawing. The previous run's allocations stay.
+- `_cleanup_runtime` is never called: Android ends the process without notice, and the `@(fini)` procedures only free memory and restore a terminal the app does not have. The FINI entry does not run on Quit either: `os.exit` ends the process with `exit_group` (`base/runtime/os_specific_linux.odin`).
+- Quit returns from `game_main` while the activity lives, and raylib resets its own state for the next launch only when the activity is being destroyed (`ClosePlatform` checks `destroyRequested`). So after `game_main` returns, `__wrap_main` ends the process with `os.exit(0)` when `destroyRequested` is 0; a system destroyed activity returns normally and keeps the process.
 - `src/platform/platform_android.odin` declares what the binding lacks: `GetAndroidApp` with the leading fields of `android_app` (up to `destroyRequested`) and `ANativeActivity`, checked against the NDK 27.3.13750724 headers, plus `__android_log_write` and `glGetString`.
 
 ## Link
 
-Gotcha: a shared library links with undefined symbols without complaint, and the phone then refuses it at `dlopen` ("cannot locate symbol __real_fopen referenced by libmain.so"). `-Wl,--no-undefined` turns that into a link error here.
+Gotcha: a shared library links with undefined symbols without complaint, and the phone then refuses it at `dlopen` ("cannot locate symbol __real_fopen referenced by libmain.so"). `-Wl,--no-undefined` turns that into a link error here. From dev-2026-11 Odin adds it for Android itself, and `build.sh` keeps passing it.
 
+- `-Wl,-u,ANativeActivity_onCreate` keeps raylib's copy of the NDK's glue, the activity's entry ([Entry point](#entry-point)).
 - `-Wl,--wrap=fopen`: raylib reads files through `__wrap_fopen`, which serves a read from the APK's assets first and calls `__real_fopen` otherwise. The wrap must be applied at the link that makes the final library; a static archive cannot carry it. With it, `llvm-nm -D --undefined-only libmain.so` lists `fopen` as an ordinary libc import.
-- `-Wl,--wrap=<name>` for six glibc functions Odin's core links on Linux that Android 9's bionic lacks. `src/android_libc/` exports each as `__wrap_<name>`:
+- `-Wl,--wrap=<name>` for six glibc functions Odin's core links on Linux that Android's bionic lacks. `src/android_libc/` exports each as `__wrap_<name>`:
 
 | Function | Why missing | Stand in |
 |---|---|---|
@@ -79,21 +83,21 @@ Gotcha: a shared library links with undefined symbols without complaint, and the
 
 ## Building the APK
 
-`./build.sh check-android` runs `odin check src -target:linux_arm64 -subtarget:android -vet -strict-style` with `tools/android_env.sh` sourced. It runs on the host (`odin check` needs the NDK, not Java) and takes neither `-minimum-os-version` (`odin check` refuses it) nor the shared build mode.
+`./build.sh check-android` runs `odin check src -target:linux_arm64 -subtarget:android -minimum-os-version:29 -no-entry-point -vet -strict-style` with `tools/android_env.sh` sourced (the level is `ANDROID_API_LEVEL`). It runs on the host (`odin check` needs the NDK, not Java). `odin check` takes `-minimum-os-version` from dev-2026-11, so the check sees what the build sees. It cannot take the shared build mode, so without `-no-entry-point` it asks for a `main`.
 
 `./build.sh android`, without `java` on the `PATH`, re-runs itself in the container (`distrobox enter mine-oh-belowed-android -- ./build.sh android`); the output lands in the same tree. Then:
 
-1. `odin build src -target:linux_arm64 -subtarget:android -minimum-os-version:28 -build-mode:shared -no-entry-point -o:speed -vet -strict-style` with the link flags above and the `BUILD_INFO` define, into `build/android/bundle/lib/lib/arm64-v8a/libmain.so`.
+1. `odin build src -target:linux_arm64 -subtarget:android -minimum-os-version:29 -build-mode:shared -no-entry-point -o:speed -vet -strict-style` with the link flags above and the `BUILD_INFO` define, into `build/android/bundle/lib/arm64-v8a/libmain.so`, then the check that it exports `ANativeActivity_onCreate`.
 2. `data/` copied to `build/android/bundle/assets/data/`, its file list (`find data -type f | sort`) to `assets/data_files.txt`, `tools/android/res/` to `res/`.
-3. `tools/android/AndroidManifest.xml` rendered with `@VERSION_CODE@` (the commit count, `git rev-list --count HEAD`, so each newer build installs over the last) and `@VERSION_NAME@` (the build info).
-4. `odin bundle android bundle` with the committed keystore, in `build/android/`; `test.apk` renamed to `mine-oh-belowed.apk`. The script prints the path, size, version code and build info.
+3. `tools/android/AndroidManifest.xml` rendered with `@VERSION_CODE@` (the commit count, `git rev-list --count HEAD`, so each newer build installs over the last), `@VERSION_NAME@` (the build info), `@MIN_SDK_VERSION@` (`ANDROID_API_LEVEL`) and `@TARGET_SDK_VERSION@` (`ANDROID_TARGET_SDK_VERSION`).
+4. `odin bundle android bundle -out:build/android/mine-oh-belowed.apk` with the committed keystore and `-minimum-os-version`, in `build/android/`, then apksigner's v4 signature file `mine-oh-belowed.apk.idsig` removed. The script prints the path, size, version code and build info.
 
-- `odin bundle android <dir>` runs `aapt package` on `<dir>/AndroidManifest.xml` (with `<dir>/res` and `<dir>/assets`), then `zipalign` and `apksigner` from the smallest `build-tools/<n>` at or above the API level, against `platforms/android-<n>/android.jar`, and writes `test.apk` in the working directory.
-- Gotcha: it hands aapt `<dir>/lib` as a directory, and aapt adds its contents at the APK root, so the library sits at `<dir>/lib/lib/arm64-v8a/libmain.so` to land at `lib/arm64-v8a/libmain.so`.
+- `odin bundle android <dir>` (dev-2026-11) runs aapt2 from the newest build-tools against the newest platform under `ODIN_ANDROID_SDK` on `<dir>/AndroidManifest.xml`, `<dir>/res` and `<dir>/assets` (the manifest's levels win over its defaults), copies `<dir>/lib/` into the APK's `lib/` as it is, adds Odin's `classes.dex` (unused, `android:hasCode="false"`), aligns with `zipalign -P 16 -f 4`, signs with apksigner (Java from `JAVA_HOME` or the `PATH`) and writes `-out:` (default `<dir>.apk`). On a failure it leaves its work directory `<out>.build/`.
+- Gotcha: build-tools 34.0.0's zipalign refuses `-P`, so the bundle needs a newer build-tools under the SDK (`tools/android_toolchain.sh` installs the newest).
 - An `android:label` given as a literal string does not show in `aapt dump badging`; the `@string` resource from `res/values/strings.xml` does.
 - `tools/android/debug.keystore` (alias `androiddebugkey`, passwords `android`, RSA 2048, 10000 days, `CN=Android Debug, O=Android, C=US`, made with `keytool -genkeypair`) is committed on purpose: Android installs an update only over an app with the same signature, so the couch and CI must sign alike, and a debug key guards nothing.
 - The manifest (`io.github.tubbles.mineohbelowed`, `NativeActivity` with `lib_name` main, `sensorLandscape` so the game turns with the phone between the two landscapes and a clip controller that holds it the other way up shows it the right way up (0235), GL ES 3.0 required) asks for `android.permission.VIBRATE` and `android.permission.INTERNET` (normal permissions granted at install; without the second every socket is refused, so the phone could neither join nor host) and `android.permission.MANAGE_EXTERNAL_STORAGE` (Export below).
-- Checking an APK: `llvm-nm -D libmain.so` shows `__wrap_main`, `android_main` and `ANativeActivity_onCreate`; `aapt dump badging <apk>` names the package, SDK levels, `uses-gl-es: '0x30000'` and `native-code: 'arm64-v8a'`; `apksigner verify --print-certs <apk>` passes (v3 scheme).
+- Checking an APK: `llvm-nm -D libmain.so` shows `__wrap_main`, `android_main` and `ANativeActivity_onCreate`; `aapt2 dump badging <apk>` names the package, SDK levels, `uses-gl-es: '0x30000'` and `native-code: 'arm64-v8a'`; `apksigner verify --print-certs <apk>` passes (v3 scheme).
 
 ## Files on the phone
 
@@ -150,7 +154,7 @@ The Data files screen's Export and its refusals are in [developer_tools.md](deve
 
 ## CI and installing
 
-- The CI job `android` on `ubuntu-latest` checks out with `fetch-depth: 0` (the commit count), downloads `odin-linux-amd64-dev-2026-09.tar.gz` (SHA-256 checked), prints the runner's Android tools and Java, and runs `MINE_OH_BELOWED_COMMIT=<short commit> ./build.sh check-android` and `./build.sh android` with the runner's `ANDROID_HOME`. The APK is uploaded as `mine-oh-belowed-android-arm64-<short commit>`.
+- The CI job `android` on `ubuntu-latest` checks out with `fetch-depth: 0` (the commit count), downloads the latest Odin release through `tools/ci_download_odin.sh linux-amd64` (digest checked, [build.md](build.md), CI), prints the runner's Android tools and Java, and runs `MINE_OH_BELOWED_COMMIT=<short commit> ./build.sh check-android` and `./build.sh android` with the runner's `ANDROID_HOME`, whose newest NDK and build-tools `tools/android_env.sh` takes. The APK is uploaded as `mine-oh-belowed-android-arm64-<short commit>`.
 - Download it from the workflow run (Actions, the run, Artifacts) or `gh run download <run id> --name mine-oh-belowed-android-arm64-<short commit>`; it arrives as a zip holding `mine-oh-belowed.apk`. Copy it to the phone, open it, allow installs from that source, install. Couch and CI builds install over each other, since both sign with the committed key and the version code only grows.
 - With USB debugging on, `adb install -r build/android/mine-oh-belowed.apk` and `adb logcat -s mine-oh-belowed raylib` work from the container (`platform-tools` is on the `PATH` after sourcing `tools/android_env.sh`).
 

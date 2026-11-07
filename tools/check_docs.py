@@ -23,13 +23,18 @@ import subprocess
 import sys
 
 # Names from outside the repository (SDL, raylib and Odin runtime sources,
-# glibc and NDK functions, Android permissions) that no source file or
-# comment in the repository names, and the naming convention words.
+# glibc and NDK functions, Linux system calls, environment variables,
+# Android permissions) that no source file or comment in the repository
+# names, and the naming convention words.
 ALLOWED_EXTERNAL_NAMES = {
     "snake_case",
     "Ada_Case",
     "SCREAMING_CASE",
     "_cleanup_runtime",
+    "_odin_entry_point",
+    "_odin_exit_point",
+    "exit_group",
+    "JAVA_HOME",
     "SDL_HINT_JOYSTICK_HIDAPI_STEAM",
     "KEY_BACKSPACE",
     "KEY_ENTER",

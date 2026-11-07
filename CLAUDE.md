@@ -4,7 +4,7 @@ Read this together with the global `~/.claude/CLAUDE.md`. This file holds the pr
 
 ## Stack
 
-- Language: Odin. Toolchain at `~/opt/odin` (release dev-2026-09). Do not install another Odin.
+- Language: Odin. Toolchain at `~/opt/odin`, a link to the release in use (dev-2026-11a since 2026-11-07, 0315); another release only with the user's approval. CI's `windows` and `android` jobs take the latest release and the `nix` job nixpkgs' Odin, which may lag, so the code compiles on both ([doc/build.md](doc/build.md), CI).
 - Rendering, windowing, audio: raylib 6.0 through the repository collection `shared:raylib`, archives built by `tools/build_raylib.sh` ([doc/build.md](doc/build.md), The shared collection). Never import `vendor:raylib`.
 - Controller input: SDL3 through `vendor:sdl3`, linked against the host `libSDL3.so.0`, with the joystick and gamepad subsystems only, never video ([doc/input.md](doc/input.md)).
 - Android (0114): the same `game` package built as `libmain.so` for arm64, with raylib's input only. SDL code stays in files tagged `#+build !linux:android` ([doc/input.md](doc/input.md), Backends).

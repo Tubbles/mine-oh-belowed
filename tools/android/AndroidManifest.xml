@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The game's manifest (work item 0114, doc/android.md, Building the
-     APK). build.sh android fills the version code (the commit count) and
-     the version name (the build stamp). -->
+     APK). build.sh android fills the version code (the commit count), the
+     version name (the build stamp) and the two SDK levels from
+     tools/android_env.sh: the minimum (ANDROID_API_LEVEL) and the target
+     (ANDROID_TARGET_SDK_VERSION). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
 	package="io.github.tubbles.mineohbelowed"
 	android:versionCode="@VERSION_CODE@"
 	android:versionName="@VERSION_NAME@">
-	<uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
+	<uses-sdk android:minSdkVersion="@MIN_SDK_VERSION@" android:targetSdkVersion="@TARGET_SDK_VERSION@" />
 	<uses-feature android:glEsVersion="0x00030000" android:required="true" />
 	<!-- The magnetometer's haptics on the phone's vibrator (work item 0122). -->
 	<uses-permission android:name="android.permission.VIBRATE" />

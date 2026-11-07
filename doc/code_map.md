@@ -57,9 +57,10 @@ Rule: a cluster references only the clusters of its row. The pilot split (0145) 
 
 The process: the loop decides when things run, the clusters decide what runs.
 
-- Entry: `loop.odin`, `run_game` (the window and the frame order), from `main`.
+- Entry: `loop.odin`, `run_game` (the window and the frame order), from `game_main`.
 - Files in reading order:
-  - `main.odin`: `Command_Line`, `main`, `load_start_data` with the overlay fallback, the world start.
+  - `main.odin`: `Command_Line`, `game_main`, `load_start_data` with the overlay fallback, the world start.
+  - `main_desktop.odin`: `main` everywhere but Android, calling `game_main` (0315).
   - `loop.odin`: `Frame_State` and its four groups, `run_game` and `update_frame`, `make_screen_context`, `apply_field_light_actions` (the torchlight and the clock step, 0297), `serve_frame_requests_before_draw` (the order of the frame requests) and the serve procedures it calls, `Game_Content`.
   - `session.odin`: `Session`, `start_session`, `end_session`, `save_session`.
   - `viewport.odin`: `Viewport` with `Viewport_Interaction` and `Viewport_Presentation` (the per player halves of the two groups, 0178), `viewport_rectangles`, `viewport_ui_scale`, `pad_claim`, adding and removing a viewport, `collect_global_requests`, the split screen render targets.
@@ -68,7 +69,7 @@ The process: the loop decides when things run, the clusters decide what runs.
   - `session_server.odin`: `Server_State`, `run_server` (`--server`).
   - `session_discovery.odin`: every game hosts and the LAN finds it (0188): `Hosting_Plan` (the port range, the discovery port), `host_windowed_session`, `session_player_count`, `answer_discovery_queries` (the host's side), `Lan_Query` and `serve_lan_query` (the Multiplayer screen's side).
   - `hot_reload.odin`: the reload per data category on `Frame_State`, served between frames.
-  - `main_android.odin`: the Android C entry wrapping `main`.
+  - `main_android.odin`: the Android C entry wrapping `game_main`.
   - `loop_field_session.odin`: a field session's frame side (0179): `stream_field_session` (the surface waves' step `advance_field_waves`, 0294, then the simulated set's requests and arrivals as commands, the meshes), `field_viewport_selection` over every viewport's eye made once a frame (`frame_field_selection`), `carry_field_turn` (the turn's fraction carried from record to record), `start_field_presentation`, `draw_field_viewport_world` and `draw_field_scene` (the sky, the field, the foundations, the entities, the trees, the runs, the torches, the players in their pose by `field_player_body_pose`, the ghosts), `prepare_field_frame`.
   - `loop_planet_preview.odin`: `run_planet_preview`, the `--planet-preview` window over the terrain field (0169) with its walk mode; since 0179 a field session of its own (`start_planet_preview_session`) ticked on a fixed step (`walk_planet_preview`) and drawn through `draw_field_scene`, the start at the home (0184, `planet_preview_home`, the free camera in the home's frame, the walk spawn on the crater's crest, `planet_preview_home_walker`), the walk screenshot's pit and pad (`dig_planet_preview_pit`, `lay_planet_preview_foundations`).
   - `loop_planet_preview_arms.odin`: the walk screenshot's two arms on the pad, one posed at full reach, their models and point lights (0175, `lay_planet_preview_arms`).

@@ -119,15 +119,19 @@ android_bundle="$android_directory/bundle"
 
 check_android() {
 	. "$repository_root/tools/android_env.sh"
-	"$odin" check src "$collection" -target:linux_arm64 -subtarget:android -vet -strict-style
+	"$odin" check src "$collection" -target:linux_arm64 -subtarget:android -minimum-os-version:"$ANDROID_API_LEVEL" -no-entry-point -vet -strict-style
 }
 
 # The bundle layout odin bundle android packages (doc/android.md, Building
-# the APK): lib/lib/arm64-v8a/libmain.so lands at lib/arm64-v8a/libmain.so
-# in the APK, data/ goes to the assets with the list of its files (the
-# asset manager cannot list directories), the manifest gets the version.
+# the APK): lib/arm64-v8a/libmain.so lands at the same path in the APK,
+# data/ goes to the assets with the list of its files (the asset manager
+# cannot list directories), the manifest gets the version and the SDK
+# levels.
 # The link: --no-undefined, since a shared library otherwise links with
 # undefined symbols and Android's loader refuses it on the phone.
+# -u ANativeActivity_onCreate keeps raylib's copy of the NDK's glue, the
+# activity's entry: from Odin dev-2026-11 nothing else references it, and
+# a library that does not export it cannot start (0315).
 # --wrap=main reaches the game's entry point. --wrap=fopen routes raylib's
 # file reads through its asset reader (rcore_android.c); a static archive
 # cannot apply the wrap itself, and without it __real_fopen stays
@@ -141,32 +145,38 @@ build_android() {
 	fi
 	. "$repository_root/tools/android_env.sh"
 	local build_info version_code android_linker_flags
-	android_linker_flags="-Wl,--no-undefined -L$android_directory/linker-shims -Wl,--wrap=main -Wl,--wrap=fopen"
+	android_linker_flags="-Wl,--no-undefined -Wl,-u,ANativeActivity_onCreate -L$android_directory/linker-shims -Wl,--wrap=main -Wl,--wrap=fopen"
 	for name in __errno_location pthread_setcancelstate pthread_setcanceltype backtrace backtrace_symbols backtrace_symbols_fd; do
 		android_linker_flags+=" -Wl,--wrap=$name"
 	done
 	build_info="$(build_commit) $(date -u +%Y-%m-%dT%H:%MZ)"
 	version_code="$(git rev-list --count HEAD)"
 	rm -rf "$android_bundle"
-	mkdir -p "$android_bundle/lib/lib/arm64-v8a" "$android_bundle/assets" "$android_directory/linker-shims"
+	mkdir -p "$android_bundle/lib/arm64-v8a" "$android_bundle/assets" "$android_directory/linker-shims"
 	printf '!<arch>\n' > "$android_directory/linker-shims/libpthread.a"
 	"$odin" build src "$collection" -target:linux_arm64 -subtarget:android \
 		-minimum-os-version:"$ANDROID_API_LEVEL" -build-mode:shared -no-entry-point \
 		-extra-linker-flags:"$android_linker_flags" -o:speed -vet -strict-style \
-		-define:BUILD_INFO="$build_info" -out:"$android_bundle/lib/lib/arm64-v8a/libmain.so"
+		-define:BUILD_INFO="$build_info" -out:"$android_bundle/lib/arm64-v8a/libmain.so"
+	local exports
+	exports="$("$ODIN_ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" -D --defined-only "$android_bundle/lib/arm64-v8a/libmain.so")"
+	if [[ "$exports" != *" T ANativeActivity_onCreate"* ]]; then
+		echo "libmain.so exports no ANativeActivity_onCreate, so Android cannot start it" >&2
+		exit 1
+	fi
 	cp -r data "$android_bundle/assets/data"
 	find data -type f | sort > "$android_bundle/assets/data_files.txt"
 	cp -r tools/android/res "$android_bundle/res"
 	sed -e "s|@VERSION_CODE@|$version_code|" -e "s|@VERSION_NAME@|$build_info|" \
+		-e "s|@MIN_SDK_VERSION@|$ANDROID_API_LEVEL|" -e "s|@TARGET_SDK_VERSION@|$ANDROID_TARGET_SDK_VERSION|" \
 		tools/android/AndroidManifest.xml > "$android_bundle/AndroidManifest.xml"
 	cd "$android_directory"
-	rm -f test.apk test.apk-build test.apk.idsig mine-oh-belowed.apk
-	"$odin" bundle android bundle \
+	rm -f mine-oh-belowed.apk mine-oh-belowed.apk.idsig
+	"$odin" bundle android bundle -out:"$android_directory/mine-oh-belowed.apk" \
 		-android-keystore:"$repository_root/tools/android/debug.keystore" \
 		-android-keystore-alias:androiddebugkey -android-keystore-password:android \
 		-minimum-os-version:"$ANDROID_API_LEVEL"
-	mv test.apk mine-oh-belowed.apk
-	rm -f test.apk-build test.apk.idsig
+	rm -f mine-oh-belowed.apk.idsig
 	echo "$android_directory/mine-oh-belowed.apk: $(wc -c < mine-oh-belowed.apk) bytes (version code $version_code, $build_info)"
 }
 

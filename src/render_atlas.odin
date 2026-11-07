@@ -1,5 +1,6 @@
 package game
 
+import "core:bytes"
 import "core:fmt"
 import "core:image"
 import "core:image/png"
@@ -125,6 +126,23 @@ generate_atlas_pixels :: proc(registry: Block_Registry, layout: Atlas_Layout, ti
 	return pixels
 }
 
+// core:image keeps the decoded pixels in a bytes.Buffer up to Odin
+// dev-2026-10 and in a [dynamic]u8 from dev-2026-11, and the nix job
+// builds with nixpkgs' Odin, which may lag: the group takes either
+// (0315). The buffer half goes once nixpkgs has dev-2026-11.
+image_pixel_bytes :: proc {
+	image_pixel_bytes_of_buffer,
+	image_pixel_bytes_of_dynamic_array,
+}
+
+image_pixel_bytes_of_buffer :: proc(pixels: ^bytes.Buffer) -> []u8 {
+	return pixels.buf[:]
+}
+
+image_pixel_bytes_of_dynamic_array :: proc(pixels: ^[dynamic]u8) -> []u8 {
+	return pixels[:]
+}
+
 // A texture file must be 16 by 16 with 8 bit channels; the decoder
 // already added the alpha channel an RGB file lacks.
 tile_from_image :: proc(decoded: ^image.Image) -> (tile: Tile_Pixels, problem: string) {
@@ -134,7 +152,7 @@ tile_from_image :: proc(decoded: ^image.Image) -> (tile: Tile_Pixels, problem: s
 	if decoded.channels != 4 || decoded.depth != 8 {
 		return {}, fmt.tprintf("the image has %d channels of %d bits, not RGBA of 8 bits", decoded.channels, decoded.depth)
 	}
-	copy(tile[:], slice.reinterpret([][4]u8, decoded.pixels.buf[:]))
+	copy(tile[:], slice.reinterpret([][4]u8, image_pixel_bytes(&decoded.pixels)))
 	return tile, ""
 }
 

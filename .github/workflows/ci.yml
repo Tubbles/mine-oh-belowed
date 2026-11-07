@@ -24,10 +24,7 @@ jobs:
       run:
         shell: bash
     env:
-      ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-09/odin-windows-amd64-dev-2026-09.zip
-      ODIN_SHA256: 8ed8abd95b82e0af1eb7e86cb75f380fd8bde104947721817b35929f5fc19388
-      SDL3_URL: https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-devel-3.4.16-VC.zip
-      SDL3_SHA256: 1a784cb2a5c64d56fe7a62090fe9d242d9865f235e4ea9678f1a6ba4e693e7de
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
       - name: MSVC environment
@@ -36,27 +33,28 @@ jobs:
           arch: x64
       - name: Short commit
         run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-      - name: Download Odin dev-2026-09
+      - name: Download the latest Odin release
+        run: tools/ci_download_odin.sh windows-amd64
+      - name: Download the latest SDL3 release and give Odin its SDL3.lib
         run: |
           downloads="$(cygpath -u "$RUNNER_TEMP")"
-          curl --fail --location --silent --show-error --output "$downloads/odin.zip" "$ODIN_URL"
-          echo "$ODIN_SHA256  $downloads/odin.zip" | sha256sum --check -
-          7z x -o"$downloads/odin" "$downloads/odin.zip" >/dev/null
-          odin_executable="$(find "$downloads/odin" -name odin.exe -print -quit)"
-          if [ -z "$odin_executable" ]; then
-            echo "odin.exe not found in the release zip" >&2
+          # The highest release-3.x.y by version, not the newest by date:
+          # SDL 2 releases share the repository, and an older 3.x line can
+          # publish after a newer one.
+          tag="$(gh api 'repos/libsdl-org/SDL/releases?per_page=100' --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | test("^release-3\\.[0-9]+\\.[0-9]+$")))] | max_by(.tag_name | ltrimstr("release-") | split(".") | map(tonumber)) | .tag_name')"
+          version="${tag#release-}"
+          asset="SDL3-devel-$version-VC.zip"
+          digest="$(gh api "repos/libsdl-org/SDL/releases/tags/$tag" --jq ".assets[] | select(.name == \"$asset\") | .digest")"
+          if [ "${digest#sha256:}" = "$digest" ]; then
+            echo "no SHA-256 digest for $asset in $tag: '$digest'" >&2
             exit 1
           fi
-          echo "ODIN=$odin_executable" >> "$GITHUB_ENV"
-          "$odin_executable" version
-      - name: Download SDL3 3.4.16 and give Odin its SDL3.lib
-        run: |
-          downloads="$(cygpath -u "$RUNNER_TEMP")"
-          curl --fail --location --silent --show-error --output "$downloads/sdl3.zip" "$SDL3_URL"
-          echo "$SDL3_SHA256  $downloads/sdl3.zip" | sha256sum --check -
-          7z x -o"$downloads/sdl3" "$downloads/sdl3.zip" >/dev/null
-          cp "$downloads/sdl3/SDL3-3.4.16/lib/x64/SDL3.lib" "$(dirname "$ODIN")/vendor/sdl3/"
-          echo "SDL3_DLL=$downloads/sdl3/SDL3-3.4.16/lib/x64/SDL3.dll" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error --output "$downloads/sdl3.zip" "https://github.com/libsdl-org/SDL/releases/download/$tag/$asset"
+          echo "${digest#sha256:}  $downloads/sdl3.zip" | sha256sum --check -
+          7z x -o"$downloads/sdl3" "$downloads/sdl3.zip" > /dev/null
+          cp "$downloads/sdl3/SDL3-$version/lib/x64/SDL3.lib" "$(dirname "$ODIN")/vendor/sdl3/"
+          echo "SDL3_DLL=$downloads/sdl3/SDL3-$version/lib/x64/SDL3.dll" >> "$GITHUB_ENV"
+          echo "SDL3 $version"
       - name: Build release
         run: MINE_OH_BELOWED_COMMIT="$SHORT_SHA" ./build.sh release
       - name: Package
@@ -90,34 +88,23 @@ jobs:
           if-no-files-found: error
 
   # The native Android app (work items 0113 and 0114, doc/android.md, CI
-  # and installing). The runner's ANDROID_HOME holds the NDK, build-tools
-  # and platform tools/android_env.sh names, and JDK 17 for apksigner, so
-  # build.sh runs on the runner directly. The full history gives the
-  # commit count, which is the APK's version code.
+  # and installing). tools/android_env.sh takes the runner's newest NDK
+  # and build-tools under ANDROID_HOME, the bundler its newest platform,
+  # and the runner's Java runs apksigner, so build.sh runs on the runner
+  # directly. The full history gives the commit count, which is the APK's
+  # version code.
   android:
     runs-on: ubuntu-latest
     env:
-      ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-09/odin-linux-amd64-dev-2026-09.tar.gz
-      ODIN_SHA256: 167c3e1d7056419dad2e04bb3bd98715b7ff286d4c125f3c5a5ee337c6254283
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Short commit
         run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-      - name: Download Odin dev-2026-09
-        run: |
-          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/odin.tar.gz" "$ODIN_URL"
-          echo "$ODIN_SHA256  $RUNNER_TEMP/odin.tar.gz" | sha256sum --check -
-          mkdir -p "$RUNNER_TEMP/odin"
-          tar -xzf "$RUNNER_TEMP/odin.tar.gz" -C "$RUNNER_TEMP/odin"
-          odin_executable="$(find "$RUNNER_TEMP/odin" -name odin -type f -perm -u+x -print -quit)"
-          if [ -z "$odin_executable" ]; then
-            echo "odin not found in the release tarball" >&2
-            exit 1
-          fi
-          echo "ODIN=$odin_executable" >> "$GITHUB_ENV"
-          "$odin_executable" version
+      - name: Download the latest Odin release
+        run: tools/ci_download_odin.sh linux-amd64
       - name: Tools
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"

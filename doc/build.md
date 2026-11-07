@@ -12,17 +12,17 @@ The couch machine runs Bazzite.
 
 | Tool | Where | Notes |
 |---|---|---|
-| Odin dev-2026-09 (nightly a2fb372) | `~/opt/odin-linux-amd64-nightly+2026-09-01`, linked as `~/opt/odin` | The `odin-linux-amd64-dev-2026-09.tar.gz` release asset. `build.sh` uses `${ODIN:-$HOME/opt/odin/odin}` |
+| Odin dev-2026-11a (nightly 9a69916) | `~/opt/odin-linux-amd64-nightly+2026-11-03`, linked as `~/opt/odin` | The `odin-linux-amd64-dev-2026-11a.tar.gz` release asset. `build.sh` uses `${ODIN:-$HOME/opt/odin/odin}` |
 | clang 23 | Homebrew | Odin drives the linker through it |
 | SDL3 3.4.16 | `/usr/lib64/libSDL3.so.0` (Fedora 44) | `vendor:sdl3` links `system:SDL3` |
-| raylib 6.0 | `shared/raylib/` | Built from source, committed (below) |
+| raylib 6.0 | `shared/raylib/` | Built from source, committed (below). Pinned, the reason beside `raylib_tag` in `tools/build_raylib.sh` |
 | Blender 5.2 LTS | Flatpak `org.blender.Blender` with host file access | Only to regenerate models ([Models](#models)) |
 
 ### The shared collection
 
 - `shared` is the collection Odin reserves for packages outside its own; `build.sh` points it at the repository's `shared/` with `-collection:shared=<repository>/shared` on every command. The toolchain stays untouched.
-- `shared/raylib/` holds the toolchain's binding (`raylib.odin`, `raymath.odin`, `rlgl/rlgl.odin`, `LICENSE`), copied with one patch: `raylib.odin` and `rlgl/rlgl.odin` carry a `when` branch importing the Android archive (0113), which must be put back after an Odin upgrade ([shared/raylib/README.md](../shared/raylib/README.md) has the redo steps). Beside it: our `platform.odin` (`glfwGetPlatform`, `glfwGetCurrentContext`, `glfwGetWindowSize`, `glfwGetProcAddress`, which the binding lacks, left out on Android) and the libraries. The copy exists because the binding names its library by a path next to itself, which no linker flag can swap.
-- `shared/raylib/README.md` records each build (raylib commit, cmake flags, compiler, date, size) and how to redo the copy after an Odin upgrade.
+- `shared/raylib/` holds the toolchain's binding (`raylib.odin`, `raymath.odin`, `rlgl/rlgl.odin`, `LICENSE`), copied with one patch: `raylib.odin` and `rlgl/rlgl.odin` carry a `when` branch importing the Android archive (0113), which must be put back when the copy is redone after a raylib upgrade; an Odin upgrade alone keeps the copy ([shared/raylib/README.md](../shared/raylib/README.md) has the redo steps). Beside it: our `platform.odin` (`glfwGetPlatform`, `glfwGetCurrentContext`, `glfwGetWindowSize`, `glfwGetProcAddress`, which the binding lacks, left out on Android) and the libraries. The copy exists because the binding names its library by a path next to itself, which no linker flag can swap.
+- `shared/raylib/README.md` records each build (raylib commit, cmake flags, compiler, date, size) and how to redo the copy after a raylib upgrade.
 - `shared/fsw/` is odin-fsw, the file watcher, vendored with patches for the Windows backend; `shared/fsw/README.md` records the commit, the patches and how to update. It has no foreign library. Check it alone with `~/opt/odin/odin check shared/fsw -no-entry-point -vet -strict-style`, plain and with `-target:windows_amd64`.
 
 ### raylib archive
@@ -63,7 +63,7 @@ Gotcha: Bazzite ships runtime libraries without the development symlinks (`libX1
 
 - Every command passes the collection; both builds pass `-vet -strict-style` and the `BUILD_INFO` define (below).
 - `test` passes `-all-packages` and any further arguments to `odin test` (a define, `-define:ODIN_TEST_NAMES=game.<test>`): plain `odin test src` runs only the game package's tests, not those of the packages under `src/` it imports (`src/platform/` and the others, [code_map.md](code_map.md), Packages). The checks need nothing extra: `odin check src` checks every package the game imports, tests included, for the target it checks.
-- `check-windows` catches code that does not compile for Windows without a Windows machine; the Nix build runs the same check, so CI guards it on every push.
+- `check-windows` catches code that does not compile for Windows without a Windows machine; on every push the `windows` job's native build guards the same target ([CI](#ci)).
 - `bench` runs `test_factory_benchmark` with `-o:speed`: size 1 on the field world (0179), its table logged, a failure when it averages 8 ms per tick or more, half the 60 Hz budget. Plain `test` (and CI) runs it unoptimised and only logs. `bench` is a heavy benchmark and follows the benchmark rules in [CLAUDE.md](../CLAUDE.md).
 - On a Windows host (Git Bash) `build.sh` makes no shims, writes `build/mine-oh-belowed.exe` and adds `-subsystem:windows` to `release`.
 
@@ -196,7 +196,7 @@ The Deck runs the same play build, installed over SSH from the couch machine (00
 
 - `flake.nix` provides `packages.default` (the game), `devShells.default` (odin, raylib, glfw, sdl3, libX11) and `checks`.
 - The flake patches the binding in `postPatch`: `shared/raylib/raylib.odin` and `rlgl/rlgl.odin` link `system:raylib` instead of the committed archive, and `platform.odin` links `system:glfw`, since nixpkgs raylib is built against an external GLFW with both backends. libX11 stays a build input for the binding's import block. A renamed foreign import line breaks `substituteInPlace` loudly.
-- The build runs `odin build` with `-o:speed -vet -strict-style`, then `odin test src -all-packages` and the Windows target check, all with `-collection:shared=shared`, and installs the data under `share/mine-oh-belowed/`.
+- The build runs `odin build` with `-o:speed -vet -strict-style`, then `odin test src -all-packages`, both with `-collection:shared=shared`, and installs the data under `share/mine-oh-belowed/`. It runs no Windows check: the `windows` job builds that target natively on every push.
 - Nix is not installed on the couch machine; CI validates the flake.
 
 ## CI
@@ -205,15 +205,23 @@ The Deck runs the same play build, installed over SSH from the couch machine (00
 
 | Job | Runner | Does |
 |---|---|---|
-| `nix` | `ubuntu-latest` | `nix develop --command odin version`, then `nix build` (build, tests, Windows check) |
+| `nix` | `ubuntu-latest` | `nix develop --command odin version`, then `nix build` (build, tests) |
 | `windows` | `windows-latest` | The Windows package (below), no tests: they assume Unix paths and sockets |
 | `android` | `ubuntu-latest` | `check-android` and the APK ([android.md](android.md)) |
+
+The toolchains float, and a pin needs a reason beside it (user, 2026-11-07, 0315):
+
+- Odin: the `nix` job takes nixpkgs-unstable's (dev-2026-10 on 2026-11-07), which may lag the latest release, so the code compiles on both. The `windows` and `android` jobs take the latest release through `tools/ci_download_odin.sh <platform>`, the `odin-<platform>-` asset checked against the SHA-256 digest GitHub records for it (the releases publish no checksum file). No match or two fail the step and list the assets.
+- SDL3 (`windows`): the highest `release-3.x.y` of libsdl-org/SDL by version that is neither draft nor prerelease, not the newest by date, since SDL 2 releases share the repository and an older 3.x line can publish after a newer one. Its `SDL3-devel-<version>-VC.zip` is checked against GitHub's digest.
+- The pins left, each with its reason where it is set: raylib 6.0 (`tools/build_raylib.sh`), the Android target SDK 34 (`tools/android_env.sh`) and the Android command line tools zip (`tools/android_toolchain.sh`).
+- nixpkgs follows `nixos-unstable` without a lock, and the GitHub actions float within their major tags (`actions/checkout@v7`).
 
 ## Windows (GameNative on Android)
 
 The user plays on an Android phone through GameNative, which runs the Windows x86-64 build under Wine and Box64 (0102).
 
-- The `windows` job, in Git Bash: checkout; the MSVC environment (`ilammy/msvc-dev-cmd@v1`, x64), which Odin links with; Odin's `odin-windows-amd64-dev-2026-09.zip` and `SDL3-devel-3.4.16-VC.zip`, both SHA-256 checked; `SDL3.lib` copied into the toolchain's `vendor/sdl3/` (the binding imports it next to itself and Odin's release does not ship it); `MINE_OH_BELOWED_COMMIT=<short commit> ./build.sh release`.
+- The `windows` job, in Git Bash: checkout; the MSVC environment (`ilammy/msvc-dev-cmd@v1`, x64), which Odin links with; the latest Odin release and the latest SDL3 3.x `SDL3-devel-<version>-VC.zip`, both checked against GitHub's SHA-256 digest ([CI](#ci)); `SDL3.lib` copied into the toolchain's `vendor/sdl3/`, where the binding imports it next to itself, over the one Odin's release bundles (the job's SDL3 is the latest SDL release, independent of Odin's, so the import library matches the `SDL3.dll` packaged beside the game); `MINE_OH_BELOWED_COMMIT=<short commit> ./build.sh release`.
+- Odin links with radlink, its default Windows linker since dev-2026-10 (Odin #7739).
 - The package `dist/mine-oh-belowed/` holds `mine-oh-belowed.exe`, `SDL3.dll`, `data/` and a `README.txt`, uploaded as `mine-oh-belowed-windows-x64-<short commit>`. raylib comes from the committed `shared/raylib/windows/raylib.lib`; nothing of SDL is committed.
 
 ### The C runtime
