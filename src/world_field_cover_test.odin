@@ -207,23 +207,28 @@ test_cover_kind_density_reads_the_ground :: proc(t: ^testing.T) {
 
 // Möller and Trumbore's ray and triangle: the distance along the unit
 // direction to where the ray meets the triangle, with a margin round its
-// edges.
-cover_test_ray_hit :: proc(origin, direction, a, b, c: [3]f64) -> (distance: f64, hit: bool) {
+// edges, and the hit's barycentric shares of b (along) and c (across).
+cover_test_ray_barycentric :: proc(origin, direction, a, b, c: [3]f64) -> (distance, along, across: f64, hit: bool) {
 	edge_first, edge_second := b - a, c - a
-	across := cover_cross(direction, edge_second)
-	determinant := cover_dot(edge_first, across)
+	sideways := cover_cross(direction, edge_second)
+	determinant := cover_dot(edge_first, sideways)
 	if abs(determinant) < 1e-12 {
-		return 0, false
+		return 0, 0, 0, false
 	}
 	offset := origin - a
-	along := cover_dot(offset, across) / determinant
+	along = cover_dot(offset, sideways) / determinant
 	turned := cover_cross(offset, edge_first)
-	up := cover_dot(direction, turned) / determinant
+	across = cover_dot(direction, turned) / determinant
 	margin := 1e-4
-	if along < -margin || up < -margin || along + up > 1 + margin {
-		return 0, false
+	if along < -margin || across < -margin || along + across > 1 + margin {
+		return 0, 0, 0, false
 	}
-	return cover_dot(edge_second, turned) / determinant, true
+	return cover_dot(edge_second, turned) / determinant, along, across, true
+}
+
+cover_test_ray_hit :: proc(origin, direction, a, b, c: [3]f64) -> (distance: f64, hit: bool) {
+	distance, _, _, hit = cover_test_ray_barycentric(origin, direction, a, b, c)
+	return distance, hit
 }
 
 // The meadow node: each of the first 300 instances' base, raised along
@@ -611,6 +616,236 @@ test_the_cover_reads_the_looks_steepness :: proc(t: ^testing.T) {
 		}) {
 		testing.expectf(t, strings.contains(fragment, line), "field.fs does not hold %s", line)
 	}
+}
+
+// Work item 0335: the snow field.fs draws buries the kinds that do not
+// grow on it.
+@(test)
+test_cover_snow_buries_by_the_kinds_snow :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	grass, boulders := cover_test_table_kind(planet, "grass"), cover_test_table_kind(planet, "boulders")
+	middle: f32 = (COVER_SNOW_THIN_WEIGHT + COVER_SNOW_GONE_WEIGHT) / 2
+	testing.expect(t, !cover_snow_buries(grass, COVER_SNOW_THIN_WEIGHT, 0), "the snow buries grass at the thin weight")
+	testing.expect(t, cover_snow_buries(grass, COVER_SNOW_GONE_WEIGHT, f32(65535) / 65536), "grass stands at the gone weight")
+	testing.expect(t, cover_snow_buries(grass, middle, 0.4), "grass stands half way with the unit 0.4")
+	testing.expect(t, !cover_snow_buries(grass, middle, 0.6), "the snow buries grass half way with the unit 0.6")
+	testing.expect(t, !cover_snow_buries(boulders, 1, 0), "the snow buries a boulder")
+	half := grass
+	half.surfaces[.Snow] = 0.5
+	testing.expect(t, cover_snow_buries(half, COVER_SNOW_GONE_WEIGHT, 0.4), "a kind growing on half the snow stands at the gone weight with the unit 0.4")
+	testing.expect(t, !cover_snow_buries(half, COVER_SNOW_GONE_WEIGHT, 0.6), "the snow buries a kind growing on half of it with the unit 0.6")
+}
+
+// A triangle at (0, 8000, 0) m, a metre a side, every corner with the
+// normal, all topsoil, snow 128 and the natural share; its corners are
+// the given vertices.
+cover_test_hand_triangle :: proc(corners: ^[3]Cover_Vertex, normal: [3]f64, natural: u8) -> (triangle: Cover_Triangle) {
+	offsets := [3][3]f64{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}
+	for index in 0 ..< 3 {
+		corners[index] = {position = [3]f64{0, 8000, 0} + offsets[index], normal = normal}
+		triangle.corners[index] = &corners[index]
+		triangle.surfaces[index].weights[field_material_slot(.Topsoil)] = 255
+		triangle.surfaces[index].look.snow = 128
+		triangle.surfaces[index].look.natural = natural
+	}
+	return triangle
+}
+
+// The triangle's point at the barycentric shares.
+cover_test_triangle_point :: proc(triangle: Cover_Triangle, shares: [3]f64) -> (point: [3]f64) {
+	for corner, index in triangle.corners {
+		point += shares[index] * corner.position
+	}
+	return point
+}
+
+// cover_point_snow follows field.fs's snow terms and the inputs field.vs
+// hands them.
+@(test)
+test_cover_point_snow_twins_field_fs :: proc(t: ^testing.T) {
+	fragment := #load("../data/shaders/field.fs", string)
+	for line in ([?]string {
+			"vec3 normal = normalize(fragment_normal);",
+			"float weight_sum = dot(fragment_weights, vec4(1.0)) + dot(fragment_ore_weights, vec3(1.0));",
+			"vec4 weights = fragment_weights / max(weight_sum, smallest_weight_sum);",
+			"float steepness = 1.0 - dot(normal, normalize(fragment_world_position));",
+			"float topsoil = weights.x;",
+			"float rock = topsoil * ground_look_on * smoothstep(rock_start_steepness, rock_full_steepness, steepness);",
+			"float cover = (topsoil - rock) * ground_look_on * fragment_look.z;",
+			"float snow = cover * fragment_look.x;",
+		}) {
+		testing.expectf(t, strings.contains(fragment, line), "field.fs does not hold %s", line)
+	}
+	vertex := #load("../data/shaders/field.vs", string)
+	testing.expect(t, strings.contains(vertex, "fragment_look = unpack_bytes(vertexTexCoord2.y);"), "field.vs does not hand fragment_look the look's second bytes")
+	corners: [3]Cover_Vertex
+	centroid := [3]f64{1, 1, 1} / 3
+	triangle := cover_test_hand_triangle(&corners, {0, 1, 0}, 255)
+	snow := cover_point_snow(triangle, centroid, cover_test_triangle_point(triangle, centroid))
+	testing.expectf(t, abs(f64(snow) - 128.0 / 255) < 1e-6, "the flat triangle's snow is %v", snow)
+	sixty := math.PI / 3
+	triangle = cover_test_hand_triangle(&corners, {math.sin(sixty), math.cos(sixty), 0}, 255)
+	testing.expect_value(t, cover_point_snow(triangle, centroid, cover_test_triangle_point(triangle, centroid)), 0)
+	triangle = cover_test_hand_triangle(&corners, {0, 1, 0}, 255)
+	triangle.surfaces[0].weights = {}
+	triangle.surfaces[0].weights[field_material_slot(.Stone)] = 255
+	stone_corner := [3]f64{1, 0, 0}
+	testing.expect_value(t, cover_point_snow(triangle, stone_corner, cover_test_triangle_point(triangle, stone_corner)), 0)
+	between := [3]f64{0.5, 0.5, 0}
+	snow = cover_point_snow(triangle, between, cover_test_triangle_point(triangle, between))
+	testing.expectf(t, abs(f64(snow) - 64.0 / 255) < 1e-6, "half way off the stone corner the snow is %v", snow)
+	triangle = cover_test_hand_triangle(&corners, {0, 1, 0}, 0)
+	testing.expect_value(t, cover_point_snow(triangle, centroid, cover_test_triangle_point(triangle, centroid)), 0)
+}
+
+// field.fs's snow weight at the barycentric shares of a mesh triangle's
+// corners (its indices), from the vertex arrays as field.vs unpacks them:
+// the weights from the tangent and the ores' bytes, the snow and the
+// natural share from the look's second bytes, the normal, and the up the
+// world position (the node's origin plus the position) normalised.
+cover_test_fragment_snow :: proc(mesh: Field_Mesh_Data, origin: [3]f64, indices: [3]int, shares: [3]f64) -> f64 {
+	topsoil, total, natural, snow: f64
+	normal, position: [3]f64
+	for index, corner in indices {
+		share := shares[corner]
+		weights := mesh.weights[index]
+		ores := unpack_test_bytes(mesh.lights[index][1])
+		look := unpack_test_bytes(mesh.looks[index][1])
+		total += share * f64(weights.x + weights.y + weights.z + weights.w + ores.x + ores.y + ores.z)
+		topsoil += share * f64(weights.x)
+		snow += share * f64(look.x)
+		natural += share * f64(look.z)
+		normal += share * cover_test_vector(mesh.normals[index])
+		position += share * cover_test_vector(mesh.positions[index])
+	}
+	topsoil /= max(total, 0.0001)
+	steepness := 1 - linalg.dot(linalg.normalize(normal), linalg.normalize(origin + position))
+	rock := topsoil * math.smoothstep(f64(GROUND_ROCK_START_STEEPNESS), f64(GROUND_ROCK_FULL_STEEPNESS), steepness)
+	return (topsoil - rock) * natural * snow
+}
+
+// Ahead and aside metres from the cold spot along its north and east
+// tangents: four nodes across a snow line, field.fs's snow weight from 0
+// to 1 across them at the shipped seed.
+COVER_TEST_SNOW_LINE :: [4][2]i64{{-256, -672}, {-256, -640}, {-256, -608}, {-256, -576}}
+
+// Nodes' cover against field.fs's snow: the instances found on no
+// triangle; per band of the triangles' centroid weight (under
+// COVER_SNOW_THIN_WEIGHT, under COVER_SNOW_GONE_WEIGHT, over) the grass
+// standing on them and their area in square metres; the boulders standing
+// at the gone weight or over; the most snow under an instance of a kind
+// growing on none.
+Cover_Test_Snow_Tally :: struct {
+	missing:          int,
+	grass:            [3]int,
+	area:             [3]f64,
+	boulders_on_snow: int,
+	most_buried_snow: f64,
+}
+
+cover_test_snow_band :: proc(snow: f64) -> int {
+	if snow < COVER_SNOW_THIN_WEIGHT {
+		return 0
+	}
+	return snow < COVER_SNOW_GONE_WEIGHT ? 1 : 2
+}
+
+cover_test_triangle_indices :: proc(mesh: Field_Mesh_Data, triangle: int) -> [3]int {
+	return {int(mesh.indices[3 * triangle]), int(mesh.indices[3 * triangle + 1]), int(mesh.indices[3 * triangle + 2])}
+}
+
+// The column's length in the instance's transform.
+cover_test_column_length :: proc(instance: matrix[4, 4]f32, column: int) -> f64 {
+	return math.sqrt(f64(instance[0, column] * instance[0, column] + instance[1, column] * instance[1, column] + instance[2, column] * instance[2, column]))
+}
+
+// The triangle the instance stands on, found as
+// test_the_cover_lies_on_its_triangles finds it among the triangles whose
+// centroid lies within 3 m of its base, and field.fs's snow weight at the
+// hit; -1 when none holds it.
+cover_test_instance_snow :: proc(mesh: Field_Mesh_Data, origin: [3]f64, centroids: [][3]f64, kind: Field_Cover_Kind, instance: matrix[4, 4]f32) -> (triangle: int, snow: f64) {
+	base := cover_test_vector(cover_instance_base(instance)) - origin
+	up := cover_test_vector({instance[0, 1], instance[1, 1], instance[2, 1]})
+	height := cover_test_column_length(instance, 1)
+	least := f64(kind.sink) * height
+	most := least + 0.5 * max(cover_test_column_length(instance, 0), cover_test_column_length(instance, 2))
+	for centroid, index in centroids {
+		if cover_dot(centroid - base, centroid - base) > 9 {
+			continue
+		}
+		corners := cover_test_triangle_indices(mesh, index)
+		a, b, c := cover_test_vector(mesh.positions[corners[0]]), cover_test_vector(mesh.positions[corners[1]]), cover_test_vector(mesh.positions[corners[2]])
+		distance, along, across, hit := cover_test_ray_barycentric(base, up / height, a, b, c)
+		if hit && distance >= least - 0.005 && distance <= most + 0.005 {
+			return index, cover_test_fragment_snow(mesh, origin, corners, {1 - along - across, along, across})
+		}
+	}
+	return -1, 0
+}
+
+// The node's generated grid's cover added to the tally.
+cover_test_tally_snow :: proc(generation: Planet_Generation, planet: Planet, node: Field_Node, tally: ^Cover_Test_Snow_Tally) {
+	grid := new(Field_Grid, context.temp_allocator)
+	generate_field_grid(generation, node, grid)
+	data, _, mesh := cover_test_grid_cover(generation, planet, grid)
+	origin := cover_test_node_origin(node, generation.spacing_millimetres)
+	table := make_field_cover_table(generation, planet, COVER_TEST_ROW)
+	triangle_count := len(mesh.indices) / 3
+	centroids := make([][3]f64, triangle_count, context.temp_allocator)
+	bands := make([]int, triangle_count, context.temp_allocator)
+	for triangle in 0 ..< triangle_count {
+		corners := cover_test_triangle_indices(mesh, triangle)
+		a, b, c := cover_test_vector(mesh.positions[corners[0]]), cover_test_vector(mesh.positions[corners[1]]), cover_test_vector(mesh.positions[corners[2]])
+		centroids[triangle] = (a + b + c) / 3
+		bands[triangle] = cover_test_snow_band(cover_test_fragment_snow(mesh, origin, corners, [3]f64{1, 1, 1} / 3))
+		tally.area[bands[triangle]] += linalg.length(cover_cross(b - a, c - a)) / 2
+	}
+	grass, boulders := cover_test_kind(planet, "grass"), cover_test_kind(planet, "boulders")
+	for kind, kind_index in data.kinds {
+		for instance in kind.instances {
+			triangle, snow := cover_test_instance_snow(mesh, origin, centroids, table.kinds[kind_index], instance)
+			if triangle < 0 {
+				tally.missing += 1
+				continue
+			}
+			if kind_index == grass {
+				tally.grass[bands[triangle]] += 1
+			}
+			if kind_index == boulders && snow >= COVER_SNOW_GONE_WEIGHT {
+				tally.boulders_on_snow += 1
+			}
+			if table.kinds[kind_index].surfaces[.Snow] == 0 {
+				tally.most_buried_snow = max(tally.most_buried_snow, snow)
+			}
+		}
+	}
+}
+
+// No plant, pebble or speck stands where field.fs draws snow at the cold
+// spot's node and across a snow line, the grass thinning out over the
+// snow's edge, and boulders stand on the snow.
+@(test) // slow
+test_snow_buries_the_plants :: proc(t: ^testing.T) {
+	planet, generation := cover_test_setup()
+	spots := COVER_TEST_SPOTS
+	direction := cover_test_direction(spots[3].latitude, spots[3].longitude)
+	cold, line: Cover_Test_Snow_Tally
+	cover_test_tally_snow(generation, planet, cover_test_surface_node(generation, direction, 0, 0), &cold)
+	snow_line := COVER_TEST_SNOW_LINE
+	for place in snow_line {
+		cover_test_tally_snow(generation, planet, cover_test_surface_node(generation, direction, place[0], place[1]), &line)
+	}
+	density: [3]f64
+	for band in 0 ..< 3 {
+		density[band] = f64(line.grass[band]) / max(line.area[band], 1)
+	}
+	log.infof("snow line: grass a square metre %.2f under the thin weight (%.0f m2), %.2f thinning (%.0f m2), %.2f over the gone weight (%.0f m2); cold spot: %d grass on %.0f m2; boulders on the snow %d; the most snow under a kind growing on none %.3f", density[0], line.area[0], density[1], line.area[1], density[2], line.area[2], cold.grass[0] + cold.grass[1] + cold.grass[2], cold.area[0] + cold.area[1] + cold.area[2], cold.boulders_on_snow + line.boulders_on_snow, max(cold.most_buried_snow, line.most_buried_snow))
+	testing.expect_value(t, cold.missing + line.missing, 0)
+	testing.expectf(t, max(cold.most_buried_snow, line.most_buried_snow) < COVER_SNOW_GONE_WEIGHT + 0.001, "a kind growing on no snow stands on snow of weight %v", max(cold.most_buried_snow, line.most_buried_snow))
+	testing.expect_value(t, cold.grass[0] + cold.grass[1] + cold.grass[2], 0)
+	testing.expectf(t, density[0] >= 2, "the snow line's bare ground holds %v grass a square metre", density[0])
+	testing.expectf(t, density[1] > 0 && density[1] < density[0] / 2, "the snow line's thinning ground holds %v grass a square metre against %v on the bare", density[1], density[0])
+	testing.expect(t, cold.boulders_on_snow + line.boulders_on_snow > 0, "no boulder stands on the snow")
 }
 
 // The cover's cost on the mesh job (0311), single threaded and not a

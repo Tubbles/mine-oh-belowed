@@ -1,6 +1,6 @@
 # 0335: Snow clears the ground cover
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-07)
 
 From 0311's landing captures: at the cold spot (81.4358 N, 159.9575 E, 0 °C, 70 % moisture) the terrain draws the ground white with snow, while grass tufts stand all over it (`test_the_cover_follows_the_climate` logs grass at 2.4 a square metre there). The user (2026-11-07): "Grass doesn't grow through snow no, if its not very freshly fallen and just a little amount. And I mean very freshly, like within a day, and at most 1 cm or something". The generated snow is settled snow, so no plant shows through it.
 

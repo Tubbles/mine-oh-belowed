@@ -236,3 +236,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 - The Windows build under Winlator on the phone takes the desktop row, so shadows are on there by default; an Android-like row for Winlator would need a way to tell it apart.
 - Belts, runs and torches neither cast nor receive (as specified), so they stay lit under a tree.
 - `draw_far_tree_cards` still binds and unbinds the shadow map, though the cards no longer read it.
+
+## Suggestions from the snow on the cover (0335, 2026-11-07)
+
+- `test_snow_buries_the_plants`'s density bounds and its "no grass at the cold spot" depend on the shipped data and seed, so a retune of the climate or the relief can fail it with no fault in the code; its `most_buried_snow` check is the one that tests the code itself. Reading the bounds off the kinds and the shares would make it robust to data changes.

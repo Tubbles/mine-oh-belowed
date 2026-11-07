@@ -15,7 +15,9 @@ import "generation_seed"
 // sample coordinates and its half, so the same ground gives the same
 // cover on every remesh and nothing repeats on a lattice; each kind's
 // density reads the look's climate, the slope, the surfaces field.fs
-// shows, a boundary term and a patch noise of its own (Planet_Cover).
+// shows, a boundary term and a patch noise of its own (Planet_Cover);
+// the snow field.fs draws buries the kinds that do not grow on it at the
+// instance's own point (cover_snow_buries, 0335).
 // Presentation only: nothing reaches the simulation, the hash or the
 // save, so floats are fine here.
 
@@ -42,6 +44,12 @@ GROUND_ROCK_START_STEEPNESS :: 0.234
 GROUND_ROCK_FULL_STEEPNESS :: 0.357
 GROUND_SAND_START_STEEPNESS :: 0.134
 GROUND_SAND_END_STEEPNESS :: 0.234
+// field.fs's snow weight where a kind that grows on no snow starts to
+// thin, and where none of it stands (0335): the shader blends the snow
+// over the whole ground by its weight, so a half weight already reads as
+// snow.
+COVER_SNOW_THIN_WEIGHT :: 0.05
+COVER_SNOW_GONE_WEIGHT :: 0.25
 
 // The surfaces a kind grows on, as Planet_Cover_Surfaces lists them.
 Cover_Surface :: enum u8 {
@@ -278,7 +286,8 @@ cover_picked_color :: proc(kind: Field_Cover_Kind, unit: f32) -> [3]u8 {
 // units; hashes[2] the depth (a stone's the mean of 0 and 1, foliage's
 // the width times 0.85 to 1.15 by 0) and foliage's lean (2, up to
 // COVER_TILT_DEGREES towards the bearing of 3); hashes[3] the shade (0,
-// 216 to 255; the colour's pick 1 is the caller's). A stone's up lies
+// 216 to 255; the colour's pick 1 and the snow's burial 2 are the
+// caller's). A stone's up lies
 // halfway to the ground's normal. The columns are the right, the up and
 // the forward times the width, the height and the depth, the translation
 // the base in world metres, sunk along the up by the sink's share of the
@@ -506,12 +515,49 @@ cover_triangle_light :: proc(triangle: Cover_Triangle) -> (light: [Field_Light_C
 	return light
 }
 
+// field.fs's snow weight at a point of the triangle (world metres), its
+// corners weighed by the barycentric shares as field.vs's outputs are
+// interpolated: the topsoil's share of the weights, less the rock the
+// steepness of the weighed normal against the point's up lays on it,
+// times the natural share and the snow.
+cover_point_snow :: proc(triangle: Cover_Triangle, shares: [3]f64, point: [3]f64) -> f32 {
+	topsoil, total, natural, snow: f64
+	normal: [3]f64
+	for corner, index in triangle.surfaces {
+		share := shares[index]
+		for weight in corner.weights {
+			total += share * f64(weight)
+		}
+		topsoil += share * f64(corner.weights[field_material_slot(.Topsoil)])
+		natural += share * f64(corner.look.natural) / 255
+		snow += share * f64(corner.look.snow) / 255
+		normal += share * triangle.corners[index].normal
+	}
+	if total <= 0 {
+		return 0
+	}
+	up := cover_normalized(point, {0, 1, 0})
+	steepness := 1 - cover_dot(cover_normalized(normal, up), up)
+	topsoil /= total
+	rock := topsoil * math.smoothstep(f64(GROUND_ROCK_START_STEEPNESS), f64(GROUND_ROCK_FULL_STEEPNESS), steepness)
+	return f32((topsoil - rock) * natural * snow)
+}
+
+// Whether the snow weight buries an instance of the kind with the unit:
+// from COVER_SNOW_THIN_WEIGHT to COVER_SNOW_GONE_WEIGHT the buried share
+// rises to the kind's share not growing on snow, so a kind with none is
+// always buried from the gone weight.
+cover_snow_buries :: proc(kind: Field_Cover_Kind, snow, unit: f32) -> bool {
+	return unit < (1 - kind.surfaces[.Snow]) * clamp((snow - COVER_SNOW_THIN_WEIGHT) / (COVER_SNOW_GONE_WEIGHT - COVER_SNOW_THIN_WEIGHT), 0, 1)
+}
+
 // The ground cover on the surface's triangles before its skirts (the
 // finest level only, with the table and the look on), in allocator: per
 // triangle none when a corner is wet, dark or cut through; else per kind
 // floor(area times density plus a hashed share) instances, each from four
 // hashes of the triangle's key, the kind and its index, skipped at a rank
-// at or above the table's density and when a frame's cell holds it
+// at or above the table's density, where the snow buries it at its point
+// (cover_snow_buries) and when a frame's cell holds it
 // (cover_instance_cleared). Per kind sorted by rank, cut to the table's
 // limit, with its rank counts.
 place_field_cover :: proc(surface: Field_Surface, grid: ^Field_Grid, look: Field_Ground_Look, table: Field_Cover_Table, spacing_millimetres: int, frames: []Cover_Frame, allocator := context.allocator) -> (data: Field_Cover_Data) {
@@ -544,6 +590,7 @@ place_field_cover :: proc(surface: Field_Surface, grid: ^Field_Grid, look: Field
 		key := cover_triangle_key(table.seed, grid, surface.quad_edges[triangle_index / 2], triangle_index % 2)
 		a, b, c := triangle.corners[0].position, triangle.corners[1].position, triangle.corners[2].position
 		light := cover_triangle_light(triangle)
+		snowy := triangle.surfaces[0].look.snow > 0 || triangle.surfaces[1].look.snow > 0 || triangle.surfaces[2].look.snow > 0
 		for kind_index in 0 ..< table.kind_count {
 			kind := table.kinds[kind_index]
 			density := cover_kind_density(kind, ground, 1)
@@ -569,6 +616,9 @@ place_field_cover :: proc(surface: Field_Surface, grid: ^Field_Grid, look: Field
 					along, across = 1 - along, 1 - across
 				}
 				point := a + (b - a) * along + (c - a) * across
+				if snowy && kind.surfaces[.Snow] < 1 && cover_snow_buries(kind, cover_point_snow(triangle, {1 - along - across, along, across}, point), cover_unit(hashes[3], 2)) {
+					continue
+				}
 				color := cover_triangle_color(kind, triangle, cover_unit(hashes[3], 1))
 				instance := cover_instance(kind, point, cover_normalized(point, radial), normal, slope_tangent, light, color, hashes)
 				if cover_instance_cleared(frames, instance) {
