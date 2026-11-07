@@ -203,3 +203,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 - `test_the_cached_field_chunks_are_the_generated_ones` reports "got Full" if the suite ever fills `FIELD_CHUNK_CACHE_CAPACITY` (2048, the slow tier fills about 950) before it runs; a message naming the full cache would read better.
 - `fill_field_chunk_cache` uses `find_field_chunk_cache_entry` without a nil check, so a key that failed to match its own stored copy would crash every staging test instead of missing.
 - The `differs` checks of the cache test catch a key that leaves out a part only when the base home entry is filled at that moment; while another test still generates it, a broken key passes that run.
+
+## Suggestions from the ground cover's design (0311, 2026-11-07)
+
+- Blocking boulders of 1 to 3 m in the generated density, scattered by climate and slope like the cover. They would be ground the player climbs or walks round and digs (the cover's boulders stay under 0.65 m and are walked through), so they change walking and the generation's cost. Yours to decide.

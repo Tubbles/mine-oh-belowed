@@ -13,7 +13,7 @@ None.
 ## Change
 
 - `data/shaders/field.fs` and the field mesh's material weights (the design decides whether a vertex carries two materials and a blend); `data/materials.sjson` gains the lap order and the doodad set per material.
-- A doodad pass in the presentation, instanced per chunk and culled with it.
+- The doodads (pebbles, tufts, ore specks) are kinds of 0311's ground cover pass, placed by material and the boundary term this item's blend defines.
 - Reference: the user sends Techtonica screenshots of a moss and ore boundary and of a fresh cut before the design starts.
 - Docs: `doc/presentation.md` (The field), `doc/content.md` (Materials).
 
