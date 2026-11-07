@@ -27,7 +27,10 @@ import "core:slice"
 // (field_sky_is_open); the fill carries it from there into cave mouths.
 // The generation gives every air sample full sky light
 // (light_generated_field_chunk): the generated terrain is a height field
-// along the radial, so no generated air lies under ground. Under an edit
+// along the radial, so no generated air lies under ground, but for the
+// carved air under a carving site's roof (0324, column_shades), which
+// generates without sky and is lit by the fill from the chunk's lit air
+// on arrival (seed_field_chunk_shade). Under an edit
 // the samples in the edit's shadow march again at the end of the edit
 // drain (update_field_sky_after_edits).
 
@@ -309,7 +312,8 @@ follow_field_terrain_with_light :: proc(world: ^Field_World, chunk: ^Field_Chunk
 }
 
 // The generation's sky: full in every air sample (the generated terrain
-// is a height field along the radial). Safe on any thread.
+// is a height field along the radial); generate_field_chunk then clears
+// it in the carved air under a roof (0324). Safe on any thread.
 light_generated_field_chunk :: proc(chunk: ^Field_Chunk) {
 	for density, index in chunk.density {
 		chunk.sky_light[index] = density > 0 ? 0 : FIELD_LIGHT_FULL
@@ -439,8 +443,8 @@ update_field_sky_after_edits :: proc(world: ^Field_World) {
 
 // A chunk arrived (field_world_insert_chunk): its generation never lit it
 // from its neighbours, nor them from it, so each face sample whose light
-// would raise the sample across the face spreads, both ways; its emitters
-// shine.
+// would raise the sample across the face spreads, both ways; its carved
+// air under a roof takes the fill from its lit air; its emitters shine.
 seed_field_chunk_light :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) {
 	chunk := world.chunks[coordinate] or_else nil
 	if chunk == nil {
@@ -456,6 +460,10 @@ seed_field_chunk_light :: proc(world: ^Field_World, coordinate: Field_Chunk_Coor
 			seed_field_light_across(world, {chunk, pair[1]}, {neighbour, pair[0]})
 		}
 	}
+	if chunk.generated_shade {
+		seed_field_chunk_shade(world, chunk)
+		chunk.generated_shade = false
+	}
 	emitters := make([dynamic]Sample_Coordinate, context.temp_allocator)
 	for sample in world.light.sources {
 		if sample_to_field_chunk_coordinate(sample) == coordinate {
@@ -465,6 +473,30 @@ seed_field_chunk_light :: proc(world: ^Field_World, coordinate: Field_Chunk_Coor
 	slice.sort_by(emitters[:], z_y_x_before)
 	for sample in emitters {
 		restore_field_light_source(world, {chunk, sample_to_field_index(sample)}, sample)
+	}
+}
+
+// The generation's carved air under a roof (0324) holds no sky: each air
+// sample at full sky with a face neighbour in the chunk that is air under
+// full sky spreads, in index order, so the fill lights the roofed air
+// from its openings.
+seed_field_chunk_shade :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if chunk.density[index] > 0 || chunk.sky_light[index] != FIELD_LIGHT_FULL {
+			continue
+		}
+		local := field_index_to_local(index)
+		for offset in FIELD_LIGHT_NEIGHBOUR_OFFSETS {
+			neighbour := local + offset
+			if !field_local_in_chunk(neighbour) {
+				continue
+			}
+			beside := field_local_to_index(neighbour)
+			if chunk.density[beside] <= 0 && chunk.sky_light[beside] < FIELD_LIGHT_FULL {
+				push_field_light_addition(world, .Sky, field_chunk_sample(chunk, index))
+				break
+			}
+		}
 	}
 }
 

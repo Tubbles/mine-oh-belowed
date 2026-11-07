@@ -21,6 +21,8 @@ import "platform"
 // landforms (0306, generation_planet_landforms.odin) add the plains, the
 // hills and the ranges, its landmarks (0323,
 // generation_planet_landmarks.odin) the gorges, the mesas and the sites.
+// A carving site's column (0324, Surface_Column) carves air between its
+// ground and the height map's top (column_depth).
 // The relief lies within the planet's bound
 // (planet_relief_bounds), which the generation holds as relief_lowest and
 // relief_highest. The crater at the home (0199, crater_relief) is the
@@ -222,23 +224,44 @@ value_noise :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
 	return corners[0]
 }
 
+// A column of the ground at a point on the sphere (0324): the height
+// map's top over the radius and the carve of the carving site it lies in
+// (kind None elsewhere).
+Surface_Column :: struct {
+	relief: i64,
+	carve:  Landmark_Carve,
+}
+
 // The local surface's height above the radius at a point on the sphere:
 // the shaped relief with the crater at the home (0199) when the
 // generation bakes it (crater_baked, 0271).
 surface_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
-	relief := uncratered_relief(generation, point)
-	if !generation.crater_baked {
-		return relief
-	}
-	return crater_relief(generation.crater, crater_distance(generation.crater, point), relief)
+	return surface_column(generation, point).relief
 }
 
-// The relief without the crater: the octaves, the first shaped by the
+// The column at a point on the sphere, its relief through the crater
+// when the generation bakes it. No carving site reaches the crater: a
+// site keeps the calm circle plus its reach from the home, and the calm
+// circle holds the crater (landforms_planet_problem).
+surface_column :: proc(generation: Planet_Generation, point: [3]i64) -> Surface_Column {
+	column := uncratered_column(generation, point)
+	if generation.crater_baked {
+		column.relief = crater_relief(generation.crater, crater_distance(generation.crater, point), column.relief)
+	}
+	return column
+}
+
+// The relief without the crater (uncratered_column).
+uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
+	return uncratered_column(generation, point).relief
+}
+
+// The column without the crater: the octaves, the first shaped by the
 // basins and the terraces, the ledges (0189, Relief_Shape), the
 // landforms (0306) and last the landmarks (0323), which raise and cut
-// that sum. With the zero shape, no landforms and no landmarks it is the
-// octaves' sum.
-uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
+// that sum and carve under a carving site's raise (0324). With the zero
+// shape, no landforms and no landmarks it is the octaves' sum.
+uncratered_column :: proc(generation: Planet_Generation, point: [3]i64) -> Surface_Column {
 	relief: i64 = 0
 	for octave, index in generation.relief_octaves {
 		noise := relief_octave_noise(generation, index, octave.wavelength_metres, point)
@@ -249,7 +272,42 @@ uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 		}
 	}
 	reading := landform_reading(generation, point)
-	return landmark_relief(generation, point, relief + ledge_relief(generation, point) + reading.relief, reading)
+	column: Surface_Column
+	column.relief, column.carve = landmark_relief(generation, point, relief + ledge_relief(generation, point) + reading.relief, reading)
+	return column
+}
+
+// The depth into the ground at a height over the radius in the column:
+// the height map's depth, with a carving site the least of it and the
+// carve's distance over the site's ground, so nothing under the ground
+// and nothing over the top is carved.
+column_depth :: proc(column: Surface_Column, height: i64) -> i64 {
+	depth := column.relief - height
+	if column.carve.site.kind in CARVING_KINDS {
+		depth = min(depth, landmark_carve_distance(column.carve, height - column.carve.ground))
+	}
+	return depth
+}
+
+// Whether ground at least a spacing thick stands over the column's
+// carved span: the carved air in a column is one span from the ground up
+// (landmark_carve_distance), so ground a spacing under the top closes it.
+column_roofed :: proc(column: Surface_Column, spacing: i64) -> bool {
+	if column.carve.site.kind not_in CARVING_KINDS {
+		return false
+	}
+	roof := column.relief - column.carve.ground - spacing
+	return roof > 0 && landmark_carve_distance(column.carve, roof) > 0
+}
+
+// Whether the height over the radius lies in the column's carved air
+// under a roof, so the generation gives it no sky. The caller checks the
+// sample is air.
+column_shades :: proc(column: Surface_Column, height, spacing: i64) -> bool {
+	if column.carve.site.kind not_in CARVING_KINDS {
+		return false
+	}
+	return landmark_carve_distance(column.carve, height - column.carve.ground) <= 0 && column_roofed(column, spacing)
 }
 
 // The ledges' noise takes the seed after the octaves'.
@@ -408,11 +466,21 @@ planet_tint :: proc(generation: Planet_Generation, position: World_Position) -> 
 }
 
 planet_sample :: proc(generation: Planet_Generation, position: World_Position) -> Field_Sample {
-	sample, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+	sample, _ := planet_sample_shaded(generation, position)
+	return sample
+}
+
+// The sample at the position and whether it is carved air under a roof
+// (column_shades), which the generation leaves without sky (0324).
+planet_sample_shaded :: proc(generation: Planet_Generation, position: World_Position) -> (sample: Field_Sample, shaded: bool) {
+	shortcut, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
 	if !needs_relief {
-		return sample
+		return shortcut, false
 	}
-	return planet_sample_at_relief(generation, position, distance, on_sphere, surface_relief(generation, on_sphere))
+	column := surface_column(generation, on_sphere)
+	sample = planet_sample_at_column(generation, position, distance, on_sphere, column)
+	shaded = sample.density <= 0 && column_shades(column, distance - generation.radius, generation.spacing)
+	return
 }
 
 // Far outside and deep inside skip the noise: the local surface lies
@@ -438,14 +506,22 @@ planet_sample_shortcut :: proc(generation: Planet_Generation, position: World_Po
 }
 
 // The sample at the position whose surface stands relief above the
-// radius: the density, the stratum and the outcrop, the tint.
+// radius, without a carve (the crater's baked sample).
 planet_sample_at_relief :: proc(generation: Planet_Generation, position: World_Position, distance: i64, on_sphere: [3]i64, relief: i64) -> Field_Sample {
-	surface := generation.radius + relief
-	depth := surface - distance
-	density := depth_to_density(depth, generation.spacing_millimetres)
+	return planet_sample_at_column(generation, position, distance, on_sphere, Surface_Column{relief = relief})
+}
+
+// The sample at the position in the column: the density from the
+// column's depth (column_depth), the stratum and the outcrop from the
+// height map's depth, so a carved face shows the stone it was cut from
+// and only the top keeps its topsoil, the tint.
+planet_sample_at_column :: proc(generation: Planet_Generation, position: World_Position, distance: i64, on_sphere: [3]i64, column: Surface_Column) -> Field_Sample {
+	height := distance - generation.radius
+	density := depth_to_density(column_depth(column, height), generation.spacing_millimetres)
 	if density <= 0 {
 		return {density, .Air, 0}
 	}
+	depth := column.relief - height
 	material := planet_outcrop_material(generation.veins, planet_stratum(depth, distance, generation.bedrock_radius, generation_topsoil_depth(generation)), depth, on_sphere)
 	return {density, material, planet_tint(generation, position)}
 }
@@ -564,7 +640,10 @@ mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, 
 // Fills chunk; safe on any thread. The chunk is not marked dirty, the
 // world does that when it takes the chunk (field_world_insert_chunk). The
 // water: the sea below the planet's sea level and the springs (0172); the
-// light: full sky in every air sample (0173, light_generated_field_chunk).
+// light: full sky in every air sample (0173, light_generated_field_chunk)
+// but carved air under a roof (0324, column_shades), which arrives
+// without sky and is lit by the fill from the chunk's lit air
+// (Field_Chunk.generated_shade).
 // With crater_overlay, a chunk of the simulated set (the workers', the
 // staged set's) of a world whose hit digs the crater, its box meeting the
 // crater's cylinder (impact_crater_reaches_box), also records the baked
@@ -575,15 +654,19 @@ generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int
 	origin := field_chunk_origin(coordinate)
 	chunk.coordinate = coordinate
 	overlay := crater_overlay && planet.crater_at_impact && impact_crater_reaches_box(generation, field_node_box(field_chunk_node(coordinate), spacing_millimetres))
+	shaded: Field_Sample_Bits
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		sample := origin + Sample_Coordinate(field_index_to_local(index))
 		position := sample_to_world_position(sample, spacing_millimetres)
 		value, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
 		if needs_relief {
-			relief := surface_relief(generation, on_sphere)
-			value = planet_sample_at_relief(generation, position, distance, on_sphere, relief)
+			column := surface_column(generation, on_sphere)
+			value = planet_sample_at_column(generation, position, distance, on_sphere, column)
+			if value.density <= 0 && column_shades(column, distance - generation.radius, generation.spacing) {
+				set_field_sample_bit(&shaded, index)
+			}
 			if overlay {
-				if baked, changed := impact_crater_baked_sample(generation, position, distance, on_sphere, relief, value); changed {
+				if baked, changed := impact_crater_baked_sample(generation, position, distance, on_sphere, column.relief, value); changed {
 					append(&chunk.crater_overlay, Field_Crater_Sample{index = i32(index), sample = baked})
 				}
 			}
@@ -595,6 +678,14 @@ generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int
 	fill_field_chunk_sea(planet, spacing_millimetres, chunk)
 	mark_field_chunk_springs(generation, planet, chunk)
 	light_generated_field_chunk(chunk)
+	chunk.generated_shade = field_sample_bits_any(&shaded)
+	if chunk.generated_shade {
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			if field_sample_bit(&shaded, index) {
+				chunk.sky_light[index] = 0
+			}
+		}
+	}
 }
 
 // The sea's density in the generation's spacing at a position, as the

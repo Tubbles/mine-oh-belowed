@@ -192,28 +192,36 @@ test_every_site_kind_stands_near_the_home :: proc(t: ^testing.T) {
 
 // Just inside a site's reach, along 32 directions from every site within
 // 1500 m of the home at 8 km, the site raises or cuts less than 1 mm: the
-// wobble vanishes at the rim, so the relief meets the ground round it.
+// wobble and a carving kind's outline roughening (0324) vanish at the
+// rim, so the relief meets the ground round it. A carving kind's points
+// lie on its stretched outline, since an arch's stretch leaves most of
+// its circle of reach outside it.
 @(test)
 test_a_site_meets_the_ground_at_its_rim :: proc(t: ^testing.T) {
-	generation := make_planet_generation(DEFAULT_WORLD_SEED, design_landmark_test_planet(8000), 1000)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, design_carving_test_planet(8000), 1000)
 	millimetre := metres_to_position_units(1) / 1000
 	inside := 0
-	for kind in ([3]Landmark_Kind{.Spire, .Butte, .Sinkhole}) {
+	for kind in ([6]Landmark_Kind{.Spire, .Butte, .Sinkhole, .Arch, .Grotto, .Mushroom}) {
 		for site in test_landmark_sites(generation, kind, 1500) {
 			up, _ := normalize_fixed(site.centre)
 			forward := tangent_of(up, {UNIT_VECTOR_ONE, 0, 0})
 			right := fixed_cross(forward, up)
+			reach := [2]i64{landmark_site_outer(site) - 8, landmark_site_outer(site) - 8}
+			if kind in CARVING_KINDS {
+				forward = landmark_site_axis(site, generation.radius)
+				right = fixed_cross(up, forward)
+				reach[1] = site.radius - 8
+			}
 			outer := landmark_site_outer(site)
 			for index in 0 ..< 32 {
 				angle := i32(index * ANGLE_UNITS_PER_TURN / 32)
-				direction := fixed_scale(forward, fixed_cosine(angle)) + fixed_scale(right, fixed_sine(angle))
-				offset := site.centre + fixed_scale(direction, outer - 8)
+				offset := site.centre + fixed_scale(forward, reach[0] * fixed_cosine(angle) / UNIT_VECTOR_ONE) + fixed_scale(right, reach[1] * fixed_sine(angle) / UNIT_VECTOR_ONE)
 				point := project_onto_sphere(World_Position(offset), vector_length(offset), generation.radius)
 				if squared_chord(point, site.centre) >= outer * outer {
 					continue
 				}
 				inside += 1
-				raise, cut := landmark_site_relief(generation, point)
+				raise, cut, _ := landmark_site_relief(generation, point)
 				testing.expectf(t, raise <= millimetre && cut <= millimetre, "a %v at %v steps by %d and %d at its rim", kind, site.centre, raise, cut)
 			}
 		}
@@ -255,6 +263,7 @@ test_landmarks_problems :: proc(t: ^testing.T) {
 		{proc(landmarks: ^Planet_Landmarks) {landmarks.gorge_floor_percent = 100}, "landmarks.gorge_floor_percent 100 is outside 0 to 99"},
 		{proc(landmarks: ^Planet_Landmarks) {landmarks.mesa_edge_permille = 0}, "landmarks.mesa_edge_permille 0 is outside 1 to 1000"},
 		{proc(landmarks: ^Planet_Landmarks) {landmarks.spire_percent = 61}, "landmarks' site shares add up to 101, more than 100"},
+		{proc(landmarks: ^Planet_Landmarks) {landmarks.arch_percent = 31}, "landmarks' site shares add up to 101, more than 100"},
 		{proc(landmarks: ^Planet_Landmarks) {landmarks.butte_metres = {28, 14}}, "landmarks.butte_metres [28, 14] runs backwards"},
 		{proc(landmarks: ^Planet_Landmarks) {landmarks.butte_stretch_percent = 401}, "landmarks.butte_stretch_percent 401 is outside 100 to 400"},
 		{proc(landmarks: ^Planet_Landmarks) {landmarks.site_spacing_metres = 177}, "landmarks.site_spacing_metres 177 is outside 178 to 8192"},
@@ -273,6 +282,17 @@ test_landmarks_problems :: proc(t: ^testing.T) {
 	off.spire_percent = 0
 	off.spire_radius_metres = {0, 0}
 	testing.expect_value(t, landmarks_problem(off, design.landforms), "")
+	// The carving kinds (0324).
+	carving := design_carving_test_planet(8000)
+	testing.expect_value(t, planet_problem(carving), "")
+	testing.expect_value(t, landmark_widest_site_metres(carving.landmarks), 88)
+	backwards := carving.landmarks
+	backwards.grotto_metres = {20, 12}
+	testing.expect_value(t, landmarks_problem(backwards, carving.landforms), "landmarks.grotto_metres [20, 12] runs backwards")
+	no_mushrooms := carving.landmarks
+	no_mushrooms.mushroom_percent = 0
+	no_mushrooms.mushroom_radius_metres = {0, 0}
+	testing.expect_value(t, landmarks_problem(no_mushrooms, carving.landforms), "")
 	shipped := string(#load("../data/planets.sjson"))
 	missing, _ := strings.replace(shipped, "gorge_metres = 26", "", 1, context.temp_allocator)
 	expect_planets_problem(t, missing, "planets[0].landmarks is missing gorge_metres")

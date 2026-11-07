@@ -181,7 +181,7 @@ tree_hash_percent :: proc(hash: u64, minimum, maximum: i64) -> u8 {
 }
 
 // The tree of a kept candidate, the cheapest rules first: the grove's
-// chance, the clearing, the sea, the slope.
+// chance, the clearing, a carving site (0324), the sea, the slope.
 planet_tree_from_candidate :: proc(generation: Planet_Generation, cell: [3]i64, on_sphere: [3]i64, hash: u64, strength: i64) -> (tree: Planet_Tree, ok: bool) {
 	term := generation.trees
 	if i64(generation_seed.hash_combine(hash, 1) % NOISE_ONE) >= strength * term.density_percent / 100 {
@@ -191,7 +191,13 @@ planet_tree_from_candidate :: proc(generation: Planet_Generation, cell: [3]i64, 
 	if offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= term.clearing * term.clearing {
 		return {}, false
 	}
-	relief := surface_relief(generation, on_sphere)
+	// No tree stands on a carving site (0324): a fin, a knoll or a cap,
+	// nor floats over an arch's flank where the carve opens the column.
+	column := surface_column(generation, on_sphere)
+	if column.carve.site.kind in CARVING_KINDS {
+		return {}, false
+	}
+	relief := column.relief
 	if relief < generation.sea_radius - generation.radius + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES) {
 		return {}, false
 	}

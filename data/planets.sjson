@@ -226,6 +226,19 @@ planets = [
 			butte_stretch_percent = 220
 			sinkhole_radius_metres = [12, 24]
 			sinkhole_metres = [9, 18]
+			// Carved under their raise (0324): arches (a fin with an
+			// opening through it, its length and height), grottos (a dome
+			// with a chamber and a tunnel, its radius and height), mushroom
+			// rocks (a cap on a stem, its radius and height).
+			arch_percent = 10
+			grotto_percent = 10
+			mushroom_percent = 10
+			arch_length_metres = [30, 48]
+			arch_metres = [18, 28]
+			grotto_radius_metres = [18, 28]
+			grotto_metres = [12, 20]
+			mushroom_radius_metres = [7, 12]
+			mushroom_metres = [9, 16]
 			wobble_percent = 30
 		}
 		// The climate and the ground's look (work item 0307,

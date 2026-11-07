@@ -193,3 +193,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the ledges (0322, 2026-11-07)
 
 - Felling by digging: the fell rule's probe lies 1.06 to 1.44 m under a trunk's base, so its sample cell reaches the stone under the 2 m of topsoil, and a tree on deep topsoil may not fall when only the topsoil (the shovel's reach) is dug under it. A shallower probe, or a rule on the dug share of the cell, would let the shovel suffice. Decide whether the shovel alone should fell a tree.
+
+## Suggestions from the carved landmarks (0324, 2026-11-07)
+
+- A chunk with carved air under a roof that a neighbour's arrival seed writes light into is marked modified; saved before its own seed runs, it loads with `generated_shade` cleared while it is already in the restored `light.arrived_chunks`, so its roofed air stays at sky 0 until an edit relights it. The window is the few ticks of the seed queue (4 chunks a tick). Saving `generated_shade`, or seeding a loaded chunk's dark roofed air again, would close it.

@@ -277,7 +277,8 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // coarse_field_water_density, so the sea shows at every level. The light
 // of a loaded sample is its own; a sample not loaded is generated air
 // under the sky or ground, so it has full sky light in air and none in
-// ground (0173). Safe on any thread.
+// ground (0173) or in carved air under a roof (0324, planet_sample_shaded),
+// so a grotto's mouth reads dark from afar. Safe on any thread.
 generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, grid: ^Field_Grid) {
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
@@ -287,14 +288,14 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 			for x in i32(-1) ..= FIELD_GRID_CELLS {
 				sample := grid.origin + Sample_Coordinate([3]i32{x, y, z} * grid.step)
 				position := sample_to_world_position(sample, generation.spacing_millimetres)
-				value := planet_sample(density_generation, position)
+				value, shaded := planet_sample_shaded(density_generation, position)
 				water := planet_sea_density(density_generation, position, value.density)
 				index := field_grid_index({x, y, z})
 				if grid.loaded[index] {
 					value = coarse_field_sample({grid.density[index], grid.material[index], grid.tint[index]}, value, grid.step)
 					water = grid.water_exact[index] ? grid.water[index] : coarse_field_water_density(grid.water[index], water, grid.step)
 				} else {
-					grid.block_light[index], grid.sky_light[index] = 0, field_sample_is_ground(value.density) ? 0 : FIELD_LIGHT_FULL
+					grid.block_light[index], grid.sky_light[index] = 0, field_sample_is_ground(value.density) || shaded ? 0 : FIELD_LIGHT_FULL
 				}
 				grid.density[index], grid.material[index], grid.tint[index] = value.density, value.material, value.tint
 				grid.water[index] = water

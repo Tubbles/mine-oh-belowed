@@ -339,6 +339,18 @@ recorded_landmarks_note :: proc(recorded: Planet_Generation_Record, planet: Plan
 	return "world: the world file records no landmarks, it keeps the relief it was made with"
 }
 
+// The log line of a world file recorded with the landmarks but before
+// the carving kinds (0324) on a planet whose data has them, or "": their
+// shares read as 0, so the world keeps the ground it was made with.
+recorded_carving_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
+	landmarks := recorded.landmarks
+	data := planet.landmarks
+	if !planet_generation_is_recorded(recorded) || landmarks.site_spacing_metres == 0 || landmarks.arch_percent + landmarks.grotto_percent + landmarks.mushroom_percent != 0 || data.arch_percent + data.grotto_percent + data.mushroom_percent == 0 {
+		return ""
+	}
+	return "world: the world file records no arches, grottos or mushroom rocks, it keeps the ground it was made with"
+}
+
 // The log line of a world file whose recorded climate (0307) and the
 // data's disagree on being on, or "": either way its ground keeps the
 // look without a climate (make_recorded_planet).
@@ -394,6 +406,9 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 		platform.log_printf("%s", note)
 	}
 	if note := recorded_landmarks_note(recorded, planet); note != "" {
+		platform.log_printf("%s", note)
+	}
+	if note := recorded_carving_note(recorded, planet); note != "" {
 		platform.log_printf("%s", note)
 	}
 	if note := recorded_climate_note(recorded, planet); note != "" {

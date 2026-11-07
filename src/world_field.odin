@@ -120,6 +120,11 @@ Field_Chunk :: struct {
 	// nil outside the crater's cylinder and once applied or dropped
 	// (apply_field_crater_overlay). Never saved or hashed.
 	crater_overlay: [dynamic]Field_Crater_Sample,
+	// The generation left air under a carved roof without sky (0324), so
+	// its arrival seeds the fill into it from the chunk's lit air
+	// (seed_field_chunk_shade). Never saved or hashed, false on a decoded
+	// chunk, whose saved light holds the fill.
+	generated_shade: bool,
 }
 
 Field_Crater_Sample :: struct {
@@ -241,6 +246,11 @@ field_chunk_origin :: proc(coordinate: Field_Chunk_Coordinate) -> Sample_Coordin
 // x fastest, then y, then z.
 field_local_to_index :: proc(local: [3]i32) -> int {
 	return int(local.x) + FIELD_CHUNK_SIZE * (int(local.y) + FIELD_CHUNK_SIZE * int(local.z))
+}
+
+// Whether a local coordinate lies inside a chunk.
+field_local_in_chunk :: proc(local: [3]i32) -> bool {
+	return local.x >= 0 && local.y >= 0 && local.z >= 0 && local.x < FIELD_CHUNK_SIZE && local.y < FIELD_CHUNK_SIZE && local.z < FIELD_CHUNK_SIZE
 }
 
 field_index_to_local :: proc(index: int) -> [3]i32 {

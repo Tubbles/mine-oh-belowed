@@ -43,13 +43,16 @@ MAXIMUM_LANDFORM_WARP_METRES :: 10_000
 MAXIMUM_LANDFORM_WILD_METRES :: 8192
 // The landmarks' bounds (0323, Planet_Landmarks): a site's or a mesa
 // tier's height and a site's radius, a butte's stretch along its axis and
-// a site outline's wobble. A spire's and a sinkhole's most stretch are
-// fixed, so the spacing's least (landmark_widest_site_metres) reads them.
+// a site outline's wobble. A spire's, a sinkhole's, a grotto's and a
+// mushroom rock's most stretch are fixed (0324), so the spacing's least
+// (landmark_widest_site_metres) reads them.
 MAXIMUM_LANDMARK_METRES :: 128
 MAXIMUM_LANDMARK_STRETCH_PERCENT :: 400
 MAXIMUM_LANDMARK_WOBBLE_PERCENT :: 90
 SPIRE_STRETCH_PERCENT :: 130
 SINKHOLE_STRETCH_PERCENT :: 140
+GROTTO_STRETCH_PERCENT :: 115
+MUSHROOM_STRETCH_PERCENT :: 115
 // A planet record may leave these out: the relief's shape (0189), the
 // landforms (0306), the landmarks (0323) and the climate (0307), each off
 // at zero, so a planet without them generates and looks as before.
@@ -168,10 +171,14 @@ Planet_Landforms :: struct {
 // hills by mesa_rough_percent passes mesa_threshold_percent and that plus
 // mesa_tier_percent, each edge rising over mesa_edge_permille of the
 // noise's range. The sites lie one per cube of site_spacing_metres at
-// most, a spire, a butte or a sinkhole by the shares, the rest of the
-// cubes empty; a site's radius and height lie between its pair's values
-// (least and most), a butte stretched up to butte_stretch_percent along a
-// drawn axis, the outline wobbling by wobble_percent.
+// most, a spire, a butte, a sinkhole, an arch, a grotto or a mushroom
+// rock by the shares, the rest of the cubes empty; a site's radius and
+// height lie between its pair's values (least and most), a butte
+// stretched up to butte_stretch_percent along a drawn axis, the outline
+// wobbling by wobble_percent. The last three (0324) are carved under
+// their raise: an arch is a fin of arch_length_metres with an opening
+// through it, a grotto a knoll with a chamber and a tunnel out, a
+// mushroom rock a cap on a stem.
 Planet_Landmarks :: struct {
 	gorge_mask_percent:      int,
 	mesa_mask_percent:       int,
@@ -202,6 +209,15 @@ Planet_Landmarks :: struct {
 	sinkhole_radius_metres:  [2]int,
 	sinkhole_metres:         [2]int,
 	wobble_percent:          int,
+	arch_percent:            int,
+	grotto_percent:          int,
+	mushroom_percent:        int,
+	arch_length_metres:      [2]int,
+	arch_metres:             [2]int,
+	grotto_radius_metres:    [2]int,
+	grotto_metres:           [2]int,
+	mushroom_radius_metres:  [2]int,
+	mushroom_metres:         [2]int,
 }
 
 // The climate's field (work item 0307, generation_planet_climate.odin),
@@ -591,6 +607,9 @@ landmarks_problem :: proc(landmarks: Planet_Landmarks, landforms: Planet_Landfor
 		{"spire_percent", landmarks.spire_percent, 0, 100},
 		{"butte_percent", landmarks.butte_percent, 0, 100},
 		{"sinkhole_percent", landmarks.sinkhole_percent, 0, 100},
+		{"arch_percent", landmarks.arch_percent, 0, 100},
+		{"grotto_percent", landmarks.grotto_percent, 0, 100},
+		{"mushroom_percent", landmarks.mushroom_percent, 0, 100},
 		{"wobble_percent", landmarks.wobble_percent, 0, MAXIMUM_LANDMARK_WOBBLE_PERCENT},
 	}
 	if problem := landmark_bounds_problem(always[:]); problem != "" {
@@ -638,7 +657,7 @@ landmark_mesas_problem :: proc(landmarks: Planet_Landmarks) -> string {
 // The shares together, each kind's pairs (and the butte's stretch) while
 // it is on, then the spacing, which holds two of the widest site.
 landmark_sites_problem :: proc(landmarks: Planet_Landmarks) -> string {
-	shares := landmarks.spire_percent + landmarks.butte_percent + landmarks.sinkhole_percent
+	shares := landmarks.spire_percent + landmarks.butte_percent + landmarks.sinkhole_percent + landmarks.arch_percent + landmarks.grotto_percent + landmarks.mushroom_percent
 	if shares > 100 {
 		return fmt.tprintf("landmarks' site shares add up to %d, more than 100", shares)
 	}
@@ -658,6 +677,24 @@ landmark_sites_problem :: proc(landmarks: Planet_Landmarks) -> string {
 	}
 	if landmarks.sinkhole_percent > 0 {
 		if problem := landmark_kind_problem("sinkhole", landmarks.sinkhole_radius_metres, landmarks.sinkhole_metres); problem != "" {
+			return problem
+		}
+	}
+	if landmarks.arch_percent > 0 {
+		if problem := landmark_pair_problem("arch_length_metres", landmarks.arch_length_metres); problem != "" {
+			return problem
+		}
+		if problem := landmark_pair_problem("arch_metres", landmarks.arch_metres); problem != "" {
+			return problem
+		}
+	}
+	if landmarks.grotto_percent > 0 {
+		if problem := landmark_kind_problem("grotto", landmarks.grotto_radius_metres, landmarks.grotto_metres); problem != "" {
+			return problem
+		}
+	}
+	if landmarks.mushroom_percent > 0 {
+		if problem := landmark_kind_problem("mushroom", landmarks.mushroom_radius_metres, landmarks.mushroom_metres); problem != "" {
 			return problem
 		}
 	}
@@ -706,7 +743,8 @@ landmark_bounds_problem :: proc(bounds: []Config_Bound) -> string {
 }
 
 // The farthest any site that is on reaches from its centre, in whole
-// metres rounded up: its kind's most radius times its most stretch.
+// metres rounded up: its kind's most radius times its most stretch, an
+// arch's half its most length.
 landmark_widest_site_metres :: proc(landmarks: Planet_Landmarks) -> int {
 	widest := 0
 	if landmarks.spire_percent > 0 {
@@ -717,6 +755,15 @@ landmark_widest_site_metres :: proc(landmarks: Planet_Landmarks) -> int {
 	}
 	if landmarks.sinkhole_percent > 0 {
 		widest = max(widest, (landmarks.sinkhole_radius_metres[1] * SINKHOLE_STRETCH_PERCENT + 99) / 100)
+	}
+	if landmarks.arch_percent > 0 {
+		widest = max(widest, (landmarks.arch_length_metres[1] + 1) / 2)
+	}
+	if landmarks.grotto_percent > 0 {
+		widest = max(widest, (landmarks.grotto_radius_metres[1] * GROTTO_STRETCH_PERCENT + 99) / 100)
+	}
+	if landmarks.mushroom_percent > 0 {
+		widest = max(widest, (landmarks.mushroom_radius_metres[1] * MUSHROOM_STRETCH_PERCENT + 99) / 100)
 	}
 	return widest
 }
