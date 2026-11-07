@@ -1,6 +1,6 @@
 # 0315: Float the toolchains and turn CI green
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, a994f07)
 
 The user (2026-11-07): "Let's only pin when there's a good reason. Have packages float on latest as a general rule, and we'll integrate them as necessary as it shows up." CI's `nix` job has failed on every push since 2026-11-05: `flake.nix` follows `nixos-unstable`, whose Odin moved from dev-2026-09 to dev-2026-10, and the new Odin refuses the flake's `odin check src -target:windows_amd64` on Linux without `-windows-sdk-root`. The build and all tests pass there on dev-2026-10.
 
