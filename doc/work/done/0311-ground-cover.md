@@ -1,6 +1,6 @@
 # 0311: Ground cover: tufts, flowers, ferns and stones
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, 863dd02)
 
 Milestone: the world generation series 0306 to 0313, after 0307 and 0310. Biomes (0308) are skipped for now (user, 2026-11-07), so the cover reads the climate (0307) and the slope directly.
 
