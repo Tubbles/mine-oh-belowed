@@ -42,6 +42,8 @@ Generation_Purpose :: enum u8 {
 	// The climate and the ground's look of work item 0307.
 	Planet_Climate,
 	Planet_Ground_Look,
+	// The landmarks of work item 0323.
+	Planet_Landmarks,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

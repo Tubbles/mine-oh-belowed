@@ -41,10 +41,19 @@ MAXIMUM_RELIEF_HEIGHT_METRES :: 256
 LANDFORM_KNOT_COUNT :: 9
 MAXIMUM_LANDFORM_WARP_METRES :: 10_000
 MAXIMUM_LANDFORM_WILD_METRES :: 8192
+// The landmarks' bounds (0323, Planet_Landmarks): a site's or a mesa
+// tier's height and a site's radius, a butte's stretch along its axis and
+// a site outline's wobble. A spire's and a sinkhole's most stretch are
+// fixed, so the spacing's least (landmark_widest_site_metres) reads them.
+MAXIMUM_LANDMARK_METRES :: 128
+MAXIMUM_LANDMARK_STRETCH_PERCENT :: 400
+MAXIMUM_LANDMARK_WOBBLE_PERCENT :: 90
+SPIRE_STRETCH_PERCENT :: 130
+SINKHOLE_STRETCH_PERCENT :: 140
 // A planet record may leave these out: the relief's shape (0189), the
-// landforms (0306) and the climate (0307), each off at zero, so a planet
-// without them generates and looks as before.
-OPTIONAL_PLANET_KEYS :: [3]string{"relief_shape", "landforms", "climate"}
+// landforms (0306), the landmarks (0323) and the climate (0307), each off
+// at zero, so a planet without them generates and looks as before.
+OPTIONAL_PLANET_KEYS :: [4]string{"relief_shape", "landforms", "landmarks", "climate"}
 // The climate's bounds (0307, Planet_Climate).
 MINIMUM_CLIMATE_WAVELENGTH_METRES :: 64
 MAXIMUM_CLIMATE_CELSIUS :: 100
@@ -143,6 +152,56 @@ Planet_Landforms :: struct {
 	home_metres:              int,
 	calm_metres:              int,
 	wild_metres:              int,
+}
+
+// The landmarks (work item 0323, generation_planet_landmarks.odin), off
+// at the zero value and needing the landforms: gorges where the
+// landforms' first warp noise lies below minus gorge_mask_percent, mesas
+// where it lies above mesa_mask_percent, each fading in over
+// mask_fade_percent, their shares at the landforms' region knots. A gorge
+// runs along the zero lines of a noise of gorge_wavelength_metres read at
+// the landforms' warped point, meandering with the hills by
+// gorge_meander_percent, gorge_width_permille of the noise's range wide
+// with a flat floor of gorge_floor_percent of it, gorge_metres deep, its
+// floor at least dry_metres over the sea. The mesas are two tiers of
+// mesa_metres where a noise of mesa_wavelength_metres roughened by the
+// hills by mesa_rough_percent passes mesa_threshold_percent and that plus
+// mesa_tier_percent, each edge rising over mesa_edge_permille of the
+// noise's range. The sites lie one per cube of site_spacing_metres at
+// most, a spire, a butte or a sinkhole by the shares, the rest of the
+// cubes empty; a site's radius and height lie between its pair's values
+// (least and most), a butte stretched up to butte_stretch_percent along a
+// drawn axis, the outline wobbling by wobble_percent.
+Planet_Landmarks :: struct {
+	gorge_mask_percent:      int,
+	mesa_mask_percent:       int,
+	mask_fade_percent:       int,
+	region_gorges_percent:   [LANDFORM_KNOT_COUNT]int,
+	region_mesas_percent:    [LANDFORM_KNOT_COUNT]int,
+	gorge_wavelength_metres: int,
+	gorge_meander_percent:   int,
+	gorge_width_permille:    int,
+	gorge_floor_percent:     int,
+	gorge_metres:            int,
+	dry_metres:              int,
+	mesa_wavelength_metres:  int,
+	mesa_rough_percent:      int,
+	mesa_threshold_percent:  int,
+	mesa_tier_percent:       int,
+	mesa_edge_permille:      int,
+	mesa_metres:             int,
+	site_spacing_metres:     int,
+	spire_percent:           int,
+	butte_percent:           int,
+	sinkhole_percent:        int,
+	spire_radius_metres:     [2]int,
+	spire_metres:            [2]int,
+	butte_radius_metres:     [2]int,
+	butte_metres:            [2]int,
+	butte_stretch_percent:   int,
+	sinkhole_radius_metres:  [2]int,
+	sinkhole_metres:         [2]int,
+	wobble_percent:          int,
 }
 
 // The climate's field (work item 0307, generation_planet_climate.odin),
@@ -305,6 +364,8 @@ Planet :: struct {
 	relief_shape:                                   Relief_Shape,
 	// Optional in the file, off at zero (0306).
 	landforms:                                      Planet_Landforms,
+	// Optional in the file, off at zero (0323), needs the landforms.
+	landmarks:                                      Planet_Landmarks,
 	// Optional in the file, off at zero (0307).
 	climate:                                        Planet_Climate,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
@@ -349,6 +410,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 		if landforms, is_object := record.(json.Object)["landforms"].(json.Object); is_object {
 			if key, missing := missing_struct_key(Planet_Landforms, landforms); missing {
 				return fmt.tprintf("%s: planets[%d].landforms is missing %s", source, index, key)
+			}
+		}
+		if landmarks, is_object := record.(json.Object)["landmarks"].(json.Object); is_object {
+			if key, missing := missing_struct_key(Planet_Landmarks, landmarks); missing {
+				return fmt.tprintf("%s: planets[%d].landmarks is missing %s", source, index, key)
 			}
 		}
 		if climate, is_object := record.(json.Object)["climate"].(json.Object); is_object {
@@ -498,6 +564,161 @@ landforms_problem :: proc(landforms: Planet_Landforms) -> string {
 		}
 	}
 	return ""
+}
+
+// The zero value (off: a planet or a world file without them) passes;
+// otherwise they need the landforms, and every key lies within its bound:
+// a feature's own keys only while it is on (the gorges while gorge_metres
+// and gorge_width_permille are above 0, the mesas while mesa_metres is, a
+// site kind while its share is), so a later kind's keys may be absent
+// from a world recorded before it; the masks, the fade, the switches, the
+// shares, the wobble and the spacing always.
+landmarks_problem :: proc(landmarks: Planet_Landmarks, landforms: Planet_Landforms) -> string {
+	if landmarks == {} {
+		return ""
+	}
+	if landforms == {} {
+		return "landmarks need landforms"
+	}
+	always := [?]Config_Bound {
+		{"gorge_mask_percent", landmarks.gorge_mask_percent, 0, 100},
+		{"mesa_mask_percent", landmarks.mesa_mask_percent, 0, 100},
+		{"mask_fade_percent", landmarks.mask_fade_percent, 1, 100},
+		{"gorge_width_permille", landmarks.gorge_width_permille, 0, 1000},
+		{"gorge_metres", landmarks.gorge_metres, 0, MAXIMUM_RELIEF_DEPTH_METRES},
+		{"dry_metres", landmarks.dry_metres, 0, MAXIMUM_RELIEF_HEIGHT_METRES},
+		{"mesa_metres", landmarks.mesa_metres, 0, MAXIMUM_LANDMARK_METRES},
+		{"spire_percent", landmarks.spire_percent, 0, 100},
+		{"butte_percent", landmarks.butte_percent, 0, 100},
+		{"sinkhole_percent", landmarks.sinkhole_percent, 0, 100},
+		{"wobble_percent", landmarks.wobble_percent, 0, MAXIMUM_LANDMARK_WOBBLE_PERCENT},
+	}
+	if problem := landmark_bounds_problem(always[:]); problem != "" {
+		return problem
+	}
+	if landmarks.gorge_metres > 0 && landmarks.gorge_width_permille > 0 {
+		if problem := landmark_gorges_problem(landmarks); problem != "" {
+			return problem
+		}
+	}
+	if landmarks.mesa_metres > 0 {
+		if problem := landmark_mesas_problem(landmarks); problem != "" {
+			return problem
+		}
+	}
+	return landmark_sites_problem(landmarks)
+}
+
+landmark_gorges_problem :: proc(landmarks: Planet_Landmarks) -> string {
+	bounds := [?]Config_Bound {
+		{"gorge_wavelength_metres", landmarks.gorge_wavelength_metres, 1, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"gorge_meander_percent", landmarks.gorge_meander_percent, 0, 100},
+		{"gorge_floor_percent", landmarks.gorge_floor_percent, 0, 99},
+	}
+	if problem := landmark_bounds_problem(bounds[:]); problem != "" {
+		return problem
+	}
+	return landmark_curve_problem("region_gorges_percent", landmarks.region_gorges_percent)
+}
+
+landmark_mesas_problem :: proc(landmarks: Planet_Landmarks) -> string {
+	bounds := [?]Config_Bound {
+		{"mesa_wavelength_metres", landmarks.mesa_wavelength_metres, 1, MAXIMUM_RELIEF_WAVELENGTH_METRES},
+		{"mesa_rough_percent", landmarks.mesa_rough_percent, 0, 100},
+		{"mesa_threshold_percent", landmarks.mesa_threshold_percent, 0, 100},
+		{"mesa_tier_percent", landmarks.mesa_tier_percent, 0, 100},
+		{"mesa_edge_permille", landmarks.mesa_edge_permille, 1, 1000},
+	}
+	if problem := landmark_bounds_problem(bounds[:]); problem != "" {
+		return problem
+	}
+	return landmark_curve_problem("region_mesas_percent", landmarks.region_mesas_percent)
+}
+
+// The shares together, each kind's pairs (and the butte's stretch) while
+// it is on, then the spacing, which holds two of the widest site.
+landmark_sites_problem :: proc(landmarks: Planet_Landmarks) -> string {
+	shares := landmarks.spire_percent + landmarks.butte_percent + landmarks.sinkhole_percent
+	if shares > 100 {
+		return fmt.tprintf("landmarks' site shares add up to %d, more than 100", shares)
+	}
+	if landmarks.spire_percent > 0 {
+		if problem := landmark_kind_problem("spire", landmarks.spire_radius_metres, landmarks.spire_metres); problem != "" {
+			return problem
+		}
+	}
+	if landmarks.butte_percent > 0 {
+		if problem := landmark_kind_problem("butte", landmarks.butte_radius_metres, landmarks.butte_metres); problem != "" {
+			return problem
+		}
+		stretch := [?]Config_Bound{{"butte_stretch_percent", landmarks.butte_stretch_percent, 100, MAXIMUM_LANDMARK_STRETCH_PERCENT}}
+		if problem := landmark_bounds_problem(stretch[:]); problem != "" {
+			return problem
+		}
+	}
+	if landmarks.sinkhole_percent > 0 {
+		if problem := landmark_kind_problem("sinkhole", landmarks.sinkhole_radius_metres, landmarks.sinkhole_metres); problem != "" {
+			return problem
+		}
+	}
+	spacing := [?]Config_Bound{{"site_spacing_metres", landmarks.site_spacing_metres, 2 * landmark_widest_site_metres(landmarks) + 2, MAXIMUM_LANDFORM_WILD_METRES}}
+	return landmark_bounds_problem(spacing[:])
+}
+
+// A site kind's radius and height pairs (<kind>_radius_metres,
+// <kind>_metres).
+landmark_kind_problem :: proc(kind: string, radius, height: [2]int) -> string {
+	if problem := landmark_pair_problem(fmt.tprintf("%s_radius_metres", kind), radius); problem != "" {
+		return problem
+	}
+	return landmark_pair_problem(fmt.tprintf("%s_metres", kind), height)
+}
+
+// Each value 1 to MAXIMUM_LANDMARK_METRES, the least at most the most.
+landmark_pair_problem :: proc(name: string, pair: [2]int) -> string {
+	for value, index in pair {
+		if value < 1 || value > MAXIMUM_LANDMARK_METRES {
+			return fmt.tprintf("landmarks.%s[%d] %d is outside 1 to %d", name, index, value, MAXIMUM_LANDMARK_METRES)
+		}
+	}
+	if pair[0] > pair[1] {
+		return fmt.tprintf("landmarks.%s [%d, %d] runs backwards", name, pair[0], pair[1])
+	}
+	return ""
+}
+
+landmark_curve_problem :: proc(name: string, knots: [LANDFORM_KNOT_COUNT]int) -> string {
+	for knot, index in knots {
+		if knot < 0 || knot > 100 {
+			return fmt.tprintf("landmarks.%s[%d] %d is outside 0 to 100", name, index, knot)
+		}
+	}
+	return ""
+}
+
+landmark_bounds_problem :: proc(bounds: []Config_Bound) -> string {
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("landmarks.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	return ""
+}
+
+// The farthest any site that is on reaches from its centre, in whole
+// metres rounded up: its kind's most radius times its most stretch.
+landmark_widest_site_metres :: proc(landmarks: Planet_Landmarks) -> int {
+	widest := 0
+	if landmarks.spire_percent > 0 {
+		widest = max(widest, (landmarks.spire_radius_metres[1] * SPIRE_STRETCH_PERCENT + 99) / 100)
+	}
+	if landmarks.butte_percent > 0 {
+		widest = max(widest, (landmarks.butte_radius_metres[1] * landmarks.butte_stretch_percent + 99) / 100)
+	}
+	if landmarks.sinkhole_percent > 0 {
+		widest = max(widest, (landmarks.sinkhole_radius_metres[1] * SINKHOLE_STRETCH_PERCENT + 99) / 100)
+	}
+	return widest
 }
 
 // The zero value (off: a planet without one) passes; otherwise the field
@@ -743,6 +964,9 @@ planet_problem :: proc(planet: Planet) -> string {
 		return problem
 	}
 	if problem := landforms_planet_problem(planet); problem != "" {
+		return problem
+	}
+	if problem := landmarks_problem(planet.landmarks, planet.landforms); problem != "" {
 		return problem
 	}
 	if problem := climate_problem(planet.climate); problem != "" {

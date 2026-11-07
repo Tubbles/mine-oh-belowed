@@ -106,39 +106,62 @@ home_wildness :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 	return fraction * fraction / NOISE_ONE * (3 * NOISE_ONE - 2 * fraction) / NOISE_ONE
 }
 
+// What the landforms read at a point, kept for the landmarks (0323): the
+// landforms' relief, home_wildness, the region noise, the warped point,
+// the first warp noise (axis 0, -NOISE_ONE to NOISE_ONE), which places
+// the landmarks' patches, and the hill noise (0 where the hills are off
+// or their share is 0).
+Landform_Reading :: struct {
+	relief, wildness, region: i64,
+	warped:                   [3]i64,
+	mask, hill:               i64,
+}
+
 // The landforms' height over the radius at the point on the sphere: the
 // region's height blended from home_metres by the wildness, the ranges
 // and the hills by their shares and the wildness. 0 without landforms.
 // The skips change no value (each skipped term is exactly 0) and keep the
 // home area, the sea floor and the lowlands cheap.
 landform_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
+	return landform_reading(generation, point).relief
+}
+
+// The landforms' relief with the values it computes on the way: {}
+// without landforms, only the home's height within the calm circle.
+landform_reading :: proc(generation: Planet_Generation, point: [3]i64) -> Landform_Reading {
 	landforms := generation.landforms
 	if landforms.region_wavelength_metres == 0 {
-		return 0
+		return {}
 	}
 	home := metres_to_position_units(i64(landforms.home_metres))
 	wildness := home_wildness(generation, point)
 	if wildness == 0 {
-		return home
+		return {relief = home}
 	}
-	warped := point
+	reading := Landform_Reading {
+		wildness = wildness,
+		warped   = point,
+	}
 	for axis in 0 ..< 3 {
 		warp := gradient_noise(generation_seed.hash_combine(generation.landform_seed, u64(axis)), point, metres_to_position_units(i64(landforms.warp_wavelength_metres)))
-		warped[axis] += metres_to_position_units(i64(landforms.warp_metres)) * warp / NOISE_ONE
+		reading.warped[axis] += metres_to_position_units(i64(landforms.warp_metres)) * warp / NOISE_ONE
+		if axis == 0 {
+			reading.mask = warp
+		}
 	}
-	region := gradient_noise(generation_seed.hash_combine(generation.landform_seed, 3), warped, metres_to_position_units(i64(landforms.region_wavelength_metres)))
-	base := landform_curve(landforms.region_heights_metres, region, POSITION_UNITS_PER_METRE)
-	relief := home + (base - home) * wildness / NOISE_ONE
-	range_share := landform_curve(landforms.region_ranges_percent, region, NOISE_ONE) / 100
+	reading.region = gradient_noise(generation_seed.hash_combine(generation.landform_seed, 3), reading.warped, metres_to_position_units(i64(landforms.region_wavelength_metres)))
+	base := landform_curve(landforms.region_heights_metres, reading.region, POSITION_UNITS_PER_METRE)
+	reading.relief = home + (base - home) * wildness / NOISE_ONE
+	range_share := landform_curve(landforms.region_ranges_percent, reading.region, NOISE_ONE) / 100
 	if landforms.range_metres > 0 && range_share > 0 {
-		relief += landform_range_relief(generation, warped, range_share, wildness)
+		reading.relief += landform_range_relief(generation, reading.warped, range_share, wildness)
 	}
-	hill_share := landform_curve(landforms.region_hills_percent, region, NOISE_ONE) / 100
+	hill_share := landform_curve(landforms.region_hills_percent, reading.region, NOISE_ONE) / 100
 	if landforms.hill_metres > 0 && hill_share > 0 {
-		hill := gradient_noise(generation_seed.hash_combine(generation.landform_seed, 5), warped, metres_to_position_units(i64(landforms.hill_wavelength_metres)))
-		relief += metres_to_position_units(i64(landforms.hill_metres)) * hill / NOISE_ONE * hill_share / NOISE_ONE * wildness / NOISE_ONE
+		reading.hill = gradient_noise(generation_seed.hash_combine(generation.landform_seed, 5), reading.warped, metres_to_position_units(i64(landforms.hill_wavelength_metres)))
+		reading.relief += metres_to_position_units(i64(landforms.hill_metres)) * reading.hill / NOISE_ONE * hill_share / NOISE_ONE * wildness / NOISE_ONE
 	}
-	return relief
+	return reading
 }
 
 // The ranges' height at the warped point: the ridge, notched by the spurs

@@ -267,6 +267,56 @@ test_a_new_world_records_its_landforms :: proc(t: ^testing.T) {
 	testing.expect_value(t, make_recorded_planet(planet, parsed.planet_generation, context.temp_allocator).landforms, planet.landforms)
 }
 
+// A world.sjson recorded with the landforms but before the landmarks
+// (0323), loaded against data that has them: one log line, no landmarks
+// on the planet and the relief of before.
+@(test)
+test_a_world_file_before_the_landmarks_keeps_its_relief :: proc(t: ^testing.T) {
+	old := design_landform_test_planet(8000)
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = old.id},
+		planet_generation = planet_generation_record(old),
+	}
+	text := string(encode_world_file(file, context.temp_allocator))
+	start := strings.index(text, "landmarks")
+	end := start + strings.index_byte(text[start:], '}') + 1
+	older := strings.concatenate({text[:start], text[end:]}, context.temp_allocator)
+	testing.expect(t, !strings.contains(older, "landmarks"), "the old text holds no landmarks")
+	parsed, problem := parse_world_file(transmute([]byte)older, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	planets := shipped_test_planets()
+	testing.expect(t, strings.contains(recorded_landmarks_note(parsed.planet_generation, default_planet(planets)), "records no landmarks"), "the old file's note")
+	testing.expect_value(t, recorded_landmarks_note(planet_generation_record(default_planet(planets)), default_planet(planets)), "")
+	_, planet, record := resolve_world_planet(parsed.settings, parsed.planet_generation, planets, true)
+	testing.expect_value(t, record.landmarks, Planet_Landmarks{})
+	recorded := make_recorded_planet(planet, record, context.temp_allocator)
+	testing.expect_value(t, recorded.landmarks, Planet_Landmarks{})
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, recorded, 1000)
+	legacy := make_planet_generation(DEFAULT_WORLD_SEED, old, 1000)
+	for index in i64(0) ..< 100 {
+		point := test_line_point(generation, index * 200)
+		testing.expect_value(t, surface_relief(generation, point), surface_relief(legacy, point))
+	}
+}
+
+@(test)
+test_a_new_world_records_its_landmarks :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	testing.expect(t, planet.landmarks != {}, "the shipped home has landmarks")
+	record := planet_generation_record(planet)
+	testing.expect_value(t, record.landmarks, planet.landmarks)
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = planet.id},
+		planet_generation = record,
+	}
+	parsed, problem := parse_world_file(encode_world_file(file, context.temp_allocator), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.landmarks, planet.landmarks)
+	testing.expect_value(t, make_recorded_planet(planet, parsed.planet_generation, context.temp_allocator).landmarks, planet.landmarks)
+}
+
 @(test)
 test_landforms_problems :: proc(t: ^testing.T) {
 	testing.expect_value(t, landforms_problem({}), "")
@@ -328,8 +378,8 @@ test_landforms_problems :: proc(t: ^testing.T) {
 
 // Measured, not asserted (0306), so it runs only with the define (log
 // and time are required imports for it): the relief's cost per point and the
-// coarse grids' and the simulated set's samples that need it, before and
-// after the landforms. Run alone with
+// coarse grids' and the simulated set's samples that need it, before the
+// landforms, with them (0306) and with the landmarks (0323). Run alone with
 // ./build.sh test quick game.test_report_the_relief_cost -o:speed -define:RELIEF_COST=true
 // or in ./build.sh nightly.
 RELIEF_COST :: #config(RELIEF_COST, false)
@@ -338,8 +388,11 @@ when RELIEF_COST {
 	@(test)
 	test_report_the_relief_cost :: proc(t: ^testing.T) {
 		levels := test_field_game_config().field_view.level_distances_metres
-		for planet, planet_index in ([2]Planet{pre_0306_test_home_at(8000), shipped_test_home_at(8000)}) {
-			label := planet_index == 0 ? "before" : "after"
+		without_landmarks := shipped_test_home_at(8000)
+		without_landmarks.landmarks = {}
+		labels := [3]string{"before", "0306", "after"}
+		for planet, planet_index in ([3]Planet{pre_0306_test_home_at(8000), without_landmarks, shipped_test_home_at(8000)}) {
+			label := labels[planet_index]
 			generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
 			report_relief_cost_per_point(generation, label)
 			home_camera := World_Position(fixed_scale(planet_home_direction(planet.home), generation.radius + generation.crater.floor_height + metres_to_position_units(2)))

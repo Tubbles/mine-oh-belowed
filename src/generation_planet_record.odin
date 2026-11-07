@@ -46,6 +46,8 @@ Planet_Generation_Record :: struct {
 	trees_recorded:                                 bool,
 	// Zero in a file written before them (0306): the relief of before.
 	landforms:                                      Planet_Landforms,
+	// Zero in a file written before them (0323): the relief of before.
+	landmarks:                                      Planet_Landmarks,
 	// The climate's field (0307); zero in a file written before it, whose
 	// ground keeps the look without a climate (make_recorded_planet).
 	climate:                                        Planet_Climate_Field,
@@ -71,6 +73,7 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		trees = planet_tree_placement(planet.trees),
 		trees_recorded = true,
 		landforms = planet.landforms,
+		landmarks = planet.landmarks,
 		climate = planet_climate_field(planet.climate),
 	}
 }
@@ -97,6 +100,8 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	result.relief_shape = record.relief_shape
 	// Set even when zero: the data's landforms never reach an old world.
 	result.landforms = record.landforms
+	// Set even when zero: the data's landmarks never reach an old world.
+	result.landmarks = record.landmarks
 	// The recorded field with the data's look, both on; a world recorded
 	// without a climate, or a planet whose data has none, keeps the look
 	// without one.
@@ -323,6 +328,17 @@ recorded_landforms_note :: proc(recorded: Planet_Generation_Record, planet: Plan
 	return "world: the world file records no landforms, it keeps the relief it was made with"
 }
 
+// The log line of a world file recorded with the landforms but before
+// the landmarks (0323) on a planet whose data has them, or "": zero is
+// off, so the world keeps the relief it was made with. A file from before
+// the landforms already logs their line.
+recorded_landmarks_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
+	if !planet_generation_is_recorded(recorded) || recorded.landforms == {} || recorded.landmarks != {} || planet.landmarks == {} {
+		return ""
+	}
+	return "world: the world file records no landmarks, it keeps the relief it was made with"
+}
+
 // The log line of a world file whose recorded climate (0307) and the
 // data's disagree on being on, or "": either way its ground keeps the
 // look without a climate (make_recorded_planet).
@@ -375,6 +391,9 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 		record.crater, record.crater_recorded = planet.crater, true
 	}
 	if note := recorded_landforms_note(recorded, planet); note != "" {
+		platform.log_printf("%s", note)
+	}
+	if note := recorded_landmarks_note(recorded, planet); note != "" {
 		platform.log_printf("%s", note)
 	}
 	if note := recorded_climate_note(recorded, planet); note != "" {

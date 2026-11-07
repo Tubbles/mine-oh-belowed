@@ -1,6 +1,6 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
-// required but relief_shape (0189), landforms (0306) and climate (0307),
-// which are off without them; the
+// required but relief_shape (0189), landforms (0306), landmarks (0323)
+// and climate (0307), which are off without them; the
 // trees are doc/content.md, Trees (0197); the
 // terrain field generates a planet from its record, the
 // world seed and the sample spacing (generation_planet.odin). A world
@@ -169,6 +169,64 @@ planets = [
 			home_metres = 2
 			calm_metres = 120
 			wild_metres = 600
+		}
+		// The landmarks (work item 0323, doc/content.md, Planets),
+		// optional and needing the landforms: gorges and mesas in patches
+		// of the landforms' first warp noise and sites on a lattice,
+		// recorded by a world.
+		landmarks = {
+			// The patches: gorges where the noise lies below minus
+			// gorge_mask_percent, mesas where it lies above
+			// mesa_mask_percent, each fading in over mask_fade_percent
+			// (percent of the noise's range).
+			gorge_mask_percent = 8
+			mesa_mask_percent = 16
+			mask_fade_percent = 14
+			// Their share at the landforms' region knots: the gorges cut
+			// the plains and the high ground, the mesas stand on the
+			// lowlands and plains.
+			region_gorges_percent = [0, 0, 0, 0, 40, 100, 100, 100, 100]
+			region_mesas_percent = [0, 0, 30, 100, 100, 70, 20, 0, 0]
+			// The gorges: along the zero lines of a noise of the
+			// wavelength, meandering with the hills by
+			// gorge_meander_percent, gorge_width_permille of the noise's
+			// range wide with a flat floor of gorge_floor_percent of it,
+			// gorge_metres deep, the floor at least dry_metres over the
+			// sea; only ground half the depth over it is cut.
+			gorge_wavelength_metres = 700
+			gorge_meander_percent = 18
+			gorge_width_permille = 40
+			gorge_floor_percent = 30
+			gorge_metres = 26
+			dry_metres = 1
+			// The mesas and cliff bands: two tiers of mesa_metres where a
+			// noise of the wavelength roughened by the hills by
+			// mesa_rough_percent passes the threshold and the threshold
+			// plus the tier, each edge rising over mesa_edge_permille of
+			// the noise's range.
+			mesa_wavelength_metres = 640
+			mesa_rough_percent = 35
+			mesa_threshold_percent = 12
+			mesa_tier_percent = 12
+			mesa_edge_permille = 30
+			mesa_metres = 13
+			// The sites: one per cube of site_spacing_metres at most, the
+			// kind drawn by the shares and the rest of the cubes empty,
+			// radius and height between the pair's values, buttes
+			// stretched up to butte_stretch_percent along a drawn axis,
+			// the outline wobbling by wobble_percent.
+			site_spacing_metres = 448
+			spire_percent = 30
+			butte_percent = 25
+			sinkhole_percent = 15
+			spire_radius_metres = [10, 18]
+			spire_metres = [28, 52]
+			butte_radius_metres = [20, 40]
+			butte_metres = [14, 28]
+			butte_stretch_percent = 220
+			sinkhole_radius_metres = [12, 24]
+			sinkhole_metres = [9, 18]
+			wobble_percent = 30
 		}
 		// The climate and the ground's look (work item 0307,
 		// doc/content.md, Planets), optional: without it the ground keeps

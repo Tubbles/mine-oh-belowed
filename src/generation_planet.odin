@@ -19,7 +19,9 @@ import "platform"
 // The relief's octaves are the planet record's (data/planets.sjson), at
 // most OCTAVE_RELIEF_LIMIT_METRES in all (data_planet.odin), and its
 // landforms (0306, generation_planet_landforms.odin) add the plains, the
-// hills and the ranges. The relief lies within the planet's bound
+// hills and the ranges, its landmarks (0323,
+// generation_planet_landmarks.odin) the gorges, the mesas and the sites.
+// The relief lies within the planet's bound
 // (planet_relief_bounds), which the generation holds as relief_lowest and
 // relief_highest. The crater at the home (0199, crater_relief) is the
 // relief's last term: its floor is clamped to at least the bound's lowest
@@ -86,6 +88,10 @@ Planet_Generation :: struct {
 	landforms:           Planet_Landforms,
 	landform_seed:       u64,
 	landform_home:       [3]i64,
+	// The landmarks (0323, generation_planet_landmarks.odin): off at the
+	// zero value; their seed. Their centre is the landforms'.
+	landmarks:           Planet_Landmarks,
+	landmark_seed:       u64,
 	// The relief's bound from the radius (planet_relief_bounds).
 	relief_lowest:       i64,
 	relief_highest:      i64,
@@ -119,6 +125,8 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		landforms = planet.landforms,
 		landform_seed = seeds[.Planet_Landforms],
 		landform_home = fixed_scale(planet_home_direction(planet.home), radius),
+		landmarks = planet.landmarks,
+		landmark_seed = seeds[.Planet_Landmarks],
 		relief_lowest = bounds.lowest,
 		relief_highest = bounds.highest,
 		climate = planet_climate_field(planet.climate),
@@ -226,8 +234,9 @@ surface_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 }
 
 // The relief without the crater: the octaves, the first shaped by the
-// basins and the terraces, the ledges (0189, Relief_Shape) and the
-// landforms (0306). With the zero shape and no landforms it is the
+// basins and the terraces, the ledges (0189, Relief_Shape), the
+// landforms (0306) and last the landmarks (0323), which raise and cut
+// that sum. With the zero shape, no landforms and no landmarks it is the
 // octaves' sum.
 uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 	relief: i64 = 0
@@ -239,7 +248,8 @@ uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 			relief += metres_to_position_units(i64(octave.amplitude_metres)) * noise / NOISE_ONE
 		}
 	}
-	return relief + ledge_relief(generation, point) + landform_relief(generation, point)
+	reading := landform_reading(generation, point)
+	return landmark_relief(generation, point, relief + ledge_relief(generation, point) + reading.relief, reading)
 }
 
 // The ledges' noise takes the seed after the octaves'.
