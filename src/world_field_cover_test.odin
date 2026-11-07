@@ -551,7 +551,13 @@ test_neighbouring_nodes_scatter_differently :: proc(t: ^testing.T) {
 		search: for x in i64(-1) ..= 1 {
 			for y in i64(-1) ..= 1 {
 				for z in i64(-1) ..= 1 {
-					for other in cells[cell + {x, y, z}] {
+					// Looked up first: ranging over a missing key's value
+					// crashes Odin before dev-2026-11 (CI's nix job).
+					others, found := cells[cell + {x, y, z}]
+					if !found {
+						continue
+					}
+					for other in others {
 						if math.sqrt(cover_dot(other - position, other - position)) < 0.01 {
 							coinciding += 1
 							break search
