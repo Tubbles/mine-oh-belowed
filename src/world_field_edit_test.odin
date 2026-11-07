@@ -239,7 +239,7 @@ test_a_coarse_grid_over_an_edited_chunk_shows_the_edit :: proc(t: ^testing.T) {
 
 // Unedited loaded chunks give the coarser grid the generation's densities
 // within one step, so the loaded chunks do not show as a seam.
-@(test)
+@(test) // slow
 test_an_unedited_loaded_coarse_grid_matches_the_generation :: proc(t: ^testing.T) {
 	planet := make_test_planet()
 	generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)

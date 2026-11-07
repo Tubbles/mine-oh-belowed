@@ -170,7 +170,7 @@ test_an_older_world_file_takes_the_planet_from_the_data :: proc(t: ^testing.T) {
 // The session resolves the planet: a new world at a preset saves its
 // record, and the save loaded against data whose radius changed keeps the
 // radius it was made with.
-@(test)
+@(test) // slow
 test_a_session_generates_from_the_recorded_planet :: proc(t: ^testing.T) {
 	config := test_game_config()
 	content := Game_Content {

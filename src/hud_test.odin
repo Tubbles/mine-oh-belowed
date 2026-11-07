@@ -137,7 +137,7 @@ test_the_tools_radial_selects_pipette_on_a_tap_and_the_editor_on_a_steered_relea
 
 // Work item 0231: the pod's hatch takes no Interact, so the glyph bar
 // offers nothing on one, shut or open.
-@(test)
+@(test) // slow
 test_the_glyph_bar_offers_nothing_on_a_hatch :: proc(t: ^testing.T) {
 	use_shipped_strings()
 	defer thread_string_table = nil

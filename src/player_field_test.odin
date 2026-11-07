@@ -239,7 +239,7 @@ ticks_round_test_sphere :: proc(tuning: Field_Player_Tuning, fraction_numerator,
 	return int(circumference * fraction_numerator * VELOCITY_FRACTION_ONE / (fraction_denominator * tuning.walk_speed))
 }
 
-@(test)
+@(test) // slow
 test_a_walk_round_the_small_planet_returns_to_the_start :: proc(t: ^testing.T) {
 	world := make_test_field(Test_Terrain{kind = .Sphere}, 1000)
 	defer destroy_field_world(&world)
@@ -279,7 +279,7 @@ test_a_field_player_stands_on_flat_ground_at_every_spacing :: proc(t: ^testing.T
 
 // Walking up +x for 40 ticks after landing: a 30 degree slope climbs, a
 // 50 degree one slides the player below where the walk began.
-@(test)
+@(test) // slow
 test_a_walkable_slope_is_climbed_and_a_steep_one_slides_back :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		tuning := test_field_tuning(spacing)
@@ -339,7 +339,7 @@ config_without_mantle :: proc() -> Field_Player_Config {
 // At every spacing one sample is walked over and two stop a walk; a 1.5 m
 // ledge is mantled and a 2 m one is not. Two samples are climbed by the
 // jump itself (no mantle) where they lie below the 1.1 m jump.
-@(test)
+@(test) // slow
 test_ledges_step_jump_and_mantle :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		sample := sample_axis_to_position(1, spacing)
@@ -357,7 +357,7 @@ test_ledges_step_jump_and_mantle :: proc(t: ^testing.T) {
 // At 1 m the step height (one sample) and the mantle height (1.5 m) are
 // the thresholds: 1.0 m is stepped and 1.2 m not, 1.5 m is mantled and
 // 1.6 m not.
-@(test)
+@(test) // slow
 test_the_step_and_mantle_heights_are_thresholds :: proc(t: ^testing.T) {
 	testing.expect(t, walk_at_test_ledge(millimetres_to_position_units(1000), 1000, false), "1.0 m is stepped")
 	testing.expect(t, !walk_at_test_ledge(millimetres_to_position_units(1200), 1000, false), "1.2 m is not stepped")
@@ -368,7 +368,7 @@ test_the_step_and_mantle_heights_are_thresholds :: proc(t: ^testing.T) {
 // Holding forward into a 4 m wall for a second: on the ground every tick,
 // the feet within a tenth of a sample of the floor and still, the capsule
 // clear of the field; released, the player stands on the floor.
-@(test)
+@(test) // slow
 test_walking_into_a_wall_stays_on_the_floor_and_clear :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = metres_to_position_units(4)}, spacing)
@@ -627,7 +627,7 @@ test_cheat_movement_multiplies_the_walk_the_jump_and_the_fly :: proc(t: ^testing
 
 // Two players stepped alike stay alike through a cheat jump and jet, so
 // every machine of a lockstep game agrees on the jet's integers.
-@(test)
+@(test) // slow
 test_two_field_players_stepped_alike_stay_alike :: proc(t: ^testing.T) {
 	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
 	defer destroy_field_world(&world)
@@ -749,7 +749,7 @@ test_the_footprint_plane_averages_a_bump_away :: proc(t: ^testing.T) {
 // Walking 60 ticks from 2 m before a decimetre wall, head on and at 45
 // degrees: no tick goes less than seven eighths of the full walk along the
 // heading, and the player ends on top past the face.
-@(test)
+@(test) // slow
 test_a_decimetre_wall_is_walked_over_without_slowing :: proc(t: ^testing.T) {
 	height := millimetres_to_position_units(100)
 	for spacing in TEST_FIELD_SPACINGS {
@@ -776,7 +776,7 @@ test_a_decimetre_wall_is_walked_over_without_slowing :: proc(t: ^testing.T) {
 
 // A wall a sample above the step stops a walk at 45 degrees too, and is
 // mantled with Jump where it lies below the 1.5 m mantle height.
-@(test)
+@(test) // slow
 test_a_wall_above_the_step_stops_a_slanted_walk :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		tuning := test_field_tuning(spacing)
@@ -822,7 +822,7 @@ test_a_steep_bump_narrower_than_the_footprint_is_walked_over :: proc(t: ^testing
 
 // Standing in a dug pit three quarters of the step deep, the player walks
 // out over its lip onto the ground round it, along x and at 45 degrees.
-@(test)
+@(test) // slow
 test_a_player_walks_out_of_a_hole_lower_than_the_step :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		tuning := test_field_tuning(spacing)
@@ -854,7 +854,7 @@ shipped_field_player_config :: proc() -> Field_Player_Config {
 // keeps the feet within a tenth of a sample of the floor and short of
 // the face: neither the settle nor the step lifts the player up the
 // wall's blurred foot.
-@(test)
+@(test) // slow
 test_walking_into_a_wall_stays_on_the_floor_at_the_shipped_angle :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		for degrees in ([2]int{0, 45}) {
@@ -880,7 +880,7 @@ test_walking_into_a_wall_stays_on_the_floor_at_the_shipped_angle :: proc(t: ^tes
 // degrees, the player leaves it and lands below within three seconds;
 // standing still at the edge of the top's walkable ground the player
 // stays on top.
-@(test)
+@(test) // slow
 test_a_walk_off_a_cliff_falls_at_the_shipped_angle :: proc(t: ^testing.T) {
 	height := metres_to_position_units(2)
 	face := metres_to_position_units(TEST_LEDGE_FACE_METRES)
@@ -952,7 +952,7 @@ expect_crouched_walk_through :: proc(t: ^testing.T, world: ^Field_World, tuning:
 	testing.expectf(t, player.position.x > face + POSITION_UNITS_PER_METRE, "%s %d mm: the crouched walk ends at x %d", label, spacing, player.position.x)
 }
 
-@(test)
+@(test) // slow
 test_a_crouched_field_player_walks_under_a_one_metre_ceiling :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		world := make_test_field(TEST_ONE_METRE_TUNNEL, spacing)

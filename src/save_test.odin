@@ -407,7 +407,7 @@ log_save_sizes :: proc(location: Save_Location) {
 // The strongest test: build a base, run it, save, load into a fresh
 // simulation, and run both for 600 ticks with the same input. The state
 // hashes must match right after loading and after every 100 ticks.
-@(test)
+@(test) // slow
 test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)

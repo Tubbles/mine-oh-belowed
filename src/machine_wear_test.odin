@@ -290,7 +290,7 @@ test_two_sessions_breaking_a_furnace_down_hash_the_same :: proc(t: ^testing.T) {
 // A field world's save carries a furnace's wear and breakdown; the same
 // save cut before the wear table (one written before 0201) loads with the
 // furnace unworn and its founded flag derived again.
-@(test)
+@(test) // slow
 test_the_wear_round_trips_a_save_and_an_older_save_loads_unworn :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()

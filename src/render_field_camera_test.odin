@@ -12,7 +12,7 @@ expect_f32_vector_near :: proc(t: ^testing.T, got, wanted: [3]f32, tolerance: f3
 // Walking a quarter round the small planet from +x towards +z: the
 // camera's up is the player's up at the start (+x) and after the quarter
 // (+z), and the first person look stays on the horizon.
-@(test)
+@(test) // slow
 test_the_field_camera_takes_the_player_up_and_tilts_after_a_quarter_turn :: proc(t: ^testing.T) {
 	world := make_test_field(Test_Terrain{kind = .Sphere}, 1000)
 	defer destroy_field_world(&world)
@@ -166,7 +166,7 @@ test_the_field_viewers_body_is_hidden_looking_straight_up :: proc(t: ^testing.T)
 // A crouched player deep in the 1 m tunnel: the ray meets the roof at a
 // grazing angle, and the camera stays in the tunnel's air, the margin
 // under the roof along its normal.
-@(test)
+@(test) // slow
 test_the_field_third_person_camera_stays_inside_a_one_metre_tunnel :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		world := make_test_field(TEST_ONE_METRE_TUNNEL, spacing)

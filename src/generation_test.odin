@@ -103,7 +103,7 @@ measure_terrain :: proc(generator: ^Generator) -> Terrain_Statistics {
 	return statistics
 }
 
-@(test)
+@(test) // slow
 test_terrain_has_lowlands_slopes_cliffs_and_rivers :: proc(t: ^testing.T) {
 	for seed in TEST_SEEDS {
 		generator := make_test_generator(seed)
@@ -232,7 +232,7 @@ test_columns_agree_across_chunk_borders :: proc(t: ^testing.T) {
 }
 
 // The generated surface follows the column function on both sides of a border.
-@(test)
+@(test) // slow
 test_generated_surface_matches_column_function :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	for chunk_z in i32(-2) ..< 2 {

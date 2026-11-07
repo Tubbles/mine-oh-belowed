@@ -156,7 +156,7 @@ end_reload_test_strings :: proc(table: ^String_Table) {
 	free(table)
 }
 
-@(test)
+@(test) // slow
 test_a_reload_with_an_inserted_item_keeps_stacks_and_makes_it_usable :: proc(t: ^testing.T) {
 	table := begin_reload_test_strings()
 	directory := make_reload_test_directory()
@@ -199,7 +199,7 @@ test_a_reload_with_an_inserted_item_keeps_stacks_and_makes_it_usable :: proc(t: 
 	testing.expect_value(t, inventory_count(player.inventory, item), 1)
 }
 
-@(test)
+@(test) // slow
 test_a_failing_recipe_file_keeps_the_old_content :: proc(t: ^testing.T) {
 	table := begin_reload_test_strings()
 	directory := make_reload_test_directory()

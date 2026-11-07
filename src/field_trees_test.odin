@@ -184,7 +184,7 @@ aims_at_test_tree :: proc(test: Felling_Test) -> bool {
 	return target.hit && target.key == test.tree.key
 }
 
-@(test)
+@(test) // slow
 test_mine_held_fells_a_tree_for_its_logs :: proc(t: ^testing.T) {
 	test, found := start_felling_test(felling_test_axe_config(), make_field_test_game_content())
 	defer end_session(test.session)
@@ -216,7 +216,7 @@ test_mine_held_fells_a_tree_for_its_logs :: proc(t: ^testing.T) {
 	testing.expectf(t, closest < test.trunk.radius + test.content.field.tuning.capsule_radius - FIELD_PENETRATION_TOLERANCE, "the walk passes the felled trunk's place, %d units off", closest)
 }
 
-@(test)
+@(test) // slow
 test_felling_is_refused_with_a_full_inventory :: proc(t: ^testing.T) {
 	test, found := start_felling_test(felling_test_axe_config(), make_field_test_game_content())
 	defer end_session(test.session)
@@ -238,7 +238,7 @@ test_felling_is_refused_with_a_full_inventory :: proc(t: ^testing.T) {
 	testing.expect(t, test.tree.key not_in state.field.felled_trees, "the tree stands")
 }
 
-@(test)
+@(test) // slow
 test_a_felled_tree_stays_felled_after_a_save_and_load :: proc(t: ^testing.T) {
 	config := felling_test_axe_config()
 	content := make_field_test_game_content()
@@ -274,7 +274,7 @@ test_a_felled_tree_stays_felled_after_a_save_and_load :: proc(t: ^testing.T) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_two_sessions_fell_alike :: proc(t: ^testing.T) {
 	config := felling_test_axe_config()
 	content := make_field_test_game_content()
@@ -309,7 +309,7 @@ test_two_sessions_fell_alike :: proc(t: ^testing.T) {
 // A save written before the trees (its entities cut before the felled
 // table) reads with no tree felled and the set not recorded; its load
 // fells once the tree standing in its free foundation, and only that one.
-@(test)
+@(test) // slow
 test_an_old_save_without_the_tree_table_loads_with_no_tree_felled :: proc(t: ^testing.T) {
 	empty: Field_Simulation
 	defer destroy_field_simulation(&empty)
@@ -361,7 +361,7 @@ test_an_old_save_without_the_tree_table_loads_with_no_tree_felled :: proc(t: ^te
 	testing.expect(t, loaded.simulation.field.felled_trees_recorded)
 }
 
-@(test)
+@(test) // slow
 test_a_trunk_stops_the_walk :: proc(t: ^testing.T) {
 	test, found := start_felling_test(test_field_game_config(), make_field_test_game_content())
 	defer end_session(test.session)
@@ -384,7 +384,7 @@ test_a_trunk_stops_the_walk :: proc(t: ^testing.T) {
 	testing.expectf(t, closest <= allowed + millimetres_to_position_units(100), "the walk reached the trunk, %d units from the axis", closest)
 }
 
-@(test)
+@(test) // slow
 test_the_trunk_takes_the_aim :: proc(t: ^testing.T) {
 	test, found := start_felling_test(test_field_game_config(), make_field_test_game_content())
 	defer end_session(test.session)
@@ -404,7 +404,7 @@ test_the_trunk_takes_the_aim :: proc(t: ^testing.T) {
 	testing.expect(t, !aims_at_test_tree(test), "turned aside the trunk takes no aim")
 }
 
-@(test)
+@(test) // slow
 test_a_placement_into_a_trunk_is_refused :: proc(t: ^testing.T) {
 	test, found := start_felling_test(test_field_game_config(), make_field_test_game_content())
 	defer end_session(test.session)
@@ -447,7 +447,7 @@ test_a_placement_into_a_trunk_is_refused :: proc(t: ^testing.T) {
 
 // Approval of 0197: a dig that hollows the ground under a trunk's base
 // fells the tree without yield; a shallow dig leaves it.
-@(test)
+@(test) // slow
 test_a_tree_falls_into_a_hole_dug_under_it :: proc(t: ^testing.T) {
 	// The drained digs dig with the shovel held (0265).
 	config := test_field_game_config()
@@ -482,7 +482,7 @@ test_a_tree_falls_into_a_hole_dug_under_it :: proc(t: ^testing.T) {
 
 // The hand fells a tree no larger than the species' hand scale (0265),
 // in the hand's time, for the logs.
-@(test)
+@(test) // slow
 test_the_hand_fells_a_small_tree :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	config.starting_items = nil
@@ -508,7 +508,7 @@ test_the_hand_fells_a_small_tree :: proc(t: ^testing.T) {
 
 // A tree above the hand's scale stands under the hand, which is told
 // once that it needs an axe; a wooden axe fells it in its time (0265).
-@(test)
+@(test) // slow
 test_the_axe_fells_a_large_tree_the_hand_cannot :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	config.starting_items = nil

@@ -123,7 +123,7 @@ test_the_relief_bounds_follow_the_record :: proc(t: ^testing.T) {
 
 // At every preset, on a line over the sphere and round the first spring's
 // range, the surface stays within the planet's bound.
-@(test)
+@(test) // slow
 test_the_landform_relief_stays_within_the_bound :: proc(t: ^testing.T) {
 	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
 		planet := shipped_test_home_at(radius)
@@ -161,7 +161,7 @@ test_the_home_is_calm :: proc(t: ^testing.T) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_the_landform_relief_is_deterministic :: proc(t: ^testing.T) {
 	planet := shipped_test_home_at(8000)
 	first := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
@@ -330,7 +330,8 @@ test_landforms_problems :: proc(t: ^testing.T) {
 // and time are required imports for it): the relief's cost per point and the
 // coarse grids' and the simulated set's samples that need it, before and
 // after the landforms. Run alone with
-// ./build.sh test -o:speed -define:RELIEF_COST=true -define:ODIN_TEST_NAMES=game.test_report_the_relief_cost
+// ./build.sh test quick game.test_report_the_relief_cost -o:speed -define:RELIEF_COST=true
+// or in ./build.sh nightly.
 RELIEF_COST :: #config(RELIEF_COST, false)
 
 when RELIEF_COST {

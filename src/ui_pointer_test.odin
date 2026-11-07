@@ -78,7 +78,7 @@ test_the_free_crafting_toggle_queues_its_request :: proc(t: ^testing.T) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_tap_on_developer_toggles_nothing :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -476,7 +476,7 @@ test_every_screen_has_a_back_button_on_touch :: proc(t: ^testing.T) {
 
 // The title and the touch layout editor draw neither glyphs nor a row:
 // the title has nothing to close, the editor has its own Close.
-@(test)
+@(test) // slow
 test_the_title_and_the_layout_editor_draw_no_row_on_touch :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -760,7 +760,7 @@ test_a_tap_in_the_recipe_picker_selects_and_choose_sets_it :: proc(t: ^testing.T
 }
 
 // The map's zoom buttons step the zoom and stop at its ends.
-@(test)
+@(test) // slow
 test_the_map_zoom_buttons_step_within_bounds :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -782,7 +782,7 @@ test_the_map_zoom_buttons_step_within_bounds :: proc(t: ^testing.T) {
 
 // At 1280 by 800 (the Deck) the machine panels' row keeps Sort in one
 // place with and without Clear filter, and no label is cut.
-@(test)
+@(test) // slow
 test_the_machine_row_keeps_its_places_at_the_deck_size :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -830,7 +830,7 @@ arrival_screen_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input
 // on Skip queues one Skip_Arrival_Command for the viewport's player and
 // closes the menu. In the settle second there is no Skip row;
 // without the fall there is none and the Journal is back.
-@(test)
+@(test) // slow
 test_the_pause_menu_offers_skip_during_the_fall :: proc(t: ^testing.T) {
 	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	arrival := Field_Arrival{fall_ticks = u64(config.arrival_ticks)}
@@ -871,7 +871,7 @@ test_the_pause_menu_offers_skip_during_the_fall :: proc(t: ^testing.T) {
 // During the fall the inventory binding opens nothing and Pause still
 // opens the menu; after the landing the inventory binding opens the
 // inventory (the approval of 0200).
-@(test)
+@(test) // slow
 test_the_screens_are_held_during_the_fall :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -901,7 +901,7 @@ placement_pause_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Inpu
 
 // While the placement editor is anchored the pause menu offers Cancel
 // placement, which cancels it and closes the menu; not otherwise.
-@(test)
+@(test) // slow
 test_the_pause_menu_offers_cancel_placement_while_the_editor_runs :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)

@@ -1,6 +1,6 @@
 # 0316: Test tiers and fewer full runs per item
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-07)
 
 The user (2026-11-07): "is it time for us to split up into multiple test suites? Like quick, light, unit, integration, nightly, all? So we can iterate faster because we've shipped only one work item in roughly 12 hours now." The suite is 2202 tests in about 7.5 minutes on an idle machine, and about 25 minutes while other agents build. Each item runs it at least four times (the implementer, the verifier, a fix round, the main agent on `main`), and a cost report behind a define took a 35 minute `-o:speed` build in 0306.
 

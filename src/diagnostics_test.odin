@@ -235,7 +235,7 @@ test_diagnostics_lines_print_the_context :: proc(t: ^testing.T) {
 
 // In a field session the player lines give the feet's latitude,
 // longitude and height and the sample under them (0187).
-@(test)
+@(test) // slow
 test_diagnostics_lines_print_the_field_feet :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()

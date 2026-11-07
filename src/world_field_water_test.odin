@@ -94,7 +94,7 @@ test_the_dead_band_holds_a_head_at_or_under_the_minimum_but_not_a_drop :: proc(t
 
 // 0292: with pressure on, a shaft joined to a lake's bed, beside it or
 // through a tunnel, fills to the lake's level.
-@(test)
+@(test) // slow
 test_a_shaft_joined_to_a_lake_bed_rises_to_the_lake_level :: proc(t: ^testing.T) {
 	for tunnel_length in ([2]i32{1, 8}) {
 		world := make_water_test_world()
@@ -227,7 +227,7 @@ test_a_film_at_a_sill_dries_without_waking_the_lake :: proc(t: ^testing.T) {
 
 // 0292: the search crosses a chunk border, and the two chunks inserted in
 // either order give the same bytes, the same failed bits and counts.
-@(test)
+@(test) // slow
 test_the_pressure_search_crosses_a_chunk_border_alike_in_either_order :: proc(t: ^testing.T) {
 	first := make_ground_chunks_water_world({0, 1})
 	defer destroy_field_world(&first)
@@ -433,7 +433,7 @@ test_water_poured_into_a_basin_settles_level_and_keeps_its_volume :: proc(t: ^te
 	testing.expect(t, highest - lowest <= 14, "the surface is level within a fill a step")
 }
 
-@(test)
+@(test) // slow
 test_a_breached_basin_drains_into_the_lower_one_keeping_the_volume :: proc(t: ^testing.T) {
 	world := make_water_test_world()
 	defer destroy_field_world(&world)
@@ -465,7 +465,7 @@ test_a_breached_basin_drains_into_the_lower_one_keeping_the_volume :: proc(t: ^t
 	testing.expect(t, water_box_total(&world, water_test_sample(lower_low), water_test_sample(lower_high)) >= poured - upper - 6 * 16)
 }
 
-@(test)
+@(test) // slow
 test_a_pumped_pond_empties_and_a_sea_edge_sample_never_does :: proc(t: ^testing.T) {
 	world := make_water_test_world()
 	defer destroy_field_world(&world)
@@ -557,7 +557,7 @@ run_water_test_sequence :: proc(world: ^Field_World) {
 
 // The chunks inserted in another order run the same sequence to the same
 // bytes, the water crossing the chunks' border.
-@(test)
+@(test) // slow
 test_the_same_water_sequence_gives_the_same_bytes :: proc(t: ^testing.T) {
 	first := make_two_chunk_water_world({0, 1})
 	defer destroy_field_world(&first)
@@ -576,7 +576,7 @@ test_the_same_water_sequence_gives_the_same_bytes :: proc(t: ^testing.T) {
 
 // Water poured in one chunk flows and wakes across the border and settles
 // in both.
-@(test)
+@(test) // slow
 test_water_flows_across_a_chunk_border :: proc(t: ^testing.T) {
 	world := make_two_chunk_water_world({0, 1})
 	defer destroy_field_world(&world)
@@ -594,7 +594,7 @@ test_water_flows_across_a_chunk_border :: proc(t: ^testing.T) {
 // Water held by a missing chunk flows on when the chunk arrives
 // (wake_field_water_facing); a settled sea meeting an arriving sea stays
 // asleep.
-@(test)
+@(test) // slow
 test_an_arriving_chunk_wakes_the_water_it_held :: proc(t: ^testing.T) {
 	world := make_water_test_world()
 	defer destroy_field_world(&world)
@@ -715,7 +715,7 @@ test_a_dig_in_dry_ground_wakes_nothing :: proc(t: ^testing.T) {
 // A settled lake on a patch at 30 degrees latitude: the water mesh's top
 // surface lies at one radius, though the samples sit at every depth in
 // their shells.
-@(test)
+@(test) // slow
 test_a_settled_lake_off_the_axis_meshes_at_one_radius :: proc(t: ^testing.T) {
 	world: Field_World
 	defer destroy_field_world(&world)

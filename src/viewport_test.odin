@@ -130,7 +130,7 @@ test_a_joining_viewport_opens_no_screen_that_needs_its_player :: proc(t: ^testin
 
 // A guest whose pad was lost keeps its player in the world: its records
 // go on (an empty pad reads nothing), so the session never waits for it.
-@(test)
+@(test) // slow
 test_a_lost_pads_viewport_keeps_stamping_while_the_session_advances :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -152,7 +152,7 @@ test_a_lost_pads_viewport_keeps_stamping_while_the_session_advances :: proc(t: ^
 
 // Start on a free pad adds a viewport whose player joins at the start
 // position (the pod), through a join's add player path.
-@(test)
+@(test) // slow
 test_a_pad_press_adds_a_viewport_and_a_player_at_the_start :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -178,7 +178,7 @@ test_a_pad_press_adds_a_viewport_and_a_player_at_the_start :: proc(t: ^testing.T
 
 // Two viewports, one simulation: each camera follows its own player, and
 // each UI pass draws its own draw list from its own player.
-@(test)
+@(test) // slow
 test_two_viewports_draw_two_draw_lists_with_different_cameras :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -244,7 +244,7 @@ test_a_screen_request_from_the_second_viewport_serves_its_screen :: proc(t: ^tes
 // Two viewports asking for the content reload in one frame reload once:
 // the game's requests move to the frame's set. A join in progress refuses
 // the reload with one toast, so nothing loads.
-@(test)
+@(test) // slow
 test_a_global_request_serves_once :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -265,7 +265,7 @@ test_a_global_request_serves_once :: proc(t: ^testing.T) {
 
 // Four viewports feed one tick a frame: each stamps one record for its
 // player, the tick runs once and adds the three joined players.
-@(test)
+@(test) // slow
 test_the_frame_with_four_viewports_runs_the_tick_once :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -295,7 +295,7 @@ test_the_frame_with_four_viewports_runs_the_tick_once :: proc(t: ^testing.T) {
 
 // A guest viewport removed between frames: its player leaves from its
 // next tick and keeps its entry, and a later Start takes that entry.
-@(test)
+@(test) // slow
 test_a_removed_viewport_leaves_and_its_entry_is_taken_again :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -372,7 +372,7 @@ frame_has_event :: proc(state: ^Frame_State, kind: Player_Event) -> bool {
 
 // The inventory binding aimed at a furnace in reach opens its panel
 // through the simulation and no inventory screen.
-@(test)
+@(test) // slow
 test_the_inventory_binding_aimed_at_a_furnace_opens_its_panel :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -394,7 +394,7 @@ test_the_inventory_binding_aimed_at_a_furnace_opens_its_panel :: proc(t: ^testin
 
 // Aimed at the ground the same press opens the inventory, and the
 // simulation sees no open.
-@(test)
+@(test) // slow
 test_the_inventory_binding_aimed_at_the_ground_opens_the_inventory :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)
@@ -413,7 +413,7 @@ test_the_inventory_binding_aimed_at_the_ground_opens_the_inventory :: proc(t: ^t
 
 // The placement editor (0215) is per session: entering one starts it
 // off; in a block world nothing anchors and Place reaches the world.
-@(test)
+@(test) // slow
 test_entering_a_session_turns_the_placement_editor_off :: proc(t: ^testing.T) {
 	state := make_viewport_test_frame()
 	defer destroy_viewport_test_frame(state)

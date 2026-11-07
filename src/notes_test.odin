@@ -42,7 +42,7 @@ resolve_test_note :: proc(unlock: Note_Unlock_Definition, key := "note_the_asset
 	return problem
 }
 
-@(test)
+@(test) // slow
 test_note_validation :: proc(t: ^testing.T) {
 	testing.expect_value(t, resolve_test_note({chapter = 1}), "")
 	testing.expect_value(t, resolve_test_note({item = "hematite"}), "")

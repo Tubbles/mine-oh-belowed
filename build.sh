@@ -7,10 +7,13 @@
 #   ./build.sh check-windows
 #                        the same check for the windows_amd64 target, on
 #                        any host (work item 0102)
-#   ./build.sh test      odin test src -all-packages, so the tests of the
-#                        packages under src/ run too (work item 0145)
-#   ./build.sh bench     the factory benchmark test, optimised, with the
-#                        size 4 budget (work item 0050)
+#   ./build.sh test [all|unit|slow|quick] [files or tests] [flags]
+#                        the tests of a tier, all by default (work item
+#                        0316, doc/build.md, Test tiers)
+#   ./build.sh nightly   the report tests and the factory benchmark,
+#                        optimised and one at a time, 03:00 to 06:00
+#                        Europe/Stockholm under ~/benchmark.lock
+#   ./build.sh bench     the factory benchmark only, the same guard
 #   ./build.sh check-android
 #                        the same check for Android arm64 (work item 0114),
 #                        with tools/android_env.sh sourced
@@ -105,6 +108,123 @@ run_tests() {
 	"$odin" test src -all-packages "$collection" "${platform_flags[@]}" "$@"
 }
 
+# The tests of a tier (doc/build.md, Test tiers): arguments starting with
+# - are odin flags, the rest select the tests of quick. The binary is
+# built like odin test builds it and run from the repository root, its
+# output through the filter that times each test and fails an unmarked
+# slow one. all passes no names, so it runs what odin test runs. Paths
+# given to quick that select no test build and run nothing.
+run_test_tier() {
+	local tier="$1" argument listing
+	shift
+	local flags=() selectors=() names=()
+	for argument in "$@"; do
+		case "$argument" in
+			-*ODIN_TEST_NAMES*)
+				echo "name the tests with ./build.sh test quick" >&2
+				exit 2
+				;;
+			-*) flags+=("$argument") ;;
+			*) selectors+=("$argument") ;;
+		esac
+	done
+	if [ "${#selectors[@]}" -gt 0 ] && [ "$tier" != quick ]; then
+		echo "./build.sh test $tier takes no files or tests, name them with ./build.sh test quick" >&2
+		exit 2
+	fi
+	set_platform_flags
+	if [ "$tier" != all ]; then
+		listing="$(python3 tools/test_tiers.py arguments "$tier" "${selectors[@]}")"
+		if [ -z "$listing" ]; then
+			return 0
+		fi
+		mapfile -t names <<< "$listing"
+	fi
+	mkdir -p "$repository_root/build"
+	"$odin" build src -all-packages -build-mode:test "$collection" "${platform_flags[@]}" \
+		-define:ODIN_TEST_LOG_STATE_CHANGES=true "${flags[@]}" -out:"$repository_root/build/mine-oh-belowed-tests"
+	"$repository_root/build/mine-oh-belowed-tests" "${names[@]}" 2>&1 | python3 tools/test_tiers.py filter "$tier"
+}
+
+# The pid a lock file names, empty when it names none or is gone.
+lock_pid() {
+	sed -n 's/^pid=//p' "$1" 2>/dev/null || true
+}
+
+# Removes a lock read as stale without ever removing a live one. The lock
+# is renamed to a name of this shell's own, so of two guards that read
+# the same stale lock only one takes it, and its pid is read again there:
+# another guard may have replaced the stale lock with its own meanwhile.
+# A live lock goes back through a hard link, which fails rather than
+# overwrite a lock that took the name in between.
+remove_stale_lock() {
+	local lock="$1" claim="$1.claim.$$" claimed_pid
+	mv "$lock" "$claim" 2>/dev/null || return 0
+	claimed_pid="$(lock_pid "$claim")"
+	if [ -n "$claimed_pid" ] && ! kill -0 "$claimed_pid" 2>/dev/null; then
+		echo "the lock is stale (pid $claimed_pid is gone), removing it" >&2
+		rm -f "$claim"
+	elif ln "$claim" "$lock" 2>/dev/null; then
+		rm -f "$claim"
+	else
+		echo "a live lock (pid $claimed_pid) was taken aside as a new lock appeared, left at $claim" >&2
+	fi
+}
+
+# On exit, the lock goes only while it is still this shell's.
+release_benchmark_lock() {
+	if [ "$(lock_pid "$HOME/benchmark.lock")" = "$$" ]; then
+		rm -f "$HOME/benchmark.lock"
+	fi
+}
+
+# A benchmark runs only from 03:00 to 06:00 Europe/Stockholm, when nobody
+# uses the machine, and holds ~/benchmark.lock so no two benchmarks of any
+# project run at once. A lock whose process is gone is stale and removed,
+# a live one is waited for.
+guard_benchmark() {
+	local command="$1" expected_minutes="$2" hour lock_pid
+	local lock="$HOME/benchmark.lock"
+	while true; do
+		hour="$(TZ=Europe/Stockholm date +%H)"
+		case "$hour" in
+			03 | 04 | 05) ;;
+			*)
+				echo "$command is a benchmark and runs only from 03:00 to 06:00 Europe/Stockholm, where the hour is $hour" >&2
+				exit 2
+				;;
+		esac
+		if (set -o noclobber; printf '%s\n' "pid=$$" "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+			"expected_minutes=$expected_minutes" "cwd=$repository_root" "project=mine-oh-belowed" \
+			"command=$command" "session=${CLAUDE_CODE_SESSION_ID:-none}" \
+			"note=keep the machine idle: an -o:speed build and timed runs" > "$lock") 2>/dev/null; then
+			trap release_benchmark_lock EXIT
+			return
+		fi
+		lock_pid="$(lock_pid "$lock")"
+		cat "$lock" >&2 2>/dev/null || continue
+		if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+			remove_stale_lock "$lock"
+			continue
+		fi
+		echo "waiting for the benchmark above to end" >&2
+		sleep 60
+	done
+}
+
+# The report tests (behind their when NAME blocks) with every define, and
+# the factory benchmark, optimised, on one runner thread so no two of
+# them run side by side and skew each other's timings.
+nightly() {
+	guard_benchmark "./build.sh nightly" 45
+	local listing defines=()
+	listing="$(python3 tools/test_tiers.py defines)"
+	if [ -n "$listing" ]; then
+		mapfile -t defines <<< "$listing"
+	fi
+	run_test_tier nightly -o:speed -define:ODIN_TEST_THREADS=1 "${defines[@]}"
+}
+
 # The workbench's checks of the models (work item 0207), from the
 # repository root so the game finds data/.
 model_check() {
@@ -190,13 +310,27 @@ case "$mode" in
 	release) build "${release_flags[@]}" ;;
 	check) "$odin" check src "$collection" -vet -strict-style ;;
 	check-windows) "$odin" check src "$collection" -target:windows_amd64 -vet -strict-style ;;
-	test) shift; run_tests "$@" ;;
-	bench) run_tests -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
+	test)
+		shift
+		tier=all
+		case "${1:-}" in
+			all | unit | slow | quick)
+				tier="$1"
+				shift
+				;;
+		esac
+		run_test_tier "$tier" "$@"
+		;;
+	nightly) nightly ;;
+	bench)
+		guard_benchmark "./build.sh bench" 40
+		run_tests -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark
+		;;
 	check-android) check_android ;;
 	android) build_android ;;
 	model-check) model_check "${2:-all}" ;;
 	*)
-		echo "usage: $0 [debug|release|check|check-windows|test|bench|check-android|android|model-check]" >&2
+		echo "usage: $0 [debug|release|check|check-windows|test|nightly|bench|check-android|android|model-check]" >&2
 		exit 2
 		;;
 esac

@@ -80,7 +80,7 @@ test_a_query_with_no_host_lists_nothing :: proc(t: ^testing.T) {
 // Two games on one machine: the second takes the next free port of the
 // range, both share the discovery port, and one broadcast on the loopback
 // reaches both.
-@(test)
+@(test) // slow
 test_two_sessions_on_one_machine_take_different_ports_and_both_answer :: proc(t: ^testing.T) {
 	taken, problem := platform.listen_on_port(0, .Loopback)
 	if !testing.expect_value(t, problem, "") {
@@ -119,7 +119,7 @@ test_two_sessions_on_one_machine_take_different_ports_and_both_answer :: proc(t:
 // A windowed game hosts its own world when the frame takes it, on the
 // first free port of its range, and plays alone as single player: a
 // pausing screen holds its ticks.
-@(test)
+@(test) // slow
 test_a_windowed_game_hosts_its_world_and_pauses_while_alone :: proc(t: ^testing.T) {
 	taken, problem := platform.listen_on_port(0, .Loopback)
 	if !testing.expect_value(t, problem, "") {
@@ -156,7 +156,7 @@ test_a_windowed_game_hosts_its_world_and_pauses_while_alone :: proc(t: ^testing.
 // loopback: a windowed game hosts, the client's query lists it, Confirm's
 // path joins it (the .Join request, the --join path), and both machines
 // keep the same hash for a thousand ticks.
-@(test)
+@(test) // slow
 test_a_join_from_the_list_keeps_the_hosts_hash :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_hosting_test_frame(content, LOOPBACK_DISCOVERY_PLAN)

@@ -2043,7 +2043,7 @@ test_a_tap_opens_a_machine_turns_a_switch_and_places_on_the_ground :: proc(t: ^t
 // Work item 0194 on the field: the tap reads the aimed frame cell, so a
 // tap on a switch turns it and a tap on a furnace opens its panel,
 // through the overlay, the bindings, the routing and the field tick.
-@(test)
+@(test) // slow
 test_a_tap_on_the_field_turns_a_switch_and_opens_a_furnace :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()

@@ -325,7 +325,7 @@ test_a_field_player_rests_on_a_foundation_pad :: proc(t: ^testing.T) {
 
 // A column of four cells 1.5 m ahead stops a walk into it: the feet stay
 // short of its near face and the step does not climb it.
-@(test)
+@(test) // slow
 test_walking_into_a_foundation_column_is_blocked :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	for spacing in TEST_FIELD_SPACINGS {
@@ -370,7 +370,7 @@ test_walking_onto_a_one_cell_pad_steps_up :: proc(t: ^testing.T) {
 
 // Standing on a pad and looking down past its edge, the tool still meets
 // the field beside it, so the brush works from a pad.
-@(test)
+@(test) // slow
 test_the_field_target_from_a_pad_hits_the_ground_beside_it :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	for spacing in TEST_FIELD_SPACINGS {

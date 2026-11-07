@@ -262,7 +262,7 @@ column_cover_pick :: proc(generator: ^Generator, column: Column_Sample, x, z: i3
 // cell is air, the column lies in a vein footprint. Chunks on both sides
 // of every border agree with the column function, so they agree with
 // each other.
-@(test)
+@(test) // slow
 test_ground_cover_stands_on_listed_top_blocks :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	registry := make_test_registry()

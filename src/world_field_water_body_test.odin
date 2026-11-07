@@ -264,7 +264,7 @@ dig_test_trough :: proc(world: ^Field_World, offset: i32) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_a_trough_between_two_lakes_runs_a_front_stream_to_the_sill :: proc(t: ^testing.T) {
 	world := make_body_test_world()
 	defer destroy_field_world(&world)
@@ -432,7 +432,7 @@ test_a_lake_straddling_a_chunk_the_set_drops_keeps_its_volume :: proc(t: ^testin
 	testing.expect(t, owned && owner == id)
 }
 
-@(test)
+@(test) // slow
 test_the_sea_does_not_rise_under_a_spring :: proc(t: ^testing.T) {
 	world: Field_World
 	defer destroy_field_world(&world)
@@ -477,7 +477,7 @@ test_the_sea_does_not_rise_under_a_spring :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_sample_bits_count(&chunk.water_awake), 1)
 }
 
-@(test)
+@(test) // slow
 test_the_breach_conserves_body_volume_plus_front_fill_over_5000_ticks :: proc(t: ^testing.T) {
 	world := make_body_test_world()
 	defer destroy_field_world(&world)
@@ -520,7 +520,7 @@ run_body_test_trough_across_chunks :: proc(world: ^Field_World) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_two_bodies_worlds_stepped_alike_hash_alike :: proc(t: ^testing.T) {
 	first := make_ground_chunks_water_world({0, 1})
 	defer destroy_field_world(&first)
@@ -691,7 +691,7 @@ test_a_dig_joining_a_cave_to_the_sea_fills_it_in_the_tick :: proc(t: ^testing.T)
 // The bodies model on the planet's own terrain: two tech demo sessions at
 // the spring run alike, the spring's water a front or a body, the sea
 // body 0 and still.
-@(test)
+@(test) // slow
 test_two_tech_demo_bodies_sessions_run_alike_at_the_spring :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	config.field_simulation.chunk_radius, config.field_simulation.chunk_margin = 1, 0
@@ -1132,7 +1132,7 @@ make_dry_water_body :: proc(world: ^Field_World, sample: Sample_Coordinate, volu
 // by a passage. Before 0299 seven bodies stayed alive with no cell, and a
 // residue above the floor's lake seeded and merged 21 times a tick for
 // good.
-@(test)
+@(test) // slow
 test_a_drained_lake_joined_to_a_second_cave_comes_to_rest :: proc(t: ^testing.T) {
 	world := make_body_test_world()
 	defer destroy_field_world(&world)
@@ -1502,7 +1502,7 @@ step_two_cave_world :: proc(t: ^testing.T, world: ^Field_World, tuning: Field_Wa
 	return true
 }
 
-@(test)
+@(test) // slow
 test_two_caves_joined_under_water_end_as_one_body :: proc(t: ^testing.T) {
 	tick: u64 = 0
 	world := joined_two_cave_world(t, &tick)
@@ -1555,7 +1555,7 @@ test_two_caves_joined_under_water_end_as_one_body :: proc(t: ^testing.T) {
 	testing.expect_value(t, body.volume, total - front_total(&world))
 }
 
-@(test)
+@(test) // slow
 test_a_pump_in_one_of_two_joined_caves_lowers_the_one_body :: proc(t: ^testing.T) {
 	tick: u64 = 0
 	world := joined_two_cave_world(t, &tick)
@@ -1594,7 +1594,7 @@ test_a_pump_in_one_of_two_joined_caves_lowers_the_one_body :: proc(t: ^testing.T
 	testing.expect_value(t, conserved_water(&world), total - 6000)
 }
 
-@(test)
+@(test) // slow
 test_two_joined_caves_pumped_under_their_passage_part :: proc(t: ^testing.T) {
 	tick: u64 = 0
 	world := joined_two_cave_world(t, &tick)
@@ -1645,7 +1645,7 @@ test_two_joined_caves_pumped_under_their_passage_part :: proc(t: ^testing.T) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_a_lake_rising_to_the_sill_of_the_lake_pouring_into_it_merges_with_it :: proc(t: ^testing.T) {
 	world := make_body_test_world()
 	defer destroy_field_world(&world)
@@ -1691,7 +1691,7 @@ test_a_lake_rising_to_the_sill_of_the_lake_pouring_into_it_merges_with_it :: pro
 	testing.expectf(t, body.level >= trough_bottom, "the level %d at or over the trough's bottom %d", body.level, trough_bottom)
 }
 
-@(test)
+@(test) // slow
 test_a_joined_body_saved_and_loaded_parts_alike :: proc(t: ^testing.T) {
 	tick: u64 = 0
 	first := joined_two_cave_world(t, &tick)
@@ -1802,7 +1802,7 @@ test_a_merged_bodys_frozen_part_thaws_into_the_survivor_after_its_id_is_reused :
 // (the flood's own tag, not the released one) waits for the flood: the
 // merge pass never merges or kills the pending body, with the waiting
 // body's id above the flood's or below it (0300's review).
-@(test)
+@(test) // slow
 test_the_merge_pass_leaves_a_pending_flood_alone :: proc(t: ^testing.T) {
 	for waiting_below in ([]bool{false, true}) {
 		pending_flood_beside_a_waiting_body(t, waiting_below)
@@ -1912,7 +1912,7 @@ fed_outlet_trough_world :: proc(t: ^testing.T, tick: ^u64) -> Field_World {
 // over and over (0300's review). Before the guard, at inflow 70: 196
 // seeds, 168 merges, 29448 flood visits in the 500 ticks; on main before
 // 0300 and with the guard: 1 seed, no merge, 456 visits.
-@(test)
+@(test) // slow
 test_a_fed_lake_draining_under_the_sill_of_the_lake_pouring_into_it_stays_apart :: proc(t: ^testing.T) {
 	tick: u64 = 0
 	world := fed_outlet_trough_world(t, &tick)

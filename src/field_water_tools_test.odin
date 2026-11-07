@@ -74,7 +74,7 @@ test_a_pour_of_n_presses_raises_the_total_by_n_times_the_press_fill :: proc(t: ^
 // fills; seventy more empty what the brush reaches, never more than the
 // lake held. Under bodies the body gives it all and its level follows its
 // volume; under teleport the films the brush does not reach stay.
-@(test)
+@(test) // slow
 test_a_drain_lowers_the_total_by_what_it_takes :: proc(t: ^testing.T) {
 	for model in Water_Model {
 		state, content := make_water_tool_test_state(model)

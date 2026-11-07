@@ -239,7 +239,7 @@ shipped_machines :: proc(allocator := context.allocator) -> []Machine {
 // Every machine but belts and pipes has a model, every model file loads
 // and meshes, a motion that moves a part has its part file, and an arm
 // has all its parts.
-@(test)
+@(test) // slow
 test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 	machines := shipped_machines()
 	defer delete(machines)

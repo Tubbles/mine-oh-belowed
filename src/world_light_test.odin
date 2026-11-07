@@ -230,7 +230,7 @@ test_generated_chunks_carry_sky_light :: proc(t: ^testing.T) {
 
 // Main thread light work after generated chunks arrive, for the notes: how
 // many ticks and queue nodes the border seeding needs on real terrain.
-@(test)
+@(test) // slow
 test_report_light_settling_on_generated_terrain :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	registry := make_test_registry()

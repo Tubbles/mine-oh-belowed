@@ -78,7 +78,7 @@ test_nearest_body :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, pla
 	return nearest
 }
 
-@(test)
+@(test) // slow
 test_a_steep_cone_volume_stops_a_walk_and_slides_a_player_off :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
@@ -105,7 +105,7 @@ test_a_steep_cone_volume_stops_a_walk_and_slides_a_player_off :: proc(t: ^testin
 	}
 }
 
-@(test)
+@(test) // slow
 test_a_gentle_cone_volume_is_walked_up :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
@@ -125,7 +125,7 @@ test_a_gentle_cone_volume_is_walked_up :: proc(t: ^testing.T) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_the_empty_corner_of_a_footprint_with_a_cone_volume_is_free :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
@@ -157,7 +157,7 @@ test_the_empty_corner_of_a_footprint_with_a_cone_volume_is_free :: proc(t: ^test
 	}
 }
 
-@(test)
+@(test) // slow
 test_a_capsule_inside_a_shell_is_held_by_its_inner_surface :: proc(t: ^testing.T) {
 	definitions := []Collision_Volume_Definition{{kind = "round", axis = "y", from = {0, 0, 0}, to = {0, 8, 0}, radius_from = 5, radius_to = 5, shell = 0.4}}
 	for spacing in TEST_FIELD_SPACINGS {
@@ -185,7 +185,7 @@ test_a_capsule_inside_a_shell_is_held_by_its_inner_surface :: proc(t: ^testing.T
 	}
 }
 
-@(test)
+@(test) // slow
 test_a_box_volume_stops_the_capsule_on_each_face_and_is_stepped_onto_when_low :: proc(t: ^testing.T) {
 	sides := [4][3]i64{{UNIT_VECTOR_ONE, 0, 0}, {-UNIT_VECTOR_ONE, 0, 0}, {0, 0, UNIT_VECTOR_ONE}, {0, 0, -UNIT_VECTOR_ONE}}
 	for spacing in TEST_FIELD_SPACINGS {
@@ -333,7 +333,7 @@ Test_Lip_Case :: struct {
 // a radius ahead read the top (0232). The top is 1 m deep along the
 // walk, shorter than the ledge's stride at 1000 mm, so a ledge lurch
 // cannot pass for a step.
-@(test)
+@(test) // slow
 test_a_low_lip_is_stepped_onto_at_crouch_and_walking_speed :: proc(t: ^testing.T) {
 	cases: [dynamic]Test_Lip_Case
 	cases.allocator = context.temp_allocator

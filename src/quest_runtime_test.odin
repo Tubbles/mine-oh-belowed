@@ -357,7 +357,7 @@ expect_same_quest_state :: proc(t: ^testing.T, a, b: Simulation_State) {
 	testing.expect_value(t, a.records.statistics.world_actions, b.records.statistics.world_actions)
 }
 
-@(test)
+@(test) // slow
 test_quest_simulation_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	content.quests = make_test_quests(make_test_quest_references())

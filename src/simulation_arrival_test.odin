@@ -80,7 +80,7 @@ tick_arrival_test_session :: proc(session: ^Session, content: Simulation_Content
 // A new world's players cannot move for the fall; the hatches stay
 // closed through it and at its end (0222: the airlock opens them as a
 // player comes).
-@(test)
+@(test) // slow
 test_a_new_world_holds_its_players_through_the_fall :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -123,7 +123,7 @@ test_a_new_world_holds_its_players_through_the_fall :: proc(t: ^testing.T) {
 // The fall cuts the frame to the look (0223): the walk, Sneak, the tools,
 // Interact and Open_Aimed do nothing, the player stays strapped in with
 // the eye on the seat's, and the look turns every tick.
-@(test)
+@(test) // slow
 test_the_fall_ignores_the_walk_and_the_tools_and_takes_the_look :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -188,7 +188,7 @@ arrival_test_stacks_equal :: proc(first, second: []Item_Stack) -> bool {
 // Interact through the fall does nothing; the landing tells player 0
 // Touchdown_Confirmed on its tick alone; Interact on the tick after
 // stands the player in the cabin, and the walk then moves it.
-@(test)
+@(test) // slow
 test_interact_before_touchdown_does_nothing_and_after_it_stands_the_player :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -227,7 +227,7 @@ test_interact_before_touchdown_does_nothing_and_after_it_stands_the_player :: pr
 // Interact sits, the eye on the seat's; the walk and Jump leave the body
 // where it is; Interact stands it at the cabin's spawn. Aimed at the
 // bench, Interact leaves the player standing.
-@(test)
+@(test) // slow
 test_interact_on_the_chair_seats_and_unseats :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	config.arrival_ticks = 0
@@ -266,7 +266,7 @@ test_interact_on_the_chair_seats_and_unseats :: proc(t: ^testing.T) {
 
 // arrival_ticks 0: no fall, the walk moves the player on the first tick,
 // the hatches stay closed (0198).
-@(test)
+@(test) // slow
 test_arrival_ticks_zero_starts_landed :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	config.arrival_ticks = 0
@@ -312,7 +312,7 @@ step_arrival_lockstep_test :: proc(first, second: ^Session, first_content, secon
 
 // Skip queued on A at tick 200 lands the fall on A and B at the tick its
 // record was stamped for; a second Skip changes nothing.
-@(test)
+@(test) // slow
 test_skip_ends_the_fall_on_two_sessions_at_the_same_tick :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -353,7 +353,7 @@ test_skip_ends_the_fall_on_two_sessions_at_the_same_tick :: proc(t: ^testing.T) 
 // the look through the fall and Interact at the landing and every 50
 // ticks after: the hashes agree at the fall's middle, its landing and
 // after the stand (0223).
-@(test)
+@(test) // slow
 test_two_machines_hash_alike_through_a_fall_with_input :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -424,7 +424,7 @@ reload_arrival_test_world :: proc(config: Game_Config, content: Game_Content, se
 // A save loaded at tick 1000 has no fall: landed, the hatches closed, the
 // walk moving the player at once; only the hit's debris is presented,
 // until the Settled phase ends (0272).
-@(test)
+@(test) // slow
 test_a_save_loaded_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -457,7 +457,7 @@ arrival_test_settled_end :: proc(config: Game_Config) -> u64 {
 // A joiner at tick 1000 starts from the snapshot's files: the pod's frame
 // is the host's rested one, a second player spawns in the cabin and walks
 // on the next tick.
-@(test)
+@(test) // slow
 test_a_joiner_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -505,7 +505,7 @@ test_a_joiner_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 // A save taken at tick 300 resumes the fall, rests at the hit to the
 // unsaved run's pose and field and lands at tick 600, not before; one
 // taken at tick 200 after a Skip at tick 101 loads landed.
-@(test)
+@(test) // slow
 test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -549,7 +549,7 @@ test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 // Work items 0222, 0231: the landing leaves both doors closed and nothing
 // opens them while the player stands still in the cabin; crawling to the
 // inner door opens it, the outer shut on that tick.
-@(test)
+@(test) // slow
 test_the_doors_stay_closed_at_the_landing_until_the_player_comes :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -587,7 +587,7 @@ test_the_doors_stay_closed_at_the_landing_until_the_player_comes :: proc(t: ^tes
 
 // A save from before 0200 ends before the arrival's table: it reads with
 // a zero arrival, nothing falls.
-@(test)
+@(test) // slow
 test_a_save_from_before_the_arrival_loads_landed :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -627,7 +627,7 @@ test_a_save_from_before_the_arrival_loads_landed :: proc(t: ^testing.T) {
 // flicker, lights and soot past the landing since 0273; the heat
 // shield's flakes since 0290; the wake's shape, order, light and flicker
 // since 0304).
-@(test)
+@(test) // slow
 test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -691,7 +691,7 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 
 // Work item 0224: gathering the pod's lamps each tick (presentation only)
 // leaves the hash equal to an untouched session's.
-@(test)
+@(test) // slow
 test_the_machine_lights_leave_the_hash :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -720,7 +720,7 @@ test_the_machine_lights_leave_the_hash :: proc(t: ^testing.T) {
 
 // Work item 0225: the pod's interior light share is presentation only, a
 // world drawn with it hashes as one whose pod has none.
-@(test)
+@(test) // slow
 test_the_interior_light_share_leaves_the_hash :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	watched_game := make_field_test_game_content()
@@ -755,7 +755,7 @@ test_the_interior_light_share_leaves_the_hash :: proc(t: ^testing.T) {
 // Work item 0223: a machine placement command (the placement editor's
 // commit) is refused from a player strapped in during the fall and from a
 // seated player after it; a standing player's is queued as before.
-@(test)
+@(test) // slow
 test_a_placement_from_the_chair_is_refused :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -784,7 +784,7 @@ test_a_placement_from_the_chair_is_refused :: proc(t: ^testing.T) {
 // pod_rest_pose's exactly after it, unchanged through the landing and
 // after; the strapped player's eye is the rested seat's and its look the
 // look before the hit turned with the pod.
-@(test)
+@(test) // slow
 test_the_pod_rests_at_the_hit :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -825,7 +825,7 @@ test_the_pod_rests_at_the_hit :: proc(t: ^testing.T) {
 // Work item 0270: a Skip at tick 100 rests the pod at that tick to the
 // same pose and field as a run that rests at the hit; the landing changes
 // neither.
-@(test)
+@(test) // slow
 test_skip_before_the_hit_rests_the_pod_once :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -862,7 +862,7 @@ test_skip_before_the_hit_rests_the_pod_once :: proc(t: ^testing.T) {
 // Work item 0270: a world landed without the rest (its arrival set
 // landed directly, as a build before 0270 left it) saves and loads with
 // the frame as saved, still level after 120 ticks.
-@(test)
+@(test) // slow
 test_a_world_landed_level_loads_level :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -956,7 +956,7 @@ delete_arrival_test_terrain :: proc(terrain: ^map[Field_Chunk_Coordinate]^Arriva
 // (the main agent's decision 3); a world ticked through the hit holds the
 // crater outside the pod's bed, the ground at the placed frame's base
 // centre.
-@(test)
+@(test) // slow
 test_the_hit_digs_the_crater_and_nothing_else :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -1020,7 +1020,7 @@ test_the_hit_digs_the_crater_and_nothing_else :: proc(t: ^testing.T) {
 // Work item 0271: a new world saved at tick 0 whose world.sjson is set
 // back to a baked crater, as a build before 0271 wrote it, generates the
 // crater and holds it before the hit and after the landing.
-@(test)
+@(test) // slow
 test_a_world_from_before_the_impact_keeps_its_baked_crater :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -1051,7 +1051,7 @@ test_a_world_from_before_the_impact_keeps_its_baked_crater :: proc(t: ^testing.T
 
 // Work item 0271: a world without a fall digs every chunk as it enters
 // the set; nothing rests the pod, so no sample is left out.
-@(test)
+@(test) // slow
 test_a_world_without_a_fall_digs_its_crater_as_it_enters :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1068,7 +1068,7 @@ test_a_world_without_a_fall_digs_its_crater_as_it_enters :: proc(t: ^testing.T) 
 // outside the bed and hashes as the run that never saved. The join case
 // restores the snapshot's set before its first tick (as the joiner tests
 // do) and hashes as the host's.
-@(test)
+@(test) // slow
 test_a_save_at_the_tick_before_the_hit_digs_at_the_hit :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
@@ -1113,7 +1113,7 @@ ARRIVAL_TEST_TOGGLES :: Input_Frame {
 
 // Seated the camera toggles as on foot, strapped it stays first person;
 // fly and no clip never toggle in the chair (0285).
-@(test)
+@(test) // slow
 test_the_camera_toggles_seated_and_not_strapped :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	config.arrival_ticks = 0
@@ -1147,7 +1147,7 @@ test_the_camera_toggles_seated_and_not_strapped :: proc(t: ^testing.T) {
 // The host and the joiner apply the same seated toggle and their hashes
 // agree; a session without the toggle differs, so the mode is hashed
 // (0285).
-@(test)
+@(test) // slow
 test_a_seated_camera_toggle_keeps_two_sessions_alike :: proc(t: ^testing.T) {
 	config := arrival_test_config()
 	config.arrival_ticks = 0

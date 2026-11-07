@@ -1122,7 +1122,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "inventory foundation touch row", screens = {.Inventory}, hud = true, touch = true})
 }
 
-@(test)
+@(test) // slow
 test_every_screen_stays_inside_the_screen :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -1495,7 +1495,7 @@ test_the_context_action_configures_a_foundation :: proc(t: ^testing.T) {
 // a step and Confirm on the focused strips each queue the command with
 // the picked indices; Back closes it onto the view with the focus where
 // it was.
-@(test)
+@(test) // slow
 test_the_configure_popup_picks_the_foundation_block :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -1562,7 +1562,7 @@ inventory_hotbar_slot_test_id :: proc(slot: int) -> Ui_Id {
 
 // Touch: with the tapped slot on a foundation the row's Configure takes
 // Sort's place and opens the pop-up; a tap off the panel closes it.
-@(test)
+@(test) // slow
 test_the_touch_row_configures_a_foundation :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -1743,7 +1743,7 @@ glyph_bar_test_frame :: proc(t: ^testing.T, audit: ^Ui_Audit, bar: Glyph_Bar_Tes
 // glyph bar names Place, Tools and Turn with the keyboard's Right mouse,
 // Q and R and the pad's L2, D-pad Up and Y; with nothing held only
 // Inventory and Pause; a foundation held has no Turn.
-@(test)
+@(test) // slow
 test_the_worlds_hints_name_the_held_machines_controls :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -1838,7 +1838,7 @@ expect_glyph_labels :: proc(t: ^testing.T, commands: []Draw_Command, labels: []s
 // (decision 6), and at 1280 by 800 scale 1.5 with the largest text it
 // wraps into two rows above the hotbar. At 1920 by 1080 the nothing held
 // bar stands beside the hotbar, right of its last slot.
-@(test)
+@(test) // slow
 test_the_glyph_bar_never_covers_the_hotbar :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)

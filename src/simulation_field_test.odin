@@ -223,7 +223,7 @@ test_the_tech_demo_starts_at_the_spring_without_a_save_or_a_fall :: proc(t: ^tes
 
 // Two simulations of one plan fed the same script hash alike at tick
 // 1000, and part after one extra input on one side.
-@(test)
+@(test) // slow
 test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	config.starting_items = field_test_digging_kit()
@@ -270,7 +270,7 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 // After the script's dig two sessions walk on across the ground (0203:
 // the footprint probes and the step a step height higher run on both)
 // and hash alike.
-@(test)
+@(test) // slow
 test_two_field_simulations_hash_alike_after_a_walk_over_dug_ground :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	config.starting_items = field_test_digging_kit()
@@ -316,7 +316,7 @@ test_two_field_simulations_hash_alike_after_a_walk_over_dug_ground :: proc(t: ^t
 // with a foundation, the pod on its own frame, the light's queues and the
 // players' field state; a planet vein keeps its drawn reservoir and gets
 // its disc back, which the save leaves out.
-@(test)
+@(test) // slow
 test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -414,7 +414,7 @@ load_test_field_save :: proc(config: Game_Config, content: Game_Content, files: 
 // The load generates nothing on its thread (0185): the world and the
 // arrivals stay empty until the streaming hands chunks over, the tick
 // waits, and a part of the set does not enter on its own.
-@(test)
+@(test) // slow
 test_a_field_load_leaves_the_set_to_the_workers :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -445,7 +445,7 @@ test_a_field_load_leaves_the_set_to_the_workers :: proc(t: ^testing.T) {
 // The restored set (0185) holds every chunk as its generation with the
 // saved bytes over it, seeds no light, and hashes as the saved world
 // whichever order the chunks arrive in.
-@(test)
+@(test) // slow
 test_a_restored_field_set_matches_the_save_in_either_arrival_order :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -490,7 +490,7 @@ test_a_restored_field_set_matches_the_save_in_either_arrival_order :: proc(t: ^t
 // A tick command waits for a loaded world's set as a lockstep tick does
 // (0185): no tick runs on the empty world, and the ticks left run once
 // the set is in.
-@(test)
+@(test) // slow
 test_a_tick_command_waits_for_a_restoring_field_set :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -538,7 +538,7 @@ feet_in_test_cabin :: proc(frame: Frame, pod: Foundation, machine: Machine, play
 // spawns as the first did, in the cabin facing the door, with the
 // starter kit, through the entry every join takes (add_player_entry);
 // after a second with no input both stand on the cabin's floor.
-@(test)
+@(test) // slow
 test_a_new_world_sinks_the_pod_in_its_crater_and_players_spawn_in_the_cabin :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -622,7 +622,7 @@ test_the_home_heading_faces_the_spring_at_every_preset :: proc(t: ^testing.T) {
 
 // Two new worlds from one seed hash alike at the start and after a second
 // with no input: the crater and the pod come from the seed and the record.
-@(test)
+@(test) // slow
 test_two_new_worlds_from_one_seed_agree :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -738,7 +738,7 @@ test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 // the lane to the inner hatch opens it on two sessions of one seed alike:
 // the toggle tick and the hash after a second agree, a session without
 // the crawl hashes otherwise, and the opened world round trips its save.
-@(test)
+@(test) // slow
 test_a_hatch_opened_for_a_player_is_lockstep_state_and_saves :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -843,7 +843,7 @@ test_session_hatch :: proc(state: ^Simulation_State, machines: Machine_Registry,
 // save taken on the tick the inner door opens and loaded into another
 // session follows the crawl alike, the hashes agree at tick 600, and a
 // session with no input hashes otherwise.
-@(test)
+@(test) // slow
 test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -911,7 +911,7 @@ test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
 // gives them), a standing player outside walks up to the outer door and
 // it opens; the walk stops no farther from its face than the capsule's
 // radius and the reach.
-@(test)
+@(test) // slow
 test_a_standing_player_outside_opens_the_outer_door_against_the_pods_volumes :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -961,7 +961,7 @@ test_a_standing_player_outside_opens_the_outer_door_against_the_pods_volumes :: 
 // Work item 0231: from the middle of the bore, Interact on the shut outer
 // door toggles nothing and raises no event, and the gamepad's A jumps
 // there: a hatch is like any other cell for the A press.
-@(test)
+@(test) // slow
 test_interact_on_a_hatch_toggles_nothing_and_the_a_press_jumps :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1015,7 +1015,7 @@ lay_test_field_pad :: proc(state: ^Simulation_State, content: Simulation_Content
 // place_drill_on_frame, a flat belt under its drop cell, a burner arm and
 // an iron chest; the session's tick runs it, and the chest fills with the
 // vein's ore.
-@(test)
+@(test) // slow
 test_a_belt_line_on_a_frame_over_an_outcrop_fills_the_chest :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1083,7 +1083,7 @@ test_a_block_world_save_is_refused_naming_m14 :: proc(t: ^testing.T) {
 
 // The set follows a player who walks a chunk: the chunks behind leave,
 // the ones ahead arrive, alike on two machines.
-@(test)
+@(test) // slow
 test_the_field_set_follows_a_walking_player :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1266,7 +1266,7 @@ count_field_refused_events :: proc(events: []Simulation_Event, refusal: Field_Ed
 // A drill queued off every vein in a session's tick raises one
 // Field_Refused event with No_Vein, which the HUD toasts; the ghost of
 // that placement takes the refused colour.
-@(test)
+@(test) // slow
 test_a_refused_field_placement_raises_one_event :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1294,7 +1294,7 @@ test_a_refused_field_placement_raises_one_event :: proc(t: ^testing.T) {
 // A 5 by 5 foundation block queued with 16 foundations held (0193) is
 // refused whole: nothing is placed or taken, one Field_Refused event is
 // raised, and its ghost takes the refused colour.
-@(test)
+@(test) // slow
 test_a_foundation_block_short_of_foundations_places_nothing :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1332,7 +1332,7 @@ test_a_foundation_block_short_of_foundations_places_nothing :: proc(t: ^testing.
 
 // A Dig held on ground the player's tools cannot dig is refused every
 // tick for ten ticks and raises one event; a new press raises another.
-@(test)
+@(test) // slow
 test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	config.starting_items = field_test_digging_kit()
@@ -1394,7 +1394,7 @@ hold_mine_on_the_ground_outside_the_pod :: proc(t: ^testing.T, kit: []Starting_I
 
 // Mine with the hand digs nothing and tells nothing (0265), where a
 // shovel digs the same ground.
-@(test)
+@(test) // slow
 test_mine_with_the_hand_digs_nothing_on_topsoil :: proc(t: ^testing.T) {
 	aimed, changed, refused := hold_mine_on_the_ground_outside_the_pod(t, nil, 120)
 	testing.expect_value(t, aimed, Field_Material.Topsoil)
@@ -1405,7 +1405,7 @@ test_mine_with_the_hand_digs_nothing_on_topsoil :: proc(t: ^testing.T) {
 }
 
 // A touch hold is Mine: with planks selected it digs nothing (0265).
-@(test)
+@(test) // slow
 test_mine_with_planks_selected_digs_nothing :: proc(t: ^testing.T) {
 	kit := []Starting_Item{{item = "plank", count = 8}}
 	aimed, changed, refused := hold_mine_on_the_ground_outside_the_pod(t, kit, 120)
@@ -1416,7 +1416,7 @@ test_mine_with_planks_selected_digs_nothing :: proc(t: ^testing.T) {
 
 // The shipped kit holds no shovel, pickaxe or axe, so a new player's
 // tool is never the Tool (0265).
-@(test)
+@(test) // slow
 test_the_starter_kit_holds_no_digging_tool :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1431,7 +1431,7 @@ test_the_starter_kit_holds_no_digging_tool :: proc(t: ^testing.T) {
 
 // The field session's walk counter (0187): a walk on the ground counts,
 // a flight counts none.
-@(test)
+@(test) // slow
 test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1462,7 +1462,7 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 // Place either stands the furnace on a new frame of its own with no
 // foundation, its footprint centred on cell (0, 0, 0) (0215), or raises
 // one Too_Steep event and places nothing, as the ghost's refusal says.
-@(test)
+@(test) // slow
 test_a_machine_on_bare_ground_stands_centred_on_its_frame :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1528,7 +1528,7 @@ test_a_field_refusal_is_news_when_new_or_pressed :: proc(t: ^testing.T) {
 // Interact alone there does nothing; X routed at a power switch is
 // Interact alone and turns it without opening its panel; A at the switch
 // turns nothing.
-@(test)
+@(test) // slow
 test_the_field_turns_a_switch_on_x_and_jumps_on_a :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1604,7 +1604,7 @@ test_the_pad_foundation_must_be_a_foundation :: proc(t: ^testing.T) {
 // Work item 0210: a field world's quest reward target is the pod's
 // locker, and a save round trips it. The load derives it again from the
 // pools; an equal hash shows the load's settle moved no baseline.
-@(test)
+@(test) // slow
 test_a_field_world_save_round_trips_the_reward_target :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1662,7 +1662,7 @@ reload_field_test_session :: proc(t: ^testing.T, session: ^Session, config: Game
 
 // Work item 0262: a new field world runs no block spawn search, so it has
 // no landing pad and no drop capsule, and a save round trip keeps it so.
-@(test)
+@(test) // slow
 test_a_new_field_world_has_no_drop_capsule :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1735,7 +1735,7 @@ test_a_new_block_world_keeps_its_drop_capsule_on_the_pad :: proc(t: ^testing.T) 
 
 // Work item 0262: a field world saved before 0262 carries a pad and a
 // capsule on frame 0. It loads as it is, the capsule's contents kept.
-@(test)
+@(test) // slow
 test_an_old_field_save_keeps_its_drop_capsule :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1779,7 +1779,7 @@ sneak_toggle_test_frame :: proc(tick: int) -> Input_Frame {
 
 SNEAK_TOGGLE_TEST_TICKS :: 32
 
-@(test)
+@(test) // slow
 test_the_sneak_toggle_crouches_the_field_player :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1795,7 +1795,7 @@ test_the_sneak_toggle_crouches_the_field_player :: proc(t: ^testing.T) {
 	}
 }
 
-@(test)
+@(test) // slow
 test_the_field_prediction_crouches_as_the_tick :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1853,7 +1853,7 @@ test_pod_volume_definitions :: proc() -> []Collision_Volume_Definition {
 // Two sessions whose pod collides by its volumes (work item 0230) walk
 // round the hull and crawl into the airlock on the same input and hash
 // alike; a third, standing still, hashes otherwise.
-@(test)
+@(test) // slow
 test_two_sessions_hash_alike_walking_round_and_into_a_pod_with_volumes :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1998,7 +1998,7 @@ test_a_new_world_on_a_wet_seed_lands_dry_and_records_its_home :: proc(t: ^testin
 // Two machines starting the wet seed's world agree: the moved home is a
 // function of the seed and the record, so the states hash alike at the
 // start and after a second, and a joiner stands at one place on both.
-@(test)
+@(test) // slow
 test_two_machines_spawn_alike_on_a_wet_seed :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -2028,7 +2028,7 @@ test_pod_cabin_floor :: proc(state: ^Simulation_State, machines: Machine_Registr
 
 // A pit dug under the empty cabin's floor drops a joiner, who spawns in
 // the cabin as always, to its bottom (0180).
-@(test)
+@(test) // slow
 test_a_joiner_drops_into_a_pit_dug_under_the_cabin :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -2067,7 +2067,7 @@ test_a_joiner_drops_into_a_pit_dug_under_the_cabin :: proc(t: ^testing.T) {
 // A place that would raise ground into the empty cabin, where the next
 // joiner spawns, is refused with Would_Bury_Spawn; the same place outside
 // the pod, away from the players, is not (0180).
-@(test)
+@(test) // slow
 test_ground_raised_in_the_cabin_is_refused :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()

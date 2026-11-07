@@ -473,7 +473,7 @@ test_the_window_light_stays_where_0273_put_it :: proc(t: ^testing.T) {
 // the pane's plane the rim's flats (six directions 60 degrees apart, at
 // some phase of 15 degrees) stand within r 0.36 of the centre; the
 // radius reaches the bore's corners (0.39).
-@(test)
+@(test) // slow
 test_the_soot_lies_on_the_outer_pane :: proc(t: ^testing.T) {
 	pod, triangles := shipped_pod_body()
 	for index in 0 ..< pod.window_count {

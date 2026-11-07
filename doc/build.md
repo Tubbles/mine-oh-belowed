@@ -55,17 +55,30 @@ Gotcha: Bazzite ships runtime libraries without the development symlinks (`libX1
 ./build.sh check          # odin check src -vet -strict-style
 ./build.sh check-windows  # the same check for -target:windows_amd64, on any host
 ./build.sh check-android  # the same check for Android arm64 (android.md)
-./build.sh test [args]    # odin test src -all-packages, further arguments passed on
-./build.sh bench          # test_factory_benchmark only, optimised
+./build.sh test [tier] [files or tests] [flags]  # the tests of a tier, all by default (Test tiers)
+./build.sh nightly        # the report tests and test_factory_benchmark, optimised, 03:00 to 06:00 only
+./build.sh bench          # test_factory_benchmark only, optimised, 03:00 to 06:00 only
 ./build.sh android        # the signed APK (android.md)
 ./build.sh model-check [machine]  # the debug build, then --model-check (all by default)
 ```
 
 - Every command passes the collection; both builds pass `-vet -strict-style` and the `BUILD_INFO` define (below).
-- `test` passes `-all-packages` and any further arguments to `odin test` (a define, `-define:ODIN_TEST_NAMES=game.<test>`): plain `odin test src` runs only the game package's tests, not those of the packages under `src/` it imports (`src/platform/` and the others, [code_map.md](code_map.md), Packages). The checks need nothing extra: `odin check src` checks every package the game imports, tests included, for the target it checks.
+- `test` builds the test binary `build/mine-oh-belowed-tests` with `odin build src -all-packages -build-mode:test` (what `odin test` builds), passes the flags given on (a define, `-o:speed`) and runs the tier's tests ([Test tiers](#test-tiers)). `-all-packages`: plain `odin test src` runs only the game package's tests, not those of the packages under `src/` it imports (`src/platform/` and the others, [code_map.md](code_map.md), Packages). The checks need nothing extra: `odin check src` checks every package the game imports, tests included, for the target it checks.
 - `check-windows` catches code that does not compile for Windows without a Windows machine; on every push the `windows` job's native build guards the same target ([CI](#ci)).
-- `bench` runs `test_factory_benchmark` with `-o:speed`: size 1 on the field world (0179), its table logged, a failure when it averages 8 ms per tick or more, half the 60 Hz budget. Plain `test` (and CI) runs it unoptimised and only logs. `bench` is a heavy benchmark and follows the benchmark rules in [CLAUDE.md](../CLAUDE.md).
+- `bench` runs `test_factory_benchmark` with `-o:speed`: size 1 on the field world (0179), its table logged, a failure when it averages 8 ms per tick or more, half the 60 Hz budget. Plain `test` (and CI) runs it unoptimised and only logs. `bench` and `nightly` are heavy benchmarks: they refuse to start (exit 2) outside 03:00 to 06:00 Europe/Stockholm, and hold `~/benchmark.lock` (its pid, start, expected minutes, directory, project, command and session) while they run, waiting for another live lock and removing a stale one, so no two benchmarks of any project share the machine. A stale lock is first renamed to a name of the guard's own and its pid read again there, so of two guards that found it only one removes it, and a lock that turns out live goes back.
 - On a Windows host (Git Bash) `build.sh` makes no shims, writes `build/mine-oh-belowed.exe` and adds `-subsystem:windows` to `release`.
+
+## Test tiers
+
+The suite in tiers (0316), so an item iterates on tests that take seconds to a minute and runs the whole suite rarely. `tools/test_tiers.py` lists, selects and judges. Its tests are `python3 tools/test_tiers_test.py`.
+
+- The tiers: `all` (every test, what CI runs, the default of bare `./build.sh test`), `unit` (every test not marked slow, the one to iterate on), `slow` (the tests marked slow), `quick` (the tests of the files or the tests named: a test file gives its tests, `src/<name>.odin` the tests of `src/<name>_test.odin`, both without their report tests, which a notice names, `test_<name>` or `game.test_<name>` that one test of any tier, a path that is not an `.odin` file is skipped with a notice. Paths that select no test, the files of a diff that touches no tested source, pass with the line `quick: no tests selected` and build nothing, while no selector or an unknown test name exits 2) and `nightly` (`./build.sh nightly`: the report tests and `test_factory_benchmark`, with `-o:speed` and `-define:ODIN_TEST_THREADS=1`, so no two of them run side by side and skew each other's timings, a benchmark under the rules of `bench` above).
+- The mark: `@(test) // slow` on the attribute line marks a test that takes 1 s or more in a run of `all`. Anything else after `@(test)` is refused. The first marking (0316) was 237 tests holding 95% of the summed test time, which left `unit` at about 22 s of running on 8 threads.
+- The runner selects by name only, so the lister reads `src/**/*.odin` (skipping a file whose `#+build` lines exclude the Linux desktop) and passes the tier's names as the binary's `-tests:` arguments, 200 names each. `all` passes none. `ODIN_TEST_NAMES` is refused: a test is named through `quick`.
+- The run's checks: the binary is built with `ODIN_TEST_LOG_STATE_CHANGES`, and its output goes through the filter, which times each test from its state change lines. An unmarked test taking 10 s or more fails the run, one of 3 s or more is named in a notice, a name the build lacks fails it, and a finished run of `all` fails when it ran a test the lister does not list or missed one it does (a `#+build` form or an attribute the lister does not know).
+- `build/test_times.tsv` holds the last run's tests, their seconds and tiers, slowest first: a new test there at 1 s or more gets the mark.
+- A report test (a measurement that only logs, like `test_report_the_relief_cost`) sits indented inside a file level `when NAME {` block, with `NAME :: #config(NAME, false)` declared in its package. It runs in `nightly`, which passes every such define, or alone with `./build.sh test quick <test> -o:speed -define:NAME=true`. Any other enclosing `when` is refused, so no test drops out silently. A define that only changes what a running test does (`TEXTURE_PREVIEW`, `FIRE_FLICKER_DUMP`) is no gate.
+- Every tier pays the compile of the test binary, about 23 s on Odin dev-2026-11a against 75 s on dev-2026-09 (0316). `./build.sh check` reports a compile error in about 4 s.
 
 ## Source checks
 
@@ -205,7 +218,7 @@ The Deck runs the same play build, installed over SSH from the couch machine (00
 
 | Job | Runner | Does |
 |---|---|---|
-| `nix` | `ubuntu-latest` | `nix develop --command odin version`, then `nix build` (build, tests) |
+| `nix` | `ubuntu-latest` | `nix develop --command odin version`, then `nix build` (build, the whole suite (the `all` tier)) |
 | `windows` | `windows-latest` | The Windows package (below), no tests: they assume Unix paths and sockets |
 | `android` | `ubuntu-latest` | `check-android` and the APK ([android.md](android.md)) |
 

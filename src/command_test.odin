@@ -751,7 +751,7 @@ test_angle_of_sine_inverts_the_fixed_sine :: proc(t: ^testing.T) {
 	testing.expect_value(t, angle_of_sine(0), i32(0))
 }
 
-@(test)
+@(test) // slow
 test_field_query_player_answers_the_field_body :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -771,7 +771,7 @@ test_field_query_player_answers_the_field_body :: proc(t: ^testing.T) {
 	testing.expectf(t, !strings.contains(text, "\nblock "), "%s", text)
 }
 
-@(test)
+@(test) // slow
 test_field_query_world_veins_entities_and_frames :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -812,7 +812,7 @@ test_field_query_world_veins_entities_and_frames :: proc(t: ^testing.T) {
 
 // Work item 0262: a new field world holds no drop capsule, so the listing
 // holds the pod's frame only.
-@(test)
+@(test) // slow
 test_field_query_entities_lists_only_the_pod_frame :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -829,7 +829,7 @@ test_field_query_entities_lists_only_the_pod_frame :: proc(t: ^testing.T) {
 	testing.expect_value(t, pool_alive_count(test.session.simulation.world.entities.capsules), 0)
 }
 
-@(test)
+@(test) // slow
 test_field_teleport_to_a_surface_point_lands_on_the_ground :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -855,7 +855,7 @@ test_field_teleport_to_a_surface_point_lands_on_the_ground :: proc(t: ^testing.T
 	testing.expectf(t, landed && abs(along_up) < 0.3, "landed %v, %f m over the surface", landed, along_up)
 }
 
-@(test)
+@(test) // slow
 test_field_teleport_to_metres_and_to_the_pod :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -874,7 +874,7 @@ test_field_teleport_to_metres_and_to_the_pod :: proc(t: ^testing.T) {
 	expect_field_command_error(t, test, "teleport 0 0 99999999", "a position must be a number")
 }
 
-@(test)
+@(test) // slow
 test_field_look_sets_the_bearing_and_the_camera_follows :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -904,7 +904,7 @@ test_field_look_sets_the_bearing_and_the_camera_follows :: proc(t: ^testing.T) {
 	expect_field_command_error(t, test, "look 0 x", "the pitch must be a number")
 }
 
-@(test)
+@(test) // slow
 test_field_look_at_a_point_faces_it :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -925,7 +925,7 @@ test_field_look_at_a_point_faces_it :: proc(t: ^testing.T) {
 	expect_field_command_error(t, test, fmt.tprintf("look at %s %s %s", eye[0], eye[1], eye[2]), "the point is at the eye")
 }
 
-@(test)
+@(test) // slow
 test_field_camera_third_is_pulled_in_in_the_cabin :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -945,7 +945,7 @@ test_field_camera_third_is_pulled_in_in_the_cabin :: proc(t: ^testing.T) {
 	expect_field_command_error(t, test, "camera side", "usage: camera <first|third>")
 }
 
-@(test)
+@(test) // slow
 test_field_crouch_holds_and_releases :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -969,7 +969,7 @@ test_field_crouch_holds_and_releases :: proc(t: ^testing.T) {
 	expect_field_command_error(t, test, "crouch maybe", "usage: crouch <on|off>")
 }
 
-@(test)
+@(test) // slow
 test_field_fly_and_noclip_act_on_the_field_body :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -987,7 +987,7 @@ test_field_fly_and_noclip_act_on_the_field_body :: proc(t: ^testing.T) {
 	testing.expect(t, !player.field.flying)
 }
 
-@(test)
+@(test) // slow
 test_field_place_on_a_frame_cell :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -1025,7 +1025,7 @@ test_field_place_on_a_frame_cell :: proc(t: ^testing.T) {
 
 // Work item 0274: insert with a frame fills the machine at a frame's
 // cell; an empty cell and frame 0 are refused.
-@(test)
+@(test) // slow
 test_field_insert_into_a_frame_machine :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -1052,7 +1052,7 @@ test_field_insert_into_a_frame_machine :: proc(t: ^testing.T) {
 	expect_field_command_error(t, test, fmt.tprintf("insert coal 0 %d %d 0 0", frame.id, x), "needs a count from 1")
 }
 
-@(test)
+@(test) // slow
 test_field_refuses_the_block_world_commands :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)
@@ -1080,7 +1080,7 @@ test_block_world_refuses_the_field_commands :: proc(t: ^testing.T) {
 // Work item 0223: seat sit puts the body in the pod's chair, its eye on
 // the seat's, and query player says so; seat stand stands it; both are
 // refused while the world falls.
-@(test)
+@(test) // slow
 test_the_seat_command_sits_and_stands :: proc(t: ^testing.T) {
 	test := make_field_command_test()
 	defer destroy_field_command_test(test)

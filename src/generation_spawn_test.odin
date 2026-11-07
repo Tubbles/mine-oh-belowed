@@ -87,7 +87,7 @@ test_starter_veins_near_the_pad :: proc(t: ^testing.T) {
 
 // Every footprint column of a starter vein holds its outcrop block with
 // only air or water above it.
-@(test)
+@(test) // slow
 test_starter_outcrops_open_to_the_sky :: proc(t: ^testing.T) {
 	for seed in LANDING_SITE_TEST_SEEDS {
 		generator, found := make_landed_test_generator(t, seed)

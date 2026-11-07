@@ -49,7 +49,7 @@ tech_demos_button_id :: proc(key: string) -> Ui_Id {
 
 // Work item 0302: the title's Tech demos button opens the list, the
 // list's Water opens the water screen, and Back walks back to the title.
-@(test)
+@(test) // slow
 test_the_title_opens_the_tech_demos_list_and_the_water_screen :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)

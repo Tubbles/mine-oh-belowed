@@ -73,7 +73,7 @@ settle_test_field_stream :: proc(streaming: ^Field_Streaming, world: ^Field_Worl
 // chunks once they are all in; an edit remeshes it with a new revision
 // while the old revision's result is dropped; leaving the selection drops
 // it and leaves the chunks, which are the simulation's.
-@(test)
+@(test) // slow
 test_an_edited_field_chunk_remeshes_on_the_next_revision :: proc(t: ^testing.T) {
 	planet := make_test_planet()
 	streaming := start_field_streaming(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
@@ -121,7 +121,7 @@ test_an_edited_field_chunk_remeshes_on_the_next_revision :: proc(t: ^testing.T) 
 
 // A fresh stream spends its first jobs on the requested chunks in the
 // order given, before any mesh.
-@(test)
+@(test) // slow
 test_a_fresh_stream_generates_the_requested_chunks_first :: proc(t: ^testing.T) {
 	planet := make_test_planet()
 	camera := World_Position{0, metres_to_position_units(i64(planet.radius_metres + 40)), 0}
@@ -156,7 +156,7 @@ test_a_fresh_stream_generates_the_requested_chunks_first :: proc(t: ^testing.T) 
 // worker's result lands after the frame's scheduling, as an asynchronous
 // worker's does, and the node is not submitted again while its job is in
 // flight, so the result is current when it is taken.
-@(test)
+@(test) // slow
 test_a_chunk_edited_every_frame_still_meshes :: proc(t: ^testing.T) {
 	planet := make_test_planet()
 	streaming := start_field_streaming(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
@@ -250,7 +250,7 @@ test_one_selection_serves_two_viewports :: proc(t: ^testing.T) {
 // selection. The unmeshed take the frame's cap first; the waves' remeshes
 // take at most two a frame of what is left, and every chunk marked meshes
 // in time.
-@(test)
+@(test) // slow
 test_the_waves_remesh_after_unmeshed_nodes_two_a_frame :: proc(t: ^testing.T) {
 	streaming := start_field_streaming(TEST_PLANET_SEED, make_test_planet(), DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
 	defer stop_field_streaming(&streaming)
@@ -320,7 +320,7 @@ test_the_waves_remesh_after_unmeshed_nodes_two_a_frame :: proc(t: ^testing.T) {
 // keeps them), the sixth once. With the jobs run every frame, two wave
 // remeshes a frame and six nodes marked, no mark waits more than three
 // frames (six over two), the sixth's included.
-@(test)
+@(test) // slow
 test_the_waves_remesh_the_oldest_mark_first :: proc(t: ^testing.T) {
 	streaming := start_field_streaming(TEST_PLANET_SEED, make_test_planet(), DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
 	defer stop_field_streaming(&streaming)

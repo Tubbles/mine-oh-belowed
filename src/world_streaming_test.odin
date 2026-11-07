@@ -113,7 +113,7 @@ volume_settled :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk:
 	return true
 }
 
-@(test)
+@(test) // slow
 test_streaming_loads_meshes_and_unloads :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	world: World
@@ -163,7 +163,7 @@ test_load_volume_offsets_nearest_first :: proc(t: ^testing.T) {
 }
 
 // Generation and meshing cost per chunk on this machine, for the notes.
-@(test)
+@(test) // slow
 test_report_generation_and_meshing_time :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	registry := make_test_registry()

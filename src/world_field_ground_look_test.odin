@@ -305,7 +305,8 @@ test_the_ground_tint_has_no_seam :: proc(t: ^testing.T) {
 
 // The look's cost on the mesh job (0307), single threaded and not a
 // benchmark; the suite leaves it out:
-// ./build.sh test -define:GROUND_LOOK_COST=true -define:ODIN_TEST_NAMES=game.test_report_the_ground_look_cost
+// ./build.sh test quick game.test_report_the_ground_look_cost -define:GROUND_LOOK_COST=true
+// or in ./build.sh nightly.
 GROUND_LOOK_COST :: #config(GROUND_LOOK_COST, false)
 
 when GROUND_LOOK_COST {

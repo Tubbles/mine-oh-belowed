@@ -108,7 +108,7 @@ lockstep_test_input :: proc(machine: ^Lockstep_Test_Machine, frame: int) -> Inpu
 // Two machines with the simulated chunk set on: the walks, the hotbar
 // commands, a socket line (give), a craft and a research start of
 // different players reach both alike, for a thousand ticks.
-@(test)
+@(test) // slow
 test_two_simulations_fed_the_same_records_keep_the_same_hash :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -209,7 +209,7 @@ test_a_tick_waits_for_the_last_players_record :: proc(t: ^testing.T) {
 // Walking ahead inside the window: the prediction is where the confirmed
 // ticks put the player when nothing else happened, and it is replaced by
 // the confirmed player when another player's command changed the outcome.
-@(test)
+@(test) // slow
 test_the_prediction_matches_and_is_reconciled :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -276,7 +276,7 @@ test_a_window_of_zero_predicts_nothing :: proc(t: ^testing.T) {
 // The set of radius one around the player: a missing chunk stalls the
 // tick, its arrival lets it run, and a chunk outside the set is unloaded
 // before the tick reads anything.
-@(test)
+@(test) // slow
 test_the_simulated_chunk_set_stalls_and_keeps_only_its_chunks :: proc(t: ^testing.T) {
 	simulation, content := make_developer_test_simulation()
 	defer destroy_simulation(&simulation)
@@ -330,7 +330,7 @@ test_a_tick_command_applies_the_held_local_commands :: proc(t: ^testing.T) {
 // A socket line runs where the commands apply, after the simulated chunk
 // set was derived: a teleport moves the set from the next tick on, on
 // every machine alike.
-@(test)
+@(test) // slow
 test_a_socket_line_runs_after_the_chunk_set_is_derived :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -405,7 +405,7 @@ run_split_screen_test :: proc(machines: []^Lockstep_Test_Machine, content: Simul
 // Two local players on one machine and one on another keep the state hash
 // of three machines with one local player each fed the same inputs: how
 // many viewports feed a machine changes nothing a tick reads.
-@(test)
+@(test) // slow
 test_two_local_members_keep_the_hash_of_one_member_machines :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -510,7 +510,7 @@ slot_test_commands :: proc(simulation: ^Simulation_State, player, frame: int, in
 // Two machines whose players move stacks through every slot command keep
 // the same state hash: the slot transfers are tick input like every
 // other screen action.
-@(test)
+@(test) // slow
 test_slot_commands_keep_two_machines_in_step :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -625,7 +625,7 @@ FIELD_PREDICTION_TEST_WALK :: Input_Frame {
 // put the player; the prediction leaves the simulation's hash, the walk
 // counter and the field's queues alone, and a session that never
 // predicts hashes alike after the same ticks.
-@(test)
+@(test) // slow
 test_the_field_prediction_matches_the_confirmed_walk :: proc(t: ^testing.T) {
 	content := make_field_test_game_content()
 	session, simulation_content := start_field_lockstep_test_session(content, 3)
@@ -668,7 +668,7 @@ test_the_field_prediction_matches_the_confirmed_walk :: proc(t: ^testing.T) {
 
 // Work item 0223: the prediction of a seated player with the walk, the
 // tools and the look keeps the body in the chair and turns the look.
-@(test)
+@(test) // slow
 test_the_prediction_holds_a_seated_player :: proc(t: ^testing.T) {
 	content := make_field_test_game_content()
 	session, simulation_content := start_field_lockstep_test_session(content, 0)
@@ -693,7 +693,7 @@ test_the_prediction_holds_a_seated_player :: proc(t: ^testing.T) {
 
 // The prediction runs the seated cut and tick: Seated the camera toggle
 // shows at once, Strapped it does nothing (0285).
-@(test)
+@(test) // slow
 test_the_prediction_toggles_the_camera_seated_and_not_strapped :: proc(t: ^testing.T) {
 	content := make_field_test_game_content()
 	session, simulation_content := start_field_lockstep_test_session(content, 0)
@@ -724,7 +724,7 @@ test_the_prediction_toggles_the_camera_seated_and_not_strapped :: proc(t: ^testi
 // and the rebuild snaps it to where the confirmed walk ends, two inputs
 // ahead of the confirmed player; after the last ticks the view is the
 // confirmed feet.
-@(test)
+@(test) // slow
 test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^testing.T) {
 	content := make_field_test_game_content()
 	session, simulation_content := start_field_lockstep_test_session(content, 3)
@@ -811,7 +811,7 @@ test_two_sessions_committing_a_placement_hash_the_same :: proc(t: ^testing.T) {
 
 // Free crafting (0234) is lockstep state: the toggle pressed on one
 // machine reaches both, and a craft from nothing keeps the hashes alike.
-@(test)
+@(test) // slow
 test_free_crafting_toggled_on_one_machine_keeps_the_hash :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)

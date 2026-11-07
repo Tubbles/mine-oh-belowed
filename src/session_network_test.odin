@@ -15,7 +15,7 @@ LOOPBACK_HOSTING_PLAN :: Hosting_Plan{port_count = 1, address = .Loopback}
 // it restores (no record of it exists), it runs the relayed ticks, and its
 // entry is added at the join tick every machine agrees on, after which
 // all three keep one hash.
-@(test)
+@(test) // slow
 test_a_joiner_restores_while_the_others_play_and_reaches_their_hash :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -153,7 +153,7 @@ test_a_server_ticks_without_a_window :: proc(t: ^testing.T) {
 // new entry. No machine sees a hash mismatch, no frame of the second runs
 // before its entry exists, and when the first client drops out mid
 // window the others play on.
-@(test)
+@(test) // slow
 test_two_clients_join_a_server_over_the_loopback :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_loopback_test_server(content)
@@ -314,7 +314,7 @@ run_client_test_frame :: proc(state: ^Frame_State) {
 // the server over the machine's one connection gets a new entry, both
 // players' records flow on it, the hashes agree, and the guest's leaving
 // keeps its entry while the machine plays on.
-@(test)
+@(test) // slow
 test_a_joined_machine_adds_and_removes_a_local_player :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_loopback_test_server(content)
@@ -348,7 +348,7 @@ test_a_joined_machine_adds_and_removes_a_local_player :: proc(t: ^testing.T) {
 // A guest viewport on a joined machine that leaves before the host's
 // answer: the answer's member leaves at once, so no machine waits for
 // records that never come, and the session plays on.
-@(test)
+@(test) // slow
 test_a_guest_leaving_before_the_hosts_answer_stalls_nothing :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_loopback_test_server(content)
@@ -411,7 +411,7 @@ run_hosting_test_frames :: proc(host: ^Frame_State, clients: []^Frame_State, tic
 // The host adds a split screen guest while a client plays and removes it
 // again: the client learns both member changes and both machines' hashes
 // agree through them.
-@(test)
+@(test) // slow
 test_a_host_adds_and_removes_a_local_guest_with_a_client_playing :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_hosting_test_frame(content)
@@ -476,7 +476,7 @@ run_host_alone_until :: proc(host: ^Frame_State, tick: u64) -> bool {
 // A joiner that drops while it restores (0190): the host played on past
 // the snapshot's tick without a record of it, and its leaving changes no
 // member and holds no tick; the host is alone again.
-@(test)
+@(test) // slow
 test_a_joiner_dropped_while_it_restores_leaves_nothing_behind :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_hosting_test_frame(content)
@@ -507,7 +507,7 @@ test_a_joiner_dropped_while_it_restores_leaves_nothing_behind :: proc(t: ^testin
 // Two joiners (0190): the first gets the world and restores (its frames
 // do not run) while the host plays on and the second joins and arrives;
 // then the first arrives too, and all three keep one hash.
-@(test)
+@(test) // slow
 test_a_second_joiner_arrives_while_the_first_restores :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_hosting_test_frame(content)

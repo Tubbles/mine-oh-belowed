@@ -335,7 +335,7 @@ test_closing_a_hatch_on_a_player_is_refused :: proc(t: ^testing.T) {
 // airlock, stands up in the cabin once the standing capsule fits, and
 // walks on in the cabin's open cells; from the cabin, crouched, the
 // closed inner hatch stops the crawl at its face (0221).
-@(test)
+@(test) // slow
 test_a_field_player_crawls_through_the_airlock_and_stands_in_the_cabin :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	for spacing in TEST_FIELD_SPACINGS {
@@ -572,7 +572,7 @@ test_the_feet_tell_the_sealed_room :: proc(t: ^testing.T) {
 
 // A machine or a foundation over the bench or in front of the locker is
 // refused, and Mine held on the bench leaves it standing.
-@(test)
+@(test) // slow
 test_the_fixtures_refuse_pick_up_and_placement_over_them :: proc(t: ^testing.T) {
 	simulation, content, items := make_pick_up_test()
 	defer destroy_simulation(&simulation)
@@ -1179,7 +1179,7 @@ rested_test_feet_height :: proc(frame: Frame, player: Field_Player) -> i64 {
 // spawn settles on the floor, and a walk along each of the frame's
 // directions never leaves the ground for 4 ticks in a row, never sinks
 // through the floor plate and never rises over ground in the cabin.
-@(test)
+@(test) // slow
 test_a_player_stands_and_walks_in_the_rested_cabin :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		for tilt in ([3]int{0, 15, 25}) {
@@ -1223,7 +1223,7 @@ test_a_player_stands_and_walks_in_the_rested_cabin :: proc(t: ^testing.T) {
 // 25, every spacing), a crouched player crawls from the bore out past
 // the pod's front onto the ground, and from outside crawls in past the
 // inner hatch's face into the cabin, not under the pod.
-@(test)
+@(test) // slow
 test_a_player_crawls_out_of_and_into_the_rested_airlock :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		for tilt in ([2]int{15, 25}) {

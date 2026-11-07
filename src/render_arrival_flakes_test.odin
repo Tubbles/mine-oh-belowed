@@ -220,7 +220,7 @@ test_no_flake_outside_the_heating :: proc(t: ^testing.T) {
 
 // Also the cost: a frame evaluates exactly MAXIMUM_ARRIVAL_FLAKES
 // candidates and draws at most that many quads.
-@(test)
+@(test) // slow
 test_the_live_flakes_stay_under_the_cap :: proc(t: ^testing.T) {
 	testing.expect_value(t, MAXIMUM_ARRIVAL_FLAKES, 328)
 	pod, _ := shipped_pod_body()
@@ -384,7 +384,7 @@ FLAKE_TEST_CROSSING_SALTS :: 8
 // 0288) crosses in a median of 6 to 14 ticks, grazing passes shorter,
 // pooled over FLAKE_TEST_CROSSING_SALTS worlds so one world's few
 // crossings do not decide it.
-@(test)
+@(test) // slow
 test_the_flakes_cross_the_chairs_porthole_as_in_the_footage :: proc(t: ^testing.T) {
 	pod, triangles := shipped_pod_body()
 	fall := flake_test_fall()
@@ -413,7 +413,7 @@ test_the_flakes_cross_the_chairs_porthole_as_in_the_footage :: proc(t: ^testing.
 // the flakes start crossing the chair's porthole (window 2) 1.4 to 2.6
 // times a second per world, pooled over FLAKE_TEST_CROSSING_SALTS
 // worlds (0303's 1.5 to 2 from the footage, the model's 1.8).
-@(test)
+@(test) // slow
 test_the_flakes_cross_the_chairs_porthole_most_seconds :: proc(t: ^testing.T) {
 	pod, triangles := shipped_pod_body()
 	fall := flake_test_fall()

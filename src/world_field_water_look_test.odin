@@ -446,7 +446,7 @@ test_a_body_marks_the_neighbours_its_samples_reach :: proc(t: ^testing.T) {
 // its grid as the gather would make it now is the one kept, so no wave
 // is drawn stale on either side; both are marked, and at rest both hold
 // the still grid again.
-@(test)
+@(test) // slow
 test_a_wave_at_a_border_remeshes_both_nodes :: proc(t: ^testing.T) {
 	world := make_two_chunk_water_world({0, 1})
 	defer destroy_field_world(&world)

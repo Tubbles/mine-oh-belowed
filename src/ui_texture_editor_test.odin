@@ -134,7 +134,7 @@ test_texture_parameter_values_print_like_the_data_file :: proc(t: ^testing.T) {
 
 // A d-pad step right on the focused Blob share slider changes the
 // selected entry, its tile and the preview's revision.
-@(test)
+@(test) // slow
 test_texture_editor_slider_step_regenerates_the_tile :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)

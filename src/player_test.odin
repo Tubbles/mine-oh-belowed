@@ -105,7 +105,7 @@ test_player_falls_onto_floor_and_lands_on_top :: proc(t: ^testing.T) {
 	testing.expect_value(t, player.velocity.y, 0)
 }
 
-@(test)
+@(test) // slow
 test_player_jump_reaches_one_block_not_two :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
@@ -415,7 +415,7 @@ owned_total :: proc(player: Player) -> int {
 	return total
 }
 
-@(test)
+@(test) // slow
 test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	first_generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -746,7 +746,7 @@ test_cheat_step_up_needs_room_above_the_ledge :: proc(t: ^testing.T) {
 
 // 0087: the cheat jump's apex is about 2.2 blocks, so a jump clears a two
 // block wall.
-@(test)
+@(test) // slow
 test_cheat_jump_reaches_two_blocks :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	stone := test_block(registry, "stone")

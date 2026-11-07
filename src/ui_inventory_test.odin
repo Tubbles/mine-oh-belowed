@@ -482,7 +482,7 @@ machine_panel_slot_id :: proc(grid: string, index: int) -> Ui_Id {
 	return ui_hash(ui_hash(machine_panel, grid, -1), "slot", index)
 }
 
-@(test)
+@(test) // slow
 test_the_touch_row_replaces_the_glyph_bar :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -507,7 +507,7 @@ test_the_touch_row_replaces_the_glyph_bar :: proc(t: ^testing.T) {
 // cursor, Sort sorts the main grid from the main grid and from the
 // hotbar, which keeps its order, and the transfers move between the
 // hotbar and the main grid.
-@(test)
+@(test) // slow
 test_the_touch_row_in_the_inventory :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -589,7 +589,7 @@ test_sort_touches_only_the_active_grid :: proc(t: ^testing.T) {
 
 // In a chest panel the hotbar and the main grid transfer into the chest,
 // the chest into the main grid; Split and Sort act on the chest's slot.
-@(test)
+@(test) // slow
 test_the_touch_row_in_a_chest_panel :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -644,7 +644,7 @@ test_a_frame_without_a_screen_clears_the_active_slot :: proc(t: ^testing.T) {
 
 // X with a hotbar slot focused (where the screen opens) sorts the main
 // grid and leaves the hotbar's order.
-@(test)
+@(test) // slow
 test_x_on_the_hotbar_sorts_the_main_grid :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -685,7 +685,7 @@ test_fit_button_widths_caps_the_widest :: proc(t: ^testing.T) {
 
 // Work item 0137: Drop in the inventory's row drops the active slot's
 // stack, Clear filter in a filter panel's row clears the filter.
-@(test)
+@(test) // slow
 test_the_touch_row_drops_the_active_stack :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -700,7 +700,7 @@ test_the_touch_row_drops_the_active_stack :: proc(t: ^testing.T) {
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 }
 
-@(test)
+@(test) // slow
 test_the_touch_row_clears_a_filter :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)

@@ -103,7 +103,7 @@ test_benchmark_field :: proc(items: Item_Registry) -> Benchmark_Field {
 // the pod's cabin at the home, with the pad 24 m ahead of it; the
 // budget holds only in the optimised build (./build.sh bench), the plain
 // build logs. Size 2 is refused with the M14 message.
-@(test)
+@(test) // slow
 test_factory_benchmark :: proc(t: ^testing.T) {
 	plan := load_test_benchmark_plan(t)
 	defer destroy_benchmark_plan(&plan)
@@ -134,7 +134,7 @@ test_factory_benchmark :: proc(t: ^testing.T) {
 
 // Work item 0196: the benchmark's pad is laid in the content's pad
 // foundation, the wooden one; the pod has no pad (0199).
-@(test)
+@(test) // slow
 test_the_benchmark_pad_is_the_contents_pad_foundation :: proc(t: ^testing.T) {
 	content := make_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)

@@ -137,7 +137,7 @@ load_crate_world :: proc(world: ^World, records: ^Game_Records, generator: ^Gene
 	place_pending_crates(world_tick_context(world, records, content, TEST_TICK_RATE))
 }
 
-@(test)
+@(test) // slow
 test_crate_placement_does_not_depend_on_load_order :: proc(t: ^testing.T) {
 	content := make_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)

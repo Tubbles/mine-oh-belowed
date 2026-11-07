@@ -439,7 +439,7 @@ test_a_pump_on_a_steep_slope_takes_its_intake_from_the_water :: proc(t: ^testing
 // spawns, on bare ground under the cabin's floor or snapped onto the
 // pod's cell, is refused: the pod's cells are taken (Frame_Cell_Taken),
 // the spawn standing inside them, and nothing enters.
-@(test)
+@(test) // slow
 test_a_pump_over_the_spawn_is_refused :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()

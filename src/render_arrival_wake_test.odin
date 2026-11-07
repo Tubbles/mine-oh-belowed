@@ -201,7 +201,7 @@ test_the_wake_frame_is_in_the_moved_space :: proc(t: ^testing.T) {
 // of the rim nearly face on, as the sheath was: the shader's speeds
 // cross the patch along the flow as 0288's crossed the glass, and the
 // gain makes the porthole read 0288's intensity at the peak.
-@(test)
+@(test) // slow
 test_the_wake_crosses_the_chairs_porthole_as_the_sheath_did :: proc(t: ^testing.T) {
 	pod, triangles := shipped_pod_body()
 	shape := arrival_wake_shape(pod.heat_shield)
@@ -260,7 +260,7 @@ test_the_wake_crosses_the_chairs_porthole_as_the_sheath_did :: proc(t: ^testing.
 // points at r 0.2 on it that reaches the tube's flats without crossing
 // the body meets the wall 3 to 6 cells aft of the rim, never the root,
 // the end or the disc; the seated eye sees the wake through window 2.
-@(test)
+@(test) // slow
 test_the_wake_fills_every_porthole_from_the_cabin :: proc(t: ^testing.T) {
 	pod, triangles := shipped_pod_body()
 	shape := arrival_wake_shape(pod.heat_shield)

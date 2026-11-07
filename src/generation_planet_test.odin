@@ -375,7 +375,7 @@ test_the_shaped_relief_stays_within_the_bound :: proc(t: ^testing.T) {
 
 // The shaped home generates the same bytes twice at every spacing and
 // every preset radius, and other bytes than the unshaped one.
-@(test)
+@(test) // slow
 test_the_shaped_home_generates_identical_bytes_twice :: proc(t: ^testing.T) {
 	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
 		planet := shipped_test_home_at(radius)
@@ -495,7 +495,7 @@ test_field_surface_distance :: proc(world: ^Field_World, spacing_millimetres: in
 // At every preset and at 1000 and 333 mm the generated floor is flat
 // enough for a machine on bare ground over 8 by 12 cells centred on the
 // home (the room 0198's pod needs), and lies at the floor's height.
-@(test)
+@(test) // slow
 test_the_crater_floor_is_flat_in_the_generated_field :: proc(t: ^testing.T) {
 	flatness := test_field_game_config().bare_ground_flatness_millimetres
 	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
@@ -534,7 +534,7 @@ test_crater_point :: proc(generation: Planet_Generation, bearing_degrees: int, d
 // round the point are the uncratered planet's (the field's surface there
 // can lie further than an eighth of a spacing from the relief on a
 // ledge's face, crater or not).
-@(test)
+@(test) // slow
 test_the_rim_stands_above_the_surrounding_surface :: proc(t: ^testing.T) {
 	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
 		planet := shipped_test_home_at(radius)
@@ -733,7 +733,7 @@ expect_field_world_is_generation :: proc(t: ^testing.T, world: ^Field_World, gen
 // generation, sample for sample, with the floor where
 // test_the_crater_floor_is_flat_in_the_generated_field finds it, and
 // leaves them nil. A plain generation computes none.
-@(test)
+@(test) // slow
 test_the_impact_dig_makes_the_baked_crater :: proc(t: ^testing.T) {
 	planet := shipped_test_impact_home()
 	for spacing in ([3]int{333, 500, 1000}) {

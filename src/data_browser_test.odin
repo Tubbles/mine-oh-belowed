@@ -443,7 +443,7 @@ test_a_saved_strings_edit_shows_at_once :: proc(t: ^testing.T) {
 // A broken overlay copy of blocks.sjson fails the start load, with the
 // overlay copy named; the data edits go off for the run and the second
 // load takes the data files. The Data files screen still sees the copy.
-@(test)
+@(test) // slow
 test_a_broken_data_edit_turns_the_overlay_off_at_start :: proc(t: ^testing.T) {
 	edits_directory, error := os.make_directory_temp("", "mine-oh-belowed-broken-edit-test-*", context.temp_allocator)
 	testing.expect_value(t, error, nil)
@@ -564,7 +564,7 @@ test_a_vanished_reachable_directory_turns_its_reading_off :: proc(t: ^testing.T)
 
 // A broken copy in the edits directory fails the start load naming it;
 // both overlays go off and the second load takes the data files.
-@(test)
+@(test) // slow
 test_a_broken_reachable_copy_turns_the_overlay_off_at_start :: proc(t: ^testing.T) {
 	base, error := os.make_directory_temp("", "mine-oh-belowed-broken-reachable-test-*", context.temp_allocator)
 	testing.expect_value(t, error, nil)

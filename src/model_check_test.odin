@@ -340,7 +340,7 @@ test_the_model_check_report_line :: proc(t: ^testing.T) {
 	testing.expect_value(t, line, "burner_mining_drill: sweep: phase 0.5000: x")
 }
 
-@(test)
+@(test) // slow
 test_the_shipped_models_pass_the_checks :: proc(t: ^testing.T) {
 	machines := shipped_machines()
 	defer delete(machines)

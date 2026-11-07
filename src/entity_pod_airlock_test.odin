@@ -66,7 +66,7 @@ expect_test_doors_follow_the_rule :: proc(t: ^testing.T, entities: ^Entities, ma
 // is past it on the way back, no hold. The inner door, since a standing
 // capsule cannot reach the outer one on cells: the pod's solid row over
 // the 2 row outside box keeps it 0.5 m off the outer face.
-@(test)
+@(test) // slow
 test_a_standing_player_opens_the_inner_door_within_the_reach_and_shuts_it_past_it :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		machines := make_test_machines()
@@ -213,7 +213,7 @@ cross_test_airlock :: proc(t: ^testing.T, spacing: int, outward: bool) {
 
 // From the lane out: the inner opens, both shut round the player in the
 // bore, the outer opens, and it shuts behind the player outside.
-@(test)
+@(test) // slow
 test_a_crouched_crawl_out_has_both_doors_shut_in_the_middle :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		cross_test_airlock(t, spacing, true)
@@ -222,7 +222,7 @@ test_a_crouched_crawl_out_has_both_doors_shut_in_the_middle :: proc(t: ^testing.
 
 // From outside in: the outer open and the inner shut, both shut in the
 // middle, the inner open and the outer shut.
-@(test)
+@(test) // slow
 test_a_crouched_crawl_in_has_both_doors_shut_in_the_middle :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		cross_test_airlock(t, spacing, false)

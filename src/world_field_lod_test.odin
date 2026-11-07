@@ -349,7 +349,7 @@ test_the_skirt_faces_follow_the_neighbours_levels :: proc(t: ^testing.T) {
 // latitude 0, 45 and 90 and at the steps 1, 2 and 4 (0294): the sea's
 // samples draw its level as a plane, a signed distance in each grid's
 // spacing, so no level of detail draws the staircase.
-@(test)
+@(test) // slow
 test_the_seas_surface_residual_is_small_at_every_latitude_and_level :: proc(t: ^testing.T) {
 	planet := make_test_planet()
 	planet.radius_metres = 1000

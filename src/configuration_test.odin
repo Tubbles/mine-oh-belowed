@@ -539,7 +539,7 @@ test_a_problem_outside_the_settings_file_still_stops_the_start :: proc(t: ^testi
 
 // A font the fonts file does not offer falls back to the default at
 // start instead of stopping it.
-@(test)
+@(test) // slow
 test_an_unavailable_font_setting_falls_back_to_the_default_at_start :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	root := make_configuration_test_directory()

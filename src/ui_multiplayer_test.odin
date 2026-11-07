@@ -13,7 +13,7 @@ lan_test_answer :: proc(world: string, port: int) -> platform.Discovery_Message 
 // game, and a game whose last answer is three seconds old drops out
 // between frames, after which the next frame's draw list reads only the
 // games left.
-@(test)
+@(test) // slow
 test_the_multiplayer_list_draws_its_games_and_drops_a_stale_one :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)

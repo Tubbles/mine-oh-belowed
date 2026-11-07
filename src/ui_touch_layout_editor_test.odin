@@ -107,7 +107,7 @@ test_resize_keeps_a_circle_round_and_opacity_steps_by_a_tenth :: proc(t: ^testin
 // The screen with the gamepad: select A, move it with the d-pad, grow it
 // with R1, Save on Default refuses, Save as stores and selects it, Delete
 // selects Default again.
-@(test)
+@(test) // slow
 test_the_touch_layout_editor_with_the_gamepad :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -161,7 +161,7 @@ test_the_touch_layout_editor_with_the_gamepad :: proc(t: ^testing.T) {
 // The Accessibility tab's Touch layout row steps the selection and asks
 // for the file to be written; Edit touch layout opens the editor on the
 // selected layout.
-@(test)
+@(test) // slow
 test_the_touch_layout_row_cycles_the_selection_and_opens_the_editor :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -190,7 +190,7 @@ test_the_touch_layout_row_cycles_the_selection_and_opens_the_editor :: proc(t: ^
 }
 
 // A tap selects an element and a drag moves it (1920 by 1080, scale 1).
-@(test)
+@(test) // slow
 test_the_touch_layout_editor_drags_an_element :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
@@ -250,7 +250,7 @@ test_a_save_as_leaves_the_frames_text_readable :: proc(t: ^testing.T) {
 // A layout without START saves (0134: the HUD's pause button opens the
 // pause menu); while the broken file from the start stands, neither the
 // row nor the editor changes anything.
-@(test)
+@(test) // slow
 test_the_editor_saves_a_layout_without_start_and_refuses_a_locked_file :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)

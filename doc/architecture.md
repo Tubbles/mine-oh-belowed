@@ -347,7 +347,7 @@ Rule: platform code is split by build tags, never by `when` around an import, si
 
 ## Testing
 
-- `./build.sh test` runs the tests of the game package and the packages under `src/` (`odin test -all-packages`). Pure procedures get unit tests: noise and generation, belt line arithmetic, recipe resolution, run length coding, the save codec and remap.
+- `./build.sh test` runs the tests of the game package and the packages under `src/` (`-all-packages`) in tiers ([build.md](build.md), Test tiers). Pure procedures get unit tests: noise and generation, belt line arithmetic, recipe resolution, run length coding, the save codec and remap.
 - Determinism: the `*_is_deterministic` tests run two identical worlds (belts, inserters, generation, fluids, combustion and more) and compare their state; `simulation_state_hash` hashes the save bytes for the save and reload tests.
 - Tests that guard rules: `test_static_runtime_imports_stay_out_of_windows`, `test_game_sources_do_not_call_make_directory_all` (`platform_paths_test.odin`), the shader literal and reserved word checks (`shader_source_test.odin`), `texture_periodicity_test.odin`.
 - Rendering and input are verified by playing.
