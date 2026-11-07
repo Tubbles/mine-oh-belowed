@@ -18,7 +18,10 @@ import "platform"
 // the normal in place of the CPU's flat light, and the haze (0313,
 // set_model_open_sky); the emissive layer draws with
 // raylib's default material, so it never takes them. A model shader that
-// fails to load leaves the lit layer on the default material too.
+// fails to load leaves the lit layer on the default material too. The
+// field's trees draw with a shader of their own (0310, Tree_Draw,
+// render_field_trees.odin), which takes the same lights; their far cards
+// are baked from the tree models whenever the models load.
 
 MODEL_VERTEX_SHADER_PATH :: "shaders/model.vs"
 MODEL_FRAGMENT_SHADER_PATH :: "shaders/model.fs"
@@ -55,6 +58,9 @@ Model_Renderer :: struct {
 	models:                []Uploaded_Machine_Model,
 	// The furnaces' and the torches' flames (render_flames.odin, 0274).
 	flame:                 Flame_Shader,
+	// The field's trees (0310, render_field_trees.odin): their shader,
+	// the cards' atlas and the cards by Machine_Id.
+	trees:                 Tree_Draw,
 }
 
 // What every model drawn this frame shares: the world for the light, the
@@ -236,6 +242,7 @@ replace_machine_models :: proc(renderer: ^Model_Renderer, machines: Machine_Regi
 		return problem
 	}
 	unload_model_meshes(renderer)
+	replace_tree_cards(&renderer.trees, meshes, machines)
 	renderer.models = make([]Uploaded_Machine_Model, len(meshes))
 	for mesh, index in meshes {
 		renderer.models[index] = {
@@ -284,6 +291,7 @@ init_model_renderer :: proc(machines: Machine_Registry, data_directory: string) 
 	renderer.emissive_material = rl.LoadMaterialDefault()
 	use_model_shader(&renderer, data_directory)
 	use_flame_shader(&renderer, data_directory)
+	use_tree_shader(&renderer.trees, data_directory)
 	use_machine_models(&renderer, machines, data_directory)
 	return renderer
 }
@@ -298,6 +306,7 @@ destroy_model_renderer :: proc(renderer: ^Model_Renderer) {
 		rl.UnloadShader(renderer.flame.shader)
 	}
 	renderer.flame = {}
+	destroy_tree_draw(&renderer.trees)
 }
 
 // The material a layer draws with: the emissive layer never takes the
@@ -320,6 +329,13 @@ set_model_point_lights :: proc(renderer: Model_Renderer, lights: [MAXIMUM_POINT_
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[2], &boxes, .VEC4, MAXIMUM_POINT_LIGHTS * POINT_LIGHT_BOX_ROWS)
+	if renderer.trees.ready {
+		shader := renderer.trees.material.shader
+		locations := renderer.trees.point_light_locations
+		rl.SetShaderValueV(shader, locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
+		rl.SetShaderValueV(shader, locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)
+		rl.SetShaderValueV(shader, locations[2], &boxes, .VEC4, MAXIMUM_POINT_LIGHTS * POINT_LIGHT_BOX_ROWS)
+	}
 }
 
 // The torchlight (0297): the field's spot, the same the field shader
@@ -330,6 +346,9 @@ set_model_spot_light :: proc(renderer: Model_Renderer, spot: Spot_Light) {
 		return
 	}
 	set_spot_light_uniforms(renderer.material.shader, renderer.spot_locations, spot)
+	if renderer.trees.ready {
+		set_spot_light_uniforms(renderer.trees.material.shader, renderer.trees.spot_locations, spot)
+	}
 }
 
 // The flat light the CPU multiplies into an open sky model's diffuse
@@ -352,6 +371,12 @@ set_model_open_sky :: proc(renderer: Model_Renderer, lights: Field_Frame_Lights,
 	rl.SetShaderValue(shader, renderer.daylight_tint_location, &daylight_tint, .VEC3)
 	rl.SetShaderValue(shader, renderer.camera_position_location, &eye, .VEC3)
 	set_model_outdoor_on(renderer, 1)
+	if renderer.trees.ready {
+		trees := renderer.trees
+		set_open_sky_uniforms(trees.material.shader, trees.open_sky_locations, lights)
+		rl.SetShaderValue(trees.material.shader, trees.daylight_tint_location, &daylight_tint, .VEC3)
+		rl.SetShaderValue(trees.material.shader, trees.camera_position_location, &eye, .VEC3)
+	}
 }
 
 // The lit layer back to the CPU's light (0313): the ghosts and the block

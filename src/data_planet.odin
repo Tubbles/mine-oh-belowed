@@ -114,6 +114,12 @@ MINIMUM_TRUNK_RADIUS_MILLIMETRES :: 50
 MAXIMUM_TRUNK_RADIUS_MILLIMETRES :: 1000
 MINIMUM_TRUNK_HEIGHT_MILLIMETRES :: 500
 MAXIMUM_TRUNK_HEIGHT_MILLIMETRES :: 20_000
+// The forest's bounds (work item 0310, Planet_Forest): a tree's scale is
+// the u8 of Planet_Tree.scale_percent.
+MAXIMUM_TREE_SCALE_PERCENT :: 250
+MINIMUM_TREE_SCALE_PERCENT :: 10
+MAXIMUM_FOREST_MEADOW_METRES :: 512
+MAXIMUM_TREE_HEIGHT_METRES :: 4000
 
 // One octave of the relief's value noise: its lattice spacing and the
 // most it raises or lowers the surface.
@@ -386,7 +392,14 @@ Planet_Crater :: struct {
 // hand_felling_scale_percent falls to the hand in
 // hand_felling_milliseconds, any tree to the wooden, stone and iron axe
 // in axe_felling_milliseconds; and the trunk's capsule, which the walk,
-// the aim and the placements meet.
+// the aim and the placements meet. In a forest (0310) the species stands
+// where the temperature (celsius), the moisture (percent), the height over
+// the sea (metres) and the forest's cover (percent) lie in its ranges,
+// least first, fading out past them over the forest's fades, by its
+// weight_percent among the others there, at a scale between its
+// scale_percent pair; a forest's yield and felling time scale with the
+// tree. The placement keys are required in the file and read only while
+// the forest is on.
 Planet_Tree_Species :: struct {
 	id:                       string,
 	machine:                  string,
@@ -398,6 +411,58 @@ Planet_Tree_Species :: struct {
 	axe_felling_milliseconds:   [3]int,
 	trunk_radius_millimetres: int,
 	trunk_height_millimetres: int,
+	temperature_celsius:      [2]int,
+	moisture_percent:         [2]int,
+	height_metres:            [2]int,
+	cover_percent:            [2]int,
+	scale_percent:            [2]int,
+	weight_percent:           int,
+}
+
+// A species' placement keys (0310), which a world records
+// (Planet_Tree_Placement.species).
+Planet_Tree_Species_Placement :: struct {
+	temperature_celsius: [2]int,
+	moisture_percent:    [2]int,
+	height_metres:       [2]int,
+	cover_percent:       [2]int,
+	scale_percent:       [2]int,
+	weight_percent:      int,
+}
+
+// The forest (work item 0310, generation_planet_trees.odin), off at the
+// zero value (a cover wavelength of 0): a cover from a noise of
+// cover_wavelength_metres mixed with clearing_percent of a noise of
+// clearing_wavelength_metres and moved by moisture_cover_percent of the
+// moisture's distance from the middle, rising from 0 at
+// cover_threshold_percent of the noise's range to full over
+// edge_percent, 0 within meadow_metres of the home and fading in to twice
+// it; at least scatter_percent everywhere, the meadow too, for lone
+// trees. A candidate of the
+// tree lattice stands by the cover times the trees' density_percent and
+// the species' climate weights there, none nearer than
+// minimum_gap_millimetres to a neighbour's, thinning from
+// full_slope_percent to none at the trees' maximum_slope_percent. Each
+// species' weight moves by stand_percent of a noise of
+// stand_wavelength_metres, so a species gathers in stands; the species'
+// ranges fade over the species_fade_ keys. Needs the climate.
+Planet_Forest :: struct {
+	cover_wavelength_metres:       int,
+	clearing_wavelength_metres:    int,
+	clearing_percent:              int,
+	cover_threshold_percent:       int,
+	edge_percent:                  int,
+	moisture_cover_percent:        int,
+	scatter_percent:               int,
+	meadow_metres:                 int,
+	minimum_gap_millimetres:       int,
+	full_slope_percent:            int,
+	stand_wavelength_metres:       int,
+	stand_percent:                 int,
+	species_fade_celsius:          int,
+	species_fade_moisture_percent: int,
+	species_fade_metres:           int,
+	species_fade_cover_percent:    int,
 }
 
 // The trees' placement (work item 0197, generation_planet_trees.odin):
@@ -407,7 +472,8 @@ Planet_Tree_Species :: struct {
 // falling with the square of the distance to none at grove_radius_metres.
 // None within clearing_metres of the home, below the sea or where the
 // ground rises more than maximum_slope_percent. A grove share of 0 is no
-// trees.
+// trees. With the forest on (0310, optional in the file) the forest
+// places the trees and the grove keys go unread.
 Planet_Trees :: struct {
 	grove_spacing_metres:  int,
 	grove_share_percent:   int,
@@ -416,12 +482,14 @@ Planet_Trees :: struct {
 	density_percent:       int,
 	clearing_metres:       int,
 	maximum_slope_percent: int,
+	forest:                Planet_Forest,
 	species:               []Planet_Tree_Species,
 }
 
 // What a world records of the trees (Planet_Generation_Record.trees): the
-// placement keys and the species count; the species themselves come from
-// the data (make_recorded_planet).
+// placement keys, the species count, the forest and each species'
+// placement keys (0310, zero in a file written before them: the forest
+// off); the rest of the species comes from the data (make_recorded_planet).
 Planet_Tree_Placement :: struct {
 	grove_spacing_metres:  int,
 	grove_share_percent:   int,
@@ -431,6 +499,8 @@ Planet_Tree_Placement :: struct {
 	clearing_metres:       int,
 	maximum_slope_percent: int,
 	species_count:         int,
+	forest:                Planet_Forest,
+	species:               [MAXIMUM_TREE_SPECIES]Planet_Tree_Species_Placement,
 }
 
 Planet :: struct {
@@ -554,14 +624,20 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 	return ""
 }
 
-// The trees object and each species hold every key.
+// The trees object and each species hold every key; the forest (0310)
+// is optional and holds every key when present.
 missing_trees_key_problem :: proc(record: json.Object, index: int, source: string) -> string {
 	trees, is_object := record["trees"].(json.Object)
 	if !is_object {
 		return ""
 	}
-	if key, missing := missing_struct_key(Planet_Trees, trees); missing {
+	if key, missing := missing_struct_key(Planet_Trees, trees, {"forest"}); missing {
 		return fmt.tprintf("%s: planets[%d].trees is missing %s", source, index, key)
+	}
+	if forest, forest_is_object := trees["forest"].(json.Object); forest_is_object {
+		if key, missing := missing_struct_key(Planet_Forest, forest); missing {
+			return fmt.tprintf("%s: planets[%d].trees.forest is missing %s", source, index, key)
+		}
 	}
 	for species, species_index in trees["species"].(json.Array) {
 		if key, missing := missing_struct_key(Planet_Tree_Species, species.(json.Object)); missing {
@@ -1120,7 +1196,7 @@ planet_problem :: proc(planet: Planet) -> string {
 	if problem := crater_problem(planet.crater); problem != "" {
 		return problem
 	}
-	if problem := trees_problem(planet.trees, planet.crater); problem != "" {
+	if problem := trees_problem(planet.trees, planet.crater, planet_climate_field(planet.climate)); problem != "" {
 		return problem
 	}
 	if problem := relief_problem(planet.relief_octaves, planet.relief_shape); problem != "" {
@@ -1211,23 +1287,34 @@ crater_reach_metres :: proc(crater: Planet_Crater) -> int {
 	return crater.radius_metres + CRATER_RIM_FALL_PER_HEIGHT * crater.rim_metres
 }
 
-// A grove share of 0 is no trees and skips the rest; otherwise every key
-// within its bounds, the clearing at least the crater's reach, and each
-// species (tree_species_problem).
-trees_problem :: proc(trees: Planet_Trees, crater: Planet_Crater) -> string {
-	if trees.grove_share_percent == 0 {
+// The forest is on (0310): a cover wavelength other than 0.
+planet_forest_on :: proc(forest: Planet_Forest) -> bool {
+	return forest.cover_wavelength_metres != 0
+}
+
+// A grove share of 0 with the forest off is no trees and skips the rest;
+// otherwise every key within its bounds (the grove keys only with a grove
+// share above 0), the clearing at least the crater's reach, each species
+// (tree_species_problem) and, with the forest on (0310), the forest
+// (forest_problem) and each species' placement
+// (tree_species_placement_problem).
+trees_problem :: proc(trees: Planet_Trees, crater: Planet_Crater, climate: Planet_Climate_Field) -> string {
+	forest_on := planet_forest_on(trees.forest)
+	if trees.grove_share_percent == 0 && !forest_on {
 		return ""
 	}
-	reach := crater_reach_metres(crater)
 	switch {
 	case trees.grove_share_percent < 0 || trees.grove_share_percent > 100:
 		return fmt.tprintf("trees.grove_share_percent %d is outside 0 to 100", trees.grove_share_percent)
 	case trees.tree_spacing_metres < MINIMUM_TREE_SPACING_METRES || trees.tree_spacing_metres > MAXIMUM_TREE_SPACING_METRES:
 		return fmt.tprintf("trees.tree_spacing_metres %d is outside %d to %d", trees.tree_spacing_metres, MINIMUM_TREE_SPACING_METRES, MAXIMUM_TREE_SPACING_METRES)
-	case trees.grove_spacing_metres < 2 * trees.tree_spacing_metres || trees.grove_spacing_metres > MAXIMUM_GROVE_SPACING_METRES:
+	case trees.grove_share_percent > 0 && (trees.grove_spacing_metres < 2 * trees.tree_spacing_metres || trees.grove_spacing_metres > MAXIMUM_GROVE_SPACING_METRES):
 		return fmt.tprintf("trees.grove_spacing_metres %d is outside %d to %d", trees.grove_spacing_metres, 2 * trees.tree_spacing_metres, MAXIMUM_GROVE_SPACING_METRES)
-	case trees.grove_radius_metres < trees.tree_spacing_metres || trees.grove_radius_metres > trees.grove_spacing_metres:
+	case trees.grove_share_percent > 0 && (trees.grove_radius_metres < trees.tree_spacing_metres || trees.grove_radius_metres > trees.grove_spacing_metres):
 		return fmt.tprintf("trees.grove_radius_metres %d is outside %d to %d", trees.grove_radius_metres, trees.tree_spacing_metres, trees.grove_spacing_metres)
+	}
+	reach := crater_reach_metres(crater)
+	switch {
 	case trees.density_percent < 1 || trees.density_percent > 100:
 		return fmt.tprintf("trees.density_percent %d is outside 1 to 100", trees.density_percent)
 	case trees.clearing_metres < 0 || trees.clearing_metres > MAXIMUM_TREE_CLEARING_METRES:
@@ -1243,6 +1330,109 @@ trees_problem :: proc(trees: Planet_Trees, crater: Planet_Crater) -> string {
 		if problem := tree_species_problem(species, index); problem != "" {
 			return problem
 		}
+	}
+	if !forest_on {
+		return ""
+	}
+	if problem := forest_problem(trees.forest, trees, climate); problem != "" {
+		return problem
+	}
+	for species, index in trees.species {
+		if problem := tree_species_placement_problem(tree_species_placement(species), index); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+// Every forest key within its bound (0310), the gap within the tree
+// spacing (it reads only the neighbour cubes), the full slope within the
+// trees' maximum, a climate to read and some species above weight 0.
+forest_problem :: proc(forest: Planet_Forest, trees: Planet_Trees, climate: Planet_Climate_Field) -> string {
+	if climate.temperature_wavelength_metres <= 0 {
+		return "trees.forest needs the climate"
+	}
+	bounds := [?]Config_Bound {
+		{"cover_wavelength_metres", forest.cover_wavelength_metres, 64, 4096},
+		{"clearing_wavelength_metres", forest.clearing_wavelength_metres, 16, 1024},
+		{"clearing_percent", forest.clearing_percent, 0, 100},
+		{"cover_threshold_percent", forest.cover_threshold_percent, -100, 100},
+		{"edge_percent", forest.edge_percent, 1, 100},
+		{"moisture_cover_percent", forest.moisture_cover_percent, 0, 100},
+		{"scatter_percent", forest.scatter_percent, 0, 100},
+		{"meadow_metres", forest.meadow_metres, 0, MAXIMUM_FOREST_MEADOW_METRES},
+		{"minimum_gap_millimetres", forest.minimum_gap_millimetres, 0, trees.tree_spacing_metres * MILLIMETRES_PER_METRE},
+		{"full_slope_percent", forest.full_slope_percent, 0, trees.maximum_slope_percent},
+		{"stand_wavelength_metres", forest.stand_wavelength_metres, 16, 1024},
+		{"stand_percent", forest.stand_percent, 0, 100},
+		{"species_fade_celsius", forest.species_fade_celsius, 1, 50},
+		{"species_fade_moisture_percent", forest.species_fade_moisture_percent, 1, 100},
+		{"species_fade_metres", forest.species_fade_metres, 1, 1000},
+		{"species_fade_cover_percent", forest.species_fade_cover_percent, 1, 100},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("trees.forest.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	for species in trees.species {
+		if species.weight_percent > 0 {
+			return ""
+		}
+	}
+	return "trees.forest has no species above weight_percent 0"
+}
+
+// A species' placement keys (0310).
+tree_species_placement :: proc(species: Planet_Tree_Species) -> Planet_Tree_Species_Placement {
+	return Planet_Tree_Species_Placement {
+		temperature_celsius = species.temperature_celsius,
+		moisture_percent = species.moisture_percent,
+		height_metres = species.height_metres,
+		cover_percent = species.cover_percent,
+		scale_percent = species.scale_percent,
+		weight_percent = species.weight_percent,
+	}
+}
+
+// The species with its placement keys replaced (0310).
+with_tree_species_placement :: proc(species: Planet_Tree_Species, placement: Planet_Tree_Species_Placement) -> Planet_Tree_Species {
+	result := species
+	result.temperature_celsius = placement.temperature_celsius
+	result.moisture_percent = placement.moisture_percent
+	result.height_metres = placement.height_metres
+	result.cover_percent = placement.cover_percent
+	result.scale_percent = placement.scale_percent
+	result.weight_percent = placement.weight_percent
+	return result
+}
+
+// Each range within its bounds, least first (0310), and the weight.
+tree_species_placement_problem :: proc(species: Planet_Tree_Species_Placement, index: int) -> string {
+	Range_Bound :: struct {
+		name:             string,
+		value:            [2]int,
+		minimum, maximum: int,
+	}
+	ranges := [?]Range_Bound {
+		{"temperature_celsius", species.temperature_celsius, -MAXIMUM_CLIMATE_CELSIUS, MAXIMUM_CLIMATE_CELSIUS},
+		{"moisture_percent", species.moisture_percent, 0, 100},
+		{"height_metres", species.height_metres, -MAXIMUM_TREE_HEIGHT_METRES, MAXIMUM_TREE_HEIGHT_METRES},
+		{"cover_percent", species.cover_percent, 0, 100},
+		{"scale_percent", species.scale_percent, MINIMUM_TREE_SCALE_PERCENT, MAXIMUM_TREE_SCALE_PERCENT},
+	}
+	for range in ranges {
+		for value in range.value {
+			if value < range.minimum || value > range.maximum {
+				return fmt.tprintf("trees.species[%d].%s has %d, outside %d to %d", index, range.name, value, range.minimum, range.maximum)
+			}
+		}
+		if range.value[0] > range.value[1] {
+			return fmt.tprintf("trees.species[%d].%s %d is above its most %d", index, range.name, range.value[0], range.value[1])
+		}
+	}
+	if species.weight_percent < 0 || species.weight_percent > 100 {
+		return fmt.tprintf("trees.species[%d].weight_percent %d is outside 0 to 100", index, species.weight_percent)
 	}
 	return ""
 }
@@ -1280,8 +1470,8 @@ tree_species_problem :: proc(species: Planet_Tree_Species, index: int) -> string
 		return fmt.tprintf("trees.species[%d].item is empty", index)
 	case species.count < 1 || species.count > MAXIMUM_TREE_LOGS:
 		return fmt.tprintf("trees.species[%d].count %d is outside 1 to %d", index, species.count, MAXIMUM_TREE_LOGS)
-	case species.hand_felling_scale_percent < 0 || species.hand_felling_scale_percent > PLANET_TREE_MAXIMUM_SCALE_PERCENT:
-		return fmt.tprintf("trees.species[%d].hand_felling_scale_percent %d is outside 0 to %d", index, species.hand_felling_scale_percent, PLANET_TREE_MAXIMUM_SCALE_PERCENT)
+	case species.hand_felling_scale_percent < 0 || species.hand_felling_scale_percent > MAXIMUM_TREE_SCALE_PERCENT:
+		return fmt.tprintf("trees.species[%d].hand_felling_scale_percent %d is outside 0 to %d", index, species.hand_felling_scale_percent, MAXIMUM_TREE_SCALE_PERCENT)
 	case !felling_milliseconds_in_bounds(species.hand_felling_milliseconds):
 		return fmt.tprintf("trees.species[%d].hand_felling_milliseconds %d is outside %d to %d", index, species.hand_felling_milliseconds, MINIMUM_FELLING_MILLISECONDS, MAXIMUM_FELLING_MILLISECONDS)
 	case species.trunk_radius_millimetres < MINIMUM_TRUNK_RADIUS_MILLIMETRES || species.trunk_radius_millimetres > MAXIMUM_TRUNK_RADIUS_MILLIMETRES:
@@ -1306,9 +1496,10 @@ felling_milliseconds_in_bounds :: proc(milliseconds: int) -> bool {
 	return milliseconds >= MINIMUM_FELLING_MILLISECONDS && milliseconds <= MAXIMUM_FELLING_MILLISECONDS
 }
 
-// The keys a world records (Planet_Generation_Record.trees).
+// The keys a world records (Planet_Generation_Record.trees), the forest
+// and the species' placement keys with them (0310).
 planet_tree_placement :: proc(trees: Planet_Trees) -> Planet_Tree_Placement {
-	return Planet_Tree_Placement {
+	placement := Planet_Tree_Placement {
 		grove_spacing_metres = trees.grove_spacing_metres,
 		grove_share_percent = trees.grove_share_percent,
 		grove_radius_metres = trees.grove_radius_metres,
@@ -1317,7 +1508,12 @@ planet_tree_placement :: proc(trees: Planet_Trees) -> Planet_Tree_Placement {
 		clearing_metres = trees.clearing_metres,
 		maximum_slope_percent = trees.maximum_slope_percent,
 		species_count = len(trees.species),
+		forest = trees.forest,
 	}
+	for species, index in trees.species[:min(len(trees.species), MAXIMUM_TREE_SPECIES)] {
+		placement.species[index] = tree_species_placement(species)
+	}
+	return placement
 }
 
 planets_problem :: proc(planets: []Planet) -> string {

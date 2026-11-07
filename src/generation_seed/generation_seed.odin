@@ -44,6 +44,8 @@ Generation_Purpose :: enum u8 {
 	Planet_Ground_Look,
 	// The landmarks of work item 0323.
 	Planet_Landmarks,
+	// The forest of work item 0310.
+	Planet_Forest,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

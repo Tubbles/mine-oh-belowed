@@ -272,6 +272,45 @@ test_the_point_light_shaders_share_the_clip_and_the_sum :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(model_sum, model_clip), "model.fs tests a light's box")
 	field_as_model, _ := strings.replace_all(field_sum, field_clip, model_clip, context.temp_allocator)
 	testing.expect(t, field_sum != "" && field_as_model == model_sum, "point_light_sum differs between field.fs and model.fs beyond the clip line")
+	// The trees' shader (0310) takes the model's lights line for line.
+	tree := read_tree_shader(t, "tree.fs")
+	testing.expect(t, strings.contains(tree, positions), "tree.fs declares the positions")
+	testing.expect(t, strings.contains(tree, boxes), "tree.fs declares the boxes")
+	testing.expect(t, shader_point_light_sum(tree) == model_sum, "point_light_sum differs between tree.fs and model.fs")
+	testing.expect(t, shader_function_text(tree, "bool point_light_inside_box(") == shader_function_text(model, "bool point_light_inside_box("), "point_light_inside_box differs between tree.fs and model.fs")
+	testing.expect(t, shader_spot_light(tree) == shader_spot_light(model), "spot_light differs between tree.fs and model.fs")
+}
+
+// A shader of the trees (0310), its text.
+read_tree_shader :: proc(t: ^testing.T, name: string) -> string {
+	data, error := os.read_entire_file(platform.join_path(test_data_directory(), CHUNK_SHADER_DIRECTORY, name), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	return string(data)
+}
+
+// Work item 0310: tree.vs reads the instance's transform where raylib's
+// DrawMeshInstanced and the card tiles put it, sizes the species' arrays
+// by MAXIMUM_TREE_SPECIES and holds the atlas's layout.
+@(test)
+test_the_tree_shader_reads_the_instance :: proc(t: ^testing.T) {
+	vertex := read_tree_shader(t, "tree.vs")
+	testing.expect(t, strings.contains(vertex, "\nin mat4 instanceTransform;\n"), "tree.vs reads instanceTransform")
+	testing.expect_value(t, TREE_INSTANCE_LOCATION, 9)
+	for line in ([?]string {
+			fmt.tprintf("uniform vec3 species_tint[%du];", MAXIMUM_TREE_SPECIES),
+			fmt.tprintf("uniform vec4 species_card[%du];", MAXIMUM_TREE_SPECIES),
+			fmt.tprintf("min(uint(instanceTransform[0u][3u] + 0.5), %du)", MAXIMUM_TREE_SPECIES - 1),
+			fmt.tprintf("const float card_cell_texels = %d.0;", TREE_CARD_CELL_TEXELS),
+			fmt.tprintf("const float card_margin_texels = %d.0;", TREE_CARD_MARGIN_TEXELS),
+			fmt.tprintf("const float card_atlas_texels = %d.0;", TREE_CARD_ATLAS_WIDTH),
+		}) {
+		testing.expectf(t, strings.contains(vertex, line), "tree.vs does not hold %s", line)
+	}
+	fragment := read_tree_shader(t, "tree.fs")
+	// The mips keep the share at or above TREE_CARD_ALPHA_KEPT, which
+	// tree.fs keeps as 0.5.
+	testing.expect_value(t, TREE_CARD_ALPHA_KEPT, 128)
+	testing.expect(t, strings.contains(fragment, "texel.a < 0.5"), "tree.fs keeps the texels from alpha 0.5")
 }
 
 // Work items 0286 and 0304: the plasma's shader, the wake's, has the
@@ -459,15 +498,18 @@ test_the_field_shader_lights_by_the_sun :: proc(t: ^testing.T) {
 @(test)
 test_the_lit_shaders_share_the_open_sky :: proc(t: ^testing.T) {
 	field, model := read_lit_shaders(t)
+	tree := read_tree_shader(t, "tree.fs")
 	names := OPEN_SKY_UNIFORM_NAMES
 	for name in names {
 		vector, scalar := fmt.tprintf("\nuniform vec3 %s;\n", name), fmt.tprintf("\nuniform float %s;\n", name)
 		testing.expectf(t, strings.contains(field, vector) || strings.contains(field, scalar), "field.fs declares no %s", name)
 		testing.expectf(t, strings.contains(model, vector) || strings.contains(model, scalar), "model.fs declares no %s", name)
+		testing.expectf(t, strings.contains(tree, vector) || strings.contains(tree, scalar), "tree.fs declares no %s", name)
 	}
 	for start in ([?]string{"vec3 outdoor_light(", "vec3 apply_haze("}) {
 		field_text, model_text := shader_function_text(field, start), shader_function_text(model, start)
 		testing.expectf(t, field_text != "" && field_text == model_text, "%s differs between field.fs and model.fs", start)
+		testing.expectf(t, shader_function_text(tree, start) == model_text, "%s differs between tree.fs and model.fs", start)
 	}
 }
 

@@ -395,9 +395,9 @@ test_a_world_file_without_trees_takes_the_datas :: proc(t: ^testing.T) {
 	defer destroy_recorded_planet(&loaded)
 	testing.expect_value(t, loaded.trees.density_percent, 40)
 	testing.expect_value(t, len(loaded.trees.species), 3)
-	for species in loaded.trees.species {
-		testing.expect_value(t, species.id, planet.trees.species[0].id)
-		testing.expect_value(t, species.machine, planet.trees.species[0].machine)
+	for species, index in loaded.trees.species {
+		testing.expect_value(t, species.id, planet.trees.species[index % len(planet.trees.species)].id)
+		testing.expect_value(t, species.machine, planet.trees.species[index % len(planet.trees.species)].machine)
 	}
 	none := planet_generation_record(planet)
 	none.trees.species_count = 0
@@ -447,15 +447,18 @@ test_a_world_file_without_the_impact_key_bakes_its_crater :: proc(t: ^testing.T)
 }
 
 // Work item 0307: a world file written before the climate keeps the
-// ground's old look (the record's zero field), with one log line.
+// ground's old look (the record's zero field), with one log line. Such a
+// file predates the forest too (0310), which needs the climate.
 @(test)
 test_a_world_file_before_the_climate_keeps_the_old_look :: proc(t: ^testing.T) {
 	planets := shipped_test_planets()
 	planet := default_planet(planets)
+	before := planet_generation_record(planet)
+	before.trees.forest = {}
 	file := World_File {
 		format_version = SAVE_FORMAT_VERSION,
 		settings = {day_length_seconds = 1200, planet_id = planet.id},
-		planet_generation = planet_generation_record(planet),
+		planet_generation = before,
 	}
 	text := string(encode_world_file(file, context.temp_allocator))
 	start := strings.index(text, "climate")
@@ -507,4 +510,103 @@ test_the_world_file_records_the_climate_field :: proc(t: ^testing.T) {
 	malformed := record
 	malformed.climate.temperature_wavelength_metres = 10
 	testing.expect_value(t, planet_generation_record_problem(malformed), "climate.temperature_wavelength_metres 10 is outside 64 to 100000")
+}
+
+// Work item 0310: a world records the forest and each species' placement,
+// which the data's later edits leave.
+@(test)
+test_the_record_keeps_the_forest :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	record := planet_generation_record(planet)
+	testing.expect_value(t, record.trees.forest, planet.trees.forest)
+	testing.expect(t, planet_forest_on(record.trees.forest))
+	for species, index in planet.trees.species {
+		testing.expect_value(t, record.trees.species[index], tree_species_placement(species))
+	}
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = planet.id},
+		planet_generation = record,
+	}
+	parsed, problem := parse_world_file(encode_world_file(file, context.temp_allocator), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.trees, record.trees)
+	edited := planet
+	edited.trees.forest.cover_wavelength_metres = 300
+	edited.trees.species = slice.clone(planet.trees.species, context.temp_allocator)
+	edited.trees.species[0].scale_percent = {100, 100}
+	recorded := make_recorded_planet(edited, parsed.planet_generation, context.temp_allocator)
+	testing.expect_value(t, recorded.trees.forest, planet.trees.forest)
+	testing.expect_value(t, recorded.trees.species[0].scale_percent, planet.trees.species[0].scale_percent)
+	testing.expect_value(t, recorded_forest_note(parsed.planet_generation, planet), "")
+}
+
+// Work item 0310: a world file written before the forest reads it as
+// zero, keeps its groves and logs one line.
+@(test)
+test_an_old_record_keeps_the_groves_and_logs :: proc(t: ^testing.T) {
+	planets := shipped_test_planets()
+	planet := default_planet(planets)
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = planet.id},
+		planet_generation = planet_generation_record(planet),
+	}
+	text := string(encode_world_file(file, context.temp_allocator))
+	start := strings.index(text, "forest")
+	testing.expect(t, start >= 0, "the world file records the forest")
+	end := start + strings.index_byte(text[start:], '}') + 1
+	older := strings.concatenate({text[:start], text[end:]}, context.temp_allocator)
+	testing.expect(t, !strings.contains(older, "forest"), "the old text holds no forest")
+	parsed, problem := parse_world_file(transmute([]byte)older, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.trees.forest, Planet_Forest{})
+	testing.expect(t, strings.contains(recorded_forest_note(parsed.planet_generation, planet), "records no forest"), "the old file's note")
+	_, resolved_planet, record := resolve_world_planet(parsed.settings, parsed.planet_generation, planets, true)
+	recorded := make_recorded_planet(resolved_planet, record, context.temp_allocator)
+	testing.expect(t, !planet_forest_on(recorded.trees.forest), "the old world has no forest")
+	testing.expect_value(t, recorded.trees.grove_share_percent, planet.trees.grove_share_percent)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, recorded, 1000)
+	testing.expect(t, !generation.trees.forest_on, "the old world's trees stand in groves")
+	testing.expect(t, generation.trees.grove_share_percent > 0, "the old world keeps its groves")
+	without_trees := parsed.planet_generation
+	without_trees.trees_recorded = false
+	testing.expect_value(t, recorded_forest_note(without_trees, planet), "")
+}
+
+// Work item 0310: a world recorded before the trees and the climate takes
+// the data's groves without the forest, which needs the climate, logs
+// the forest's line as an old world does, and saves and loads again.
+@(test)
+test_a_world_before_the_trees_and_the_climate_takes_the_groves :: proc(t: ^testing.T) {
+	planets := shipped_test_planets()
+	planet := default_planet(planets)
+	older := planet_generation_record(planet)
+	older.trees, older.trees_recorded = {}, false
+	older.climate = {}
+	testing.expect(t, strings.contains(recorded_forest_note(older, planet), "records no forest"), "the old file's note")
+	settings := World_File_Settings{planet_id = planet.id}
+	_, resolved_planet, record := resolve_world_planet(settings, older, planets, true)
+	testing.expect(t, record.trees_recorded)
+	testing.expect_value(t, record.trees.forest, Planet_Forest{})
+	testing.expect_value(t, record.trees.grove_share_percent, planet.trees.grove_share_percent)
+	testing.expect_value(t, planet_generation_record_problem(record), "")
+	recorded := make_recorded_planet(resolved_planet, record, context.temp_allocator)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, recorded, 1000)
+	testing.expect(t, !generation.trees.forest_on, "the old world's trees stand in groves")
+	testing.expect(t, generation.trees.grove_share_percent > 0, "the old world has groves")
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = planet.id},
+		planet_generation = record,
+	}
+	parsed, problem := parse_world_file(encode_world_file(file, context.temp_allocator), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.trees, record.trees)
+	// With a climate the data's forest comes along, without a note.
+	with_climate := planet_generation_record(planet)
+	with_climate.trees, with_climate.trees_recorded = {}, false
+	testing.expect_value(t, recorded_forest_note(with_climate, planet), "")
+	_, _, forested := resolve_world_planet(settings, with_climate, planets, true)
+	testing.expect_value(t, forested.trees.forest, planet.trees.forest)
 }

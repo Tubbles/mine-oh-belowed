@@ -160,7 +160,7 @@ pulled_in_field_camera :: proc(simulation: ^Simulation_State, content: Field_Con
 	if mode != .Third_Person {
 		return camera
 	}
-	reach := i64((distance + THIRD_PERSON_HEIGHT + abs(shoulder)) * POSITION_UNITS_PER_METRE) + millimetres_to_position_units(FIELD_TREE_QUERY_MARGIN_MILLIMETRES)
+	reach := i64((distance + THIRD_PERSON_HEIGHT + abs(shoulder)) * POSITION_UNITS_PER_METRE) + field_tree_query_margin(content)
 	trunks := field_tree_trunks(field_trees_near(&simulation.field, view.eye, reach), content)
 	offset := field_third_person_offset(view, distance, shoulder)
 	position := field_third_person_position(&simulation.field.world, &simulation.world.entities.frames, trunks, simulation.field.spacing_millimetres, view.eye, offset)

@@ -138,8 +138,9 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 }
 
 // The recorded placement over the data's species, repeated or cut to the
-// recorded count; no species (a count of 0 or a data list of 0) is no
-// trees, so the grove share goes to 0.
+// recorded count, each with its recorded placement keys (0310), so a data
+// edit never moves a saved forest; no species (a count of 0 or a data
+// list of 0) is no trees, so the grove share and the forest go to 0.
 recorded_trees :: proc(data: Planet_Trees, placement: Planet_Tree_Placement, allocator := context.allocator) -> Planet_Trees {
 	trees := Planet_Trees {
 		grove_spacing_metres  = placement.grove_spacing_metres,
@@ -149,12 +150,17 @@ recorded_trees :: proc(data: Planet_Trees, placement: Planet_Tree_Placement, all
 		density_percent       = placement.density_percent,
 		clearing_metres       = placement.clearing_metres,
 		maximum_slope_percent = placement.maximum_slope_percent,
+		forest                = placement.forest,
 	}
 	if placement.species_count <= 0 || len(data.species) == 0 {
 		trees.grove_share_percent = 0
+		trees.forest = {}
 		return trees
 	}
 	trees.species = clone_tree_species(data.species, placement.species_count, allocator)
+	for &species, index in trees.species[:min(len(trees.species), MAXIMUM_TREE_SPECIES)] {
+		species = with_tree_species_placement(species, placement.species[index])
+	}
 	return trees
 }
 
@@ -191,7 +197,8 @@ destroy_recorded_planet :: proc(planet: ^Planet) {
 
 // A valid species for the stand in planet of
 // planet_generation_record_problem, so a recorded placement passes
-// trees_problem whatever the data's species.
+// trees_problem whatever the data's species; its placement keys are the
+// record's (recorded_trees).
 PLANET_TREE_STAND_IN_SPECIES :: Planet_Tree_Species {
 	id                       = "recorded",
 	machine                  = "recorded",
@@ -203,6 +210,15 @@ PLANET_TREE_STAND_IN_SPECIES :: Planet_Tree_Species {
 	axe_felling_milliseconds   = {1000, 1000, 1000},
 	trunk_radius_millimetres = 100,
 	trunk_height_millimetres = 1000,
+}
+
+// A valid look for the stand in planet (0310), so a recorded climate
+// field reaches planet_problem with it and a recorded forest is checked
+// against the record's climate.
+PLANET_CLIMATE_STAND_IN :: Planet_Climate {
+	grass_hot_celsius = 1,
+	snow_fade_celsius = 1,
+	sand_fade_metres  = 1,
 }
 
 // Empty for an absent record (a file written before it) and for one
@@ -221,6 +237,7 @@ planet_generation_record_problem :: proc(record: Planet_Generation_Record) -> st
 		id      = "recorded",
 		palette = {{0, 0, 0}},
 		trees   = {species = {PLANET_TREE_STAND_IN_SPECIES}},
+		climate = PLANET_CLIMATE_STAND_IN,
 	}
 	if problem := planet_problem(make_recorded_planet(stand_in, record, context.temp_allocator)); problem != "" {
 		return problem
@@ -385,6 +402,27 @@ recorded_waters_note :: proc(recorded: Planet_Generation_Record, planet: Planet)
 	return "world: the world file records no waters, it keeps its springs and has no lakes"
 }
 
+// The log line of a world file without a forest (0310) on a planet whose
+// data has one, or "": trees recorded before the forest (zero is off, so
+// the world keeps the groves of its record), or trees taken from the data
+// by a record without a climate for a forest to read (resolve_world_planet
+// takes the data's groves without the forest).
+recorded_forest_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
+	if !planet_generation_is_recorded(recorded) || planet.trees.forest == {} {
+		return ""
+	}
+	without_forest := recorded.trees_recorded ? recorded.trees.forest == {} : !record_has_climate(recorded)
+	if !without_forest {
+		return ""
+	}
+	return "world: the world file records no forest, its trees keep the groves"
+}
+
+// The record's climate field is on (0307); a forest reads it (0310).
+record_has_climate :: proc(recorded: Planet_Generation_Record) -> bool {
+	return recorded.climate.temperature_wavelength_metres > 0
+}
+
 // The planet a world generates on, against the data's planets: the
 // settings' planet, or with a log line the default one when the data has
 // no planet of that id (a loaded world keeps its id in the settings, so
@@ -436,9 +474,17 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 	if note := recorded_waters_note(recorded, planet); note != "" {
 		platform.log_printf("%s", note)
 	}
+	if note := recorded_forest_note(recorded, planet); note != "" {
+		platform.log_printf("%s", note)
+	}
 	if planet_generation_is_recorded(recorded) && !recorded.trees_recorded {
 		platform.log_printf("world: the world file records no trees, it takes the trees of %q from %s", planet.id, PLANETS_FILE_NAME)
 		record.trees, record.trees_recorded = planet_tree_placement(planet.trees), true
+		// A forest needs the climate (0310): a record without one takes
+		// the data's groves.
+		if !record_has_climate(recorded) {
+			record.trees.forest = {}
+		}
 	}
 	if !planet_generation_is_recorded(recorded) {
 		if loading {

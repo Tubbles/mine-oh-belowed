@@ -23,7 +23,10 @@ import "core:thread"
 // from its chunks once they and their shell are simulated. Each mesh job
 // carries the node's revision; a result whose revision is no longer the
 // node's latest is dropped, so an edited chunk (dirty again) remeshes on
-// the next revision and an old result never overwrites a new one.
+// the next revision and an old result never overwrites a new one. The
+// workers also generate the trees' draw tiles (0310,
+// render_field_trees.odin) when no chunk or mesh job waits: a tree job
+// carries its tile, and its result the tile's keys and packed instances.
 
 MAXIMUM_FIELD_PENDING_JOBS :: 32
 MAXIMUM_FIELD_GENERATED_PER_FRAME :: 16
@@ -37,13 +40,33 @@ MAXIMUM_FIELD_WAVE_REMESHES_PER_FRAME :: 2
 Field_Job_Kind :: enum u8 {
 	Generate,
 	Mesh,
+	Trees,
+}
+
+// The trees' draw tile (0310): a cube of field_tree_tile_cells tree cubes
+// an edge, about FIELD_TREE_TILE_METRES.
+Field_Tree_Tile :: [3]i32
+FIELD_TREE_TILE_METRES :: 128
+
+// The tree cubes along a tile's edge at the tree spacing (position
+// units), at least one.
+field_tree_tile_cells :: proc(spacing: i64) -> i64 {
+	return max(1, metres_to_position_units(FIELD_TREE_TILE_METRES) / max(spacing, 1))
+}
+
+// The tile's box in position units.
+field_tree_tile_box :: proc(tile: Field_Tree_Tile, edge: i64) -> (minimum, maximum: [3]i64) {
+	minimum = [3]i64{i64(tile.x), i64(tile.y), i64(tile.z)} * edge
+	return minimum, minimum + edge - 1
 }
 
 // Generate jobs name a chunk (a finest level node). A Mesh job of a finest
 // node whose chunks are simulated carries its grid whole; any other
 // (generate set) carries the samples of the loaded chunks it reads, or
 // none, and generates the rest. skirt_faces are the node's faces that
-// border a coarser node or none (field_node_skirt_faces).
+// border a coarser node or none (field_node_skirt_faces). A Trees job
+// (0310) carries its tile, the tile's edge in tree cubes and the pitch
+// the instances scale the models by.
 Field_Job :: struct {
 	kind:        Field_Job_Kind,
 	node:        Field_Node,
@@ -51,11 +74,16 @@ Field_Job :: struct {
 	grid:        ^Field_Grid,
 	generate:    bool,
 	skirt_faces: Field_Faces,
+	tree_tile:   Field_Tree_Tile,
+	tree_cells:  i64,
+	tree_pitch_millimetres: int,
 }
 
 // Generate results carry chunk, Mesh results the terrain's mesh and the
 // water's (0172), both from one grid in one job, so the water never lags
-// the terrain it lies on and one revision covers both.
+// the terrain it lies on and one revision covers both. Trees results
+// (0310) carry the tile's standing and felled trees' keys and instances
+// (tree_instance), in the workers' allocator.
 Field_Job_Result :: struct {
 	kind:       Field_Job_Kind,
 	node:       Field_Node,
@@ -63,6 +91,9 @@ Field_Job_Result :: struct {
 	chunk:      ^Field_Chunk,
 	mesh:       Field_Mesh_Data,
 	water_mesh: Field_Mesh_Data,
+	tree_tile:  Field_Tree_Tile,
+	tree_keys:  []Tree_Key,
+	tree_instances: []matrix[4, 4]f32,
 }
 
 // Everything the workers read; only the queues are written after start.
@@ -74,6 +105,10 @@ Field_Worker_Shared :: struct {
 	jobs:          queue.Queue(Field_Job),
 	generated:     queue.Queue(Field_Job_Result),
 	meshed:        queue.Queue(Field_Job_Result),
+	// The trees' tile jobs (0310), taken only when jobs is empty, and
+	// their results.
+	tree_jobs:     queue.Queue(Field_Job),
+	trees_done:    queue.Queue(Field_Job_Result),
 	stopping:      bool,
 	seed:          u64,
 	planet:        Planet,
@@ -118,22 +153,56 @@ submit_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) {
 	sync.cond_signal(&shared.job_available)
 }
 
+// A chunk or mesh job first; a tree tile only when none waits (0310), so
+// the trees never hold back the ground.
 wait_for_field_job :: proc(shared: ^Field_Worker_Shared) -> (job: Field_Job, ok: bool) {
 	sync.mutex_lock(&shared.mutex)
 	defer sync.mutex_unlock(&shared.mutex)
-	for queue.len(shared.jobs) == 0 && !shared.stopping {
+	for queue.len(shared.jobs) == 0 && queue.len(shared.tree_jobs) == 0 && !shared.stopping {
 		sync.cond_wait(&shared.job_available, &shared.mutex)
 	}
 	if shared.stopping {
 		return {}, false
 	}
-	return queue.pop_front(&shared.jobs), true
+	if queue.len(shared.jobs) > 0 {
+		return queue.pop_front(&shared.jobs), true
+	}
+	return queue.pop_front(&shared.tree_jobs), true
 }
 
 push_field_result :: proc(shared: ^Field_Worker_Shared, result: Field_Job_Result) {
 	sync.mutex_lock(&shared.mutex)
 	defer sync.mutex_unlock(&shared.mutex)
-	queue.push_back(result.kind == .Generate ? &shared.generated : &shared.meshed, result)
+	switch result.kind {
+	case .Generate:
+		queue.push_back(&shared.generated, result)
+	case .Mesh:
+		queue.push_back(&shared.meshed, result)
+	case .Trees:
+		queue.push_back(&shared.trees_done, result)
+	}
+}
+
+// A tree tile for the workers (0310), behind every chunk and mesh job.
+submit_field_tree_tile :: proc(streaming: ^Field_Streaming, tile: Field_Tree_Tile, cells: i64, pitch_millimetres: int) {
+	shared := streaming.shared
+	sync.mutex_lock(&shared.mutex)
+	defer sync.mutex_unlock(&shared.mutex)
+	queue.push_back(&shared.tree_jobs, Field_Job{kind = .Trees, tree_tile = tile, tree_cells = cells, tree_pitch_millimetres = pitch_millimetres})
+	sync.cond_signal(&shared.job_available)
+}
+
+// Up to maximum finished tree tiles; the caller takes their slices
+// (free_field_job_result).
+take_field_tree_tiles :: proc(streaming: ^Field_Streaming, maximum: int, allocator := context.temp_allocator) -> [dynamic]Field_Job_Result {
+	shared := streaming.shared
+	sync.mutex_lock(&shared.mutex)
+	defer sync.mutex_unlock(&shared.mutex)
+	results := make([dynamic]Field_Job_Result, 0, maximum, allocator)
+	for len(results) < maximum && queue.len(shared.trees_done) > 0 {
+		append(&results, queue.pop_front(&shared.trees_done))
+	}
+	return results
 }
 
 take_field_results :: proc(shared: ^Field_Worker_Shared, kind: Field_Job_Kind, maximum: int, allocator := context.allocator) -> [dynamic]Field_Job_Result {
@@ -151,6 +220,22 @@ free_field_job_result :: proc(result: Field_Job_Result) {
 	destroy_field_chunk(result.chunk)
 	destroy_field_mesh_data(result.mesh)
 	destroy_field_mesh_data(result.water_mesh)
+	delete(result.tree_keys)
+	delete(result.tree_instances)
+}
+
+// The tile's trees (planet_trees_in_box), their keys and instances in the
+// allocator.
+generate_field_tree_tile :: proc(generation: ^Planet_Generation, tile: Field_Tree_Tile, cells: i64, pitch_millimetres: int, allocator := context.allocator) -> (keys: []Tree_Key, instances: []matrix[4, 4]f32) {
+	minimum, maximum := field_tree_tile_box(tile, cells * generation.trees.spacing)
+	trees := planet_trees_in_box(generation, minimum, maximum)
+	keys = make([]Tree_Key, len(trees), allocator)
+	instances = make([]matrix[4, 4]f32, len(trees), allocator)
+	for tree, index in trees {
+		keys[index] = tree.key
+		instances[index] = tree_instance(tree, pitch_millimetres)
+	}
+	return keys, instances
 }
 
 run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job_Result {
@@ -176,6 +261,9 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces, look = shared.look, measure_cuts = job.grid != nil)
 		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
 		free(job.grid)
+	case .Trees:
+		result.tree_tile = job.tree_tile
+		result.tree_keys, result.tree_instances = generate_field_tree_tile(&shared.generation, job.tree_tile, job.tree_cells, job.tree_pitch_millimetres)
 	}
 	return result
 }
@@ -202,6 +290,8 @@ start_field_streaming :: proc(seed: u64, planet: Planet, spacing_millimetres: in
 	queue.init(&shared.jobs)
 	queue.init(&shared.generated)
 	queue.init(&shared.meshed)
+	queue.init(&shared.tree_jobs)
+	queue.init(&shared.trees_done)
 	streaming := Field_Streaming {
 		shared = shared,
 	}
@@ -230,9 +320,14 @@ stop_field_streaming :: proc(streaming: ^Field_Streaming) {
 	for queue.len(shared.meshed) > 0 {
 		free_field_job_result(queue.pop_front(&shared.meshed))
 	}
+	for queue.len(shared.trees_done) > 0 {
+		free_field_job_result(queue.pop_front(&shared.trees_done))
+	}
 	queue.destroy(&shared.jobs)
 	queue.destroy(&shared.generated)
 	queue.destroy(&shared.meshed)
+	queue.destroy(&shared.tree_jobs)
+	queue.destroy(&shared.trees_done)
 	free(shared)
 	delete(streaming.threads)
 	delete(streaming.generating)

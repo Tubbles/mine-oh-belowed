@@ -132,6 +132,8 @@ Planet_Preview :: struct {
 	session:         ^Session,
 	content:         Game_Content,
 	level_distances: [FIELD_LEVEL_COUNT]int,
+	// The build target's row of data/game.sjson's field_trees (0310).
+	field_trees:     Field_Trees_Row,
 	// The open sky's inputs (0297, 0313): the preview's sun stands at
 	// noon over the camera, its light scaled by
 	// --planet-preview-daylight, and its torchlight stays off.
@@ -671,7 +673,9 @@ stream_planet_preview :: proc(preview: ^Planet_Preview) -> []Field_Node {
 	stream_field_session(preview.session, selection)
 	upload_streamed_field_meshes(&preview.renderer, &preview.session.field_streaming)
 	eyes := [1]World_Position{planet_preview_viewpoint(preview)}
-	update_field_tree_cache(&preview.renderer.trees, field_tree_generation(&preview.session.simulation.field), eyes[:])
+	simulation := &preview.session.simulation
+	update_field_tree_cache(&preview.renderer.trees, &preview.session.field_streaming, field_tree_generation(&simulation.field), eyes[:], simulation.field.felled_trees, preview.field_trees, preview.session.field_content.foundation_pitch_millimetres)
+	upload_field_tree_tiles(&preview.renderer.trees)
 	return selection
 }
 
@@ -806,6 +810,7 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 		session         = session,
 		content         = content,
 		level_distances = level_distances,
+		field_trees     = field_trees_row(config.field_trees),
 		field_light     = field_light_inputs(&renderer, day_sky_at(NOON_FRACTION, 0), f32(daylight_percent) / 100, planet.radius_metres, config),
 		camera          = planet_preview_start_camera(home_site, basis, yaw_degrees),
 		renderer        = renderer,

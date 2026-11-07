@@ -792,8 +792,9 @@ field_arrival_debris_site :: proc(simulation: ^Simulation_State, content: Simula
 	return arrival_debris_site(generation, config, pod_base, reach)
 }
 
-// Before the viewports draw: the finished meshes up, the trees round the
-// eyes (update_field_tree_cache) and each player's crouch progress
+// Before the viewports draw: the finished meshes up, the trees' tiles
+// round the eyes (update_field_tree_cache, upload_field_tree_tiles) and
+// each player's crouch progress
 // (0218), read by value by the draws.
 prepare_field_frame :: proc(state: ^Frame_State) {
 	session := state.session
@@ -801,7 +802,9 @@ prepare_field_frame :: proc(state: ^Frame_State) {
 		return
 	}
 	upload_streamed_field_meshes(&state.presentation.field_renderer, &session.field_streaming)
-	update_field_tree_cache(&state.presentation.field_renderer.trees, field_tree_generation(&session.simulation.field), field_viewport_eyes(state))
+	trees := &state.presentation.field_renderer.trees
+	update_field_tree_cache(trees, &session.field_streaming, field_tree_generation(&session.simulation.field), field_viewport_eyes(state), session.simulation.field.felled_trees, field_trees_row(state.config.field_trees), session.field_content.foundation_pitch_millimetres)
+	upload_field_tree_tiles(trees)
 	crouch_progress := &state.presentation.field_renderer.crouch_progress
 	resize(crouch_progress, len(session.simulation.players))
 	for index in 0 ..< len(crouch_progress) {

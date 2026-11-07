@@ -130,16 +130,25 @@ test_the_waters_round_the_shipped_home :: proc(t: ^testing.T) {
 		generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, sample_to_field_chunk_coordinate(spring_sample), spring_chunk)
 		testing.expect(t, field_sample_bit(&spring_chunk.water_source, sample_to_field_index(spring_sample)), "the first derived spring is a source")
 	}
-	// No tree stands in a lake.
+	// No tree stands in a lake. The box goes in quarters along each axis,
+	// within PLANET_TREE_BOX_CELL_LIMIT at the forest's 2 m spacing (0310).
 	tree_generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
 	half := min(largest.bound_radius, metres_to_position_units(120))
-	minimum, maximum := largest.origin - half, largest.origin + half
+	quarter := half / 2
 	margin := metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES)
-	trees := planet_trees_in_box(&tree_generation, minimum, maximum)
-	for tree in trees {
-		on_sphere := tree_test_on_sphere(tree_generation, tree)
-		if level, found := planet_lake_level_at(features.lakes, on_sphere, generation.radius); found {
-			testing.expectf(t, surface_column(tree_generation, on_sphere).relief >= level + margin, "the tree %v stands in a lake", tree.key)
+	seen := make(map[Tree_Key]struct{}, context.temp_allocator)
+	for x in i64(0) ..< 4 {
+		for y in i64(0) ..< 4 {
+			for z in i64(0) ..< 4 {
+				minimum := largest.origin - half + [3]i64{x, y, z} * quarter
+				for tree in planet_trees_in_box(&tree_generation, minimum, minimum + quarter - 1) {
+					seen[tree.key] = {}
+					on_sphere := tree_test_on_sphere(tree_generation, tree)
+					if level, found := planet_lake_level_at(features.lakes, on_sphere, generation.radius); found {
+						testing.expectf(t, surface_column(tree_generation, on_sphere).relief >= level + margin, "the tree %v stands in a lake", tree.key)
+					}
+				}
+			}
 		}
 	}
 	// The coarse grid shows the lake where no chunk is loaded.
@@ -160,7 +169,7 @@ test_the_waters_round_the_shipped_home :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expectf(t, lake_water > 0, "the level 1 grid %v shows the lake", node)
-	log.infof("0312: the largest lake's chunk holds %d lake samples, %d trees round it, the level 1 grid %d lake samples", filled, len(trees), lake_water)
+	log.infof("0312: the largest lake's chunk holds %d lake samples, %d trees round it, the level 1 grid %d lake samples", filled, len(seen), lake_water)
 }
 
 @(test) // slow

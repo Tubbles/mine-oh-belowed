@@ -44,6 +44,48 @@ test_the_field_view_distances_rise_within_the_limit :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0310: the shipped field_trees rows (the phone's shorter
+// reach) and each key one past its bound in either row.
+@(test)
+test_the_field_trees_config_is_bounded :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	trees := config.field_trees
+	testing.expect_value(t, trees.desktop, Field_Trees_Row{near_metres = 96, near_limit = 1024, far_metres = 1024, far_limit = 160000, fade_metres = 12, far_fade_metres = 64})
+	testing.expect_value(t, trees.android, Field_Trees_Row{near_metres = 96, near_limit = 1024, far_metres = 512, far_limit = 40000, fade_metres = 12, far_fade_metres = 64})
+	testing.expect_value(t, field_trees_problem(trees, config.field_view), "")
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		testing.expect_value(t, field_trees_row(trees), trees.android)
+	} else {
+		testing.expect_value(t, field_trees_row(trees), trees.desktop)
+	}
+	testing.expect_value(t, field_trees_problem({}, config.field_view), "field_trees.desktop.near_metres 0 is outside 16 to 256")
+	cases := [?]struct {
+		change:   proc(row: ^Field_Trees_Row),
+		expected: string,
+	} {
+		{proc(row: ^Field_Trees_Row) {row.near_metres = 15}, "near_metres 15 is outside 16 to 256"},
+		{proc(row: ^Field_Trees_Row) {row.near_metres = 257}, "near_metres 257 is outside 16 to 256"},
+		{proc(row: ^Field_Trees_Row) {row.near_limit = 0}, "near_limit 0 is outside 1 to 8192"},
+		{proc(row: ^Field_Trees_Row) {row.near_limit = 8193}, "near_limit 8193 is outside 1 to 8192"},
+		{proc(row: ^Field_Trees_Row) {row.far_metres = 95}, "far_metres 95 is outside 96 to 1024"},
+		{proc(row: ^Field_Trees_Row) {row.far_metres = 1025}, "far_metres 1025 is outside 96 to 1024"},
+		{proc(row: ^Field_Trees_Row) {row.far_limit = -1}, "far_limit -1 is outside 0 to 1000000"},
+		{proc(row: ^Field_Trees_Row) {row.far_limit = 1_000_001}, "far_limit 1000001 is outside 0 to 1000000"},
+		{proc(row: ^Field_Trees_Row) {row.fade_metres = 0}, "fade_metres 0 is outside 1 to 48"},
+		{proc(row: ^Field_Trees_Row) {row.fade_metres = 49}, "fade_metres 49 is outside 1 to 48"},
+		{proc(row: ^Field_Trees_Row) {row.far_fade_metres = 0}, "far_fade_metres 0 is outside 1 to"},
+		{proc(row: ^Field_Trees_Row) {row.far_fade_metres = 1000}, "far_fade_metres 1000 is outside 1 to"},
+	}
+	for entry in cases {
+		desktop := trees
+		entry.change(&desktop.desktop)
+		testing.expect(t, strings.has_prefix(field_trees_problem(desktop, config.field_view), strings.concatenate({"field_trees.desktop.", entry.expected}, context.temp_allocator)), entry.expected)
+		android := trees
+		entry.change(&android.android)
+		testing.expect(t, strings.has_prefix(field_trees_problem(android, config.field_view), strings.concatenate({"field_trees.android.", entry.expected}, context.temp_allocator)), entry.expected)
+	}
+}
+
 // The Android asset copy (work item 0114): the list build.sh writes and
 // the stamp that skips the copy on a later start of the same build.
 @(test)

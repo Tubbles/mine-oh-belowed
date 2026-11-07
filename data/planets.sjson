@@ -59,10 +59,13 @@ planets = [
 		// steepest), the rim falls 1 m over 6 m, and the crater reaches
 		// 18 m from the home.
 		crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1}
-		// Trees (work item 0197, doc/content.md, Trees): groves of trees on
-		// the surface above the sea, none in the home's clearing. A world
-		// records the placement keys and the species count in its
-		// world.sjson.
+		// Trees (work items 0197 and 0310, doc/content.md, Trees): a forest
+		// read off the climate, the height and the slope, none in the
+		// home's clearing, below the sea or a lake, on a carving site or
+		// on ground too steep. A world records the placement keys, the
+		// forest and the species' placement keys and count in its
+		// world.sjson; the grove keys place the trees of a world recorded
+		// before the forest, and of a planet without one.
 		trees = {
 			// The grove lattice's cube edge; a grove centre per cube at most.
 			grove_spacing_metres = 40
@@ -72,25 +75,68 @@ planets = [
 			// the distance from its centre.
 			grove_radius_metres = 14
 			// The tree lattice's cube edge; a tree per cube at most.
-			tree_spacing_metres = 4
-			// The chance of a tree at a grove's centre.
-			density_percent = 80
+			tree_spacing_metres = 2
+			// The chance of a tree where the forest's cover is full (at a
+			// grove's centre without a forest).
+			density_percent = 90
 			// No tree within this of the home: the crater, which reaches
 			// 18 m, and its rim.
 			clearing_metres = 24
 			// No tree where the ground rises more than this per 100 m (35
 			// degrees).
 			maximum_slope_percent = 70
+			// The forest (work item 0310), optional, off without it. The
+			// cover: a noise of 520 m mixed with 30% of a noise of 72 m
+			// (the clearings), moved by 30% of the moisture's distance
+			// from the middle, rising from -8% of the noise's range to
+			// full over 28%, the cover 0 within 56 m of the home and fading
+			// in to 112 m; at least 3% everywhere, the meadow too
+			// (scattered trees, some 45 within 56 m of the home). No two
+			// trees nearer than 0.9 m; the trees thin from a 40% slope.
+			// Each species' weight moves by up to 100% with its own noise
+			// of 80 m, so species gather in stands; a species' ranges fade
+			// out over 3 degrees, 10% moisture, 10 m and 10% cover. About
+			// 40% of the land is forest interior at 2 to 3 m spacing
+			// (1300 to 2400 trees a hectare), 20% edge and 40% open.
+			forest = {
+				cover_wavelength_metres = 520
+				clearing_wavelength_metres = 72
+				clearing_percent = 30
+				cover_threshold_percent = -8
+				edge_percent = 28
+				moisture_cover_percent = 30
+				scatter_percent = 3
+				meadow_metres = 56
+				minimum_gap_millimetres = 900
+				full_slope_percent = 40
+				stand_wavelength_metres = 80
+				stand_percent = 100
+				species_fade_celsius = 3
+				species_fade_moisture_percent = 10
+				species_fade_metres = 10
+				species_fade_cover_percent = 10
+			}
 			species = [
 				// machine: a machines.sjson record of kind tree, its model.
 				// tint multiplies the model's colours. The yield is count of
 				// item after Mine held on the trunk (0265): a tree of at most
-				// hand_felling_scale_percent (85 to 115 grow) falls to the hand
-				// in hand_felling_milliseconds, any tree to the wooden, stone and
+				// hand_felling_scale_percent falls to the hand in
+				// hand_felling_milliseconds, any tree to the wooden, stone and
 				// iron axe in axe_felling_milliseconds (the wooden axe four logs
-				// at the block world's 1.5 s a log). The trunk is the capsule
-				// the walk, the aim and the placements meet.
-				{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, hand_felling_scale_percent = 100, hand_felling_milliseconds = 10000, axe_felling_milliseconds = [6000, 4000, 2500], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}
+				// at the block world's 1.5 s a log). In a forest the yield and
+				// the times scale with the tree's scale (count at 100%). The
+				// trunk is the capsule the walk, the aim and the placements
+				// meet. The forest (0310) grows a species where the
+				// temperature (celsius), the moisture (percent), the height
+				// over the sea (metres) and the cover (percent) lie in its
+				// ranges, by weight_percent among the species there, at a
+				// scale_percent between the pair. Every species stands in
+				// with the pine's model until its own (0329 to 0333).
+				{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, hand_felling_scale_percent = 100, hand_felling_milliseconds = 10000, axe_felling_milliseconds = [6000, 4000, 2500], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500, temperature_celsius = [-6, 16], moisture_percent = [15, 100], height_metres = [-20, 256], cover_percent = [0, 100], scale_percent = [45, 210], weight_percent = 100}
+				{id = "broadleaf", machine = "pine_tree", tint = [196, 236, 160], item = "log", count = 5, hand_felling_scale_percent = 90, hand_felling_milliseconds = 12000, axe_felling_milliseconds = [7000, 5000, 3000], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500, temperature_celsius = [6, 30], moisture_percent = [40, 100], height_metres = [-20, 70], cover_percent = [25, 100], scale_percent = [50, 220], weight_percent = 100}
+				{id = "birch", machine = "pine_tree", tint = [250, 250, 236], item = "log", count = 3, hand_felling_scale_percent = 90, hand_felling_milliseconds = 8000, axe_felling_milliseconds = [5000, 3500, 2000], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500, temperature_celsius = [-2, 18], moisture_percent = [35, 100], height_metres = [-20, 256], cover_percent = [5, 80], scale_percent = [40, 160], weight_percent = 60}
+				{id = "snag", machine = "pine_tree", tint = [150, 132, 112], item = "log", count = 2, hand_felling_scale_percent = 80, hand_felling_milliseconds = 6000, axe_felling_milliseconds = [4000, 3000, 1800], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500, temperature_celsius = [-8, 30], moisture_percent = [0, 60], height_metres = [-20, 256], cover_percent = [0, 100], scale_percent = [50, 150], weight_percent = 10}
+				{id = "bush", machine = "pine_tree", tint = [176, 220, 150], item = "stick", count = 5, hand_felling_scale_percent = 45, hand_felling_milliseconds = 1500, axe_felling_milliseconds = [1000, 800, 600], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500, temperature_celsius = [-4, 32], moisture_percent = [10, 100], height_metres = [-20, 256], cover_percent = [0, 70], scale_percent = [20, 45], weight_percent = 70}
 			]
 		}
 		// Fill per surface sample per minute (254 a sample), applied by

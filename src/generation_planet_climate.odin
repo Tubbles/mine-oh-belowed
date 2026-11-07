@@ -33,13 +33,27 @@ planet_climate_noise :: proc(seed: u64, point: [3]i64, wavelength_metres: int) -
 // relief reads it) standing height position units over the sea level;
 // the zero sample without a climate.
 planet_climate :: proc(generation: Planet_Generation, on_sphere: [3]i64, height: i64) -> Planet_Climate_Sample {
+	return {planet_temperature(generation, on_sphere, height), planet_moisture(generation, on_sphere)}
+}
+
+// The temperature in millicelsius (planet_climate); 0 without a climate.
+planet_temperature :: proc(generation: Planet_Generation, on_sphere: [3]i64, height: i64) -> i64 {
 	field := generation.climate
 	if field.temperature_wavelength_metres == 0 {
-		return {}
+		return 0
 	}
-	temperature_noise := planet_climate_noise(generation_seed.hash_combine(generation.climate_seed, 0), on_sphere, field.temperature_wavelength_metres)
-	moisture_noise := planet_climate_noise(generation_seed.hash_combine(generation.climate_seed, 2), on_sphere, field.moisture_wavelength_metres)
-	temperature := i64(field.sea_level_celsius) * 1000 + i64(field.temperature_spread_celsius) * 1000 * temperature_noise / NOISE_ONE - i64(field.lapse_millicelsius_per_metre) * height / POSITION_UNITS_PER_METRE
-	moisture := i64(field.moisture_percent) * 10 + i64(field.moisture_spread_percent) * 10 * moisture_noise / NOISE_ONE
-	return {temperature, clamp(moisture, 0, 1000)}
+	noise := planet_climate_noise(generation_seed.hash_combine(generation.climate_seed, 0), on_sphere, field.temperature_wavelength_metres)
+	return i64(field.sea_level_celsius) * 1000 + i64(field.temperature_spread_celsius) * 1000 * noise / NOISE_ONE - i64(field.lapse_millicelsius_per_metre) * height / POSITION_UNITS_PER_METRE
+}
+
+// The moisture in permille (planet_climate), which does not read the
+// height, so the forest reads it before the relief (0310); 0 without a
+// climate.
+planet_moisture :: proc(generation: Planet_Generation, on_sphere: [3]i64) -> i64 {
+	field := generation.climate
+	if field.temperature_wavelength_metres == 0 {
+		return 0
+	}
+	noise := planet_climate_noise(generation_seed.hash_combine(generation.climate_seed, 2), on_sphere, field.moisture_wavelength_metres)
+	return clamp(i64(field.moisture_percent) * 10 + i64(field.moisture_spread_percent) * 10 * noise / NOISE_ONE, 0, 1000)
 }

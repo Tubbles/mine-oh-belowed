@@ -14,7 +14,7 @@ TEST_PLANET_RECORD :: `planets = [{
 	springs = [{latitude_degrees = 88, longitude_degrees = -120}]
 	home = {latitude_degrees = 86, longitude_degrees = -115}
 	crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1}
-	trees = {grove_spacing_metres = 40, grove_share_percent = 50, grove_radius_metres = 14, tree_spacing_metres = 4, density_percent = 80, clearing_metres = 24, maximum_slope_percent = 70, species = [{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, hand_felling_scale_percent = 100, hand_felling_milliseconds = 10000, axe_felling_milliseconds = [6000, 4000, 2500], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}]}
+	trees = {grove_spacing_metres = 40, grove_share_percent = 50, grove_radius_metres = 14, tree_spacing_metres = 4, density_percent = 80, clearing_metres = 24, maximum_slope_percent = 70, species = [{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, hand_felling_scale_percent = 100, hand_felling_milliseconds = 10000, axe_felling_milliseconds = [6000, 4000, 2500], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500, temperature_celsius = [-6, 16], moisture_percent = [15, 100], height_metres = [-20, 256], cover_percent = [0, 100], scale_percent = [45, 210], weight_percent = 100}]}
 	rain_fill_per_minute = 2
 	rotation_period_seconds = 1200
 	relief_octaves = [{wavelength_metres = 512, amplitude_metres = 24}, {wavelength_metres = 128, amplitude_metres = 8}, {wavelength_metres = 32, amplitude_metres = 2}]
@@ -243,14 +243,16 @@ test_a_crater_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 }
 
 // Work item 0197: each trees key one past each bound is refused with its
-// message; no trees (a share of 0, no species) passes; a clearing inside
-// the crater's reach is refused; the shipped record passes.
+// message; no trees (a share of 0, no species, no forest) passes; a
+// clearing inside the crater's reach is refused; the shipped record
+// passes.
 @(test)
 test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 	planet := default_planet(shipped_test_planets())
 	shipped := planet.trees
-	testing.expect_value(t, trees_problem(shipped, planet.crater), "")
-	testing.expect_value(t, trees_problem(Planet_Trees{}, planet.crater), "")
+	climate := planet_climate_field(planet.climate)
+	testing.expect_value(t, trees_problem(shipped, planet.crater, climate), "")
+	testing.expect_value(t, trees_problem(Planet_Trees{}, planet.crater, climate), "")
 	species := shipped.species[0]
 	cases := [?]struct {
 		change:   proc(trees: ^Planet_Trees),
@@ -260,10 +262,10 @@ test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 		{proc(trees: ^Planet_Trees) {trees.grove_share_percent = -1}, "trees.grove_share_percent -1 is outside 0 to 100"},
 		{proc(trees: ^Planet_Trees) {trees.tree_spacing_metres = 1}, "trees.tree_spacing_metres 1 is outside 2 to 16"},
 		{proc(trees: ^Planet_Trees) {trees.tree_spacing_metres = 17}, "trees.tree_spacing_metres 17 is outside 2 to 16"},
-		{proc(trees: ^Planet_Trees) {trees.grove_spacing_metres = 7}, "trees.grove_spacing_metres 7 is outside 8 to 256"},
-		{proc(trees: ^Planet_Trees) {trees.grove_spacing_metres = 257}, "trees.grove_spacing_metres 257 is outside 8 to 256"},
-		{proc(trees: ^Planet_Trees) {trees.grove_radius_metres = 3}, "trees.grove_radius_metres 3 is outside 4 to 40"},
-		{proc(trees: ^Planet_Trees) {trees.grove_radius_metres = 41}, "trees.grove_radius_metres 41 is outside 4 to 40"},
+		{proc(trees: ^Planet_Trees) {trees.grove_spacing_metres = 3}, "trees.grove_spacing_metres 3 is outside 4 to 256"},
+		{proc(trees: ^Planet_Trees) {trees.grove_spacing_metres = 257}, "trees.grove_spacing_metres 257 is outside 4 to 256"},
+		{proc(trees: ^Planet_Trees) {trees.grove_radius_metres = 1}, "trees.grove_radius_metres 1 is outside 2 to 40"},
+		{proc(trees: ^Planet_Trees) {trees.grove_radius_metres = 41}, "trees.grove_radius_metres 41 is outside 2 to 40"},
 		{proc(trees: ^Planet_Trees) {trees.density_percent = 0}, "trees.density_percent 0 is outside 1 to 100"},
 		{proc(trees: ^Planet_Trees) {trees.density_percent = 101}, "trees.density_percent 101 is outside 1 to 100"},
 		{proc(trees: ^Planet_Trees) {trees.clearing_metres = -1}, "trees.clearing_metres -1 is outside 0 to 64"},
@@ -277,11 +279,11 @@ test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 	for entry in cases {
 		trees := shipped
 		entry.change(&trees)
-		testing.expect_value(t, trees_problem(trees, planet.crater), entry.expected)
+		testing.expect_value(t, trees_problem(trees, planet.crater, climate), entry.expected)
 	}
 	inside := shipped
 	inside.clearing_metres = 0
-	testing.expect_value(t, trees_problem(inside, {}), "")
+	testing.expect_value(t, trees_problem(inside, {}, climate), "")
 	species_cases := [?]struct {
 		change:   proc(species: ^Planet_Tree_Species),
 		expected: string,
@@ -296,8 +298,8 @@ test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 		{proc(species: ^Planet_Tree_Species) {species.hand_felling_milliseconds = 60_001}, "trees.species[0].hand_felling_milliseconds 60001 is outside 100 to 60000"},
 		{proc(species: ^Planet_Tree_Species) {species.axe_felling_milliseconds[1] = 99}, "trees.species[0].axe_felling_milliseconds[1] 99 is outside 100 to 60000"},
 		{proc(species: ^Planet_Tree_Species) {species.axe_felling_milliseconds[1] = 60_001}, "trees.species[0].axe_felling_milliseconds[1] 60001 is outside 100 to 60000"},
-		{proc(species: ^Planet_Tree_Species) {species.hand_felling_scale_percent = -1}, "trees.species[0].hand_felling_scale_percent -1 is outside 0 to 115"},
-		{proc(species: ^Planet_Tree_Species) {species.hand_felling_scale_percent = 116}, "trees.species[0].hand_felling_scale_percent 116 is outside 0 to 115"},
+		{proc(species: ^Planet_Tree_Species) {species.hand_felling_scale_percent = -1}, "trees.species[0].hand_felling_scale_percent -1 is outside 0 to 250"},
+		{proc(species: ^Planet_Tree_Species) {species.hand_felling_scale_percent = 251}, "trees.species[0].hand_felling_scale_percent 251 is outside 0 to 250"},
 		{proc(species: ^Planet_Tree_Species) {species.trunk_radius_millimetres = 49}, "trees.species[0].trunk_radius_millimetres 49 is outside 50 to 1000"},
 		{proc(species: ^Planet_Tree_Species) {species.trunk_radius_millimetres = 1001}, "trees.species[0].trunk_radius_millimetres 1001 is outside 50 to 1000"},
 		{proc(species: ^Planet_Tree_Species) {species.trunk_height_millimetres = 499}, "trees.species[0].trunk_height_millimetres 499 is outside 500 to 20000"},
@@ -310,18 +312,136 @@ test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 		entry.change(&changed)
 		trees := shipped
 		trees.species = []Planet_Tree_Species{changed}
-		testing.expect_value(t, trees_problem(trees, planet.crater), entry.expected)
+		testing.expect_value(t, trees_problem(trees, planet.crater, climate), entry.expected)
 	}
 	twice := shipped
 	twice.species = []Planet_Tree_Species{species, species}
 	testing.expect_value(t, tree_species_ids_problem(twice), `trees.species[1].id "pine" is used twice`)
-	doubled, _ := strings.replace(string(TEST_PLANET_RECORD), "species = [{id = \"pine\"", "species = [{id = \"pine\", machine = \"pine_tree\", tint = [1, 2, 3], item = \"log\", count = 1, hand_felling_scale_percent = 100, hand_felling_milliseconds = 1000, axe_felling_milliseconds = [1000, 1000, 1000], trunk_radius_millimetres = 100, trunk_height_millimetres = 1000}, {id = \"pine\"", 1, context.temp_allocator)
+	doubled, _ := strings.replace(string(TEST_PLANET_RECORD), "species = [{id = \"pine\"", "species = [{id = \"pine\", machine = \"pine_tree\", tint = [1, 2, 3], item = \"log\", count = 1, hand_felling_scale_percent = 100, hand_felling_milliseconds = 1000, axe_felling_milliseconds = [1000, 1000, 1000], trunk_radius_millimetres = 100, trunk_height_millimetres = 1000, temperature_celsius = [-6, 16], moisture_percent = [15, 100], height_metres = [-20, 256], cover_percent = [0, 100], scale_percent = [45, 210], weight_percent = 100}, {id = \"pine\"", 1, context.temp_allocator)
 	expect_planets_problem(t, doubled, `trees.species[1].id "pine" is used twice`)
 	record := string(TEST_PLANET_RECORD)
 	missing, _ := strings.replace(record, "density_percent = 80, ", "", 1, context.temp_allocator)
 	expect_planets_problem(t, missing, "planets[0].trees is missing density_percent")
 	species_missing, _ := strings.replace(record, "count = 4, ", "", 1, context.temp_allocator)
 	expect_planets_problem(t, species_missing, "planets[0].trees.species[0] is missing count")
+}
+
+// Work item 0310: each forest key one past each bound names it, as do a
+// forest without a climate, a gap above the tree spacing, a full slope
+// above the maximum and no species above weight 0.
+@(test)
+test_the_forest_keys_are_bounded :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	climate := planet_climate_field(planet.climate)
+	shipped := planet.trees
+	testing.expect(t, planet_forest_on(shipped.forest), "the shipped home has a forest")
+	cases := [?]struct {
+		change:   proc(forest: ^Planet_Forest),
+		expected: string,
+	} {
+		{proc(forest: ^Planet_Forest) {forest.cover_wavelength_metres = 63}, "trees.forest.cover_wavelength_metres 63 is outside 64 to 4096"},
+		{proc(forest: ^Planet_Forest) {forest.cover_wavelength_metres = 4097}, "trees.forest.cover_wavelength_metres 4097 is outside 64 to 4096"},
+		{proc(forest: ^Planet_Forest) {forest.clearing_wavelength_metres = 15}, "trees.forest.clearing_wavelength_metres 15 is outside 16 to 1024"},
+		{proc(forest: ^Planet_Forest) {forest.clearing_wavelength_metres = 1025}, "trees.forest.clearing_wavelength_metres 1025 is outside 16 to 1024"},
+		{proc(forest: ^Planet_Forest) {forest.clearing_percent = -1}, "trees.forest.clearing_percent -1 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.clearing_percent = 101}, "trees.forest.clearing_percent 101 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.cover_threshold_percent = -101}, "trees.forest.cover_threshold_percent -101 is outside -100 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.cover_threshold_percent = 101}, "trees.forest.cover_threshold_percent 101 is outside -100 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.edge_percent = 0}, "trees.forest.edge_percent 0 is outside 1 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.edge_percent = 101}, "trees.forest.edge_percent 101 is outside 1 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.moisture_cover_percent = -1}, "trees.forest.moisture_cover_percent -1 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.moisture_cover_percent = 101}, "trees.forest.moisture_cover_percent 101 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.scatter_percent = -1}, "trees.forest.scatter_percent -1 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.scatter_percent = 101}, "trees.forest.scatter_percent 101 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.meadow_metres = -1}, "trees.forest.meadow_metres -1 is outside 0 to 512"},
+		{proc(forest: ^Planet_Forest) {forest.meadow_metres = 513}, "trees.forest.meadow_metres 513 is outside 0 to 512"},
+		{proc(forest: ^Planet_Forest) {forest.minimum_gap_millimetres = -1}, "trees.forest.minimum_gap_millimetres -1 is outside 0 to 2000"},
+		{proc(forest: ^Planet_Forest) {forest.minimum_gap_millimetres = 2001}, "trees.forest.minimum_gap_millimetres 2001 is outside 0 to 2000"},
+		{proc(forest: ^Planet_Forest) {forest.full_slope_percent = -1}, "trees.forest.full_slope_percent -1 is outside 0 to 70"},
+		{proc(forest: ^Planet_Forest) {forest.full_slope_percent = 71}, "trees.forest.full_slope_percent 71 is outside 0 to 70"},
+		{proc(forest: ^Planet_Forest) {forest.stand_wavelength_metres = 15}, "trees.forest.stand_wavelength_metres 15 is outside 16 to 1024"},
+		{proc(forest: ^Planet_Forest) {forest.stand_wavelength_metres = 1025}, "trees.forest.stand_wavelength_metres 1025 is outside 16 to 1024"},
+		{proc(forest: ^Planet_Forest) {forest.stand_percent = -1}, "trees.forest.stand_percent -1 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.stand_percent = 101}, "trees.forest.stand_percent 101 is outside 0 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_celsius = 0}, "trees.forest.species_fade_celsius 0 is outside 1 to 50"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_celsius = 51}, "trees.forest.species_fade_celsius 51 is outside 1 to 50"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_moisture_percent = 0}, "trees.forest.species_fade_moisture_percent 0 is outside 1 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_moisture_percent = 101}, "trees.forest.species_fade_moisture_percent 101 is outside 1 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_metres = 0}, "trees.forest.species_fade_metres 0 is outside 1 to 1000"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_metres = 1001}, "trees.forest.species_fade_metres 1001 is outside 1 to 1000"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_cover_percent = 0}, "trees.forest.species_fade_cover_percent 0 is outside 1 to 100"},
+		{proc(forest: ^Planet_Forest) {forest.species_fade_cover_percent = 101}, "trees.forest.species_fade_cover_percent 101 is outside 1 to 100"},
+	}
+	for entry in cases {
+		trees := shipped
+		entry.change(&trees.forest)
+		testing.expect_value(t, trees_problem(trees, planet.crater, climate), entry.expected)
+	}
+	testing.expect_value(t, trees_problem(shipped, planet.crater, {}), "trees.forest needs the climate")
+	narrow := shipped
+	narrow.tree_spacing_metres = 3
+	narrow.forest.minimum_gap_millimetres = 3001
+	testing.expect_value(t, trees_problem(narrow, planet.crater, climate), "trees.forest.minimum_gap_millimetres 3001 is outside 0 to 3000")
+	still := shipped
+	still.species = slice.clone(shipped.species, context.temp_allocator)
+	for &species in still.species {
+		species.weight_percent = 0
+	}
+	testing.expect_value(t, trees_problem(still, planet.crater, climate), "trees.forest has no species above weight_percent 0")
+	groveless := shipped
+	groveless.grove_share_percent = 0
+	groveless.grove_spacing_metres = 0
+	testing.expect_value(t, trees_problem(groveless, planet.crater, climate), "")
+}
+
+// Work item 0310: each placement range past its bound or reversed names
+// it, as does a weight past its bound; checked only while the forest is
+// on.
+@(test)
+test_species_placement_is_bounded :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	climate := planet_climate_field(planet.climate)
+	shipped := planet.trees
+	cases := [?]struct {
+		change:   proc(species: ^Planet_Tree_Species),
+		expected: string,
+	} {
+		{proc(species: ^Planet_Tree_Species) {species.temperature_celsius = {-101, 0}}, "trees.species[0].temperature_celsius has -101, outside -100 to 100"},
+		{proc(species: ^Planet_Tree_Species) {species.temperature_celsius = {0, 101}}, "trees.species[0].temperature_celsius has 101, outside -100 to 100"},
+		{proc(species: ^Planet_Tree_Species) {species.temperature_celsius = {10, 5}}, "trees.species[0].temperature_celsius 10 is above its most 5"},
+		{proc(species: ^Planet_Tree_Species) {species.moisture_percent = {-1, 50}}, "trees.species[0].moisture_percent has -1, outside 0 to 100"},
+		{proc(species: ^Planet_Tree_Species) {species.moisture_percent = {0, 101}}, "trees.species[0].moisture_percent has 101, outside 0 to 100"},
+		{proc(species: ^Planet_Tree_Species) {species.height_metres = {-4001, 0}}, "trees.species[0].height_metres has -4001, outside -4000 to 4000"},
+		{proc(species: ^Planet_Tree_Species) {species.height_metres = {0, 4001}}, "trees.species[0].height_metres has 4001, outside -4000 to 4000"},
+		{proc(species: ^Planet_Tree_Species) {species.cover_percent = {-1, 50}}, "trees.species[0].cover_percent has -1, outside 0 to 100"},
+		{proc(species: ^Planet_Tree_Species) {species.cover_percent = {60, 50}}, "trees.species[0].cover_percent 60 is above its most 50"},
+		{proc(species: ^Planet_Tree_Species) {species.scale_percent = {9, 100}}, "trees.species[0].scale_percent has 9, outside 10 to 250"},
+		{proc(species: ^Planet_Tree_Species) {species.scale_percent = {100, 251}}, "trees.species[0].scale_percent has 251, outside 10 to 250"},
+		{proc(species: ^Planet_Tree_Species) {species.weight_percent = -1}, "trees.species[0].weight_percent -1 is outside 0 to 100"},
+		{proc(species: ^Planet_Tree_Species) {species.weight_percent = 101}, "trees.species[0].weight_percent 101 is outside 0 to 100"},
+	}
+	for entry in cases {
+		trees := shipped
+		trees.species = slice.clone(shipped.species, context.temp_allocator)
+		entry.change(&trees.species[0])
+		testing.expect_value(t, trees_problem(trees, planet.crater, climate), entry.expected)
+		trees.forest = {}
+		testing.expect_value(t, trees_problem(trees, planet.crater, climate), "")
+	}
+}
+
+// Work item 0310: a planet without a forest object loads with the forest
+// off; a forest object missing a key names it.
+@(test)
+test_the_forest_is_optional_in_the_file :: proc(t: ^testing.T) {
+	planets, problem := parse_planets_file(transmute([]byte)string(TEST_PLANET_RECORD), PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, planets[0].trees.forest, Planet_Forest{})
+	testing.expect(t, !planet_forest_on(planets[0].trees.forest))
+	partial, _ := strings.replace(string(TEST_PLANET_RECORD), "maximum_slope_percent = 70, ", "maximum_slope_percent = 70, forest = {cover_wavelength_metres = 520}, ", 1, context.temp_allocator)
+	expect_planets_problem(t, partial, "planets[0].trees.forest is missing clearing_wavelength_metres")
+	species_missing, _ := strings.replace(string(TEST_PLANET_RECORD), "weight_percent = 100", "", 1, context.temp_allocator)
+	expect_planets_problem(t, species_missing, "planets[0].trees.species[0] is missing weight_percent")
 }
 
 // Work item 0197: each species names a machine of kind tree and an item.

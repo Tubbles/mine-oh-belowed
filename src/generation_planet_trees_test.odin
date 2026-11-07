@@ -1,21 +1,40 @@
 package game
 
 import "core:fmt"
+import "core:math"
 import "core:testing"
 import "core:time"
+import "generation_seed"
 
-// The trees on the sphere (work item 0197): a pure function of the seed
-// and the recorded planet, not of the spacing; in groves, none in the
-// clearing, below the sea or on a steep slope; the density near its
-// expectation.
+// The trees on the sphere (work items 0197 and 0310): a pure function of
+// the seed and the recorded planet, not of the spacing; none in the
+// clearing, below the sea or on a steep slope. The groves: in groves, the
+// density near its expectation. The forest: its share of the land, its
+// interior's density, the gap, the meadow round the home, the species by
+// the climate and their sizes.
 
 TREE_TEST_RADIUS_METRES :: 8000
 
-// The shipped home planet at the radius.
+// The shipped home planet at the radius, with its forest.
 tree_test_planet :: proc(radius_metres := TREE_TEST_RADIUS_METRES) -> Planet {
 	planet := default_planet(shipped_test_planets())
 	planet.radius_metres = radius_metres
 	return planet
+}
+
+// The shipped home without its forest: the groves of 0197 at a spacing of
+// 4 m and a density of 80%, as a world recorded before 0310 has them.
+grove_test_planet :: proc(radius_metres := TREE_TEST_RADIUS_METRES) -> Planet {
+	planet := tree_test_planet(radius_metres)
+	planet.trees.forest = {}
+	planet.trees.tree_spacing_metres = 4
+	planet.trees.density_percent = 80
+	return planet
+}
+
+// Both placements, the forest's first.
+tree_test_planets :: proc() -> [2]Planet {
+	return {tree_test_planet(), grove_test_planet()}
 }
 
 tree_test_generation :: proc(planet: Planet, seed := DEFAULT_WORLD_SEED, spacing_millimetres := 1000) -> Planet_Generation {
@@ -56,62 +75,65 @@ trees_equal :: proc(first, second: []Planet_Tree) -> bool {
 
 @(test)
 test_the_same_seed_places_the_same_trees :: proc(t: ^testing.T) {
-	planet := tree_test_planet()
-	generation := tree_test_generation(planet)
-	minimum, maximum := tree_test_box(tree_test_point_from_home(generation, planet, 0, 60), 48)
-	first := planet_trees_in_box(&generation, minimum, maximum)
-	second := planet_trees_in_box(&generation, minimum, maximum)
-	testing.expect(t, trees_equal(first[:], second[:]))
-	testing.expectf(t, len(first) >= 10, "%d trees in the box", len(first))
-	for spacing in TEST_FIELD_SPACINGS {
-		at_spacing := tree_test_generation(planet, spacing_millimetres = spacing)
-		testing.expectf(t, trees_equal(planet_trees_in_box(&at_spacing, minimum, maximum)[:], first[:]), "the spacing %d mm moves no tree", spacing)
+	for planet in tree_test_planets() {
+		generation := tree_test_generation(planet)
+		minimum, maximum := tree_test_box(tree_test_point_from_home(generation, planet, 0, 60), 48)
+		first := planet_trees_in_box(&generation, minimum, maximum)
+		second := planet_trees_in_box(&generation, minimum, maximum)
+		testing.expect(t, trees_equal(first[:], second[:]))
+		testing.expectf(t, len(first) >= 10, "%d trees in the box", len(first))
+		for spacing in TEST_FIELD_SPACINGS {
+			at_spacing := tree_test_generation(planet, spacing_millimetres = spacing)
+			testing.expectf(t, trees_equal(planet_trees_in_box(&at_spacing, minimum, maximum)[:], first[:]), "the spacing %d mm moves no tree", spacing)
+		}
+		other := tree_test_generation(planet, seed = DEFAULT_WORLD_SEED + 1)
+		testing.expect(t, !trees_equal(planet_trees_in_box(&other, minimum, maximum)[:], first[:]), "another seed grows other trees")
 	}
-	other := tree_test_generation(planet, seed = DEFAULT_WORLD_SEED + 1)
-	testing.expect(t, !trees_equal(planet_trees_in_box(&other, minimum, maximum)[:], first[:]), "another seed grows other trees")
 }
 
 @(test)
 test_a_tree_key_regenerates_alone :: proc(t: ^testing.T) {
-	planet := tree_test_planet()
-	generation := tree_test_generation(planet)
-	minimum, maximum := tree_test_box(tree_test_point_from_home(generation, planet, 0, 60), 48)
-	trees := planet_trees_in_box(&generation, minimum, maximum)
-	keys := make(map[Tree_Key]struct{}, context.temp_allocator)
-	for tree in trees {
-		alone, found := planet_tree_at_key(&generation, tree.key)
-		testing.expect(t, found)
-		testing.expect_value(t, alone, tree)
-		keys[tree.key] = {}
-	}
-	empty_found := false
-	first := minimum / generation.trees.spacing
-	for x in first.x ..< first.x + 24 {
-		key := Tree_Key{i32(x), i32(first.y), i32(first.z)}
-		if key in keys {
-			continue
+	for planet in tree_test_planets() {
+		generation := tree_test_generation(planet)
+		minimum, maximum := tree_test_box(tree_test_point_from_home(generation, planet, 0, 60), 48)
+		trees := planet_trees_in_box(&generation, minimum, maximum)
+		keys := make(map[Tree_Key]struct{}, context.temp_allocator)
+		for tree in trees {
+			alone, found := planet_tree_at_key(&generation, tree.key)
+			testing.expect(t, found)
+			testing.expect_value(t, alone, tree)
+			keys[tree.key] = {}
 		}
-		_, found := planet_tree_at_key(&generation, key)
-		if !found {
-			empty_found = true
-			break
+		empty_found := false
+		first := minimum / generation.trees.spacing
+		for x in first.x ..< first.x + 24 {
+			key := Tree_Key{i32(x), i32(first.y), i32(first.z)}
+			if key in keys {
+				continue
+			}
+			_, found := planet_tree_at_key(&generation, key)
+			if !found {
+				empty_found = true
+				break
+			}
 		}
+		testing.expect(t, empty_found, "a cube without a tree finds none")
 	}
-	testing.expect(t, empty_found, "a cube without a tree finds none")
 }
 
 @(test)
 test_no_tree_stands_in_the_home_clearing :: proc(t: ^testing.T) {
 	for radius in tree_test_planet().radius_presets_metres {
-		planet := tree_test_planet(radius)
-		generation := tree_test_generation(planet)
-		term := generation.trees
-		minimum, maximum := tree_test_box(term.home, i64(planet.trees.clearing_metres) + 40)
-		trees := planet_trees_in_box(&generation, minimum, maximum)
-		testing.expectf(t, len(trees) > 0, "trees round the clearing at %d m", radius)
-		for tree in trees {
-			offset := tree_test_on_sphere(generation, tree) - term.home
-			testing.expect(t, offset.x * offset.x + offset.y * offset.y + offset.z * offset.z > term.clearing * term.clearing)
+		for planet in ([2]Planet{tree_test_planet(radius), grove_test_planet(radius)}) {
+			generation := tree_test_generation(planet)
+			term := generation.trees
+			minimum, maximum := tree_test_box(term.home, i64(planet.trees.clearing_metres) + 40)
+			trees := planet_trees_in_box(&generation, minimum, maximum)
+			testing.expectf(t, len(trees) > 0, "trees round the clearing at %d m", radius)
+			for tree in trees {
+				offset := tree_test_on_sphere(generation, tree) - term.home
+				testing.expect(t, offset.x * offset.x + offset.y * offset.y + offset.z * offset.z > term.clearing * term.clearing)
+			}
 		}
 	}
 }
@@ -149,7 +171,7 @@ trees_in_test_circle :: proc(generation: ^Planet_Generation, centre: [3]i64) -> 
 
 @(test)
 test_the_tree_density_stays_within_its_bounds :: proc(t: ^testing.T) {
-	planet := tree_test_planet()
+	planet := grove_test_planet()
 	generation := tree_test_generation(planet)
 	expected := planet_tree_expected_count(planet.trees, TREE_TEST_CIRCLE_METRES)
 	testing.expect_value(t, expected, 113)
@@ -172,33 +194,40 @@ test_the_tree_density_stays_within_its_bounds :: proc(t: ^testing.T) {
 }
 
 // Every tree of the circles stands at least the margin above the sea on
-// ground no steeper than the planet's slope; a higher sea leaves fewer.
-@(test)
+// ground no steeper than the planet's slope (by the placement's own
+// probes); a higher sea leaves fewer.
+@(test) // slow
 test_no_tree_stands_below_the_sea_or_on_a_steep_slope :: proc(t: ^testing.T) {
-	planet := tree_test_planet()
-	generation := tree_test_generation(planet)
-	flooded_planet := planet
-	flooded_planet.sea_level_metres = 8
-	flooded := tree_test_generation(flooded_planet)
-	total, flooded_total := 0, 0
-	for centre in tree_test_circle_centres(generation) {
-		for tree in trees_in_test_circle(&generation, centre) {
-			on_sphere := tree_test_on_sphere(generation, tree)
-			testing.expect(t, surface_relief(generation, on_sphere) >= generation.sea_radius - generation.radius + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES))
-			testing.expect(t, planet_tree_slope_ok(generation, on_sphere, tree.up))
-			total += 1
+	for planet in tree_test_planets() {
+		generation := tree_test_generation(planet)
+		flooded_planet := planet
+		flooded_planet.sea_level_metres = 8
+		flooded := tree_test_generation(flooded_planet)
+		total, flooded_total := 0, 0
+		for centre in tree_test_circle_centres(generation) {
+			for tree in trees_in_test_circle(&generation, centre) {
+				on_sphere := tree_test_on_sphere(generation, tree)
+				relief := surface_relief(generation, on_sphere)
+				testing.expect(t, relief >= generation.sea_radius - generation.radius + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES))
+				if generation.trees.forest_on {
+					testing.expect(t, forest_slope_percent(generation, on_sphere, tree.up, relief) < generation.trees.maximum_slope_percent)
+				} else {
+					testing.expect(t, planet_tree_slope_ok(generation, on_sphere, tree.up))
+				}
+				total += 1
+			}
+			for tree in trees_in_test_circle(&flooded, centre) {
+				testing.expect(t, surface_relief(flooded, tree_test_on_sphere(flooded, tree)) >= flooded.sea_radius - flooded.radius + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES))
+				flooded_total += 1
+			}
 		}
-		for tree in trees_in_test_circle(&flooded, centre) {
-			testing.expect(t, surface_relief(flooded, tree_test_on_sphere(flooded, tree)) >= flooded.sea_radius - flooded.radius + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES))
-			flooded_total += 1
-		}
+		testing.expectf(t, flooded_total < total, "%d trees under a higher sea, %d under the shipped one", flooded_total, total)
 	}
-	testing.expectf(t, flooded_total < total, "%d trees under a higher sea, %d under the shipped one", flooded_total, total)
 }
 
 @(test)
 test_trees_stand_in_groves_not_on_a_grid :: proc(t: ^testing.T) {
-	planet := tree_test_planet()
+	planet := grove_test_planet()
 	generation := tree_test_generation(planet)
 	minimum, maximum := tree_test_box(tree_test_point_from_home(generation, planet, ANGLE_UNITS_PER_QUARTER, 300), 100)
 	trees := planet_trees_in_box(&generation, minimum, maximum)
@@ -262,7 +291,7 @@ test_tree_axes_turn_with_the_yaw :: proc(t: ^testing.T) {
 
 @(test)
 test_the_zero_tree_term_places_nothing :: proc(t: ^testing.T) {
-	bare := tree_test_planet()
+	bare := grove_test_planet()
 	bare.trees.grove_share_percent = 0
 	built := make_test_planet()
 	for planet in ([2]Planet{bare, built}) {
@@ -276,26 +305,31 @@ test_the_zero_tree_term_places_nothing :: proc(t: ^testing.T) {
 }
 
 // Not a benchmark: the cost of the player's query box and of a draw
-// region, for the report.
+// region, for the report, on the groves and in the forest's interior
+// (0310).
 @(test)
 test_the_tree_query_cost_is_logged :: proc(t: ^testing.T) {
-	planet := tree_test_planet()
-	generation := tree_test_generation(planet)
-	centre := tree_test_point_from_home(generation, planet, ANGLE_UNITS_PER_QUARTER, 300)
-	query_minimum, query_maximum := tree_test_box(centre, 5)
-	region_minimum, region_maximum := tree_test_box(centre, 16)
-	REPEATS :: 20
-	start := time.tick_now()
-	for _ in 0 ..< REPEATS {
-		planet_trees_in_box(&generation, query_minimum, query_maximum)
+	for planet in tree_test_planets() {
+		generation := tree_test_generation(planet)
+		centre := tree_test_point_from_home(generation, planet, ANGLE_UNITS_PER_QUARTER, 300)
+		if generation.trees.forest_on {
+			centre = forest_test_interior(generation)
+		}
+		query_minimum, query_maximum := tree_test_box(centre, 5)
+		region_minimum, region_maximum := tree_test_box(centre, 16)
+		REPEATS :: 20
+		start := time.tick_now()
+		for _ in 0 ..< REPEATS {
+			planet_trees_in_box(&generation, query_minimum, query_maximum)
+		}
+		query := time.tick_since(start) / REPEATS
+		start = time.tick_now()
+		for _ in 0 ..< REPEATS {
+			planet_trees_in_box(&generation, region_minimum, region_maximum)
+		}
+		region := time.tick_since(start) / REPEATS
+		fmt.printfln("tree query (%s): a 10 m box %v, a 32 m region %v", generation.trees.forest_on ? "forest interior" : "groves", query, region)
 	}
-	query := time.tick_since(start) / REPEATS
-	start = time.tick_now()
-	for _ in 0 ..< REPEATS {
-		planet_trees_in_box(&generation, region_minimum, region_maximum)
-	}
-	region := time.tick_since(start) / REPEATS
-	fmt.printfln("tree query: a 10 m box %v, a 32 m region %v", query, region)
 	testing.expect(t, true)
 }
 
@@ -317,4 +351,340 @@ planet_tree_expected_count :: proc(trees: Planet_Trees, circle_radius_metres: in
 		return 0
 	}
 	return int(numerator / denominator)
+}
+
+// The forest (0310).
+
+// The point on the sphere of the radius at the latitude and longitude in
+// degrees, moved east and north on the tangent plane there by the metres
+// (the prototype's frame, tmp/0310/proto), in position units.
+forest_test_point :: proc(radius_metres: int, latitude, longitude: f64, east_metres: f64 = 0, north_metres: f64 = 0) -> [3]i64 {
+	la, lo := math.to_radians(latitude), math.to_radians(longitude)
+	centre := [3]f64{math.cos(la) * math.cos(lo), math.sin(la), math.cos(la) * math.sin(lo)}
+	east := [3]f64{-math.sin(lo), 0, math.cos(lo)}
+	north := [3]f64{-math.sin(la) * math.cos(lo), math.cos(la), -math.sin(la) * math.sin(lo)}
+	radius := f64(radius_metres)
+	point := centre * radius + east * east_metres + north * north_metres
+	point *= radius / math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z) * POSITION_UNITS_PER_METRE
+	return {i64(math.round(point.x)), i64(math.round(point.y)), i64(math.round(point.z))}
+}
+
+// The interior the measurements name: 80.6 N 132 E, 335 m south of the
+// home at 8 km.
+forest_test_interior :: proc(generation: Planet_Generation) -> [3]i64 {
+	return forest_test_point(int(generation.radius / POSITION_UNITS_PER_METRE), 80.6, 132)
+}
+
+// The trees whose candidate lies within the radius of the centre on the
+// sphere (temp allocator).
+forest_trees_within :: proc(generation: ^Planet_Generation, centre: [3]i64, radius_metres: i64) -> [dynamic]Planet_Tree {
+	minimum, maximum := tree_test_box(centre, radius_metres + 1)
+	inside := make([dynamic]Planet_Tree, context.temp_allocator)
+	reach := metres_to_position_units(radius_metres)
+	for tree in planet_trees_in_box(generation, minimum, maximum) {
+		offset := tree_test_on_sphere(generation^, tree) - centre
+		if offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= reach * reach {
+			append(&inside, tree)
+		}
+	}
+	return inside
+}
+
+// The shares of the land (planet_tree_ground) on a 16 m grid over the
+// 4 km square round the home at 8 km: interior at least 60% of the full
+// density, edge 20 to 60%, open below (0310's measure, 42.1, 19.3 and
+// 38.6% on an 8 m grid).
+@(test) // slow
+test_the_forest_share_of_the_land_holds :: proc(t: ^testing.T) {
+	planet := tree_test_planet()
+	generation := tree_test_generation(planet)
+	full := generation.trees.forest_density
+	land, interior, edge := 0, 0, 0
+	STEP :: 16.0
+	SIDE :: 4000.0
+	count := int(SIDE / STEP)
+	for row in 0 ..< count {
+		for column in 0 ..< count {
+			east := (f64(column) + 0.5) * STEP - SIDE / 2
+			north := (f64(row) + 0.5) * STEP - SIDE / 2
+			point := forest_test_point(planet.radius_metres, f64(planet.home.latitude_degrees), f64(planet.home.longitude_degrees), east, north)
+			density, is_land := forest_density_at(generation, point)
+			if !is_land {
+				continue
+			}
+			land += 1
+			switch {
+			case density * 10 >= full * 6:
+				interior += 1
+			case density * 10 >= full * 2:
+				edge += 1
+			}
+		}
+	}
+	interior_percent := 100 * f64(interior) / f64(max(land, 1))
+	edge_percent := 100 * f64(edge) / f64(max(land, 1))
+	open_percent := 100 - interior_percent - edge_percent
+	fmt.printfln("forest share of the land: %d points, interior %.1f%%, edge %.1f%%, open %.1f%%", land, interior_percent, edge_percent, open_percent)
+	testing.expectf(t, interior_percent >= 35 && interior_percent <= 50, "interior %.1f%%", interior_percent)
+	testing.expectf(t, open_percent >= 30 && open_percent <= 48, "open %.1f%%", open_percent)
+}
+
+@(test)
+test_the_forest_interior_is_dense :: proc(t: ^testing.T) {
+	generation := tree_test_generation(tree_test_planet())
+	RADIUS :: 30
+	trees := forest_trees_within(&generation, forest_test_interior(generation), RADIUS)
+	hectare := f64(len(trees)) / (math.PI * RADIUS * RADIUS / 10000)
+	fmt.printfln("forest interior: %d trees within %d m, %.0f a hectare", len(trees), RADIUS, hectare)
+	testing.expectf(t, hectare >= 1300 && hectare <= 2400, "%.0f trees a hectare", hectare)
+}
+
+@(test)
+test_no_two_trees_stand_closer_than_the_gap :: proc(t: ^testing.T) {
+	generation := tree_test_generation(tree_test_planet())
+	minimum, maximum := tree_test_box(forest_test_interior(generation), 32)
+	trees := planet_trees_in_box(&generation, minimum, maximum)
+	testing.expectf(t, len(trees) > 200, "%d trees in the box", len(trees))
+	points := make([][3]i64, len(trees), context.temp_allocator)
+	for tree, index in trees {
+		points[index] = tree_test_on_sphere(generation, tree)
+	}
+	gap := millimetres_to_position_units(900)
+	nearest := i64(max(i64))
+	for first in 0 ..< len(points) {
+		for second in first + 1 ..< len(points) {
+			offset := points[first] - points[second]
+			nearest = min(nearest, offset.x * offset.x + offset.y * offset.y + offset.z * offset.z)
+		}
+	}
+	testing.expectf(t, nearest >= gap * gap, "two trees %d mm apart", i64(math.sqrt(f64(nearest))) * MILLIMETRES_PER_METRE / POSITION_UNITS_PER_METRE)
+}
+
+@(test)
+test_overlapping_boxes_agree_on_their_trees :: proc(t: ^testing.T) {
+	generation := tree_test_generation(tree_test_planet())
+	centre := forest_test_interior(generation)
+	first_minimum, first_maximum := tree_test_box(centre, 16)
+	shift := metres_to_position_units(7)
+	second_minimum, second_maximum := first_minimum + shift, first_maximum + shift
+	first := planet_trees_in_box(&generation, first_minimum, first_maximum)
+	second := planet_trees_in_box(&generation, second_minimum, second_maximum)
+	in_box :: proc(tree: Planet_Tree, spacing: i64, minimum, maximum: [3]i64) -> bool {
+		for axis in 0 ..< 3 {
+			if i64(tree.key[axis]) < floor_divide_i64(minimum[axis], spacing) || i64(tree.key[axis]) > floor_divide_i64(maximum[axis], spacing) {
+				return false
+			}
+		}
+		return true
+	}
+	spacing := generation.trees.spacing
+	from_first := make(map[Tree_Key]Planet_Tree, context.temp_allocator)
+	for tree in first {
+		if in_box(tree, spacing, second_minimum, second_maximum) {
+			from_first[tree.key] = tree
+		}
+	}
+	shared := 0
+	for tree in second {
+		if !in_box(tree, spacing, first_minimum, first_maximum) {
+			continue
+		}
+		other, found := from_first[tree.key]
+		testing.expectf(t, found && other == tree, "the key %v differs between the boxes", tree.key)
+		shared += 1
+	}
+	testing.expect_value(t, shared, len(from_first))
+	testing.expectf(t, shared > 50, "%d trees in the overlap", shared)
+	for tree in first {
+		alone, found := planet_tree_at_key(&generation, tree.key)
+		testing.expect(t, found && alone == tree, "a key regenerates alone")
+	}
+}
+
+// Each species fells for logs by the hand at most at its hand scale.
+forest_test_hand_fells_for_logs :: proc(planet: Planet, tree: Planet_Tree) -> bool {
+	species := planet.trees.species[int(tree.species) % len(planet.trees.species)]
+	return species.item == "log" && int(tree.scale_percent) <= species.hand_felling_scale_percent
+}
+
+@(test) // slow
+test_the_meadow_round_the_home_is_open :: proc(t: ^testing.T) {
+	for radius in tree_test_planet().radius_presets_metres {
+		planet := tree_test_planet(radius)
+		generation := tree_test_generation(planet)
+		home := generation.trees.home
+		within_meadow := len(forest_trees_within(&generation, home, 56))
+		around := forest_trees_within(&generation, home, 96)
+		hand := 0
+		for tree in around {
+			if forest_test_hand_fells_for_logs(planet, tree) {
+				hand += 1
+			}
+		}
+		fmt.printfln("the meadow at %d m: %d trees within 56 m, %d within 96 m, %d of them the hand fells for logs", radius, within_meadow, len(around), hand)
+		testing.expectf(t, within_meadow <= 100, "%d trees within 56 m at %d m", within_meadow, radius)
+		testing.expectf(t, len(around) >= 200, "%d trees within 96 m at %d m", len(around), radius)
+		testing.expectf(t, hand >= 10, "%d trees the hand fells for logs at %d m", hand, radius)
+	}
+}
+
+// The shipped species by name (the data's order).
+forest_test_species_index :: proc(planet: Planet, id: string) -> int {
+	for species, index in planet.trees.species {
+		if species.id == id {
+			return index
+		}
+	}
+	return -1
+}
+
+// The species weighed above 0 at the climate, by id.
+forest_test_weighed :: proc(planet: Planet, term: Planet_Tree_Term, celsius, moisture_percent, height_metres: i64) -> map[string]bool {
+	weights, _ := species_climate_weights(term, celsius * 1000, moisture_percent * 10, metres_to_position_units(height_metres), NOISE_ONE)
+	weighed := make(map[string]bool, context.temp_allocator)
+	for species, index in planet.trees.species {
+		weighed[species.id] = weights[index] > 0
+	}
+	return weighed
+}
+
+@(test)
+test_species_follow_the_climate :: proc(t: ^testing.T) {
+	planet := tree_test_planet()
+	term := tree_test_generation(planet).trees
+	warm := forest_test_weighed(planet, term, 25, 80, 0)
+	testing.expect(t, warm["broadleaf"] && !warm["pine"], "25 degrees, moist, at the sea: broadleaf, no pine")
+	cold := forest_test_weighed(planet, term, -5, 50, 0)
+	for id, weighed in cold {
+		testing.expectf(t, weighed == (id == "pine" || id == "snag"), "-5 degrees: %s weighed %v", id, weighed)
+	}
+	dry := forest_test_weighed(planet, term, 10, 5, 0)
+	for id, weighed in dry {
+		testing.expectf(t, weighed == (id == "snag"), "5%% moisture: %s weighed %v", id, weighed)
+	}
+	high := forest_test_weighed(planet, term, 10, 80, 100)
+	testing.expect(t, !high["broadleaf"], "100 m over the sea: no broadleaf")
+	testing.expect(t, high["pine"], "100 m over the sea: pine")
+}
+
+// The species' shares over the tiles round the home within 500 m: every
+// species stands there (at least 0.2%, the snag measures 0.53%), pine and
+// broadleaf make at least 60%.
+@(test) // slow
+test_the_shipped_forest_mixes_species :: proc(t: ^testing.T) {
+	planet := tree_test_planet()
+	generation := tree_test_generation(planet)
+	eyes := [1]World_Position{World_Position(generation.trees.home)}
+	edge := field_tree_tile_edge(&generation)
+	counts: [MAXIMUM_TREE_SPECIES]int
+	total := 0
+	for tile in field_tree_tiles_around(&generation, eyes[:], 500) {
+		minimum, maximum := field_tree_tile_box(tile, edge)
+		for tree in planet_trees_in_box(&generation, minimum, maximum) {
+			counts[tree.species] += 1
+			total += 1
+		}
+	}
+	pine, broadleaf := forest_test_species_index(planet, "pine"), forest_test_species_index(planet, "broadleaf")
+	for species, index in planet.trees.species {
+		share := 100 * f64(counts[index]) / f64(max(total, 1))
+		fmt.printfln("species %s: %d trees, %.1f%%", species.id, counts[index], share)
+		testing.expectf(t, share >= 0.2, "%s %.2f%%", species.id, share)
+	}
+	testing.expectf(t, (counts[pine] + counts[broadleaf]) * 100 >= total * 60, "pine and broadleaf %d of %d", counts[pine] + counts[broadleaf], total)
+}
+
+@(test)
+test_the_forest_scale_is_triangular :: proc(t: ^testing.T) {
+	least, most := 40, 160
+	sum := 0
+	in_middle := 0
+	for index in 0 ..< 10000 {
+		scale := int(forest_scale_percent(generation_seed.hash_u64(u64(index)), least, most))
+		testing.expect(t, scale >= least && scale <= most)
+		sum += scale
+		if scale >= least + (most - least) / 4 && scale <= most - (most - least) / 4 {
+			in_middle += 1
+		}
+	}
+	mean := f64(sum) / 10000
+	middle := f64(least + most) / 2
+	testing.expectf(t, abs(mean - middle) <= middle * 0.02, "mean %.2f against %.1f", mean, middle)
+	// A triangle holds three quarters of its draws in the middle half.
+	testing.expectf(t, in_middle >= 7000 && in_middle <= 8000, "%d in the middle half", in_middle)
+}
+
+@(test)
+test_tree_sizes_span_saplings_to_giants :: proc(t: ^testing.T) {
+	planet := tree_test_planet()
+	generation := tree_test_generation(planet)
+	minimum, maximum := tree_test_box(forest_test_interior(generation), 32)
+	trees := planet_trees_in_box(&generation, minimum, maximum)
+	smallest, largest: [MAXIMUM_TREE_SPECIES]int
+	counts: [MAXIMUM_TREE_SPECIES]int
+	for &value in smallest {
+		value = 1000
+	}
+	for tree in trees {
+		smallest[tree.species] = min(smallest[tree.species], int(tree.scale_percent))
+		largest[tree.species] = max(largest[tree.species], int(tree.scale_percent))
+		counts[tree.species] += 1
+	}
+	checked := 0
+	for species, index in planet.trees.species {
+		if counts[index] < 20 {
+			continue
+		}
+		least, most := species.scale_percent[0], species.scale_percent[1]
+		third := (most - least) / 3
+		testing.expectf(t, smallest[index] < least + third, "%s: the smallest of %d at %d%%", species.id, counts[index], smallest[index])
+		testing.expectf(t, largest[index] > most - third, "%s: the largest of %d at %d%%", species.id, counts[index], largest[index])
+		checked += 1
+	}
+	testing.expectf(t, checked >= 2, "%d species with 20 trees in the box", checked)
+}
+
+@(test)
+test_the_forest_reads_the_same_ground_rules :: proc(t: ^testing.T) {
+	generation := tree_test_generation(tree_test_planet())
+	sea := generation.sea_radius - generation.radius
+	found := false
+	for centre in tree_test_circle_centres(generation) {
+		if surface_relief(generation, centre) >= sea - metres_to_position_units(4) {
+			continue
+		}
+		found = true
+		_, ground := planet_tree_ground(generation, centre)
+		testing.expect(t, !ground, "no ground under the sea")
+		density, land := forest_density_at(generation, centre)
+		testing.expect(t, !land && density == 0, "no forest under the sea")
+		minimum, maximum := tree_test_box(centre, 2)
+		for tree in planet_trees_in_box(&generation, minimum, maximum) {
+			testing.expect(t, surface_relief(generation, tree_test_on_sphere(generation, tree)) >= sea + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES), "a tree stands above the sea")
+		}
+		cell := [3]i64{floor_divide_i64(centre.x, generation.trees.spacing), floor_divide_i64(centre.y, generation.trees.spacing), floor_divide_i64(centre.z, generation.trees.spacing)}
+		if on_sphere, hash, ok := lattice_candidate(generation.trees.tree_seed, cell, generation.trees.spacing, generation.radius); ok && surface_relief(generation, on_sphere) < sea {
+			_, kept := forest_tree_from_candidate(generation, cell, on_sphere, hash)
+			testing.expect(t, !kept, "the forest path refuses the sea")
+		}
+	}
+	testing.expect(t, found, "a circle centre lies under the sea")
+}
+
+@(test)
+test_a_world_without_a_forest_keeps_its_groves :: proc(t: ^testing.T) {
+	data := tree_test_planet()
+	groves := grove_test_planet()
+	record := planet_generation_record(groves)
+	testing.expect_value(t, record.trees.forest, Planet_Forest{})
+	recorded := make_recorded_planet(data, record, context.temp_allocator)
+	testing.expect(t, !planet_forest_on(recorded.trees.forest), "the record's zero forest is off")
+	recorded_generation := tree_test_generation(recorded)
+	grove_generation := tree_test_generation(groves)
+	forest_generation := tree_test_generation(data)
+	minimum, maximum := tree_test_box(tree_test_point_from_home(grove_generation, groves, 0, 60), 48)
+	kept := planet_trees_in_box(&recorded_generation, minimum, maximum)
+	testing.expect(t, len(kept) > 0)
+	testing.expect(t, trees_equal(kept[:], planet_trees_in_box(&grove_generation, minimum, maximum)[:]), "the recorded world's trees are the groves'")
+	testing.expect(t, !trees_equal(kept[:], planet_trees_in_box(&forest_generation, minimum, maximum)[:]), "the data's forest does not reach it")
 }

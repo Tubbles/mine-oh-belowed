@@ -73,6 +73,9 @@ Game_Config :: struct {
 	simulated_chunk_radius_horizontal: int,
 	simulated_chunk_radius_vertical:   int,
 	field_view:           Field_View_Config,
+	// The trees' draw (work item 0310, render_field_trees.odin), a row
+	// per build target (field_trees_row).
+	field_trees:          Field_Trees_Config,
 	field_player:         Field_Player_Config,
 	field_brushes:        []Field_Brush_Config,
 	field_water:          Field_Water_Config,
@@ -263,6 +266,36 @@ Field_View_Config :: struct {
 	// globe is drawn. The first entry is also how far the planet preview
 	// streams field chunks.
 	level_distances_metres: [FIELD_LEVEL_COUNT]int,
+}
+
+// The trees' draw (work item 0310, render_field_trees.odin): a model each
+// for the trees within near_metres, at most near_limit of them nearest
+// first, crossfaded with their cards over fade_metres; cards out to
+// far_metres, at most far_limit of them by tiles nearest first, fading
+// out over the last far_fade_metres.
+Field_Trees_Row :: struct {
+	near_metres:     int,
+	near_limit:      int,
+	far_metres:      int,
+	far_limit:       int,
+	fade_metres:     int,
+	far_fade_metres: int,
+}
+
+// One row for the desktop builds and one for Android, chosen by the build
+// target (field_trees_row).
+Field_Trees_Config :: struct {
+	desktop: Field_Trees_Row,
+	android: Field_Trees_Row,
+}
+
+// The build target's row.
+field_trees_row :: proc(config: Field_Trees_Config) -> Field_Trees_Row {
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		return config.android
+	} else {
+		return config.desktop
+	}
 }
 
 // The player on the terrain field (work item 0170, player_field.odin):
@@ -812,6 +845,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := field_view_problem(config.field_view); problem != "" {
 		return problem
 	}
+	if problem := field_trees_problem(config.field_trees, config.field_view); problem != "" {
+		return problem
+	}
 	if problem := field_player_problem(config.field_player); problem != "" {
 		return problem
 	}
@@ -1204,6 +1240,31 @@ field_view_problem :: proc(field_view: Field_View_Config) -> string {
 	}
 	if distances[FIELD_LEVEL_COUNT - 1] > MAXIMUM_FIELD_VIEW_DISTANCE_METRES {
 		return fmt.tprintf("field_view.level_distances_metres[%d] %d is above %d", FIELD_LEVEL_COUNT - 1, distances[FIELD_LEVEL_COUNT - 1], MAXIMUM_FIELD_VIEW_DISTANCE_METRES)
+	}
+	return ""
+}
+
+// Each row's values inside their bounds (0310): the cards reach at most
+// the last level of detail's distance, the fades at most half the near
+// distance and a quarter of the far one; a missing table reads as zeros
+// and fails the first bound.
+field_trees_problem :: proc(trees: Field_Trees_Config, field_view: Field_View_Config) -> string {
+	rows := [2]Field_Trees_Row{trees.desktop, trees.android}
+	names := [2]string{"desktop", "android"}
+	for row, index in rows {
+		bounds := [?]Config_Bound {
+			{"near_metres", row.near_metres, 16, 256},
+			{"near_limit", row.near_limit, 1, 8192},
+			{"far_metres", row.far_metres, row.near_metres, field_view.level_distances_metres[FIELD_LEVEL_COUNT - 1]},
+			{"far_limit", row.far_limit, 0, 1_000_000},
+			{"fade_metres", row.fade_metres, 1, row.near_metres / 2},
+			{"far_fade_metres", row.far_fade_metres, 1, row.far_metres / 4},
+		}
+		for bound in bounds {
+			if bound.value < bound.minimum || bound.value > bound.maximum {
+				return fmt.tprintf("field_trees.%s.%s %d is outside %d to %d", names[index], bound.name, bound.value, bound.minimum, bound.maximum)
+			}
+		}
 	}
 	return ""
 }

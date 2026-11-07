@@ -48,6 +48,19 @@ loose_item_despawn_minutes = 15
 field_view = {
 	level_distances_metres = [64, 160, 384, 1024]
 }
+// The trees' draw (work item 0310, doc/presentation.md, The field
+// session), a row for the desktop builds and one for Android: a model
+// each for the trees within near_metres (16 to 256), at most near_limit
+// (1 to 8192) of them nearest first, crossfaded with their cards over
+// fade_metres (1 to half the near distance); cards out to far_metres (the
+// near distance to field_view's last distance), at most far_limit (0 to
+// 1000000, 0 draws none) of them by tiles nearest first, fading out over
+// the last far_fade_metres (1 to a quarter of the far distance). The
+// Steam Deck takes the desktop row.
+field_trees = {
+	desktop = {near_metres = 96, near_limit = 1024, far_metres = 1024, far_limit = 160000, fade_metres = 12, far_fade_metres = 64}
+	android = {near_metres = 96, near_limit = 1024, far_metres = 512, far_limit = 40000, fade_metres = 12, far_fade_metres = 64}
+}
 // The player on the terrain field (work item 0170, doc/content.md, World):
 // lengths in millimetres, speeds in millimetres per second, gravity from
 // the planet record. Ground steeper than the walkable angle slows the walk

@@ -20,17 +20,21 @@ import "platform"
 // trees has the trees standing inside its frames felled once at load
 // (clear_trees_under_frames).
 
-// A tick's query reaches this far past the tool's reach: a tick's step,
-// the capsule and the widest scaled trunk.
-FIELD_TREE_QUERY_MARGIN_MILLIMETRES :: 1500
+// A tick's query reaches this far past the tool's reach, before the
+// widest scaled trunk (field_tree_query_margin): a tick's step and the
+// capsule.
+FIELD_TREE_QUERY_STEP_MILLIMETRES :: 1300
 // The aim walks the look in steps of this.
 FIELD_TREE_AIM_STEP_MILLIMETRES :: 50
 
 // A species in the simulation's units: the machine holding its model, the
 // tint, the yield, the felling times in ticks (the hand's on a tree of at
 // most hand_felling_scale_percent, the wooden, stone and iron axe's on
-// any, 0265) and the trunk in position units. NO_MACHINE or NO_ITEM only
-// in code built test content.
+// any, 0265) and the trunk in position units. In a forest (0310) the
+// yield and the times scale with the tree (scales_with_size), and a tree
+// grows to the species' most scale; the groves' trees to
+// PLANET_TREE_MAXIMUM_SCALE_PERCENT. NO_MACHINE or NO_ITEM only in code
+// built test content.
 Field_Tree_Species :: struct {
 	machine:       Machine_Id,
 	tint:          [3]u8,
@@ -41,6 +45,8 @@ Field_Tree_Species :: struct {
 	axe_felling_ticks:  [3]u32,
 	trunk_radius:  i64,
 	trunk_height:  i64,
+	scales_with_size:   bool,
+	most_scale_percent: u8,
 }
 
 // The trunk under the reticle, nearer than the ground and the frames.
@@ -57,6 +63,7 @@ Felled_Tree_Record :: struct {
 }
 
 make_field_tree_species :: proc(trees: Planet_Trees, items: Item_Registry, machines: Machine_Registry, tick_rate: int, allocator := context.allocator) -> []Field_Tree_Species {
+	forest_on := planet_forest_on(trees.forest)
 	species := make([]Field_Tree_Species, len(trees.species), allocator)
 	for &entry, index in species {
 		source := trees.species[index]
@@ -76,6 +83,8 @@ make_field_tree_species :: proc(trees: Planet_Trees, items: Item_Registry, machi
 			},
 			trunk_radius  = millimetres_to_position_units(source.trunk_radius_millimetres),
 			trunk_height  = millimetres_to_position_units(source.trunk_height_millimetres),
+			scales_with_size = forest_on,
+			most_scale_percent = forest_on ? u8(source.scale_percent[1]) : PLANET_TREE_MAXIMUM_SCALE_PERCENT,
 		}
 	}
 	return species
@@ -229,7 +238,7 @@ aim_field_player_at_trees :: proc(player: ^Field_Player, trees: []Planet_Tree, c
 // a trunk as the tick does.
 move_and_aim_field_player :: proc(field: ^Field_Simulation, frames: ^Frame_Table, content: Field_Content, player: ^Field_Player, input: Field_Player_Input) {
 	tuning := content.tuning
-	trees := field_trees_near(field, player.position, tuning.reach + millimetres_to_position_units(FIELD_TREE_QUERY_MARGIN_MILLIMETRES))
+	trees := field_trees_near(field, player.position, tuning.reach + field_tree_query_margin(content))
 	tick_field_player(&field.world, frames, tuning, player, input)
 	// A seated body stays in the chair (0223).
 	if player.seat == .Standing {
@@ -252,22 +261,37 @@ field_aimed_tree :: proc(state: ^Simulation_State, content: Simulation_Content, 
 	return tree, species, species.item != NO_ITEM
 }
 
-field_tree_yield :: proc(species: Field_Tree_Species) -> [1]Item_Stack {
-	return {{item = species.item, count = u16(species.count)}}
+// The species' count, in a forest (0310) times the tree's scale, rounded,
+// at least 1.
+field_tree_yield :: proc(species: Field_Tree_Species, tree: Planet_Tree) -> [1]Item_Stack {
+	count := species.count
+	if species.scales_with_size {
+		count = max(1, (count * int(tree.scale_percent) + 50) / 100)
+	}
+	return {{item = species.item, count = u16(count)}}
 }
 
 // The felling time of the tree for the player's tool (0265): an axe's by
 // its tier, a tier above 3 taking the iron axe's; the hand or any other
 // item fells only a tree of at most the species' hand scale, in the
-// hand's time.
+// hand's time. In a forest (0310) the time scales with the tree.
 field_felling_ticks :: proc(species: Field_Tree_Species, tree: Planet_Tree, player: Field_Player) -> (ticks: u32, fellable: bool) {
 	if player.tool == .Tool && player.held_tool_role == .Axe {
-		return species.axe_felling_ticks[clamp(int(player.held_tool_tier), 1, 3) - 1], true
+		return field_tree_scaled_ticks(species, tree, species.axe_felling_ticks[clamp(int(player.held_tool_tier), 1, 3) - 1]), true
 	}
 	if tree.scale_percent <= species.hand_felling_scale_percent {
-		return species.hand_felling_ticks, true
+		return field_tree_scaled_ticks(species, tree, species.hand_felling_ticks), true
 	}
 	return 0, false
+}
+
+// The ticks times the tree's scale over 100 in a forest (at least 1),
+// unchanged otherwise.
+field_tree_scaled_ticks :: proc(species: Field_Tree_Species, tree: Planet_Tree, ticks: u32) -> u32 {
+	if !species.scales_with_size {
+		return ticks
+	}
+	return max(1, u32(u64(ticks) * u64(tree.scale_percent) / 100))
 }
 
 // Mine held on the aimed trunk advances the player's mining towards the
@@ -280,7 +304,7 @@ field_felling_ticks :: proc(species: Field_Tree_Species, tree: Planet_Tree, play
 advance_field_felling :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, input: Field_Player_Input) -> (placement: Field_Placement, finished: bool) {
 	target := player.field.tree_target
 	tree, species, found := field_aimed_tree(state, content, target.key)
-	yield := field_tree_yield(species)
+	yield := field_tree_yield(species, tree)
 	ticks, fellable := field_felling_ticks(species, tree, player.field)
 	switch {
 	case .Dig not_in input.held || !target.hit || !found:
@@ -309,16 +333,16 @@ advance_field_felling :: proc(state: ^Simulation_State, content: Simulation_Cont
 // felled already (another player this tick); Inventory_Full when the
 // yield does not fit, and the tree stands.
 drain_field_felling :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, key: Tree_Key) {
-	_, species, found := field_aimed_tree(state, content, key)
+	tree, species, found := field_aimed_tree(state, content, key)
 	if !found {
 		return
 	}
-	yield := field_tree_yield(species)
+	yield := field_tree_yield(species, tree)
 	if !inventory_fits_all_picked_up(player.inventory, content.items, yield[:]) {
 		player.field_refusal = .Inventory_Full
 		return
 	}
-	inventory_add_picked_up(player.inventory, content.items, species.item, species.count)
+	inventory_add_picked_up(player.inventory, content.items, species.item, int(yield[0].count))
 	state.field.felled_trees[key] = {}
 }
 
@@ -351,14 +375,26 @@ fell_trees_over_dug_ground :: proc(state: ^Simulation_State, content: Simulation
 	}
 }
 
-// The tallest and widest scaled trunk of the species: how far a cell or
-// a brush must reach past a tree's key to meet its trunk.
+// The tallest and widest scaled trunk of the species, each at its most
+// scale: how far a cell or a brush must reach past a tree's key to meet
+// its trunk.
 field_tree_widest_reach :: proc(content: Field_Content) -> i64 {
 	reach: i64 = 0
 	for species in content.tree_species {
-		reach = max(reach, (species.trunk_height + species.trunk_radius) * PLANET_TREE_MAXIMUM_SCALE_PERCENT / 100)
+		reach = max(reach, (species.trunk_height + species.trunk_radius) * i64(species.most_scale_percent) / 100)
 	}
 	return reach
+}
+
+// How far a tick's query reaches past the tool's reach: a tick's step and
+// the capsule (FIELD_TREE_QUERY_STEP_MILLIMETRES) and the widest trunk at
+// its species' most scale.
+field_tree_query_margin :: proc(content: Field_Content) -> i64 {
+	widest: i64 = 0
+	for species in content.tree_species {
+		widest = max(widest, species.trunk_radius * i64(species.most_scale_percent) / 100)
+	}
+	return millimetres_to_position_units(FIELD_TREE_QUERY_STEP_MILLIMETRES) + widest
 }
 
 // The placements.
