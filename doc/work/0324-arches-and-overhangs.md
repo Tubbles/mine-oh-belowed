@@ -1,6 +1,6 @@
 # 0324: Arches, overhangs and caves in the generation
 
-Status: designed (2026-11-07)
+Status: implementing (2026-11-07)
 
 The user (2026-11-07): "Minecraft is really good at this, with gorges, cliffs, and even arcs, and other exciting features." An arch, a natural bridge, an overhang or a cave mouth needs ground above air. The field holds that, since players dig caves, but the generation is a height map (`planet_sample_at_relief`: the density is the depth below one surface height), so it can make none of them. 0323 makes the height map landforms. This item adds a three-dimensional density term.
 
