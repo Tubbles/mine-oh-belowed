@@ -1,6 +1,6 @@
 # 0313: Light and air on the landscape
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, 7bc09de)
 
 Milestone: the world generation series 0306 to 0313. The user (2026-11-06): "just generally better visuals".
 
