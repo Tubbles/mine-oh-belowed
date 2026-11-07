@@ -235,9 +235,15 @@ field_grid_generation :: proc(generation: Planet_Generation, step: i32) -> Plane
 // surface keeps the generation's coarse density (a full one would terrace
 // the slopes, see field_grid_generation), any other is its density over
 // the step, floored as depth_to_density floors (ground stays at least 1),
-// so a dig or a place shows; the material and tint are the chunk's.
+// so a dig or a place shows. The material and tint are the chunk's, but
+// stone where the coarse generation holds topsoil reads topsoil, the
+// coarse topsoil band (0322, generation_topsoil_depth).
 coarse_field_sample :: proc(loaded, generated: Field_Sample, step: i32) -> Field_Sample {
-	return {coarse_field_density(loaded.density, generated.density, step), loaded.material, loaded.tint}
+	material := loaded.material
+	if material == .Stone && generated.material == .Topsoil {
+		material = .Topsoil
+	}
+	return {coarse_field_density(loaded.density, generated.density, step), material, loaded.tint}
 }
 
 // A coarse grid's water from a loaded sample (0172), as

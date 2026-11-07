@@ -189,3 +189,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 - `loop_planet_preview.odin` loads the field's tiles and renderer without the overlay fallback, so an overlay copy from before 0307 makes `--planet-preview` exit with an error.
 - An overlay copy of `field.vs` alone from before 0307 links with the new `field.fs` on desktop Mesa and draws without the looks. A uniform only the new vertex shader uses would let the renderer catch it.
 - The Odin mirror of the shader's `unpack_bytes` (`unpack_test_bytes`) is checked against its own packing, not against the GLSL body, so the two could drift.
+
+## Suggestions from the ledges (0322, 2026-11-07)
+
+- Felling by digging: the fell rule's probe lies 1.06 to 1.44 m under a trunk's base, so its sample cell reaches the stone under the 2 m of topsoil, and a tree on deep topsoil may not fall when only the topsoil (the shovel's reach) is dug under it. A shallower probe, or a rule on the dug share of the cell, would let the shovel suffice. Decide whether the shovel alone should fell a tree.

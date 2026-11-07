@@ -11,7 +11,9 @@ import "platform"
 // surface is the radius plus value noise read at the sample's position
 // projected onto the sphere of the radius (three dimensional, so no
 // latitude and longitude and no pole). Strata go by depth below the local
-// surface; bedrock starts at the planet's bedrock depth below the radius.
+// surface, the topsoil at least two of the generation's spacings deep
+// (generation_topsoil_depth); bedrock starts at the planet's bedrock depth
+// below the radius.
 // The veins' outcrops replace the strata near the surface within their
 // discs (0179, generation_planet_veins.odin).
 // The relief's octaves are the planet record's (data/planets.sjson), at
@@ -368,16 +370,25 @@ depth_to_density :: proc(depth: i64, spacing_millimetres: int) -> i8 {
 	return i8(clamp(steps, -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
 }
 
-planet_stratum :: proc(depth, distance, bedrock_radius: i64) -> Field_Material {
+planet_stratum :: proc(depth, distance, bedrock_radius, topsoil_depth: i64) -> Field_Material {
 	switch {
 	case distance <= bedrock_radius:
 		return .Bedrock
-	case depth < metres_to_position_units(TOPSOIL_DEPTH_METRES):
+	case depth < topsoil_depth:
 		return .Topsoil
 	case depth < metres_to_position_units(DEEP_STONE_DEPTH_METRES):
 		return .Stone
 	}
 	return .Deep_Stone
+}
+
+// The topsoil's depth below the local surface in the generation's
+// spacing: TOPSOIL_DEPTH_METRES, or two spacings of a coarse grid wider
+// than a metre (0322), so a coarse surface cell's ground corners read
+// topsoil as the finest grid's do instead of the stone under it, which
+// striped the far ground along the contours.
+generation_topsoil_depth :: proc(generation: Planet_Generation) -> i64 {
+	return max(metres_to_position_units(TOPSOIL_DEPTH_METRES), 2 * generation.spacing)
 }
 
 planet_tint :: proc(generation: Planet_Generation, position: World_Position) -> u8 {
@@ -425,7 +436,7 @@ planet_sample_at_relief :: proc(generation: Planet_Generation, position: World_P
 	if density <= 0 {
 		return {density, .Air, 0}
 	}
-	material := planet_outcrop_material(generation.veins, planet_stratum(depth, distance, generation.bedrock_radius), depth, on_sphere)
+	material := planet_outcrop_material(generation.veins, planet_stratum(depth, distance, generation.bedrock_radius, generation_topsoil_depth(generation)), depth, on_sphere)
 	return {density, material, planet_tint(generation, position)}
 }
 

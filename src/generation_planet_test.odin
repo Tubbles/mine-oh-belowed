@@ -138,10 +138,90 @@ test_a_sample_at_the_bedrock_depth_is_bedrock :: proc(t: ^testing.T) {
 test_strata_follow_the_depth_below_the_local_surface :: proc(t: ^testing.T) {
 	bedrock_radius := metres_to_position_units(7744)
 	distance := metres_to_position_units(8000)
-	testing.expect_value(t, planet_stratum(1, distance, bedrock_radius), Field_Material.Topsoil)
-	testing.expect_value(t, planet_stratum(metres_to_position_units(TOPSOIL_DEPTH_METRES), distance, bedrock_radius), Field_Material.Stone)
-	testing.expect_value(t, planet_stratum(metres_to_position_units(DEEP_STONE_DEPTH_METRES), distance, bedrock_radius), Field_Material.Deep_Stone)
-	testing.expect_value(t, planet_stratum(1, bedrock_radius, bedrock_radius), Field_Material.Bedrock)
+	topsoil := metres_to_position_units(TOPSOIL_DEPTH_METRES)
+	testing.expect_value(t, planet_stratum(1, distance, bedrock_radius, topsoil), Field_Material.Topsoil)
+	testing.expect_value(t, planet_stratum(topsoil, distance, bedrock_radius, topsoil), Field_Material.Stone)
+	testing.expect_value(t, planet_stratum(metres_to_position_units(DEEP_STONE_DEPTH_METRES), distance, bedrock_radius, topsoil), Field_Material.Deep_Stone)
+	testing.expect_value(t, planet_stratum(1, bedrock_radius, bedrock_radius, topsoil), Field_Material.Bedrock)
+	// The chunks' spacings keep the 2 m; a coarse grid of 8 m cells takes
+	// two of them (0322).
+	for spacing in ([3]int{1000, 500, 333}) {
+		testing.expect_value(t, generation_topsoil_depth(make_planet_generation(DEFAULT_WORLD_SEED, make_test_planet(), spacing)), topsoil)
+	}
+	coarse := field_grid_generation(make_planet_generation(DEFAULT_WORLD_SEED, make_test_planet(), 1000), 8)
+	testing.expect_value(t, generation_topsoil_depth(coarse), metres_to_position_units(16))
+}
+
+// The ground corners of a grid's surface cells (the cells whose eight
+// corners are neither all ground nor all air) and how many of them are
+// stone.
+coarse_grid_stone_corners :: proc(grid: ^Field_Grid) -> (ground, stone: int) {
+	for z in i32(0) ..< FIELD_GRID_CELLS {
+		for y in i32(0) ..< FIELD_GRID_CELLS {
+			for x in i32(0) ..< FIELD_GRID_CELLS {
+				cell_ground, cell_stone := 0, 0
+				for corner in i32(0) ..< 8 {
+					index := field_grid_index({x + corner & 1, y + (corner >> 1) & 1, z + corner >> 2})
+					if grid.density[index] > 0 {
+						cell_ground += 1
+						cell_stone += grid.material[index] == .Stone ? 1 : 0
+					}
+				}
+				if cell_ground == 0 || cell_ground == 8 {
+					continue
+				}
+				ground += cell_ground
+				stone += cell_stone
+			}
+		}
+	}
+	return
+}
+
+// The node of the level holding the position's sample.
+test_surface_node :: proc(position: World_Position, spacing_millimetres: int, level: i32) -> Field_Node {
+	sample := world_position_to_sample(position, spacing_millimetres)
+	samples := i64(field_node_samples(level))
+	return {level, {i32(floor_divide_i64(i64(sample.x), samples)), i32(floor_divide_i64(i64(sample.y), samples)), i32(floor_divide_i64(i64(sample.z), samples))}}
+}
+
+// Work item 0322: a coarse level's surface cells, whose ground corners
+// lie up to a cell below the surface, read topsoil (at most one ground
+// corner in a hundred stone) under the home and the first spring at 1000
+// and 333 mm, generated and over the loaded chunks round the home, so the
+// far ground shows no stone bands along its contours.
+@(test) // slow
+test_the_coarse_levels_read_topsoil_at_the_surface :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	for spacing in ([2]int{1000, 333}) {
+		generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, spacing)
+		for place in ([2][2]int{{83, 132}, {79, 151}}) {
+			point := test_degree_point(generation, place[0], place[1])
+			up, _ := normalize_fixed(point)
+			surface := World_Position(fixed_scale(up, generation.radius + surface_relief(generation, point)))
+			for level in i32(1) ..< FIELD_LEVEL_COUNT {
+				grid := new(Field_Grid, context.temp_allocator)
+				generate_field_grid(generation, test_surface_node(surface, spacing, level), grid)
+				ground, stone := coarse_grid_stone_corners(grid)
+				testing.expectf(t, ground >= 1000 && stone * 100 <= ground, "%d mm at %v, level %d: %d of %d ground corners are stone", spacing, place, level, stone, ground)
+			}
+		}
+	}
+	world := make_test_home_field(planet, 1000, 2)
+	defer destroy_field_world(&world)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	site, _ := field_home_site(generation, planet)
+	for level in i32(1) ..= 2 {
+		node := test_surface_node(site, 1000, level)
+		grid := gather_coarse_field_grid(&world, node, context.temp_allocator)
+		testing.expectf(t, grid != nil, "level %d reads the loaded chunks", level)
+		if grid == nil {
+			continue
+		}
+		generate_field_grid(generation, node, grid)
+		ground, stone := coarse_grid_stone_corners(grid)
+		testing.expectf(t, ground >= 1000 && stone * 100 <= ground, "loaded, level %d: %d of %d ground corners are stone", level, stone, ground)
+	}
 }
 
 @(test)
@@ -271,14 +351,15 @@ test_the_relief_terms_are_off_at_zero :: proc(t: ^testing.T) {
 	}
 }
 
-// The ledges alone, on a chunk's width at the shipped home: a slope
-// steeper than the walkable angle of data/game.sjson, where the same
-// ground without the ledges stays walkable.
+// The ledges alone, on a chunk's width at the home of before the
+// landforms (the shipped home has none since 0322): a slope steeper than
+// the walkable angle of data/game.sjson, where the same ground without
+// the ledges stays walkable.
 @(test)
 test_the_ledges_make_a_slope_above_the_walkable_angle_within_a_chunk :: proc(t: ^testing.T) {
 	walkable_cosine := fixed_cosine(degrees_to_angle_units(test_field_game_config().field_player.walkable_angle_degrees))
-	planet := shipped_test_home_at(8000)
-	testing.expect(t, planet.relief_shape.ledge_amplitude_millimetres > 0, "the shipped home has ledges")
+	planet := pre_0306_test_home_at(8000)
+	testing.expect(t, planet.relief_shape.ledge_amplitude_millimetres > 0, "the home of before 0306 has ledges")
 	ledges_only := planet
 	for &octave in ledges_only.relief_octaves {
 		octave.amplitude_metres = 0
@@ -373,12 +454,13 @@ test_the_shaped_relief_stays_within_the_bound :: proc(t: ^testing.T) {
 	}
 }
 
-// The shaped home generates the same bytes twice at every spacing and
-// every preset radius, and other bytes than the unshaped one.
+// The shaped home (0306's, whose ledges the shipped home lost in 0322)
+// generates the same bytes twice at every spacing and every preset
+// radius, and other bytes than the unshaped one.
 @(test) // slow
 test_the_shaped_home_generates_identical_bytes_twice :: proc(t: ^testing.T) {
-	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
-		planet := shipped_test_home_at(radius)
+	for radius in design_landform_test_planet(8000).radius_presets_metres {
+		planet := design_landform_test_planet(radius)
 		unshaped := planet
 		unshaped.relief_shape = {}
 		for spacing in SAMPLE_SPACING_CHOICES_MILLIMETRES {
@@ -533,7 +615,7 @@ test_crater_point :: proc(generation: Planet_Generation, bearing_degrees: int, d
 // the uncratered relief, and two spacings past the reach the samples
 // round the point are the uncratered planet's (the field's surface there
 // can lie further than an eighth of a spacing from the relief on a
-// ledge's face, crater or not).
+// steep face, crater or not).
 @(test) // slow
 test_the_rim_stands_above_the_surrounding_surface :: proc(t: ^testing.T) {
 	for radius in default_planet(shipped_test_planets()).radius_presets_metres {

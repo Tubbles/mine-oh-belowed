@@ -282,9 +282,9 @@ test_a_world_file_without_a_water_model_reads_teleport :: proc(t: ^testing.T) {
 // did; a file written now keeps the shape it was made with.
 @(test)
 test_a_world_file_before_the_relief_shape_keeps_the_plain_relief :: proc(t: ^testing.T) {
-	planet := default_planet(shipped_test_planets())
+	planet := design_landform_test_planet(8000)
 	record := planet_generation_record(planet)
-	testing.expect(t, record.relief_shape != {}, "the shipped home shapes its relief")
+	testing.expect(t, record.relief_shape.ledge_amplitude_millimetres > 0, "0306's home shapes its relief")
 	file := World_File {
 		format_version = SAVE_FORMAT_VERSION,
 		settings = {day_length_seconds = 1200},
@@ -303,6 +303,40 @@ test_a_world_file_before_the_relief_shape_keeps_the_plain_relief :: proc(t: ^tes
 	testing.expect_value(t, parsed.planet_generation.relief_octaves, record.relief_octaves)
 	loaded := make_recorded_planet(planet, parsed.planet_generation, context.temp_allocator)
 	testing.expect_value(t, make_planet_generation(TEST_PLANET_SEED, loaded, 1000).relief_shape, Relief_Shape{})
+}
+
+// Work item 0322: a world recorded with the ledges (0306's home) keeps
+// them against the shipped data, which has none, so its unedited ground
+// generates as it was made; without them the same points differ.
+@(test)
+test_a_world_recorded_with_ledges_keeps_them :: proc(t: ^testing.T) {
+	old := design_landform_test_planet(8000)
+	testing.expect(t, old.relief_shape.ledge_amplitude_millimetres > 0, "0306's home has ledges")
+	planets := shipped_test_planets()
+	testing.expect_value(t, default_planet(planets).relief_shape.ledge_amplitude_millimetres, 0)
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200, planet_id = old.id},
+		planet_generation = planet_generation_record(old),
+	}
+	parsed, problem := parse_world_file(encode_world_file(file, context.temp_allocator), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	_, planet, record := resolve_world_planet(parsed.settings, parsed.planet_generation, planets, true)
+	recorded := make_recorded_planet(planet, record, context.temp_allocator)
+	testing.expect_value(t, recorded.relief_shape, old.relief_shape)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, recorded, 1000)
+	legacy := make_planet_generation(DEFAULT_WORLD_SEED, old, 1000)
+	flattened := recorded
+	flattened.relief_shape.ledge_amplitude_millimetres = 0
+	without := make_planet_generation(DEFAULT_WORLD_SEED, flattened, 1000)
+	differs := 0
+	for index in i64(0) ..< 100 {
+		point := test_line_point(generation, index * 200)
+		testing.expect_value(t, surface_relief(generation, point), surface_relief(legacy, point))
+		differs += surface_relief(without, point) != surface_relief(generation, point) ? 1 : 0
+	}
+	testing.expectf(t, differs > 50, "the ledges change %d of 100 points", differs)
+	testing.expect_value(t, generation.crater.floor_height, legacy.crater.floor_height)
 }
 
 // Work item 0199: a world file recorded without the crater resolves to

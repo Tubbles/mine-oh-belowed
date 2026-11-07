@@ -43,9 +43,9 @@ test_the_shipped_planets_file_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, home.bedrock_depth_metres, 256)
 	testing.expect(t, slice.equal(home.radius_presets_metres, []int{4000, 8000, 16000}))
 	testing.expect_value(t, home.relief_octaves[0], Relief_Octave{96, 4})
-	// The landforms (0306) make the basins, so the 0189 terms keep only
-	// the ledges.
-	testing.expect(t, home.relief_shape.ledge_amplitude_millimetres > 0 && home.relief_shape.terrace_rise_millimetres == 0 && home.relief_shape.basin_depth_metres == 0, "the shipped home shapes its relief with the ledges")
+	// The landforms (0306) make the basins and the ledges went in 0322,
+	// so every 0189 term is off.
+	testing.expect(t, home.relief_shape.ledge_amplitude_millimetres == 0 && home.relief_shape.terrace_rise_millimetres == 0 && home.relief_shape.basin_depth_metres == 0, "the shipped home's 0189 terms are off")
 	testing.expect(t, home.landforms != {}, "the shipped home has landforms")
 	testing.expect(t, home.climate != {}, "the shipped home has a climate")
 }

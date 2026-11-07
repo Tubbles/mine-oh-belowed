@@ -468,14 +468,24 @@ test_a_tree_falls_into_a_hole_dug_under_it :: proc(t: ^testing.T) {
 	append(&state.field.edits, Queued_Field_Edit{player = 0, edit = shallow})
 	tick_field_test_simulation(state, content, {})
 	testing.expect(t, test.tree.key not_in state.field.felled_trees, "a dig above the base leaves the tree")
-	for depth in ([3]int{200, 800, 1400}) {
-		deep := shallow
-		deep.centre = test.tree.base - World_Position(fixed_scale(test.tree.up, millimetres_to_position_units(depth)))
-		for _ in 0 ..< 4 {
-			append(&state.field.edits, Queued_Field_Edit{player = 0, edit = deep})
-			tick_field_test_simulation(state, content, {})
+	// The hole: a sphere round the fell rule's probe, half the trunk below
+	// its base, reaching every corner of the probe's sample cell, with every
+	// material that has an item dug by the held shovel, since the probe of a
+	// tree on thin topsoil reads the stone under it (0322).
+	probe := test.trunk.bottom - World_Position(fixed_scale(test.trunk.up, test.trunk.length / 2))
+	for &record in content.field.materials {
+		if record.item != NO_ITEM {
+			record.dug_with, record.tool_tier = .Shovel, 1
 		}
 	}
+	deep := shallow
+	deep.centre = probe
+	deep.brush.radius = 2 * sample_axis_to_position(1, state.field.spacing_millimetres)
+	for _ in 0 ..< 4 {
+		append(&state.field.edits, Queued_Field_Edit{player = 0, edit = deep})
+		tick_field_test_simulation(state, content, {})
+	}
+	testing.expect(t, field_density_at(&state.field.world, state.field.spacing_millimetres, probe) <= 0, "the hole reaches the probe")
 	testing.expect(t, test.tree.key in state.field.felled_trees, "the tree falls into the hole")
 	testing.expect_value(t, inventory_count(state.players[0].inventory, log), before)
 }
