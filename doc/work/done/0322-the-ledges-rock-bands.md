@@ -1,6 +1,6 @@
 # 0322: No more ledges
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, 0c8ffc6)
 
 The user (2026-11-07, a phone screenshot): "there is dirt striping that doesn't look good. Furthermore, there are weird half meter drop features snaking around the world. Feels like the height map has two frequencies or something. Get rid of the half meter features, they look artificial." Both come from the ledges of 0189 (`relief_shape.ledge_*` in `data/planets.sjson`: a 32 m wavelength, 700 mm amplitude, sharpness 128), which 0306 kept as detail. Each ledge is a step of about half a metre snaking along a contour. Since 0307 its riser is steep enough to take the rock look, so every slope is striped with brown bands (`tmp/shot_terrain_colours/state/mine-oh-belowed/screenshots/home_air120.png`).
 
