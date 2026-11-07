@@ -1,6 +1,6 @@
 # 0323: Landmarks worth exploring
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, 9ad2228)
 
 The user (2026-11-07, after 0306 and 0307 on the phone): "while the terrain elevation now looks much more natural, it doesn't excite natural exploration. It needs to be more interesting and whimsical. Minecraft is really good at this, with gorges, cliffs, and even arcs, and other exciting features." The planet is a height map: a sample's density is its depth below `surface_relief` (`planet_sample_at_relief`), so it holds valleys and ranges but no feature that makes a player walk over to look. The research is `work/world_generation_research.md`.
 
