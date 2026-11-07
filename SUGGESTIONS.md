@@ -218,3 +218,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 - If `model.fs` fails to load while `tree.fs` loads, `set_model_open_sky`, `set_model_point_lights` and `set_model_spot_light` return early, so the tree shader keeps zero camera and sky uniforms and the field draws no trees.
 - When `use_machine_models` fails after the machine table changes, it keeps the old card atlas indexed by the old machine ids.
 - With `far_limit` below a tile's count, or `far_distance` below `near_distance`, the near models dither out with no cards behind them; the shipped rows never reach it.
+
+## Suggestions from the sun shadows' design (0328, 2026-11-07)
+
+- A second, far shadow cascade would let ridges shade the valleys at dusk; 0328's one map covers 64 m round the eye. It costs a second depth pass of the coarse terrain. Yours to decide.
