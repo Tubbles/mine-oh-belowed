@@ -132,6 +132,14 @@ run_test_tier() {
 		echo "./build.sh test $tier takes no files or tests, name them with ./build.sh test quick" >&2
 		exit 2
 	fi
+	# unit and quick build unoptimised (0318): their compile outweighs
+	# their run. A given -o flag stays alone, odin refuses a second.
+	if [ "$tier" = unit ] || [ "$tier" = quick ]; then
+		case " ${flags[*]-} " in
+			*" -o:"*) ;;
+			*) flags+=(-o:none) ;;
+		esac
+	fi
 	set_platform_flags
 	if [ "$tier" != all ]; then
 		listing="$(python3 tools/test_tiers.py arguments "$tier" "${selectors[@]}")"

@@ -72,7 +72,7 @@ ARRIVAL_TEST_INTERACT :: Input_Frame{pressed = {.Interact}, just_pressed = {.Int
 // One tick of a session with each player's frame, the set staged first.
 tick_arrival_test_session :: proc(session: ^Session, content: Simulation_Content, inputs: []Input_Frame) {
 	if !simulated_chunks_ready(&session.simulation) {
-		stage_generated_field_set(&session.simulation)
+		stage_cached_field_set(&session.simulation)
 	}
 	simulation_tick(&session.simulation, content, inputs)
 }
@@ -416,7 +416,7 @@ run_arrival_test_world :: proc(config: Game_Config, content: Game_Content, count
 reload_arrival_test_world :: proc(config: Game_Config, content: Game_Content, session: ^Session, simulation_content: Simulation_Content) -> (loaded: ^Session, loaded_content: Simulation_Content) {
 	files := encode_save_files(&session.simulation, simulation_content, "arrival", 0)
 	loaded = load_test_field_save(config, content, &files)
-	stage_generated_field_set(&loaded.simulation)
+	stage_cached_field_set(&loaded.simulation)
 	restore_arrived_field_set(&loaded.simulation.field)
 	return loaded, field_test_content(loaded, content)
 }
@@ -901,16 +901,31 @@ arrival_test_bed :: proc(state: ^Simulation_State, machines: Machine_Registry) -
 	return pod_base_centre(frame, pod), radius + 2 * sample_axis_to_position(1, state.field.spacing_millimetres)
 }
 
-// Every loaded sample farther than except_radius from except_centre
-// holds the baked generation's density, material and tint; the first
-// that does not is named.
-expect_field_holds_the_crater :: proc(t: ^testing.T, state: ^Simulation_State, except_centre: World_Position, except_radius: i64, location := #caller_location) {
+// Whether the crater can change the sample at the position: it needs the
+// relief and projects inside the crater's reach. False is the first
+// branch of impact_crater_baked_sample and of crater_relief, so neither
+// the dig nor the baked generation changes the sample.
+arrival_test_crater_may_change :: proc(generation: Planet_Generation, position: World_Position) -> bool {
+	_, _, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+	term := generation.crater
+	return needs_relief && term.reach != 0 && crater_distance(term, on_sphere) < term.reach
+}
+
+// Every loaded sample farther than except_radius from except_centre (all
+// of them with a negative radius) is the expected generation's:
+// planet_sample's where the crater may change it, elsewhere the
+// session's generated chunk's (a copy from the chunk cache for a staged
+// set), which is the same there. The first that is not is named.
+expect_arrival_test_ground :: proc(t: ^testing.T, state: ^Simulation_State, expected: Planet_Generation, except_centre: World_Position, except_radius: i64, label: string, location := #caller_location) {
 	world := &state.field.world
-	baked := baked_planet_generation(world.water_planet.generation)
 	spacing := state.field.spacing_millimetres
 	testing.expect(t, len(world.chunks) > 0, "chunks are loaded", loc = location)
 	for coordinate in sorted_field_chunk_coordinates(world.chunks) {
 		chunk := world.chunks[coordinate]
+		// Fresh each time: generate_field_chunk expects a zeroed chunk.
+		generated := new(Field_Chunk)
+		defer destroy_field_chunk(generated)
+		generate_cached_field_chunk(state, coordinate, generated, crater_overlay = true)
 		origin := field_chunk_origin(coordinate)
 		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 			sample := origin + Sample_Coordinate(field_index_to_local(index))
@@ -918,12 +933,23 @@ expect_field_holds_the_crater :: proc(t: ^testing.T, state: ^Simulation_State, e
 			if except_radius >= 0 && vector_length(cast([3]i64)(position - except_centre)) <= except_radius {
 				continue
 			}
-			if expected := planet_sample(baked, position); field_chunk_get_sample(chunk, index) != expected {
-				testing.expectf(t, false, "the sample %v is %v, not the crater's %v", sample, field_chunk_get_sample(chunk, index), expected, loc = location)
+			want := field_chunk_get_sample(generated, index)
+			if arrival_test_crater_may_change(expected, position) {
+				want = planet_sample(expected, position)
+			}
+			if field_chunk_get_sample(chunk, index) != want {
+				testing.expectf(t, false, "%s: the sample %v is %v, not %v", label, sample, field_chunk_get_sample(chunk, index), want, loc = location)
 				return
 			}
 		}
 	}
+}
+
+// Every loaded sample farther than except_radius from except_centre
+// holds the baked generation's density, material and tint; the first
+// that does not is named.
+expect_field_holds_the_crater :: proc(t: ^testing.T, state: ^Simulation_State, except_centre: World_Position, except_radius: i64, location := #caller_location) {
+	expect_arrival_test_ground(t, state, baked_planet_generation(state.field.world.water_planet.generation), except_centre, except_radius, "the crater", location)
 }
 
 // The terrain of every loaded chunk, for a comparison after an edit.
@@ -955,66 +981,86 @@ delete_arrival_test_terrain :: proc(terrain: ^map[Field_Chunk_Coordinate]^Arriva
 // marks a change and leaves every other sample, its wall time logged
 // (the main agent's decision 3); a world ticked through the hit holds the
 // crater outside the pod's bed, the ground at the placed frame's base
-// centre.
-@(test) // slow
-test_the_hit_digs_the_crater_and_nothing_else :: proc(t: ^testing.T) {
+// centre. One test per spacing, so the three run side by side (0318).
+run_the_hit_digs_the_crater_and_nothing_else :: proc(t: ^testing.T, spacing: int) {
 	config := arrival_test_config()
 	content := make_field_test_game_content()
-	for spacing in ([3]int{1000, 500, 333}) {
-		session := start_arrival_test_session_at(config, content, spacing)
-		defer end_session(session)
-		simulation_content := field_test_content(session, content)
-		state := &session.simulation
-		testing.expect(t, state.world.planet.crater_at_impact, "a new world digs its crater at the hit")
-		hit := field_arrival_hit_tick(state.field.arrival, simulation_content.field.pod_rest.settle_ticks)
-		for state.tick < hit - 1 {
-			tick_field_test_simulation(state, simulation_content, {})
-		}
-		world := &state.field.world
-		generation := world.water_planet.generation
-		expect_field_world_is_generation(t, world, generation, "before the hit")
-		before := copy_arrival_test_terrain(world)
-		defer delete_arrival_test_terrain(&before)
-		entries := 0
-		for _, chunk in world.chunks {
-			entries += len(chunk.crater_overlay)
-		}
-		start := time.tick_now()
-		chunks, applied := dig_impact_crater(state)
-		log.infof("0271: the apply at %d mm over %d loaded chunks took %v: %d chunks with an overlay, %d samples applied, the overlays held %d samples (%d bytes)", spacing, len(world.chunks), time.tick_since(start), chunks, applied, entries, entries * size_of(Field_Crater_Sample))
-		changed_count := 0
-		mismatch: for coordinate in sorted_field_chunk_coordinates(world.chunks) {
-			chunk := world.chunks[coordinate]
-			copied := before[coordinate]
-			origin := field_chunk_origin(coordinate)
-			for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
-				sample := origin + Sample_Coordinate(field_index_to_local(index))
-				baked, changed := impact_crater_sample(generation, sample_to_world_position(sample, spacing))
-				expected := changed ? baked : Field_Sample{copied.density[index], copied.material[index], copied.tint[index]}
-				changed_count += changed ? 1 : 0
-				if field_chunk_get_sample(chunk, index) != expected {
-					testing.expectf(t, false, "%d mm: the sample %v (changed %v) is %v, not %v", spacing, sample, changed, field_chunk_get_sample(chunk, index), expected)
-					break mismatch
+	session := start_arrival_test_session_at(config, content, spacing)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	testing.expect(t, state.world.planet.crater_at_impact, "a new world digs its crater at the hit")
+	hit := field_arrival_hit_tick(state.field.arrival, simulation_content.field.pod_rest.settle_ticks)
+	for state.tick < hit - 1 {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	world := &state.field.world
+	generation := world.water_planet.generation
+	expect_arrival_test_ground(t, state, generation, {}, -1, "before the hit")
+	before := copy_arrival_test_terrain(world)
+	defer delete_arrival_test_terrain(&before)
+	entries := 0
+	for _, chunk in world.chunks {
+		entries += len(chunk.crater_overlay)
+	}
+	start := time.tick_now()
+	chunks, applied := dig_impact_crater(state)
+	log.infof("0271: the apply at %d mm over %d loaded chunks took %v: %d chunks with an overlay, %d samples applied, the overlays held %d samples (%d bytes)", spacing, len(world.chunks), time.tick_since(start), chunks, applied, entries, entries * size_of(Field_Crater_Sample))
+	changed_count := 0
+	mismatch: for coordinate in sorted_field_chunk_coordinates(world.chunks) {
+		chunk := world.chunks[coordinate]
+		copied := before[coordinate]
+		origin := field_chunk_origin(coordinate)
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			sample := origin + Sample_Coordinate(field_index_to_local(index))
+			position := sample_to_world_position(sample, spacing)
+			expected := Field_Sample{copied.density[index], copied.material[index], copied.tint[index]}
+			changed := false
+			if arrival_test_crater_may_change(generation, position) {
+				baked: Field_Sample
+				baked, changed = impact_crater_sample(generation, position)
+				if changed {
+					expected = baked
+					changed_count += 1
 				}
 			}
+			if field_chunk_get_sample(chunk, index) != expected {
+				testing.expectf(t, false, "%d mm: the sample %v (changed %v) is %v, not %v", spacing, sample, changed, field_chunk_get_sample(chunk, index), expected)
+				break mismatch
+			}
 		}
-		testing.expectf(t, changed_count > 0, "%d mm: the dig changes samples", spacing)
-
-		through := start_arrival_test_session_at(config, content, spacing)
-		defer end_session(through)
-		through_content := field_test_content(through, content)
-		pod, placed, _ := find_pod(&through.simulation.world.entities, through_content.machines)
-		for through.simulation.tick < hit {
-			tick_field_test_simulation(&through.simulation, through_content, {})
-		}
-		centre, radius := arrival_test_bed(&through.simulation, through_content.machines)
-		expect_field_holds_the_crater(t, &through.simulation, centre, radius)
-		base := pod_base_centre(placed, pod)
-		up := placed.axes[FRAME_UP]
-		metre := i64(POSITION_UNITS_PER_METRE)
-		ground := raycast_field(&through.simulation.field.world, spacing, base + World_Position(fixed_scale(up, metre)), -up, 3 * metre)
-		testing.expectf(t, ground.hit && vector_length(cast([3]i64)(ground.position - base)) <= sample_axis_to_position(1, spacing), "%d mm: the ground lies %v off the base centre", spacing, ground.position - base)
 	}
+	testing.expectf(t, changed_count > 0, "%d mm: the dig changes samples", spacing)
+
+	through := start_arrival_test_session_at(config, content, spacing)
+	defer end_session(through)
+	through_content := field_test_content(through, content)
+	pod, placed, _ := find_pod(&through.simulation.world.entities, through_content.machines)
+	for through.simulation.tick < hit {
+		tick_field_test_simulation(&through.simulation, through_content, {})
+	}
+	centre, radius := arrival_test_bed(&through.simulation, through_content.machines)
+	expect_field_holds_the_crater(t, &through.simulation, centre, radius)
+	base := pod_base_centre(placed, pod)
+	up := placed.axes[FRAME_UP]
+	metre := i64(POSITION_UNITS_PER_METRE)
+	ground := raycast_field(&through.simulation.field.world, spacing, base + World_Position(fixed_scale(up, metre)), -up, 3 * metre)
+	testing.expectf(t, ground.hit && vector_length(cast([3]i64)(ground.position - base)) <= sample_axis_to_position(1, spacing), "%d mm: the ground lies %v off the base centre", spacing, ground.position - base)
+}
+
+@(test) // slow
+test_the_hit_digs_the_crater_and_nothing_else_at_1000_mm :: proc(t: ^testing.T) {
+	run_the_hit_digs_the_crater_and_nothing_else(t, 1000)
+}
+
+@(test) // slow
+test_the_hit_digs_the_crater_and_nothing_else_at_500_mm :: proc(t: ^testing.T) {
+	run_the_hit_digs_the_crater_and_nothing_else(t, 500)
+}
+
+@(test) // slow
+test_the_hit_digs_the_crater_and_nothing_else_at_333_mm :: proc(t: ^testing.T) {
+	run_the_hit_digs_the_crater_and_nothing_else(t, 333)
 }
 
 // Work item 0271: a new world saved at tick 0 whose world.sjson is set

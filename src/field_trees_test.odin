@@ -261,7 +261,7 @@ test_a_felled_tree_stays_felled_after_a_save_and_load :: proc(t: ^testing.T) {
 	loaded := load_test_field_save(config, content, &files)
 	defer end_session(loaded)
 	restored := &loaded.simulation
-	stage_generated_field_set(restored)
+	stage_cached_field_set(restored)
 	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
 	testing.expect_value(t, len(restored.field.felled_trees), len(felled))
 	for key in felled {

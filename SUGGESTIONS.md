@@ -197,3 +197,9 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the carved landmarks (0324, 2026-11-07)
 
 - A chunk with carved air under a roof that a neighbour's arrival seed writes light into is marked modified; saved before its own seed runs, it loads with `generated_shade` cleared while it is already in the restored `light.arrived_chunks`, so its roofed air stays at sky 0 until an edit relights it. The window is the few ticks of the seed queue (4 chunks a tick). Saving `generated_shade`, or seeding a loaded chunk's dark roofed air again, would close it.
+
+## Suggestions from the slowest tests (0318, 2026-11-07)
+
+- `test_the_cached_field_chunks_are_the_generated_ones` reports "got Full" if the suite ever fills `FIELD_CHUNK_CACHE_CAPACITY` (2048, the slow tier fills about 950) before it runs; a message naming the full cache would read better.
+- `fill_field_chunk_cache` uses `find_field_chunk_cache_entry` without a nil check, so a key that failed to match its own stored copy would crash every staging test instead of missing.
+- The `differs` checks of the cache test catch a key that leaves out a part only when the base home entry is filled at that moment; while another test still generates it, a broken key passes that run.

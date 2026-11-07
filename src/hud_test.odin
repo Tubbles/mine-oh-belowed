@@ -147,7 +147,7 @@ test_the_glyph_bar_offers_nothing_on_a_hatch :: proc(t: ^testing.T) {
 	defer end_session(session)
 	simulation_content := field_test_content(session, content)
 	state := &session.simulation
-	stage_generated_field_set(state)
+	stage_cached_field_set(state)
 	pod, frame, found := find_test_pod(&state.world.entities, content.machines)
 	testing.expect(t, found)
 	if !found {

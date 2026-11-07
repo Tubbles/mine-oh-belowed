@@ -323,7 +323,7 @@ test_the_wear_round_trips_a_save_and_an_older_save_loads_unworn :: proc(t: ^test
 		loaded := load_test_field_save(config, content, &cut)
 		defer end_session(loaded)
 		restored := &loaded.simulation
-		stage_generated_field_set(restored)
+		stage_cached_field_set(restored)
 		testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
 		loaded_furnace := pool_get(&restored.world.entities.furnaces, handle)
 		testing.expect(t, loaded_furnace != nil, "the furnace loads")

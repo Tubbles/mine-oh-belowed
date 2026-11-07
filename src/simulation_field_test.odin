@@ -62,10 +62,11 @@ field_test_content :: proc(session: ^Session, content: Game_Content) -> Simulati
 }
 
 // One tick with the set's chunks generated on the test's thread first,
-// as the streaming would hand them over.
+// through the process's chunk cache, as the streaming would hand them
+// over.
 tick_field_test_simulation :: proc(state: ^Simulation_State, content: Simulation_Content, frame: Input_Frame) {
 	if !simulated_chunks_ready(state) {
-		stage_generated_field_set(state)
+		stage_cached_field_set(state)
 	}
 	inputs := [1]Input_Frame{frame}
 	simulation_tick(state, content, inputs[:])
@@ -360,7 +361,7 @@ test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	defer end_session(loaded)
 	restored := &loaded.simulation
 	testing.expect(t, restored.field.enabled)
-	stage_generated_field_set(restored)
+	stage_cached_field_set(restored)
 	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
 	testing.expect_value(t, simulation_state_hash(restored), hash)
 	testing.expect_value(t, field_world_get_sample(&restored.field.world, sample), edited)
@@ -458,7 +459,7 @@ test_a_restored_field_set_matches_the_save_in_either_arrival_order :: proc(t: ^t
 	expected := make(map[Field_Chunk_Coordinate]u64, context.temp_allocator)
 	for coordinate in coordinates {
 		chunk := new(Field_Chunk, context.temp_allocator)
-		generate_field_chunk(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres, coordinate, chunk)
+		generate_cached_field_chunk(state, coordinate, chunk)
 		if saved, found := state.field.saved_chunks[coordinate]; found {
 			testing.expect_value(t, decode_field_chunk_delta(saved.bytes, chunk), "")
 		}
@@ -469,7 +470,7 @@ test_a_restored_field_set_matches_the_save_in_either_arrival_order :: proc(t: ^t
 		for index in 0 ..< len(coordinates) {
 			coordinate := coordinates[order == 0 ? index : len(coordinates) - 1 - index]
 			chunk := new(Field_Chunk)
-			generate_field_chunk(simulation.world.settings.seed, simulation.world.planet, simulation.field.spacing_millimetres, coordinate, chunk)
+			generate_cached_field_chunk(simulation, coordinate, chunk)
 			stage_field_chunk_arrival(&simulation.field, chunk)
 		}
 		testing.expect(t, field_chunks_ready(simulation))
@@ -506,7 +507,7 @@ test_a_tick_command_waits_for_a_restoring_field_set :: proc(t: ^testing.T) {
 	testing.expect_value(t, run_command_ticks(state, simulation_content), 0)
 	testing.expect_value(t, session.simulation.tick, start)
 	testing.expect_value(t, state.developer.command_control.pending_ticks, 3)
-	stage_generated_field_set(&session.simulation)
+	stage_cached_field_set(&session.simulation)
 	testing.expect_value(t, run_command_ticks(state, simulation_content), 3)
 	testing.expect_value(t, session.simulation.tick, start + 3)
 	testing.expect(t, !session.simulation.field.chunk_set.restoring)
@@ -587,7 +588,7 @@ test_a_new_world_sinks_the_pod_in_its_crater_and_players_spawn_in_the_cabin :: p
 			testing.expectf(t, inventory_count(player.inventory, test_item(content.items, starting.item)) == starting.count, "%s", starting.item)
 		}
 	}
-	stage_generated_field_set(state)
+	stage_cached_field_set(state)
 	for _ in 0 ..< 60 {
 		tick_field_test_simulation(state, simulation_content, {})
 	}
@@ -755,7 +756,7 @@ test_a_hatch_opened_for_a_player_is_lockstep_state_and_saves :: proc(t: ^testing
 	for session, index in sessions {
 		simulation_content := field_test_content(session, content)
 		state := &session.simulation
-		stage_generated_field_set(state)
+		stage_cached_field_set(state)
 		pod, frame, found := find_test_pod(&state.world.entities, content.machines)
 		testing.expect(t, found)
 		if !found {
@@ -805,7 +806,7 @@ test_a_hatch_opened_for_a_player_is_lockstep_state_and_saves :: proc(t: ^testing
 	}
 	defer end_session(loaded)
 	restored := &loaded.simulation
-	stage_generated_field_set(restored)
+	stage_cached_field_set(restored)
 	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
 	testing.expect_value(t, simulation_state_hash(restored), hash)
 	pod, frame, _ := find_test_pod(&restored.world.entities, content.machines)
@@ -855,7 +856,7 @@ test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
 	for session, index in sessions {
 		contents[index] = field_test_content(session, content)
 		state := &session.simulation
-		stage_generated_field_set(state)
+		stage_cached_field_set(state)
 		pod, frame, found := find_test_pod(&state.world.entities, content.machines)
 		testing.expect(t, found)
 		if !found {
@@ -883,7 +884,7 @@ test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
 		if inner := test_session_hatch(&sessions[0].simulation, content.machines, 1); inner != nil && inner.hatch_open {
 			files := encode_save_files(&sessions[0].simulation, contents[0], "airlock", 0)
 			loaded = load_test_field_save(config, content, &files)
-			stage_generated_field_set(&loaded.simulation)
+			stage_cached_field_set(&loaded.simulation)
 			testing.expect(t, restore_arrived_field_set(&loaded.simulation.field), "the staged set restores")
 			loaded_content = field_test_content(loaded, content)
 			testing.expect_value(t, simulation_state_hash(&loaded.simulation), simulation_state_hash(&sessions[0].simulation))
@@ -924,7 +925,7 @@ test_a_standing_player_outside_opens_the_outer_door_against_the_pods_volumes :: 
 	defer end_session(session)
 	simulation_content := field_test_content(session, content)
 	state := &session.simulation
-	stage_generated_field_set(state)
+	stage_cached_field_set(state)
 	pod, frame, found := find_test_pod(&state.world.entities, content.machines)
 	testing.expect(t, found)
 	if !found {
@@ -969,7 +970,7 @@ test_interact_on_a_hatch_toggles_nothing_and_the_a_press_jumps :: proc(t: ^testi
 	defer end_session(session)
 	simulation_content := field_test_content(session, content)
 	state := &session.simulation
-	stage_generated_field_set(state)
+	stage_cached_field_set(state)
 	pod, frame, found := find_test_pod(&state.world.entities, content.machines)
 	testing.expect(t, found)
 	if !found {
@@ -1634,7 +1635,7 @@ test_a_field_world_save_round_trips_the_reward_target :: proc(t: ^testing.T) {
 	}
 	defer end_session(loaded)
 	restored := &loaded.simulation
-	stage_generated_field_set(restored)
+	stage_cached_field_set(restored)
 	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
 	testing.expect_value(t, restored.quests.reward_target, locker)
 	testing.expect_value(t, restored.quests.capsule, capsule)
@@ -1655,7 +1656,7 @@ reload_field_test_session :: proc(t: ^testing.T, session: ^Session, config: Game
 	if loaded == nil {
 		return nil, file
 	}
-	stage_generated_field_set(&loaded.simulation)
+	stage_cached_field_set(&loaded.simulation)
 	testing.expect(t, restore_arrived_field_set(&loaded.simulation.field), "the staged set restores")
 	return loaded, file
 }
@@ -1693,7 +1694,7 @@ test_a_new_field_world_has_no_drop_capsule :: proc(t: ^testing.T) {
 
 // Work item 0262: the debug terrain is a block world, so it keeps its
 // capsule on its pad even with planet data present.
-@(test)
+@(test) // slow
 test_a_debug_terrain_world_keeps_its_drop_capsule :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -1864,7 +1865,7 @@ test_two_sessions_hash_alike_walking_round_and_into_a_pod_with_volumes :: proc(t
 	for &session, index in sessions {
 		session = start_field_test_session(config, content)
 		contents[index] = field_test_content(session, content)
-		stage_generated_field_set(&session.simulation)
+		stage_cached_field_set(&session.simulation)
 		move_test_players_out_of_the_pod(&session.simulation, contents[index].machines)
 	}
 	defer for session in sessions {

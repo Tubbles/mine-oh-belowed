@@ -1,6 +1,6 @@
 # 0318: The slowest tests
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-07)
 
 0316's measurement (`tmp/0316/test_times.tsv`, on a loaded machine): the whole suite is 664 s of wall time against 4345 s of summed test time on 8 threads, and the test binary took 75 s to compile at any selection on Odin dev-2026-09, 23 s on dev-2026-11a since 0315.
 

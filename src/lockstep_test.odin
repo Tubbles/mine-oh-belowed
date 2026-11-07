@@ -589,14 +589,14 @@ test_slot_commands_keep_two_machines_in_step :: proc(t: ^testing.T) {
 
 // The field session's ticks whose records are there, the local records
 // delivered as offline and the field set staged on the test's thread
-// first (tick_field_test_simulation).
+// through the process's chunk cache first (tick_field_test_simulation).
 run_field_lockstep_test_ticks :: proc(session: ^Session, content: Simulation_Content, most := max(int)) {
 	control: Command_Control
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
 	deliver_outgoing_locally(&session.lockstep, session.simulation.tick)
 	for count := 0; count < most && lockstep_records_ready(session.lockstep, session.simulation.tick); count += 1 {
 		if !simulated_chunks_ready(&session.simulation) {
-			stage_generated_field_set(&session.simulation)
+			stage_cached_field_set(&session.simulation)
 		}
 		run_session_tick(session, content, &control, &answers)
 	}
