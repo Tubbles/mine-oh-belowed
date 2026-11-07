@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:slice"
 import "core:strings"
 import "core:testing"
@@ -461,4 +462,145 @@ test_a_tree_species_must_name_a_tree_model_and_an_item :: proc(t: ^testing.T) {
 	species[0].machine = "pine_tree"
 	species[0].item = "no_such_item"
 	testing.expect_value(t, planet_tree_species_problem(changed, items, machines), `planets[0].trees.species[0].item "no_such_item" is not an item`)
+}
+
+// Work item 0311: each cover key one past each bound names the key with
+// the kind's index, as do kinds without a climate, an unknown shape or
+// colour source, a repeated id and 13 kinds.
+@(test)
+test_the_cover_keys_are_bounded :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	shipped := planet.cover
+	testing.expect_value(t, len(shipped.kinds), 9)
+	testing.expect_value(t, cover_problem(shipped, planet.climate), "")
+	testing.expect_value(t, cover_problem(shipped, {}), "cover needs the climate")
+	testing.expect_value(t, cover_problem({}, {}), "")
+	Cover_Case :: struct {
+		index:    int,
+		change:   proc(kind: ^Planet_Cover_Kind),
+		expected: string,
+	}
+	cases := [?]Cover_Case {
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.id = ""}, `cover.kinds[0].id "" is not 1 to 32 bytes`},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.id = "an_id_of_thirty_three_bytes_long_"}, `cover.kinds[0].id "an_id_of_thirty_three_bytes_long_" is not 1 to 32 bytes`},
+		{1, proc(kind: ^Planet_Cover_Kind) {kind.id = "grass"}, `cover.kinds[1].id "grass" is used twice`},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.shape = "tree"}, `cover.kinds[0].shape "tree" is not blades, flower, fern, pebble or crystal`},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.color_from = "sky"}, `cover.kinds[0].color_from "sky" is not grass, ground or colors`},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.parts = 0}, "cover.kinds[0].parts 0 is outside 1 to 16"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.parts = 17}, "cover.kinds[0].parts 17 is outside 1 to 16"},
+		{3, proc(kind: ^Planet_Cover_Kind) {kind.parts = 1}, "cover.kinds[3].parts 1 is outside 0 to 0"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.per_hundred_square_metres = -1}, "cover.kinds[0].per_hundred_square_metres -1 is outside 0 to 5000"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.per_hundred_square_metres = 5001}, "cover.kinds[0].per_hundred_square_metres 5001 is outside 0 to 5000"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.temperature_celsius = {-101, 0}}, "cover.kinds[0].temperature_celsius has -101, outside -100 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.temperature_celsius = {0, 101}}, "cover.kinds[0].temperature_celsius has 101, outside -100 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.temperature_celsius = {10, 5}}, "cover.kinds[0].temperature_celsius [10, 5] runs backwards"},
+		{2, proc(kind: ^Planet_Cover_Kind) {kind.moisture_percent = {60, 40}}, "cover.kinds[2].moisture_percent [60, 40] runs backwards"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.moisture_percent = {-1, 50}}, "cover.kinds[0].moisture_percent has -1, outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.moisture_percent = {0, 101}}, "cover.kinds[0].moisture_percent has 101, outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.slope_degrees = {-1, 30}}, "cover.kinds[0].slope_degrees has -1, outside 0 to 90"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.slope_degrees = {0, 91}}, "cover.kinds[0].slope_degrees has 91, outside 0 to 90"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.temperature_fade_celsius = 0}, "cover.kinds[0].temperature_fade_celsius 0 is outside 1 to 50"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.temperature_fade_celsius = 51}, "cover.kinds[0].temperature_fade_celsius 51 is outside 1 to 50"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.moisture_fade_percent = 0}, "cover.kinds[0].moisture_fade_percent 0 is outside 1 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.moisture_fade_percent = 101}, "cover.kinds[0].moisture_fade_percent 101 is outside 1 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.slope_fade_degrees = 0}, "cover.kinds[0].slope_fade_degrees 0 is outside 1 to 90"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.slope_fade_degrees = 91}, "cover.kinds[0].slope_fade_degrees 91 is outside 1 to 90"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.grass = -1}, "cover.kinds[0].surfaces.grass -1 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.grass = 101}, "cover.kinds[0].surfaces.grass 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.sand = 101}, "cover.kinds[0].surfaces.sand 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.snow = 101}, "cover.kinds[0].surfaces.snow 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.rock = 101}, "cover.kinds[0].surfaces.rock 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.stone = 101}, "cover.kinds[0].surfaces.stone 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.hematite = 101}, "cover.kinds[0].surfaces.hematite 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.chalcopyrite = 101}, "cover.kinds[0].surfaces.chalcopyrite 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.surfaces.coal = -1}, "cover.kinds[0].surfaces.coal -1 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.boundary_percent = -1}, "cover.kinds[0].boundary_percent -1 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.boundary_percent = 101}, "cover.kinds[0].boundary_percent 101 is outside 0 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.patch_wavelength_metres = 1}, "cover.kinds[0].patch_wavelength_metres 1 is neither 0 nor 2 to 512"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.patch_wavelength_metres = 513}, "cover.kinds[0].patch_wavelength_metres 513 is neither 0 nor 2 to 512"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.patch_threshold_percent = -101}, "cover.kinds[0].patch_threshold_percent -101 is outside -100 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.patch_threshold_percent = 101}, "cover.kinds[0].patch_threshold_percent 101 is outside -100 to 100"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.patch_edge_percent = 0}, "cover.kinds[0].patch_edge_percent 0 is outside 1 to 200"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.patch_edge_percent = 201}, "cover.kinds[0].patch_edge_percent 201 is outside 1 to 200"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.width_millimetres = {9, 100}}, "cover.kinds[0].width_millimetres has 9, outside 10 to 4000"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.width_millimetres = {100, 4001}}, "cover.kinds[0].width_millimetres has 4001, outside 10 to 4000"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.width_millimetres = {200, 100}}, "cover.kinds[0].width_millimetres [200, 100] runs backwards"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.height_millimetres = {9, 100}}, "cover.kinds[0].height_millimetres has 9, outside 10 to 4000"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.height_millimetres = {100, 4001}}, "cover.kinds[0].height_millimetres has 4001, outside 10 to 4000"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.sink_percent = -1}, "cover.kinds[0].sink_percent -1 is outside 0 to 90"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.sink_percent = 91}, "cover.kinds[0].sink_percent 91 is outside 0 to 90"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.colors = nil}, "cover.kinds[0].colors has 0 colours, not 1 to 8"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.colors = make([][3]int, 9, context.temp_allocator)}, "cover.kinds[0].colors has 9 colours, not 1 to 8"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.colors = cover_test_colors({0, 256, 0})}, "cover.kinds[0].colors[0] has 256, outside 0 to 255"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.colors = cover_test_colors({0, 0, -1})}, "cover.kinds[0].colors[0] has -1, outside 0 to 255"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.near_metres = -1}, "cover.kinds[0].near_metres -1 is outside 0 to 40"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.near_metres = 41}, "cover.kinds[0].near_metres 41 is outside 0 to 40"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.far_metres = 0}, "cover.kinds[0].far_metres 0 is outside 1 to 256"},
+		{0, proc(kind: ^Planet_Cover_Kind) {kind.far_metres = 257}, "cover.kinds[0].far_metres 257 is outside 1 to 256"},
+	}
+	for entry in cases {
+		kinds := slice.clone(shipped.kinds, context.temp_allocator)
+		entry.change(&kinds[entry.index])
+		testing.expect_value(t, cover_problem(Planet_Cover{kinds = kinds}, planet.climate), entry.expected)
+	}
+	thirteen := make([]Planet_Cover_Kind, MAXIMUM_COVER_KINDS + 1, context.temp_allocator)
+	for &kind, index in thirteen {
+		kind = shipped.kinds[0]
+		kind.id = fmt.tprintf("kind_%d", index)
+	}
+	testing.expect_value(t, cover_problem(Planet_Cover{kinds = thirteen}, planet.climate), "cover has 13 kinds, more than 12")
+	testing.expect_value(t, cover_problem(Planet_Cover{kinds = thirteen[:MAXIMUM_COVER_KINDS]}, planet.climate), "")
+}
+
+// One colour in the temp allocator.
+cover_test_colors :: proc(color: [3]int) -> [][3]int {
+	colors := make([][3]int, 1, context.temp_allocator)
+	colors[0] = color
+	return colors
+}
+
+// A cover of one grass kind, as a planet record's line.
+TEST_COVER_LINE :: "\tcover = {kinds = [{id = \"grass\", shape = \"blades\", parts = 9, per_hundred_square_metres = 600, temperature_celsius = [2, 30], temperature_fade_celsius = 6, moisture_percent = [55, 100], moisture_fade_percent = 30, slope_degrees = [0, 32], slope_fade_degrees = 8, surfaces = {grass = 100, sand = 15, snow = 0, rock = 0, stone = 0, hematite = 0, chalcopyrite = 0, coal = 0}, boundary_percent = 0, patch_wavelength_metres = 9, patch_threshold_percent = -45, patch_edge_percent = 60, width_millimetres = [180, 420], height_millimetres = [140, 460], sink_percent = 0, color_from = \"grass\", colors = [[128, 128, 128]], near_metres = 12, far_metres = 40}]}\n"
+
+// The test record with the shipped climate and the lines before its
+// palette.
+cover_test_record :: proc(lines: ..string) -> string {
+	climate_line := "\tclimate = {temperature_wavelength_metres = 1600, moisture_wavelength_metres = 1100, sea_level_celsius = 13, temperature_spread_celsius = 14, lapse_millicelsius_per_metre = 120, moisture_percent = 55, moisture_spread_percent = 70, grass_colors = [[146, 150, 104], [80, 124, 78], [44, 98, 70], [190, 182, 82], [96, 166, 58], [52, 140, 58], [220, 180, 90], [158, 180, 56], [60, 160, 50]], grass_cold_celsius = 2, grass_hot_celsius = 26, snow_celsius = 0, snow_fade_celsius = 3, snow_color = [210, 218, 232], sand_metres = 1, sand_fade_metres = 2, sand_color = [208, 188, 142]}\n"
+	inserted := strings.concatenate({climate_line, strings.concatenate(lines, context.temp_allocator), "\tpalette"}, context.temp_allocator)
+	record, _ := strings.replace(string(TEST_PLANET_RECORD), "\tpalette", inserted, 1, context.temp_allocator)
+	return record
+}
+
+// Work item 0311: a planet without a cover object loads with the cover
+// off; a cover object is read whole, and needs the climate.
+@(test)
+test_the_cover_is_optional_in_the_file :: proc(t: ^testing.T) {
+	planets, problem := parse_planets_file(transmute([]byte)string(TEST_PLANET_RECORD), PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, len(planets[0].cover.kinds), 0)
+	planets, problem = parse_planets_file(transmute([]byte)cover_test_record(TEST_COVER_LINE), PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, len(planets[0].cover.kinds), 1)
+	kind := planets[0].cover.kinds[0]
+	testing.expect_value(t, kind.id, "grass")
+	testing.expect_value(t, kind.shape, "blades")
+	testing.expect_value(t, kind.surfaces, Planet_Cover_Surfaces{grass = 100, sand = 15})
+	testing.expect_value(t, kind.width_millimetres, [2]int{180, 420})
+	testing.expect_value(t, len(kind.colors), 1)
+	testing.expect_value(t, kind.far_metres, 40)
+	without_climate, _ := strings.replace(string(TEST_PLANET_RECORD), "\tpalette", strings.concatenate({TEST_COVER_LINE, "\tpalette"}, context.temp_allocator), 1, context.temp_allocator)
+	expect_planets_problem(t, without_climate, "cover needs the climate")
+}
+
+// Work item 0311: a cover object, a kind and a kind's surfaces missing a
+// key name it.
+@(test)
+test_a_missing_cover_key_is_named :: proc(t: ^testing.T) {
+	expect_planets_problem(t, cover_test_record("\tcover = {}\n"), "planets[0].cover is missing kinds")
+	sinkless, _ := strings.replace(TEST_COVER_LINE, "sink_percent = 0, ", "", 1, context.temp_allocator)
+	expect_planets_problem(t, cover_test_record(sinkless), "planets[0].cover.kinds[0] is missing sink_percent")
+	coalless, _ := strings.replace(TEST_COVER_LINE, ", coal = 0}", "}", 1, context.temp_allocator)
+	expect_planets_problem(t, cover_test_record(coalless), "planets[0].cover.kinds[0].surfaces is missing coal")
+	unknown, _ := strings.replace(TEST_COVER_LINE, "sink_percent = 0, ", "sink_percent = 0, depth = 1, ", 1, context.temp_allocator)
+	expect_planets_problem(t, cover_test_record(unknown), "unknown key")
 }

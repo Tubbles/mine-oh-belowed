@@ -80,10 +80,14 @@ Field_Surface_Vertex :: struct {
 // Triangles as index triples. The skirts (world_field_lod.odin) come after
 // skirt_index_start. cell_vertices holds each cell's vertex
 // (field_vertex_cell_index), -1 for none, which the cut at a level seam
-// reads (cut_field_surface); nil for a uniform grid.
+// reads (cut_field_surface); nil for a uniform grid. quad_edges holds
+// each quad's grid edge, its local sample and its axis, in quad order
+// (two triangles a quad), which keys the ground cover's hash (0311); the
+// skirts add none.
 Field_Surface :: struct {
 	vertices:          [dynamic]Field_Surface_Vertex,
 	indices:           [dynamic]u16,
+	quad_edges:        [dynamic][4]i32,
 	skirt_index_start: int,
 	cell_vertices:     []i32,
 }
@@ -347,6 +351,7 @@ append_field_edge_quad :: proc(surface: ^Field_Surface, cell_vertices: []i32, gr
 	for corner in order {
 		append(&surface.indices, quad[corner])
 	}
+	append(&surface.quad_edges, [4]i32{sample.x, sample.y, sample.z, i32(axis)})
 }
 
 // The surface without skirts. A node owns the grid edges that start at
@@ -355,8 +360,9 @@ append_field_edge_quad :: proc(surface: ^Field_Surface, cell_vertices: []i32, gr
 mesh_field_surface :: proc(grid: ^Field_Grid, palette: [][3]int, allocator := context.allocator, light_grid: ^Field_Grid = nil) -> Field_Surface {
 	light_source := light_grid == nil ? grid : light_grid
 	surface := Field_Surface {
-		vertices = make([dynamic]Field_Surface_Vertex, allocator),
-		indices  = make([dynamic]u16, allocator),
+		vertices   = make([dynamic]Field_Surface_Vertex, allocator),
+		indices    = make([dynamic]u16, allocator),
+		quad_edges = make([dynamic][4]i32, allocator),
 	}
 	if field_grid_is_uniform(grid) {
 		return surface
@@ -426,13 +432,18 @@ make_field_mesh_data :: proc(allocator := context.allocator) -> Field_Mesh_Data 
 
 // The worker's job for one node's terrain: the surface, the ground's look
 // with a climate (write_field_ground_look, 0307; measure_cuts for a grid
-// holding loaded samples), its skirts on skirt_faces
-// (field_node_skirt_faces), the vertex arrays. The surface is temporary.
-// A vertex the cut at a level seam moves keeps the look of where it was,
-// under a cell away along the same surface.
-mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, skirt_faces: Field_Seam_Faces, allocator := context.allocator, look: Field_Ground_Look = {}, measure_cuts := false) -> Field_Mesh_Data {
+// holding loaded samples and a finest node's), with cover set the ground
+// cover on the surface's triangles (place_field_cover, 0311, in
+// allocator), its skirts on skirt_faces (field_node_skirt_faces), the
+// vertex arrays. The surface is temporary. A vertex the cut at a level
+// seam moves keeps the look of where it was, under a cell away along the
+// same surface.
+mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, skirt_faces: Field_Seam_Faces, allocator := context.allocator, look: Field_Ground_Look = {}, measure_cuts := false, cover: ^Field_Cover_Data = nil, cover_table: Field_Cover_Table = {}, cover_frames: []Cover_Frame = nil) -> Field_Mesh_Data {
 	surface := mesh_field_surface(grid, palette, context.temp_allocator)
 	write_field_ground_look(&surface, grid, look, spacing_millimetres, measure_cuts)
+	if cover != nil {
+		cover^ = place_field_cover(surface, grid, look, cover_table, spacing_millimetres, cover_frames, allocator)
+	}
 	append_field_skirts(&surface, skirt_faces)
 	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
 }

@@ -1,0 +1,181 @@
+#version 330
+
+// Ground cover fragment shader (work item 0311, render_field_cover.odin):
+// the cover lit and hazed as the terrain (field.fs): per channel the
+// brighter of the block light and the open sky's light by the normal
+// times the sky light, the point lights and the torchlight on top, then
+// the aerial haze; opaque, without textures and without discard.
+// outdoor_light, apply_haze, point_light_sum and spot_light are field.fs's
+// line for line (shader_source_test.odin).
+//
+// Every integer literal carries the u suffix (work item 0105,
+// shader_source_test.odin), as the point lights' array sizes and loop do.
+
+in vec3 fragment_world_position;
+in vec3 fragment_normal;
+in vec3 fragment_albedo;
+in float fragment_sky_light;
+in float fragment_block_light;
+
+// The eye in the world's metres, for the haze.
+uniform vec3 camera_position;
+
+out vec4 finalColor;
+
+const float smallest_weight_sum = 0.0001;
+
+// The open sky's light (0313, Field_Frame_Lights): the sky's light from
+// above and the ground's bounce from below, shared by the normal's facing
+// of the local up, and the sun's by its facing of sun_direction (the day
+// clock's sun in the world's frame, 0297). The colours carry the time of
+// day; the sun's is zero once it has set. outdoor_light is model.fs's
+// line for line (shader_source_test.odin).
+uniform vec3 sun_direction;
+uniform vec3 sun_color;
+uniform vec3 sky_color;
+uniform vec3 bounce_color;
+
+vec3 outdoor_light(vec3 normal, vec3 up)
+{
+    float upward = 0.5 + 0.5 * dot(normal, up);
+    return mix(bounce_color, sky_color, upward) + sun_color * max(dot(normal, sun_direction), 0.0);
+}
+
+// The aerial haze (0313, Field_Haze): over the reach from the eye the
+// surface takes the sky's colour at the horizon (haze_color), warmed
+// towards a low sun (haze_sun_color), by the air's optical depth: the air
+// thins with the height above planet_radius by haze_scale_height, so a
+// valley holds more haze than a ridge and the view from above less. The
+// end fade between fog_start and fog_end, the last level of detail's
+// distance, brings it to the full sky colour inside the atmosphere and
+// to the globe's colour (globe_color) lit by the open sky above its top,
+// mixed by haze_end_share (the sky's share at the eye), so the far
+// nodes, the globe and the horizon read as one from the ground and the
+// drawn terrain blends into the globe from above the air.
+// sky_share scales it: air the sky does not light (a cave's, by its
+// samples' sky light) scatters no sky colour.
+// apply_haze is model.fs's line for line.
+uniform vec3 haze_color;
+uniform vec3 haze_sun_color;
+uniform float haze_density;
+uniform float haze_scale_height;
+uniform float haze_end_share;
+uniform vec3 globe_color;
+uniform float planet_radius;
+uniform float eye_height;
+uniform float fog_start;
+uniform float fog_end;
+
+// The glow's narrowness towards the sun (HAZE_SUN_EXPONENT, the dome's);
+// a rise under haze_level_rise scale heights takes the mean height's
+// density, where the exact form divides by nearly nothing. The scale
+// height is at least 1 m, so the zero uniforms outside a field session
+// divide by no zero.
+const float haze_sun_exponent = 6.0;
+const float haze_level_rise = 0.01;
+
+vec3 apply_haze(vec3 color, vec3 position, vec3 eye, float sky_share)
+{
+    vec3 offset = position - eye;
+    float reach = length(offset);
+    float height = length(position) - planet_radius;
+    float scale_height = max(haze_scale_height, 1.0);
+    float rise = (height - eye_height) / scale_height;
+    float mean_density = abs(rise) < haze_level_rise ? exp(-0.5 * (height + eye_height) / scale_height) : (exp(-eye_height / scale_height) - exp(-height / scale_height)) / rise;
+    float aerial = 1.0 - exp(-reach * haze_density * mean_density);
+    float toward_sun = max(dot(offset, sun_direction) / max(reach, smallest_weight_sum), 0.0);
+    vec3 sky = min(haze_color + haze_sun_color * pow(toward_sun, haze_sun_exponent), vec3(1.0));
+    vec3 up = position / max(length(position), smallest_weight_sum);
+    vec3 globe = min(globe_color * outdoor_light(up, up), vec3(1.0));
+    vec3 end_color = mix(globe, sky, haze_end_share);
+    vec3 hazed = mix(mix(color, sky, aerial), end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
+    return mix(color, hazed, sky_share);
+}
+
+// Point lights of working parts (work item 0175, render_point_lights.odin):
+// up to eight, the nearest to the camera, added on top of the field's
+// light, never in its place. xyz is the position in metres and w the
+// radius, 0 for an unused slot; the colour's rgb is the light's colour.
+// The lights come nearest first with the unused slots last, so the loop
+// stops at the first unused one and costs nothing without lights.
+// The term is soft: half of it ignores the facing, and it falls off
+// smoothly to nothing at the radius. A machine's lamp is clipped to its
+// machine's box (work item 0229): its colour's alpha is 0, and the
+// terrain takes nothing from it (the machine's floor covers the ground
+// inside its box, and the ground round the machine stays unlit), so this
+// shader needs no boxes; model.fs tests the box. point_light_sum is the
+// one of model.fs but for that line.
+uniform vec4 point_light_positions[8u];
+uniform vec4 point_light_colors[8u];
+
+const float point_light_wrap = 0.5;
+// A clipped light fades out over this much of the cosine past grazing, so
+// a curved fixture shows no hard edge.
+const float back_face_fade = 0.25;
+
+// The back face factor below is always 1 here, since a clipped light
+// (alpha 0) is skipped first; it stays so the sum is line for line
+// model.fs's, which shader_source_test.odin compares.
+vec3 point_light_sum(vec3 position, vec3 normal)
+{
+    vec3 sum = vec3(0.0);
+    for (uint index = 0u; index < 8u; index++) {
+        vec4 light = point_light_positions[index];
+        if (light.w <= 0.0) {
+            break;
+        }
+        vec4 color = point_light_colors[index];
+        if (color.a < 0.5) {
+            continue;
+        }
+        vec3 offset = light.xyz - position;
+        float share = clamp(1.0 - dot(offset, offset) / max(light.w * light.w, smallest_weight_sum), 0.0, 1.0);
+        float turned = dot(normal, normalize(offset + vec3(smallest_weight_sum)));
+        float facing = mix(point_light_wrap, 1.0, max(turned, 0.0));
+        float back_face = clamp(1.0 + turned / back_face_fade, 0.0, 1.0);
+        facing *= mix(back_face, 1.0, color.a);
+        sum += color.rgb * share * share * facing;
+    }
+    return sum;
+}
+
+// The torchlight (0297): a cone from spot_position along spot_direction,
+// full inside spot_cos_inner, gone past spot_cos_outer, inverse square
+// from torchlight_reference_metres, ended smoothly at spot_range; a range
+// of 0 is off and costs one compare. Half the facing is wrapped as the
+// point lights do.
+uniform vec3 spot_position;
+uniform vec3 spot_direction;
+uniform float spot_cos_inner;
+uniform float spot_cos_outer;
+uniform float spot_range;
+uniform vec3 spot_color;
+
+const float torchlight_reference_metres = 4.0;
+
+vec3 spot_light(vec3 position, vec3 normal)
+{
+    if (spot_range <= 0.0) {
+        return vec3(0.0);
+    }
+    vec3 offset = position - spot_position;
+    float distance_squared = dot(offset, offset);
+    vec3 to_fragment = offset * inversesqrt(max(distance_squared, smallest_weight_sum));
+    float cone = smoothstep(spot_cos_outer, spot_cos_inner, dot(to_fragment, spot_direction));
+    float reach = clamp(1.0 - distance_squared / (spot_range * spot_range), 0.0, 1.0);
+    float reference = torchlight_reference_metres * torchlight_reference_metres;
+    float falloff = reference / (reference + distance_squared) * reach * reach;
+    float facing = mix(point_light_wrap, 1.0, max(dot(normal, -to_fragment), 0.0));
+    return spot_color * cone * falloff * facing;
+}
+
+void main()
+{
+    vec3 normal = normalize(fragment_normal);
+    vec3 outdoor = fragment_sky_light * outdoor_light(normal, normalize(fragment_world_position));
+    vec3 light = max(vec3(fragment_block_light), outdoor);
+    vec3 lit = fragment_albedo * light;
+    lit += fragment_albedo * point_light_sum(fragment_world_position, normal);
+    lit += fragment_albedo * spot_light(fragment_world_position, normal);
+    finalColor = vec4(apply_haze(min(lit, vec3(1.0)), fragment_world_position, camera_position, fragment_sky_light), 1.0);
+}

@@ -610,3 +610,34 @@ test_a_world_before_the_trees_and_the_climate_takes_the_groves :: proc(t: ^testi
 	_, _, forested := resolve_world_planet(settings, with_climate, planets, true)
 	testing.expect_value(t, forested.trees.forest, planet.trees.forest)
 }
+
+// Work item 0311: a recorded planet takes the data's cover (presentation,
+// never recorded) as its own copy, which destroy_recorded_planet frees;
+// a world recorded without a climate keeps the kinds but its table is
+// off.
+@(test)
+test_a_recorded_planet_takes_the_datas_cover :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	testing.expect(t, len(planet.cover.kinds) > 0, "the shipped home has a cover")
+	loaded := make_recorded_planet(planet, planet_generation_record(planet))
+	defer destroy_recorded_planet(&loaded)
+	testing.expect_value(t, len(loaded.cover.kinds), len(planet.cover.kinds))
+	for kind, index in loaded.cover.kinds {
+		data := planet.cover.kinds[index]
+		testing.expect_value(t, kind.id, data.id)
+		testing.expect_value(t, kind.shape, data.shape)
+		testing.expect_value(t, kind.color_from, data.color_from)
+		testing.expect(t, slice.equal(kind.colors, data.colors), "the colours are the data's")
+		testing.expect(t, raw_data(kind.id) != raw_data(data.id) && raw_data(kind.colors) != raw_data(data.colors), "the strings and the colours are the result's own")
+		testing.expect_value(t, kind.per_hundred_square_metres, data.per_hundred_square_metres)
+		testing.expect_value(t, kind.surfaces, data.surfaces)
+	}
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, loaded, 1000)
+	testing.expect(t, make_field_cover_table(generation, loaded, {distance_percent = 100, density_percent = 100, node_limit = 8192}).on, "the loaded world places the cover")
+	climateless := planet_generation_record(planet)
+	climateless.climate = {}
+	old := make_recorded_planet(planet, climateless)
+	defer destroy_recorded_planet(&old)
+	testing.expect_value(t, len(old.cover.kinds), len(planet.cover.kinds))
+	testing.expect(t, !make_field_cover_table(make_planet_generation(DEFAULT_WORLD_SEED, old, 1000), old, {distance_percent = 100, density_percent = 100, node_limit = 8192}).on, "a world recorded without a climate places none")
+}

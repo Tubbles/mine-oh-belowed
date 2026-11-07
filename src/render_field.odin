@@ -23,7 +23,9 @@ import "render_frustum"
 // the open sky's light (0313: the sun, the sky from above and the
 // ground's bounce from below) and its haze; those and the torchlight
 // (0297, render_point_lights.odin) are set per draw
-// (set_field_frame_lights), since each viewer's up turns the sun.
+// (set_field_frame_lights), since each viewer's up turns the sun. The
+// finest nodes also carry the ground cover's instances (0311,
+// render_field_cover.odin), drawn between the terrain and the water.
 
 FIELD_VERTEX_SHADER_PATH :: "shaders/field.vs"
 FIELD_FRAGMENT_SHADER_PATH :: "shaders/field.fs"
@@ -46,7 +48,8 @@ FIELD_HAZE_UNIFORM :: "haze_color"
 #assert(FIELD_MATERIAL_TILE_COUNT == FIELD_TEXTURED_MATERIAL_COUNT, "every generated material tile is a tile of the atlas")
 
 // origin is the node's first sample in metres. A node with no water has
-// has_water false and no water mesh.
+// has_water false and no water mesh. cover holds a finest node's ground
+// cover per kind (0311).
 Field_Node_Render :: struct {
 	mesh:         rl.Mesh,
 	water:        rl.Mesh,
@@ -54,6 +57,7 @@ Field_Node_Render :: struct {
 	has_water:    bool,
 	origin:       [3]f32,
 	vertex_count: int,
+	cover:        [MAXIMUM_COVER_KINDS]Field_Cover_Node_Draw,
 }
 
 Field_Renderer :: struct {
@@ -85,6 +89,11 @@ Field_Renderer :: struct {
 	crouch_progress:          [dynamic]f32,
 	// Each material tile's mean texel, 0 to 1 (the debris' colours, 0272).
 	material_colors:          [FIELD_MATERIAL_TILE_COUNT][3]f32,
+	// The grass tile's mean texel, 0 to 1 (the globe's and the cover's
+	// grass, 0311).
+	grass_color:              [3]f32,
+	// The ground cover's shader and kinds (0311, init_field_cover_renderer).
+	cover:                    Field_Cover_Renderer,
 }
 
 // A tile's mean texel, 0 to 1.
@@ -177,7 +186,8 @@ init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, p
 		renderer.material_colors[slot] = tile_mean_color(tiles[slot])
 	}
 	renderer.globe = rl.GenMeshSphere(field_globe_radius_metres(planet), FIELD_GLOBE_RINGS, FIELD_GLOBE_SLICES)
-	renderer.globe_color = color_to_vector3(field_globe_color(planet, tile_mean_color(tiles[field_look_tile(.Grass)])))
+	renderer.grass_color = tile_mean_color(tiles[field_look_tile(.Grass)])
+	renderer.globe_color = color_to_vector3(field_globe_color(planet, renderer.grass_color))
 	renderer.last_distance_metres = fog_end
 	renderer.spacing_millimetres = spacing_millimetres
 	return renderer, true
@@ -209,6 +219,7 @@ unload_field_node_render :: proc(render: Field_Node_Render) {
 	if render.has_water {
 		rl.UnloadMesh(render.water)
 	}
+	unload_field_cover_node(render.cover)
 }
 
 unload_field_node :: proc(renderer: ^Field_Renderer, node: Field_Node) {
@@ -225,8 +236,9 @@ field_node_origin_metres :: proc(node: Field_Node, spacing_millimetres: int) -> 
 	return {f32(f64(origin.x) * metres_per_sample), f32(f64(origin.y) * metres_per_sample), f32(f64(origin.z) * metres_per_sample)}
 }
 
-// Replaces the node's meshes; two empty meshes only remove the old ones.
-apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, water: Field_Mesh_Data) {
+// Replaces the node's meshes and its cover (0311); two empty meshes only
+// remove the old ones. The data stays the caller's.
+apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, water: Field_Mesh_Data, cover: Field_Cover_Data = {}) {
 	unload_field_node(renderer, node)
 	if len(data.indices) == 0 && len(water.indices) == 0 {
 		return
@@ -241,6 +253,7 @@ apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, wate
 	if len(water.indices) > 0 {
 		render.water, render.has_water = upload_field_mesh(water), true
 	}
+	render.cover = upload_field_cover(renderer.cover, cover)
 	renderer.meshes[node] = render
 	renderer.vertex_count += render.vertex_count
 }
@@ -252,9 +265,10 @@ upload_streamed_field_meshes :: proc(renderer: ^Field_Renderer, streaming: ^Fiel
 		unload_field_node(renderer, node)
 	}
 	for result in take_current_field_meshes(streaming, context.temp_allocator) {
-		apply_field_mesh(renderer, result.node, result.mesh, result.water_mesh)
+		apply_field_mesh(renderer, result.node, result.mesh, result.water_mesh, result.cover)
 		destroy_field_mesh_data(result.mesh)
 		destroy_field_mesh_data(result.water_mesh)
+		destroy_field_cover_data(result.cover)
 	}
 }
 
@@ -375,11 +389,12 @@ set_open_sky_uniforms :: proc(shader: rl.Shader, locations: [Open_Sky_Uniform]i3
 }
 
 // The open sky's light and haze (0313) and the torchlight (0297), before
-// the terrain so the water pass shares them.
+// the terrain so the water pass and the cover (0311) share them.
 set_field_frame_lights :: proc(renderer: ^Field_Renderer, lights: Field_Frame_Lights) {
 	shader := renderer.material.shader
 	set_open_sky_uniforms(shader, renderer.open_sky_locations, lights)
 	set_spot_light_uniforms(shader, renderer.spot_locations, lights.spot)
+	set_field_cover_frame_lights(renderer.cover, lights)
 }
 
 // The globe through the model shader's lit material (0313), lit and
@@ -394,8 +409,8 @@ draw_field_globe :: proc(renderer: ^Field_Renderer, models: Model_Renderer, dayl
 }
 
 // Must run between BeginMode3D and EndMode3D, after the globe. The
-// selected nodes' terrain, then their water, lit by the frame's open sky
-// and torchlight.
+// selected nodes' terrain, then the cover on the visible ones (0311),
+// then their water, lit by the frame's open sky and torchlight.
 draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights) {
 	renderer.drawn_node_count = 0
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
@@ -416,6 +431,7 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 		}
 		renderer.drawn_node_count += 1
 	}
+	draw_field_cover(renderer, camera, visible[:])
 	draw_field_water(renderer, visible[:])
 }
 
@@ -426,6 +442,7 @@ destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 	}
 	delete(renderer.meshes)
 	destroy_field_tree_cache(&renderer.trees)
+	destroy_field_cover_renderer(&renderer.cover)
 	delete(renderer.crouch_progress)
 	rl.UnloadMesh(renderer.globe)
 	rl.UnloadMaterial(renderer.material)
@@ -442,4 +459,5 @@ set_field_point_lights :: proc(renderer: ^Field_Renderer, lights: [MAXIMUM_POINT
 	shader := renderer.material.shader
 	rl.SetShaderValueV(shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)
+	set_field_cover_point_lights(renderer.cover, &positions, &colors)
 }

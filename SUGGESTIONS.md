@@ -222,3 +222,10 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the sun shadows' design (0328, 2026-11-07)
 
 - A second, far shadow cascade would let ridges shade the valleys at dusk; 0328's one map covers 64 m round the eye. It costs a second depth pass of the coarse terrain. Yours to decide.
+
+## Suggestions from the ground cover (0311, 2026-11-07)
+
+- `snapshot_cover_frames` walks and sorts every occupied cell of a frame on each revision change (a placement, a removal, a hatch), and `cover_frames_meeting` copies whole frames into each job; a late base on one large frame pays that per build action. Marking only the changed cells' box and copying the cells near the node would bound it.
+- The cover's wet test reads `grid.water`, which near a disturbed shore holds the waves' offsets, so a narrow band of beach cover may pop in and out while the water moves.
+- The patch noise is one octave of trilinear `value_noise` on world axes; thresholded drifts of flowers and grass may sit on a visible lattice of 7 to 13 m. The landing captures look for it.
+- The streaming keeps placing cover when the cover shaders failed to load, work nothing draws.

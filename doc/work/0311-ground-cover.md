@@ -1,6 +1,6 @@
 # 0311: Ground cover: tufts, flowers, ferns and stones
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-07)
 
 Milestone: the world generation series 0306 to 0313, after 0307 and 0310. Biomes (0308) are skipped for now (user, 2026-11-07), so the cover reads the climate (0307) and the slope directly.
 
@@ -195,3 +195,5 @@ At 8 km, `DEFAULT_WORLD_SEED`, noon, at eye height, `teleport <latitude> <longit
 5. No settings toggle: the Android row holds the phone's values, and the frame cost on the couch decides whether one is needed.
 6. The level 0 job's extra 2 ms on the workers is accepted; the captures note how long the start's view takes to fill before and after.
 7. The implementation starts from 0310's snapshot (stream 0312, 0310, 0311).
+
+Deviation (implementer): `own` in `cover_kind_density` is the weighed share `clamp(on, 0, 1)`, since the pebbles' grass 3 would count a meadow as their own ground and the boundary would never gather them at the rock's edge.

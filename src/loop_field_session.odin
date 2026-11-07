@@ -157,8 +157,9 @@ frame_field_selection :: proc(state: ^Frame_State) -> []Field_Node {
 // The field's part of the frame's streaming: the chunks the next ticks
 // need to the workers, the generated ones back as chunk ready commands
 // (NO_PLAYER, kept on this machine as the block chunks are), and the
-// selection's nodes meshed. A server passes no selection and meshes
-// nothing; the edited chunks are taken either way. The surface waves step
+// selection's nodes meshed, the frames handed over for the ground cover
+// (0311). A server passes no selection and meshes nothing; the edited
+// chunks are taken either way. The surface waves step
 // first (advance_field_waves, 0294), so this frame's gather reads this
 // frame's heights; with the waves off (a server, the planet preview) the
 // gather takes none (field_waves_drawn).
@@ -170,6 +171,9 @@ stream_field_session :: proc(session: ^Session, selection: []Field_Node) {
 		held      = held_field_chunk_arrivals(simulation),
 		selection = selection,
 	}
+	if len(selection) > 0 {
+		frame.frames = &simulation.world.entities.frames
+	}
 	arrivals := make([dynamic]^Field_Chunk, context.temp_allocator)
 	update_field_streaming(&session.field_streaming, &simulation.field.world, frame, &arrivals, field_waves_drawn(&session.field_waves))
 	for chunk in arrivals {
@@ -179,6 +183,8 @@ stream_field_session :: proc(session: ^Session, selection: []Field_Node) {
 
 // The field renderer of a field session; false (and a log line) when its
 // shader or tiles do not load, and the session then draws only its UI.
+// The ground cover's renderer (0311) goes off alone when its shaders do
+// not load.
 start_field_presentation :: proc(state: ^Frame_State) -> bool {
 	session := state.session
 	distances := state.config.field_view.level_distances_metres
@@ -186,6 +192,7 @@ start_field_presentation :: proc(state: ^Frame_State) -> bool {
 	if problem != "" {
 		return false
 	}
+	init_field_cover_renderer(&renderer, state.data_directory, session.planet, field_cover_row(state.config.field_cover), f32(distances[0]))
 	state.presentation.field_renderer = renderer
 	state.presentation.field_renderer_ready = true
 	state.presentation.arrival = init_arrival_presentation(state.data_directory, state.config)

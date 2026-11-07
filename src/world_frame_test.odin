@@ -122,3 +122,38 @@ test_the_occupant_index_counts_cells_per_frame :: proc(t: ^testing.T) {
 	found, known := frame_occupant(&table, first, {1, 0, 0})
 	testing.expect(t, known && found == occupant)
 }
+
+// Work item 0311: the frame table's revision moves with every occupancy
+// and pose change (a vacated empty cell is none), and two worlds whose
+// revisions differ hash the same: the simulation never reads it.
+@(test)
+test_the_frame_revision_counts_its_changes :: proc(t: ^testing.T) {
+	table: Frame_Table
+	defer destroy_frame_table(&table)
+	testing.expect_value(t, table.revision, 0)
+	axes := test_frame_at(TEST_FRAME_HIT, 0, 500).axes
+	frame := add_frame(&table, TEST_FRAME_HIT, axes, 500)
+	occupy_frame_cell(&table, frame, {0, 0, 0}, {handle = 1})
+	testing.expect_value(t, table.revision, 1)
+	occupy_frame_cell(&table, frame, {1, 0, 0}, {handle = 2})
+	testing.expect_value(t, table.revision, 2)
+	vacate_frame_cell(&table, frame, {1, 0, 0})
+	testing.expect_value(t, table.revision, 3)
+	vacate_frame_cell(&table, frame, {1, 0, 0})
+	testing.expect_value(t, table.revision, 3)
+	set_frame_pose(&table, frame, TEST_FRAME_HIT + {1, 0, 0}, axes)
+	testing.expect_value(t, table.revision, 4)
+	clear_frame_occupants(&table)
+	testing.expect_value(t, table.revision, 5)
+	remove_frame(&table, frame)
+	testing.expect_value(t, table.revision, 6)
+
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	first := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&first)
+	second := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&second)
+	second.world.entities.frames.revision += 7
+	testing.expect_value(t, simulation_state_hash(&second), simulation_state_hash(&first))
+}

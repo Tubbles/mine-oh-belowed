@@ -134,7 +134,7 @@ start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Co
 	if plan.loading {
 		clear_trees_of_an_old_save(simulation, content.machines, session.field_content)
 	}
-	session.field_streaming = start_field_streaming(seed, session.planet, field.spacing_millimetres, default_worker_count())
+	session.field_streaming = start_field_streaming(seed, session.planet, field.spacing_millimetres, default_worker_count(), field_cover_row(config.field_cover))
 	session.field_waves = Field_Waves{tuning = make_field_wave_tuning(config.water_look), last_tick = simulation.tick}
 	return ""
 }

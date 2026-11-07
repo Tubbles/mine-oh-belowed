@@ -1,12 +1,11 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
 // required but relief_shape (0189), landforms (0306), landmarks (0323),
-// climate (0307) and waters (0312), which are off without them; the
-// trees are doc/content.md, Trees (0197); the
-// terrain field generates a planet from its record, the
-// world seed and the sample spacing (generation_planet.odin). A world
-// records the values it was made with in its world.sjson; once the
-// session generates the field from them (0179), an edit here reshapes new
-// worlds only.
+// climate (0307), waters (0312) and cover (0311), which are off without
+// them; the trees are doc/content.md, Trees (0197); the terrain field
+// generates a planet from its record, the world seed and the sample
+// spacing (generation_planet.odin). A world records the values it was
+// made with in its world.sjson; once the session generates the field
+// from them (0179), an edit here reshapes new worlds only.
 planets = [
 	{
 		id = "home"
@@ -355,6 +354,140 @@ planets = [
 			lake_maximum_metres = 384
 			// A lake stands this far under its pour point.
 			lake_margin_millimetres = 500
+		}
+		// The ground cover (work item 0311, doc/content.md, Planets),
+		// optional and needing the climate: tufts, flowers, ferns and stones
+		// scattered on the ground near the eye, drawn only, never recorded,
+		// so an edit here re-dresses every world. Per kind:
+		// - what it is: an id, a shape (blades, flower, fern, pebble or
+		//   crystal) of parts blades, flowers or fronds (0 for a stone), and
+		//   how many stand on a hundred square metres where it grows fully;
+		// - where it grows: the temperature, the moisture and the slope
+		//   ranges, least first, fading out past them over the fades, and
+		//   the share of each surface (percent: grass, sand, snow, rock on
+		//   steep topsoil, stone, the three ores), raised
+		//   where its surfaces meet others by boundary_percent;
+		// - its patches: a noise of patch_wavelength_metres (0 none), the
+		//   kind growing above patch_threshold_percent of its range, full
+		//   over patch_edge_percent;
+		// - its size in millimetres, least and most, sunk sink_percent of its
+		//   height into the ground;
+		// - its colour: from the grass under it, the ground's strata tint
+		//   (scaled by the first colour over 128) or its colors by hash;
+		// - its reach: drawn out to far_metres, thinning from near_metres.
+		cover = {
+			kinds = [
+				{
+					id = "grass", shape = "blades", parts = 9, per_hundred_square_metres = 600
+					temperature_celsius = [2, 30], temperature_fade_celsius = 6
+					moisture_percent = [55, 100], moisture_fade_percent = 30
+					slope_degrees = [0, 32], slope_fade_degrees = 8
+					surfaces = {grass = 100, sand = 15, snow = 0, rock = 0, stone = 0, hematite = 0, chalcopyrite = 0, coal = 0}
+					boundary_percent = 0
+					patch_wavelength_metres = 9, patch_threshold_percent = -45, patch_edge_percent = 60
+					width_millimetres = [180, 420], height_millimetres = [140, 460], sink_percent = 0
+					color_from = "grass", colors = [[128, 128, 128]]
+					near_metres = 12, far_metres = 40
+				}
+				{
+					id = "flowers", shape = "flower", parts = 3, per_hundred_square_metres = 200
+					temperature_celsius = [7, 26], temperature_fade_celsius = 4
+					moisture_percent = [45, 90], moisture_fade_percent = 12
+					slope_degrees = [0, 20], slope_fade_degrees = 6
+					surfaces = {grass = 100, sand = 0, snow = 0, rock = 0, stone = 0, hematite = 0, chalcopyrite = 0, coal = 0}
+					boundary_percent = 0
+					patch_wavelength_metres = 7, patch_threshold_percent = 15, patch_edge_percent = 30
+					width_millimetres = [120, 260], height_millimetres = [180, 420], sink_percent = 0
+					color_from = "colors", colors = [[236, 232, 220], [232, 196, 64], [156, 116, 196], [204, 84, 64]]
+					near_metres = 8, far_metres = 32
+				}
+				{
+					id = "ferns", shape = "fern", parts = 7, per_hundred_square_metres = 90
+					temperature_celsius = [4, 24], temperature_fade_celsius = 4
+					moisture_percent = [65, 100], moisture_fade_percent = 10
+					slope_degrees = [0, 40], slope_fade_degrees = 10
+					surfaces = {grass = 100, sand = 0, snow = 0, rock = 40, stone = 0, hematite = 0, chalcopyrite = 0, coal = 0}
+					boundary_percent = 0
+					patch_wavelength_metres = 13, patch_threshold_percent = -10, patch_edge_percent = 40
+					width_millimetres = [500, 1100], height_millimetres = [350, 800], sink_percent = 0
+					color_from = "grass", colors = [[104, 120, 96]]
+					near_metres = 12, far_metres = 40
+				}
+				{
+					id = "pebbles", shape = "pebble", parts = 0, per_hundred_square_metres = 250
+					temperature_celsius = [-100, 100], temperature_fade_celsius = 1
+					moisture_percent = [0, 100], moisture_fade_percent = 1
+					slope_degrees = [0, 60], slope_fade_degrees = 10
+					surfaces = {grass = 3, sand = 50, snow = 0, rock = 100, stone = 100, hematite = 0, chalcopyrite = 0, coal = 0}
+					boundary_percent = 70
+					patch_wavelength_metres = 6, patch_threshold_percent = -20, patch_edge_percent = 50
+					width_millimetres = [40, 140], height_millimetres = [30, 90], sink_percent = 35
+					color_from = "ground", colors = [[128, 128, 128]]
+					near_metres = 6, far_metres = 20
+				}
+				{
+					id = "dry_stones", shape = "pebble", parts = 0, per_hundred_square_metres = 140
+					temperature_celsius = [-100, 100], temperature_fade_celsius = 1
+					moisture_percent = [0, 30], moisture_fade_percent = 15
+					slope_degrees = [0, 35], slope_fade_degrees = 8
+					surfaces = {grass = 100, sand = 60, snow = 0, rock = 0, stone = 0, hematite = 0, chalcopyrite = 0, coal = 0}
+					boundary_percent = 0
+					patch_wavelength_metres = 11, patch_threshold_percent = -25, patch_edge_percent = 50
+					width_millimetres = [50, 220], height_millimetres = [40, 140], sink_percent = 35
+					color_from = "ground", colors = [[136, 130, 120]]
+					near_metres = 8, far_metres = 28
+				}
+				{
+					id = "boulders", shape = "pebble", parts = 0, per_hundred_square_metres = 2
+					temperature_celsius = [-100, 100], temperature_fade_celsius = 1
+					moisture_percent = [0, 100], moisture_fade_percent = 1
+					slope_degrees = [0, 40], slope_fade_degrees = 10
+					surfaces = {grass = 100, sand = 40, snow = 100, rock = 100, stone = 100, hematite = 0, chalcopyrite = 0, coal = 0}
+					boundary_percent = 0
+					patch_wavelength_metres = 40, patch_threshold_percent = 5, patch_edge_percent = 30
+					width_millimetres = [350, 1000], height_millimetres = [250, 650], sink_percent = 30
+					color_from = "ground", colors = [[128, 128, 128]]
+					near_metres = 30, far_metres = 56
+				}
+				// The ore specks on the veins' outcrops take the ore tiles'
+				// fleck colours (data/textures/field_materials.sjson).
+				{
+					id = "hematite_specks", shape = "crystal", parts = 0, per_hundred_square_metres = 600
+					temperature_celsius = [-100, 100], temperature_fade_celsius = 1
+					moisture_percent = [0, 100], moisture_fade_percent = 1
+					slope_degrees = [0, 90], slope_fade_degrees = 1
+					surfaces = {grass = 0, sand = 0, snow = 0, rock = 0, stone = 0, hematite = 100, chalcopyrite = 0, coal = 0}
+					boundary_percent = 40
+					patch_wavelength_metres = 0, patch_threshold_percent = 0, patch_edge_percent = 1
+					width_millimetres = [30, 80], height_millimetres = [30, 90], sink_percent = 30
+					color_from = "colors", colors = [[150, 62, 40]]
+					near_metres = 4, far_metres = 16
+				}
+				{
+					id = "chalcopyrite_specks", shape = "crystal", parts = 0, per_hundred_square_metres = 600
+					temperature_celsius = [-100, 100], temperature_fade_celsius = 1
+					moisture_percent = [0, 100], moisture_fade_percent = 1
+					slope_degrees = [0, 90], slope_fade_degrees = 1
+					surfaces = {grass = 0, sand = 0, snow = 0, rock = 0, stone = 0, hematite = 0, chalcopyrite = 100, coal = 0}
+					boundary_percent = 40
+					patch_wavelength_metres = 0, patch_threshold_percent = 0, patch_edge_percent = 1
+					width_millimetres = [30, 80], height_millimetres = [30, 90], sink_percent = 30
+					color_from = "colors", colors = [[178, 150, 70]]
+					near_metres = 4, far_metres = 16
+				}
+				{
+					id = "coal_specks", shape = "crystal", parts = 0, per_hundred_square_metres = 600
+					temperature_celsius = [-100, 100], temperature_fade_celsius = 1
+					moisture_percent = [0, 100], moisture_fade_percent = 1
+					slope_degrees = [0, 90], slope_fade_degrees = 1
+					surfaces = {grass = 0, sand = 0, snow = 0, rock = 0, stone = 0, hematite = 0, chalcopyrite = 0, coal = 100}
+					boundary_percent = 40
+					patch_wavelength_metres = 0, patch_threshold_percent = 0, patch_edge_percent = 1
+					width_millimetres = [30, 80], height_millimetres = [30, 90], sink_percent = 30
+					color_from = "colors", colors = [[32, 30, 30]]
+					near_metres = 4, far_metres = 16
+				}
+			]
 		}
 		// The tints of the ground, red, green and blue from 0 to 255: with
 		// a climate a smooth field of 256 m wavelength blends along them,

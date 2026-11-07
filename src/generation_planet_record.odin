@@ -134,7 +134,37 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	} else {
 		result.trees.species = clone_tree_species(planet.trees.species, len(planet.trees.species), allocator)
 	}
+	// The data's cover in every world (0311): presentation, never
+	// recorded; without a climate its table is off.
+	result.cover = clone_planet_cover(planet.cover, allocator)
 	return result
+}
+
+// The kinds with their strings and colours cloned, as the species are.
+clone_planet_cover :: proc(cover: Planet_Cover, allocator := context.allocator) -> Planet_Cover {
+	if len(cover.kinds) == 0 {
+		return {}
+	}
+	kinds := make([]Planet_Cover_Kind, len(cover.kinds), allocator)
+	for &kind, index in kinds {
+		kind = cover.kinds[index]
+		kind.id = strings.clone(kind.id, allocator)
+		kind.shape = strings.clone(kind.shape, allocator)
+		kind.color_from = strings.clone(kind.color_from, allocator)
+		kind.colors = slice.clone(kind.colors, allocator)
+	}
+	return Planet_Cover{kinds = kinds}
+}
+
+destroy_planet_cover :: proc(cover: ^Planet_Cover) {
+	for kind in cover.kinds {
+		delete(kind.id)
+		delete(kind.shape)
+		delete(kind.color_from)
+		delete(kind.colors)
+	}
+	delete(cover.kinds)
+	cover^ = {}
 }
 
 // The recorded placement over the data's species, repeated or cut to the
@@ -192,6 +222,7 @@ destroy_recorded_planet :: proc(planet: ^Planet) {
 		delete(species.item)
 	}
 	delete(planet.trees.species)
+	destroy_planet_cover(&planet.cover)
 	planet^ = {}
 }
 

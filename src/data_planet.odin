@@ -54,10 +54,10 @@ SINKHOLE_STRETCH_PERCENT :: 140
 GROTTO_STRETCH_PERCENT :: 115
 MUSHROOM_STRETCH_PERCENT :: 115
 // A planet record may leave these out: the relief's shape (0189), the
-// landforms (0306), the landmarks (0323), the climate (0307) and the
-// waters (0312), each off at zero, so a planet without them generates and
-// looks as before.
-OPTIONAL_PLANET_KEYS :: [5]string{"relief_shape", "landforms", "landmarks", "climate", "waters"}
+// landforms (0306), the landmarks (0323), the climate (0307), the
+// waters (0312) and the ground cover (0311), each off at zero, so a
+// planet without them generates and looks as before.
+OPTIONAL_PLANET_KEYS :: [6]string{"relief_shape", "landforms", "landmarks", "climate", "waters", "cover"}
 // The waters' bounds (0312, Planet_Waters). The finder's reach round the
 // home in metres, least and most.
 MINIMUM_WATERS_REACH_METRES :: 256
@@ -120,6 +120,14 @@ MAXIMUM_TREE_SCALE_PERCENT :: 250
 MINIMUM_TREE_SCALE_PERCENT :: 10
 MAXIMUM_FOREST_MEADOW_METRES :: 512
 MAXIMUM_TREE_HEIGHT_METRES :: 4000
+// The ground cover's bounds (work item 0311, Planet_Cover).
+MAXIMUM_COVER_KINDS :: 12
+MAXIMUM_COVER_COLORS :: 8
+MAXIMUM_COVER_PARTS :: 16
+MAXIMUM_COVER_PER_HUNDRED_SQUARE_METRES :: 5000
+MAXIMUM_COVER_SIZE_MILLIMETRES :: 4000
+MAXIMUM_COVER_FAR_METRES :: 256
+MAXIMUM_COVER_KIND_ID_LENGTH :: 32
 
 // One octave of the relief's value noise: its lattice spacing and the
 // most it raises or lowers the surface.
@@ -503,6 +511,96 @@ Planet_Tree_Placement :: struct {
 	species:               [MAXIMUM_TREE_SPECIES]Planet_Tree_Species_Placement,
 }
 
+// The ground cover (work item 0311, world_field_cover.odin): kinds of
+// tufts, flowers, ferns and stones scattered on the finest meshes near the
+// eye, presentation only. A kind stands at per_hundred_square_metres of
+// surface where the temperature, the moisture (the look's, varied) and
+// the slope lie in its ranges, fading out past them over the fades, on
+// the surfaces its shares weigh (percent each), more where its own
+// surfaces meet others by boundary_percent, in patches of a noise of
+// patch_wavelength_metres (0 none) above patch_threshold_percent of its
+// range, full over patch_edge_percent. An instance is width and height
+// millimetres between the pairs, sunk sink_percent of its height, of
+// parts blades, flowers or fronds (0 for a stone), coloured from the
+// grass, the ground or its colors (color_from), and drawn out to
+// far_metres, thinning from near_metres.
+Planet_Cover_Kind :: struct {
+	id:                        string,
+	shape:                     string,
+	parts:                     int,
+	per_hundred_square_metres: int,
+	temperature_celsius:       [2]int,
+	temperature_fade_celsius:  int,
+	moisture_percent:          [2]int,
+	moisture_fade_percent:     int,
+	slope_degrees:             [2]int,
+	slope_fade_degrees:        int,
+	surfaces:                  Planet_Cover_Surfaces,
+	boundary_percent:          int,
+	patch_wavelength_metres:   int,
+	patch_threshold_percent:   int,
+	patch_edge_percent:        int,
+	width_millimetres:         [2]int,
+	height_millimetres:        [2]int,
+	sink_percent:              int,
+	color_from:                string,
+	colors:                    [][3]int,
+	near_metres:               int,
+	far_metres:                int,
+}
+
+// The share of each surface a kind grows on, percent: the topsoil's looks
+// as field.fs splits it, the stones and the three ores.
+Planet_Cover_Surfaces :: struct {
+	grass:        int,
+	sand:         int,
+	snow:         int,
+	rock:         int,
+	stone:        int,
+	hematite:     int,
+	chalcopyrite: int,
+	coal:         int,
+}
+
+Planet_Cover :: struct {
+	kinds: []Planet_Cover_Kind,
+}
+
+Cover_Shape :: enum u8 {
+	Blades,
+	Flower,
+	Fern,
+	Pebble,
+	Crystal,
+}
+
+cover_shape_names := [Cover_Shape]string {
+	.Blades  = "blades",
+	.Flower  = "flower",
+	.Fern    = "fern",
+	.Pebble  = "pebble",
+	.Crystal = "crystal",
+}
+
+// Where an instance's colour comes from: the grass under it, the ground's
+// strata tint, or one of the kind's colours by hash.
+Cover_Color_Source :: enum u8 {
+	Grass,
+	Ground,
+	Colors,
+}
+
+cover_color_source_names := [Cover_Color_Source]string {
+	.Grass  = "grass",
+	.Ground = "ground",
+	.Colors = "colors",
+}
+
+// Blades, flowers and ferns are foliage: parts, both faces, a lean.
+cover_shape_is_foliage :: proc(shape: Cover_Shape) -> bool {
+	return shape == .Blades || shape == .Flower || shape == .Fern
+}
+
 Planet :: struct {
 	id:                                             string,
 	radius_metres:                                  int,
@@ -535,6 +633,9 @@ Planet :: struct {
 	climate:                                        Planet_Climate,
 	// Optional in the file, off at zero (0312).
 	waters:                                         Planet_Waters,
+	// Optional in the file, off without kinds (0311); needs the climate;
+	// presentation only, never recorded.
+	cover:                                          Planet_Cover,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
 	// The arrival's hit digs the crater (0271): set only by
@@ -597,6 +698,9 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 				return fmt.tprintf("%s: planets[%d].waters is missing %s", source, index, key)
 			}
 		}
+		if problem := missing_cover_key_problem(record.(json.Object), index, source); problem != "" {
+			return problem
+		}
 		for spring, spring_index in record.(json.Object)["springs"].(json.Array) {
 			if key, missing := missing_struct_key(Planet_Spring, spring.(json.Object)); missing {
 				return fmt.tprintf("%s: planets[%d].springs[%d] is missing %s", source, index, spring_index, key)
@@ -642,6 +746,29 @@ missing_trees_key_problem :: proc(record: json.Object, index: int, source: strin
 	for species, species_index in trees["species"].(json.Array) {
 		if key, missing := missing_struct_key(Planet_Tree_Species, species.(json.Object)); missing {
 			return fmt.tprintf("%s: planets[%d].trees.species[%d] is missing %s", source, index, species_index, key)
+		}
+	}
+	return ""
+}
+
+// A cover object holds its kinds, each kind every key and its surfaces
+// every surface (0311).
+missing_cover_key_problem :: proc(record: json.Object, index: int, source: string) -> string {
+	cover, is_object := record["cover"].(json.Object)
+	if !is_object {
+		return ""
+	}
+	if key, missing := missing_struct_key(Planet_Cover, cover); missing {
+		return fmt.tprintf("%s: planets[%d].cover is missing %s", source, index, key)
+	}
+	for kind, kind_index in cover["kinds"].(json.Array) {
+		if key, missing := missing_struct_key(Planet_Cover_Kind, kind.(json.Object)); missing {
+			return fmt.tprintf("%s: planets[%d].cover.kinds[%d] is missing %s", source, index, kind_index, key)
+		}
+		if surfaces, surfaces_is_object := kind.(json.Object)["surfaces"].(json.Object); surfaces_is_object {
+			if key, missing := missing_struct_key(Planet_Cover_Surfaces, surfaces); missing {
+				return fmt.tprintf("%s: planets[%d].cover.kinds[%d].surfaces is missing %s", source, index, kind_index, key)
+			}
 		}
 	}
 	return ""
@@ -1040,6 +1167,124 @@ waters_problem :: proc(waters: Planet_Waters) -> string {
 	return ""
 }
 
+// The cover (0311): none passes; kinds need the climate, at most
+// MAXIMUM_COVER_KINDS of them, each with a unique id and every key within
+// its bound (cover_kind_problem).
+cover_problem :: proc(cover: Planet_Cover, climate: Planet_Climate) -> string {
+	if len(cover.kinds) == 0 {
+		return ""
+	}
+	if climate == {} {
+		return "cover needs the climate"
+	}
+	if len(cover.kinds) > MAXIMUM_COVER_KINDS {
+		return fmt.tprintf("cover has %d kinds, more than %d", len(cover.kinds), MAXIMUM_COVER_KINDS)
+	}
+	for kind, index in cover.kinds {
+		if problem := cover_kind_problem(kind, index); problem != "" {
+			return problem
+		}
+		for earlier in cover.kinds[:index] {
+			if earlier.id == kind.id {
+				return fmt.tprintf("cover.kinds[%d].id %q is used twice", index, kind.id)
+			}
+		}
+	}
+	return ""
+}
+
+// One kind's keys, the message naming the key with the kind's index.
+cover_kind_problem :: proc(kind: Planet_Cover_Kind, index: int) -> string {
+	if kind.id == "" || len(kind.id) > MAXIMUM_COVER_KIND_ID_LENGTH {
+		return fmt.tprintf("cover.kinds[%d].id %q is not 1 to %d bytes", index, kind.id, MAXIMUM_COVER_KIND_ID_LENGTH)
+	}
+	shape, shape_found := parse_named_enum(cover_shape_names, kind.shape)
+	if !shape_found {
+		return fmt.tprintf("cover.kinds[%d].shape %q is not blades, flower, fern, pebble or crystal", index, kind.shape)
+	}
+	if _, source_found := parse_named_enum(cover_color_source_names, kind.color_from); !source_found {
+		return fmt.tprintf("cover.kinds[%d].color_from %q is not grass, ground or colors", index, kind.color_from)
+	}
+	parts_least, parts_most := 1, MAXIMUM_COVER_PARTS
+	if !cover_shape_is_foliage(shape) {
+		parts_least, parts_most = 0, 0
+	}
+	ranges := [?]Cover_Range_Bound {
+		{"temperature_celsius", kind.temperature_celsius, -MAXIMUM_CLIMATE_CELSIUS, MAXIMUM_CLIMATE_CELSIUS},
+		{"moisture_percent", kind.moisture_percent, 0, 100},
+		{"slope_degrees", kind.slope_degrees, 0, 90},
+		{"width_millimetres", kind.width_millimetres, 10, MAXIMUM_COVER_SIZE_MILLIMETRES},
+		{"height_millimetres", kind.height_millimetres, 10, MAXIMUM_COVER_SIZE_MILLIMETRES},
+	}
+	if problem := cover_ranges_problem(ranges[:], index); problem != "" {
+		return problem
+	}
+	surfaces := kind.surfaces
+	bounds := [?]Config_Bound {
+		{"parts", kind.parts, parts_least, parts_most},
+		{"per_hundred_square_metres", kind.per_hundred_square_metres, 0, MAXIMUM_COVER_PER_HUNDRED_SQUARE_METRES},
+		{"temperature_fade_celsius", kind.temperature_fade_celsius, 1, 50},
+		{"moisture_fade_percent", kind.moisture_fade_percent, 1, 100},
+		{"slope_fade_degrees", kind.slope_fade_degrees, 1, 90},
+		{"surfaces.grass", surfaces.grass, 0, 100},
+		{"surfaces.sand", surfaces.sand, 0, 100},
+		{"surfaces.snow", surfaces.snow, 0, 100},
+		{"surfaces.rock", surfaces.rock, 0, 100},
+		{"surfaces.stone", surfaces.stone, 0, 100},
+		{"surfaces.hematite", surfaces.hematite, 0, 100},
+		{"surfaces.chalcopyrite", surfaces.chalcopyrite, 0, 100},
+		{"surfaces.coal", surfaces.coal, 0, 100},
+		{"boundary_percent", kind.boundary_percent, 0, 100},
+		{"patch_threshold_percent", kind.patch_threshold_percent, -100, 100},
+		{"patch_edge_percent", kind.patch_edge_percent, 1, 200},
+		{"sink_percent", kind.sink_percent, 0, 90},
+		{"far_metres", kind.far_metres, 1, MAXIMUM_COVER_FAR_METRES},
+		{"near_metres", kind.near_metres, 0, kind.far_metres},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("cover.kinds[%d].%s %d is outside %d to %d", index, bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	if wavelength := kind.patch_wavelength_metres; wavelength != 0 && (wavelength < 2 || wavelength > 512) {
+		return fmt.tprintf("cover.kinds[%d].patch_wavelength_metres %d is neither 0 nor 2 to 512", index, wavelength)
+	}
+	if len(kind.colors) < 1 || len(kind.colors) > MAXIMUM_COVER_COLORS {
+		return fmt.tprintf("cover.kinds[%d].colors has %d colours, not 1 to %d", index, len(kind.colors), MAXIMUM_COVER_COLORS)
+	}
+	for color, color_index in kind.colors {
+		for component in color {
+			if component < 0 || component > MAXIMUM_COLOR_COMPONENT {
+				return fmt.tprintf("cover.kinds[%d].colors[%d] has %d, outside 0 to %d", index, color_index, component, MAXIMUM_COLOR_COMPONENT)
+			}
+		}
+	}
+	return ""
+}
+
+
+// A least and most pair of a cover kind and the bounds of both.
+Cover_Range_Bound :: struct {
+	name:             string,
+	value:            [2]int,
+	minimum, maximum: int,
+}
+
+// Each pair within its bounds and least first.
+cover_ranges_problem :: proc(ranges: []Cover_Range_Bound, index: int) -> string {
+	for range in ranges {
+		for value in range.value {
+			if value < range.minimum || value > range.maximum {
+				return fmt.tprintf("cover.kinds[%d].%s has %d, outside %d to %d", index, range.name, value, range.minimum, range.maximum)
+			}
+		}
+		if range.value[0] > range.value[1] {
+			return fmt.tprintf("cover.kinds[%d].%s [%d, %d] runs backwards", index, range.name, range.value[0], range.value[1])
+		}
+	}
+	return ""
+}
+
 // The keys a world records (Planet_Generation_Record.climate).
 planet_climate_field :: proc(climate: Planet_Climate) -> Planet_Climate_Field {
 	return Planet_Climate_Field {
@@ -1215,6 +1460,9 @@ planet_problem :: proc(planet: Planet) -> string {
 		return problem
 	}
 	if problem := waters_problem(planet.waters); problem != "" {
+		return problem
+	}
+	if problem := cover_problem(planet.cover, planet.climate); problem != "" {
 		return problem
 	}
 	// Bedrock lies below every local surface's deep stone, so a valley at

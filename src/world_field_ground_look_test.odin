@@ -303,6 +303,34 @@ test_the_ground_tint_has_no_seam :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_ground_tint(generation, single, direction), [3]u8{12, 34, 56})
 }
 
+// Work item 0311: a measured vertex keeps its distance from the
+// generated surface (field_surface_offset) in millimetres and the varied
+// climate its grass colour took; an unmeasured one keeps no offset.
+@(test)
+test_the_offset_is_kept_per_vertex :: proc(t: ^testing.T) {
+	planet := ground_look_test_planet()
+	generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
+	grid := ground_look_test_grid(generation, ground_look_test_node(generation, planet.home, 200))
+	look := make_field_ground_look(generation, planet)
+	for measure_cuts in ([2]bool{true, false}) {
+		surface := mesh_field_surface(grid, planet.palette, context.temp_allocator)
+		write_field_ground_look(&surface, grid, look, 1000, measure_cuts)
+		testing.expect(t, len(surface.vertices) > 0, "the node holds the surface")
+		offsets := 0
+		for vertex in surface.vertices {
+			position := field_vertex_world_position(grid, vertex.position, 1000)
+			distance := vector_length(([3]i64)(position))
+			on_sphere := project_onto_sphere(position, distance, generation.radius)
+			expected := measure_cuts ? field_offset_millimetres(field_surface_offset(generation, on_sphere, distance)) : 0
+			testing.expect_value(t, vertex.look.offset_millimetres, expected)
+			offsets += vertex.look.offset_millimetres > 0 ? 1 : 0
+			climate := planet_climate(generation, on_sphere, distance - generation.sea_radius)
+			testing.expectf(t, abs(vertex.look.celsius - f32(climate.temperature_millicelsius) / 1000) <= GROUND_VARIATION_CELSIUS + 1e-3, "the vertex's %v degrees are the climate's %d millidegrees varied", vertex.look.celsius, climate.temperature_millicelsius)
+		}
+		testing.expect(t, !measure_cuts || offsets > 0, "the measured vertices lie off the surface by their cells' rounding")
+	}
+}
+
 // The look's cost on the mesh job (0307), single threaded and not a
 // benchmark; the suite leaves it out:
 // ./build.sh test quick game.test_report_the_ground_look_cost -define:GROUND_LOOK_COST=true

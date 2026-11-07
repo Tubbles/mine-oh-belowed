@@ -400,3 +400,145 @@ test_the_waves_remesh_the_oldest_mark_first :: proc(t: ^testing.T) {
 		testing.expect(t, longest[slot] >= 1 && longest[slot] <= BOUND)
 	}
 }
+
+// Frames over the selection with the frame table and no chunk requested,
+// so the finest nodes mesh from generated grids, until no job is pending;
+// the meshes and their cover taken and freed (0311).
+settle_test_cover_stream :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node, frames: ^Frame_Table) {
+	for _ in 0 ..< 16 {
+		arrivals := make([dynamic]^Field_Chunk, context.temp_allocator)
+		update_field_streaming(streaming, world, Field_Stream_Frame{selection = selection, frames = frames}, &arrivals)
+		run_queued_field_jobs(streaming)
+		for result in take_current_field_meshes(streaming, context.temp_allocator) {
+			free_field_job_result(result)
+		}
+		if streaming.pending_jobs == 0 && queue.len(streaming.shared.jobs) == 0 {
+			return
+		}
+	}
+}
+
+// 0311: a frame added over a meshed finest node marks it, and its next
+// job carries the frame; a node 200 m away is not marked; a revision
+// without a change marks none.
+@(test) // slow
+test_a_frame_change_remeshes_the_nodes_under_it :: proc(t: ^testing.T) {
+	planet, generation := cover_test_setup()
+	spots := COVER_TEST_SPOTS
+	direction := cover_test_direction(spots[0].latitude, spots[0].longitude)
+	node := cover_test_surface_node(generation, direction, 0, 0)
+	far := cover_test_surface_node(generation, direction, 200, 0)
+	streaming := start_field_streaming(DEFAULT_WORLD_SEED, planet, 1000, 0, COVER_TEST_ROW)
+	defer stop_field_streaming(&streaming)
+	world: Field_World
+	defer destroy_field_world(&world)
+	table: Frame_Table
+	defer destroy_frame_table(&table)
+	selection := []Field_Node{node, far}
+	settle_test_cover_stream(&streaming, &world, selection, &table)
+	testing.expect(t, node in streaming.mesh_revisions && far in streaming.mesh_revisions, "both nodes meshed")
+	testing.expect_value(t, len(streaming.remesh), 0)
+
+	grid := new(Field_Grid, context.temp_allocator)
+	generate_field_grid(generation, node, grid)
+	_, _, mesh := cover_test_grid_cover(generation, planet, grid)
+	frame := cover_test_add_block(&table, grid, mesh)
+	update_cover_frames(&streaming, &table)
+	testing.expect(t, node in streaming.remesh, "the node under the frame is marked")
+	testing.expect(t, far not_in streaming.remesh, "the node 200 m away is not")
+
+	arrivals := make([dynamic]^Field_Chunk, context.temp_allocator)
+	update_field_streaming(&streaming, &world, Field_Stream_Frame{selection = selection, frames = &table}, &arrivals)
+	jobs := &streaming.shared.jobs
+	testing.expect_value(t, queue.len(jobs^), 1)
+	if queue.len(jobs^) == 1 {
+		job := queue.get(jobs, 0)
+		testing.expect_value(t, job.node, node)
+		testing.expect_value(t, len(job.cover_frames), 1)
+		if len(job.cover_frames) == 1 {
+			testing.expect_value(t, job.cover_frames[0].frame.id, frame)
+			testing.expect_value(t, len(job.cover_frames[0].cells), 64)
+		}
+	}
+	settle_test_cover_stream(&streaming, &world, selection, &table)
+	testing.expect_value(t, len(streaming.remesh), 0)
+
+	// The cell occupied again by the same occupant: the revision moves,
+	// the frames do not.
+	revision := table.revision
+	occupy_frame_cell(&table, frame, {0, 0, 0}, {handle = 1})
+	testing.expect(t, table.revision > revision, "the revision moved")
+	update_cover_frames(&streaming, &table)
+	testing.expect_value(t, len(streaming.remesh), 0)
+}
+
+// 0311: a worker's finest mesh job places the cover place_field_cover
+// places on the same grid; a level 1 job carries none.
+@(test) // slow
+test_a_worker_job_carries_the_cover :: proc(t: ^testing.T) {
+	planet, generation := cover_test_setup()
+	spots := COVER_TEST_SPOTS
+	node := cover_test_surface_node(generation, cover_test_direction(spots[0].latitude, spots[0].longitude), 0, 0)
+	streaming := start_field_streaming(DEFAULT_WORLD_SEED, planet, 1000, 0, COVER_TEST_ROW)
+	defer stop_field_streaming(&streaming)
+	finest := run_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, grid = new(Field_Grid), generate = true})
+	defer free_field_job_result(finest)
+	expected, _ := cover_test_node_cover(generation, planet, node)
+	total := 0
+	for kind, index in finest.cover.kinds {
+		testing.expect(t, slice.equal(kind.instances[:], expected.kinds[index].instances[:]), "the worker's cover differs")
+		testing.expect_value(t, kind.rank_counts, expected.kinds[index].rank_counts)
+		total += len(kind.instances)
+	}
+	testing.expect(t, total > 1000, "the meadow node holds a cover")
+	coarse := Field_Node{1, {node.coordinate.x >> 1, node.coordinate.y >> 1, node.coordinate.z >> 1}}
+	coarse_result := run_field_job(streaming.shared, Field_Job{kind = .Mesh, node = coarse, grid = new(Field_Grid), generate = true})
+	defer free_field_job_result(coarse_result)
+	testing.expect(t, len(coarse_result.mesh.indices) > 0, "the level 1 node holds the surface")
+	testing.expect_value(t, cover_test_count(coarse_result.cover), 0)
+}
+
+// 0311 fix round: a finest node over the arch nearest the home, 16 m
+// before its centre, meshed from a generated grid (no chunk loaded, as
+// gather_coarse_field_grid leaves it) gives the same cover as meshed from
+// its 27 gathered chunks: both measure the cuts, so the carved ground
+// under the arch carries none either way.
+@(test) // slow
+test_a_carved_node_gives_the_same_cover_from_either_grid :: proc(t: ^testing.T) {
+	planet, generation := cover_test_setup()
+	site := test_nearest_carving_site(generation, .Arch)
+	direction, _ := normalize_fixed(site.centre)
+	forward := tangent_of(direction, {UNIT_VECTOR_ONE, 0, 0})
+	point := test_sphere_point(generation, direction, forward, fixed_cross(forward, direction), -16, 0)
+	node := test_surface_node(test_radial_position(generation, point, uncratered_column(generation, point).relief), 1000, 0)
+	streaming := start_field_streaming(DEFAULT_WORLD_SEED, planet, 1000, 0, COVER_TEST_ROW)
+	defer stop_field_streaming(&streaming)
+	generated := run_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, generate = true})
+	defer free_field_job_result(generated)
+	world: Field_World
+	defer destroy_field_world(&world)
+	world.water_planet = make_field_water_planet(DEFAULT_WORLD_SEED, planet, 1000)
+	coordinate := field_node_chunk(node)
+	for z in i32(-1) ..= 1 {
+		for y in i32(-1) ..= 1 {
+			for x in i32(-1) ..= 1 {
+				chunk := new(Field_Chunk)
+				generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, coordinate + {x, y, z}, chunk, crater_overlay = true)
+				field_world_insert_chunk(&world, chunk)
+			}
+		}
+	}
+	gathered := run_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, grid = gather_field_grid(&world, coordinate)})
+	defer free_field_job_result(gathered)
+	for kind, index in planet.cover.kinds {
+		from_grid, from_chunks := generated.cover.kinds[index].instances[:], gathered.cover.kinds[index].instances[:]
+		testing.expectf(t, slice.equal(from_grid, from_chunks), "%s: %d instances from the generated grid, %d from the chunks", kind.id, len(from_grid), len(from_chunks))
+	}
+	// The carving cuts cover here: unmeasured, the generated grid would
+	// carry more.
+	grid := new(Field_Grid, context.temp_allocator)
+	generate_field_grid(generation, node, grid)
+	unmeasured: Field_Cover_Data
+	mesh_field_grid(grid, planet.palette, 1000, {}, context.temp_allocator, make_field_ground_look(generation, planet), false, &unmeasured, streaming.shared.cover)
+	testing.expectf(t, cover_test_count(unmeasured) > cover_test_count(gathered.cover) && cover_test_count(gathered.cover) > 1000, "%d instances unmeasured against %d measured", cover_test_count(unmeasured), cover_test_count(gathered.cover))
+}

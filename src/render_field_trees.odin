@@ -36,9 +36,9 @@ TREE_VERTEX_SHADER_PATH :: "shaders/tree.vs"
 TREE_FRAGMENT_SHADER_PATH :: "shaders/tree.fs"
 // Three quads of two triangles.
 TREE_CARD_VERTEX_COUNT :: 18
-// raylib binds instanceTransform here (RL_DEFAULT_SHADER_ATTRIB_LOCATION_
-// INSTANCETRANSFORM), a column a location.
-TREE_INSTANCE_LOCATION :: 9
+// The cards' vertices: u and v of a quad and its card, three floats at
+// location 0.
+TREE_CARD_LAYOUT :: [1]Instanced_Attribute{{location = 0, size = 3, type = rlgl.FLOAT}}
 
 // One tile of the cache: its trees' keys and instances (felled ones
 // dropped), its bases' box in metres, the buffers its cards draw from
@@ -238,12 +238,7 @@ destroy_field_tree_cache :: proc(cache: ^Field_Tree_Cache) {
 
 // The tile's buffers (none in a test, which uploads nothing) and slices.
 release_field_tree_tile :: proc(tile: ^Field_Tree_Tile_Draw) {
-	if tile.vao != 0 {
-		rlgl.UnloadVertexArray(tile.vao)
-	}
-	if tile.vbo != 0 {
-		rlgl.UnloadVertexBuffer(tile.vbo)
-	}
+	unload_instanced_buffer(tile.vao, tile.vbo)
 	delete(tile.keys)
 	delete(tile.instances)
 	tile^ = {}
@@ -478,8 +473,9 @@ tree_card_vertices :: proc() -> [TREE_CARD_VERTEX_COUNT][3]f32 {
 }
 
 // Every dirty tile up: its vertex array of the cards' vertices at
-// location 0 and its instances at TREE_INSTANCE_LOCATION, one per
-// instance. After update_field_tree_cache, before any viewport draws.
+// location 0 and its instances at INSTANCE_TRANSFORM_LOCATION, one per
+// instance (upload_instanced_buffer). After update_field_tree_cache,
+// before any viewport draws.
 upload_field_tree_tiles :: proc(cache: ^Field_Tree_Cache) {
 	for _, &tile in cache.tiles {
 		if !tile.dirty {
@@ -494,32 +490,11 @@ upload_field_tree_tiles :: proc(cache: ^Field_Tree_Cache) {
 }
 
 upload_field_tree_tile :: proc(tile: ^Field_Tree_Tile_Draw, card_vbo: u32) {
-	if tile.vao != 0 {
-		rlgl.UnloadVertexArray(tile.vao)
-	}
-	if tile.vbo != 0 {
-		rlgl.UnloadVertexBuffer(tile.vbo)
-	}
-	tile.vao, tile.vbo = 0, 0
+	unload_instanced_buffer(tile.vao, tile.vbo)
 	tile.count = len(tile.instances)
 	tile.dirty = false
-	if tile.count == 0 {
-		return
-	}
-	tile.vao = rlgl.LoadVertexArray()
-	rlgl.EnableVertexArray(tile.vao)
-	rlgl.EnableVertexBuffer(card_vbo)
-	rlgl.SetVertexAttribute(0, 3, rlgl.FLOAT, false, 0, 0)
-	rlgl.EnableVertexAttribute(0)
-	tile.vbo = rlgl.LoadVertexBuffer(raw_data(tile.instances), i32(tile.count * size_of(matrix[4, 4]f32)), false)
-	for column in 0 ..< 4 {
-		location := u32(TREE_INSTANCE_LOCATION + column)
-		rlgl.EnableVertexAttribute(location)
-		rlgl.SetVertexAttribute(location, 4, rlgl.FLOAT, false, size_of(matrix[4, 4]f32), i32(column * size_of([4]f32)))
-		rlgl.SetVertexAttributeDivisor(location, 1)
-	}
-	rlgl.DisableVertexArray()
-	rlgl.DisableVertexBuffer()
+	layout := TREE_CARD_LAYOUT
+	tile.vao, tile.vbo = upload_instanced_buffer(card_vbo, layout[:], 0, tile.instances)
 }
 
 // Every tile the eyes want out to the far distance is cached and up.
@@ -719,7 +694,7 @@ draw_far_tree_cards :: proc(trees: Tree_Draw, far: []Far_Tile, daylight: rl.Colo
 	rl.SetShaderValue(shader, shader.locs[int(rl.ShaderLocationIndex.COLOR_DIFFUSE)], &diffuse, .VEC4)
 	slot: i32 = 0
 	rl.SetShaderValue(shader, shader.locs[int(rl.ShaderLocationIndex.MAP_ALBEDO)], &slot, .INT)
-	rl.SetShaderValueMatrix(shader, shader.locs[int(rl.ShaderLocationIndex.MATRIX_MVP)], rlgl.GetMatrixProjection() * rlgl.GetMatrixModelview() * rlgl.GetMatrixTransform())
+	rl.SetShaderValueMatrix(shader, shader.locs[int(rl.ShaderLocationIndex.MATRIX_MVP)], instanced_mvp())
 	rlgl.EnableShader(shader.id)
 	rlgl.ActiveTextureSlot(0)
 	rlgl.EnableTexture(trees.atlas.id)

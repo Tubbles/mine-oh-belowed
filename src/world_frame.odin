@@ -111,6 +111,10 @@ Frame_Table :: struct {
 	// occupant handle; derived from the entities like the occupant index,
 	// rebuilt on load, never saved.
 	bodies:    [dynamic]Frame_Body,
+	// Counts the occupancy and pose changes (0311): the cover's streaming
+	// snapshots the frames when it moves; never saved, hashed or read by
+	// the simulation.
+	revision:  u64,
 }
 
 destroy_frame_table :: proc(table: ^Frame_Table) {
@@ -153,6 +157,7 @@ add_frame :: proc(table: ^Frame_Table, origin: World_Position, axes: [3][3]i64, 
 // (make_frame_body copies the frame and the collision reads the copy).
 // Nothing for an unknown id.
 set_frame_pose :: proc(table: ^Frame_Table, id: Frame_Id, origin: World_Position, axes: [3][3]i64) {
+	table.revision += 1
 	for &frame in table.frames {
 		if frame.id == id {
 			frame.origin, frame.axes = origin, axes
@@ -168,6 +173,7 @@ set_frame_pose :: proc(table: ^Frame_Table, id: Frame_Id, origin: World_Position
 // A frame's record and its extent, once its cells are empty (the
 // simulation's release_empty_frame decides when).
 remove_frame :: proc(table: ^Frame_Table, id: Frame_Id) {
+	table.revision += 1
 	for frame, index in table.frames {
 		if frame.id == id {
 			ordered_remove(&table.frames, index)
@@ -180,6 +186,7 @@ remove_frame :: proc(table: ^Frame_Table, id: Frame_Id) {
 // The occupant index.
 
 occupy_frame_cell :: proc(table: ^Frame_Table, frame: Frame_Id, cell: World_Coordinate, occupant: Occupant) {
+	table.revision += 1
 	key := Frame_Cell{frame, cell}
 	extent, known := table.extents[frame]
 	if key not_in table.occupants {
@@ -200,6 +207,7 @@ vacate_frame_cell :: proc(table: ^Frame_Table, frame: Frame_Id, cell: World_Coor
 	if key not_in table.occupants {
 		return
 	}
+	table.revision += 1
 	delete_key(&table.occupants, key)
 	if extent, known := table.extents[frame]; known {
 		extent.cell_count -= 1
@@ -228,6 +236,7 @@ frame_cell_count :: proc(table: ^Frame_Table, frame: Frame_Id) -> int {
 
 // Before the index is rebuilt from the entities; the frame records stay.
 clear_frame_occupants :: proc(table: ^Frame_Table) {
+	table.revision += 1
 	clear(&table.occupants)
 	clear(&table.extents)
 	clear(&table.bodies)

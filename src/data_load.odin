@@ -76,6 +76,9 @@ Game_Config :: struct {
 	// The trees' draw (work item 0310, render_field_trees.odin), a row
 	// per build target (field_trees_row).
 	field_trees:          Field_Trees_Config,
+	// The ground cover's draw (work item 0311, world_field_cover.odin), a
+	// row per build target (field_cover_row).
+	field_cover:          Field_Cover_Config,
 	field_player:         Field_Player_Config,
 	field_brushes:        []Field_Brush_Config,
 	field_water:          Field_Water_Config,
@@ -291,6 +294,34 @@ Field_Trees_Config :: struct {
 
 // The build target's row.
 field_trees_row :: proc(config: Field_Trees_Config) -> Field_Trees_Row {
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		return config.android
+	} else {
+		return config.desktop
+	}
+}
+
+// The ground cover (work item 0311, world_field_cover.odin): each kind's
+// reach (its near and far) times distance_percent, clamped 8 m inside the
+// first level of detail's distance; the instances placed kept by their
+// rank under density_percent (0 turns the cover off); a kind's instances
+// in a node at most node_limit, the lowest ranks kept.
+Field_Cover_Row :: struct {
+	distance_percent: int,
+	density_percent:  int,
+	node_limit:       int,
+}
+
+// One row for the desktop builds and one for Android, chosen by the build
+// target (field_cover_row).
+Field_Cover_Config :: struct {
+	desktop: Field_Cover_Row,
+	android: Field_Cover_Row,
+}
+
+// The build target's row, as field_trees_row chooses: the Steam Deck and
+// the other desktop builds take the desktop's.
+field_cover_row :: proc(config: Field_Cover_Config) -> Field_Cover_Row {
 	when ODIN_PLATFORM_SUBTARGET == .Android {
 		return config.android
 	} else {
@@ -848,6 +879,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := field_trees_problem(config.field_trees, config.field_view); problem != "" {
 		return problem
 	}
+	if problem := field_cover_problem(config.field_cover); problem != "" {
+		return problem
+	}
 	if problem := field_player_problem(config.field_player); problem != "" {
 		return problem
 	}
@@ -1263,6 +1297,26 @@ field_trees_problem :: proc(trees: Field_Trees_Config, field_view: Field_View_Co
 		for bound in bounds {
 			if bound.value < bound.minimum || bound.value > bound.maximum {
 				return fmt.tprintf("field_trees.%s.%s %d is outside %d to %d", names[index], bound.name, bound.value, bound.minimum, bound.maximum)
+			}
+		}
+	}
+	return ""
+}
+
+// Each row's values inside their bounds (0311); a missing table reads as
+// zeros and fails the first bound.
+field_cover_problem :: proc(cover: Field_Cover_Config) -> string {
+	rows := [2]Field_Cover_Row{cover.desktop, cover.android}
+	names := [2]string{"desktop", "android"}
+	for row, index in rows {
+		bounds := [?]Config_Bound {
+			{"distance_percent", row.distance_percent, 10, 200},
+			{"density_percent", row.density_percent, 0, 100},
+			{"node_limit", row.node_limit, 64, 65536},
+		}
+		for bound in bounds {
+			if bound.value < bound.minimum || bound.value > bound.maximum {
+				return fmt.tprintf("field_cover.%s.%s %d is outside %d to %d", names[index], bound.name, bound.value, bound.minimum, bound.maximum)
 			}
 		}
 	}

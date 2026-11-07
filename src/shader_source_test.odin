@@ -279,6 +279,10 @@ test_the_point_light_shaders_share_the_clip_and_the_sum :: proc(t: ^testing.T) {
 	testing.expect(t, shader_point_light_sum(tree) == model_sum, "point_light_sum differs between tree.fs and model.fs")
 	testing.expect(t, shader_function_text(tree, "bool point_light_inside_box(") == shader_function_text(model, "bool point_light_inside_box("), "point_light_inside_box differs between tree.fs and model.fs")
 	testing.expect(t, shader_spot_light(tree) == shader_spot_light(model), "spot_light differs between tree.fs and model.fs")
+	// The cover's shader (0311) takes the terrain's lights line for line.
+	cover := read_tree_shader(t, "cover.fs")
+	testing.expect(t, strings.contains(cover, positions), "cover.fs declares the positions")
+	testing.expect(t, shader_point_light_sum(cover) == field_sum, "point_light_sum differs between cover.fs and field.fs")
 }
 
 // A shader of the trees (0310), its text.
@@ -295,7 +299,7 @@ read_tree_shader :: proc(t: ^testing.T, name: string) -> string {
 test_the_tree_shader_reads_the_instance :: proc(t: ^testing.T) {
 	vertex := read_tree_shader(t, "tree.vs")
 	testing.expect(t, strings.contains(vertex, "\nin mat4 instanceTransform;\n"), "tree.vs reads instanceTransform")
-	testing.expect_value(t, TREE_INSTANCE_LOCATION, 9)
+	testing.expect_value(t, INSTANCE_TRANSFORM_LOCATION, 9)
 	for line in ([?]string {
 			fmt.tprintf("uniform vec3 species_tint[%du];", MAXIMUM_TREE_SPECIES),
 			fmt.tprintf("uniform vec4 species_card[%du];", MAXIMUM_TREE_SPECIES),
@@ -471,6 +475,12 @@ test_the_lit_shaders_share_the_spot_light :: proc(t: ^testing.T) {
 	}
 	field_spot, model_spot := shader_spot_light(field), shader_spot_light(model)
 	testing.expect(t, field_spot != "" && field_spot == model_spot, "spot_light differs between field.fs and model.fs")
+	// The cover's shader (0311) is field.fs's twin.
+	cover := read_tree_shader(t, "cover.fs")
+	for uniform in uniforms {
+		testing.expectf(t, strings.contains(cover, uniform), "cover.fs declares %s", uniform)
+	}
+	testing.expect(t, shader_spot_light(cover) == field_spot, "spot_light differs between cover.fs and field.fs")
 }
 
 // Work items 0297 and 0313: the field shader lights by the clock's sun,
@@ -499,18 +509,36 @@ test_the_field_shader_lights_by_the_sun :: proc(t: ^testing.T) {
 test_the_lit_shaders_share_the_open_sky :: proc(t: ^testing.T) {
 	field, model := read_lit_shaders(t)
 	tree := read_tree_shader(t, "tree.fs")
+	cover := read_tree_shader(t, "cover.fs")
 	names := OPEN_SKY_UNIFORM_NAMES
 	for name in names {
 		vector, scalar := fmt.tprintf("\nuniform vec3 %s;\n", name), fmt.tprintf("\nuniform float %s;\n", name)
 		testing.expectf(t, strings.contains(field, vector) || strings.contains(field, scalar), "field.fs declares no %s", name)
 		testing.expectf(t, strings.contains(model, vector) || strings.contains(model, scalar), "model.fs declares no %s", name)
 		testing.expectf(t, strings.contains(tree, vector) || strings.contains(tree, scalar), "tree.fs declares no %s", name)
+		testing.expectf(t, strings.contains(cover, vector) || strings.contains(cover, scalar), "cover.fs declares no %s", name)
 	}
 	for start in ([?]string{"vec3 outdoor_light(", "vec3 apply_haze("}) {
 		field_text, model_text := shader_function_text(field, start), shader_function_text(model, start)
 		testing.expectf(t, field_text != "" && field_text == model_text, "%s differs between field.fs and model.fs", start)
 		testing.expectf(t, shader_function_text(tree, start) == model_text, "%s differs between tree.fs and model.fs", start)
+		testing.expectf(t, shader_function_text(cover, start) == field_text, "%s differs between cover.fs and field.fs", start)
 	}
+}
+
+// Work item 0311: cover.vs reads the instance's transform where the
+// node's buffer puts it and the rank's bits for the parts' lean.
+@(test)
+test_the_cover_shader_reads_the_instance :: proc(t: ^testing.T) {
+	vertex := read_tree_shader(t, "cover.vs")
+	testing.expect(t, strings.contains(vertex, "\nin mat4 instanceTransform;\n"), "cover.vs reads instanceTransform")
+	testing.expect(t, strings.contains(vertex, "floatBitsToUint(rank)"), "cover.vs hashes the rank's bits")
+	testing.expect(t, strings.contains(vertex, "float rank = instanceTransform[0u][3u];"), "cover.vs reads the rank from the bottom row")
+	testing.expect_value(t, INSTANCE_TRANSFORM_LOCATION, 9)
+	layout := COVER_SHAPE_LAYOUT
+	testing.expect_value(t, layout[0].location, 0)
+	testing.expect_value(t, layout[1].location, 2)
+	testing.expect_value(t, layout[2].location, 3)
 }
 
 // Work item 0313: the shaders' haze glow is as narrow as the dome's.

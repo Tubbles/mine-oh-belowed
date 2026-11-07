@@ -27,6 +27,11 @@ import "core:thread"
 // workers also generate the trees' draw tiles (0310,
 // render_field_trees.odin) when no chunk or mesh job waits: a tree job
 // carries its tile, and its result the tile's keys and packed instances.
+// A finest level mesh job with the ground cover on (0311,
+// world_field_cover.odin) carries copies of the frames over its node and
+// returns the cover placed on its triangles; a change of the frames
+// (Frame_Table.revision) marks the finest nodes under the changed frames
+// to mesh again.
 
 MAXIMUM_FIELD_PENDING_JOBS :: 32
 MAXIMUM_FIELD_GENERATED_PER_FRAME :: 16
@@ -67,7 +72,9 @@ field_tree_tile_box :: proc(tile: Field_Tree_Tile, edge: i64) -> (minimum, maxim
 // hang a flap (a coarser node or none beyond) and those that cut and hang
 // a curtain (finer nodes beyond, 0321; field_node_skirt_faces). A Trees
 // job (0310) carries its tile, the tile's edge in tree cubes and the
-// pitch the instances scale the models by.
+// pitch the instances scale the models by. A finest Mesh job with the
+// cover on carries copies of the frames over its node (cover_frames,
+// 0311), freed by the worker after the job.
 Field_Job :: struct {
 	kind:        Field_Job_Kind,
 	node:        Field_Node,
@@ -78,13 +85,15 @@ Field_Job :: struct {
 	tree_tile:   Field_Tree_Tile,
 	tree_cells:  i64,
 	tree_pitch_millimetres: int,
+	cover_frames: []Cover_Frame,
 }
 
 // Generate results carry chunk, Mesh results the terrain's mesh and the
 // water's (0172), both from one grid in one job, so the water never lags
 // the terrain it lies on and one revision covers both. Trees results
 // (0310) carry the tile's standing and felled trees' keys and instances
-// (tree_instance), in the workers' allocator.
+// (tree_instance), in the workers' allocator. A finest Mesh result with
+// the cover on carries the node's cover (0311).
 Field_Job_Result :: struct {
 	kind:       Field_Job_Kind,
 	node:       Field_Node,
@@ -95,6 +104,7 @@ Field_Job_Result :: struct {
 	tree_tile:  Field_Tree_Tile,
 	tree_keys:  []Tree_Key,
 	tree_instances: []matrix[4, 4]f32,
+	cover:      Field_Cover_Data,
 }
 
 // Everything the workers read; only the queues are written after start.
@@ -116,6 +126,9 @@ Field_Worker_Shared :: struct {
 	generation:    Planet_Generation,
 	// The ground's look the meshes take (0307, make_field_ground_look).
 	look:          Field_Ground_Look,
+	// The ground cover the finest meshes place (0311,
+	// make_field_cover_table); off in a stream started without a row.
+	cover:         Field_Cover_Table,
 	allocator:     runtime.Allocator,
 }
 
@@ -146,6 +159,10 @@ Field_Streaming :: struct {
 	pending_jobs:   int,
 	// Nodes no longer selected this frame, whose meshes the renderer drops.
 	dropped:        [dynamic]Field_Node,
+	// The frames with occupied cells as the cover last saw them, and the
+	// frame table's revision then (0311, update_cover_frames).
+	cover_frames:          [dynamic]Cover_Frame,
+	cover_frames_revision: u64,
 }
 
 submit_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) {
@@ -224,6 +241,13 @@ free_field_job_result :: proc(result: Field_Job_Result) {
 	destroy_field_mesh_data(result.water_mesh)
 	delete(result.tree_keys)
 	delete(result.tree_instances)
+	destroy_field_cover_data(result.cover)
+}
+
+// A job's frame copies (0311).
+free_field_job_frames :: proc(job: Field_Job) {
+	destroy_cover_frames(job.cover_frames)
+	delete(job.cover_frames)
 }
 
 // The tile's trees (planet_trees_in_box), their keys and instances in the
@@ -259,10 +283,20 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 			generate_field_grid(shared.generation, job.node, grid)
 		}
 		// A job's own grid holds loaded samples, which an edit can have
-		// moved off the generated surface (field_natural_share).
-		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces, look = shared.look, measure_cuts = job.grid != nil)
+		// moved off the generated surface (field_natural_share). The
+		// finest level places the cover (0311) and measures its cuts with
+		// or without loaded samples, since the generation carves below the
+		// height map (an arch, a grotto): its cover is then the same from
+		// a generated grid as from the loaded chunks.
+		cover: ^Field_Cover_Data = nil
+		if job.node.level == 0 && shared.cover.on {
+			cover = &result.cover
+		}
+		measure_cuts := job.grid != nil || job.node.level == 0
+		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces, look = shared.look, measure_cuts = measure_cuts, cover = cover, cover_table = shared.cover, cover_frames = job.cover_frames)
 		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
 		free(job.grid)
+		free_field_job_frames(job)
 	case .Trees:
 		result.tree_tile = job.tree_tile
 		result.tree_keys, result.tree_instances = generate_field_tree_tile(&shared.generation, job.tree_tile, job.tree_cells, job.tree_pitch_millimetres)
@@ -282,12 +316,15 @@ field_worker :: proc(shared: ^Field_Worker_Shared) {
 	}
 }
 
-start_field_streaming :: proc(seed: u64, planet: Planet, spacing_millimetres: int, worker_count: int) -> Field_Streaming {
+// cover_row is the build target's row of field_cover (0311); the zero row
+// places no cover.
+start_field_streaming :: proc(seed: u64, planet: Planet, spacing_millimetres: int, worker_count: int, cover_row: Field_Cover_Row = {}) -> Field_Streaming {
 	shared := new(Field_Worker_Shared)
 	shared.seed = seed
 	shared.planet = planet
 	shared.generation = make_planet_generation(seed, planet, spacing_millimetres)
 	shared.look = make_field_ground_look(shared.generation, planet)
+	shared.cover = make_field_cover_table(shared.generation, planet, cover_row)
 	shared.allocator = context.allocator
 	queue.init(&shared.jobs)
 	queue.init(&shared.generated)
@@ -314,7 +351,9 @@ stop_field_streaming :: proc(streaming: ^Field_Streaming) {
 		thread.destroy(worker)
 	}
 	for queue.len(shared.jobs) > 0 {
-		free(queue.pop_front(&shared.jobs).grid)
+		job := queue.pop_front(&shared.jobs)
+		free(job.grid)
+		free_field_job_frames(job)
 	}
 	for queue.len(shared.generated) > 0 {
 		free_field_job_result(queue.pop_front(&shared.generated))
@@ -339,6 +378,8 @@ stop_field_streaming :: proc(streaming: ^Field_Streaming) {
 	delete(streaming.remesh)
 	delete(streaming.finest_generated)
 	delete(streaming.dropped)
+	destroy_cover_frames(streaming.cover_frames[:])
+	delete(streaming.cover_frames)
 	streaming^ = {}
 }
 
@@ -424,12 +465,19 @@ field_chunk_neighbours_loaded :: proc(world: ^Field_World, coordinate: Field_Chu
 	return true
 }
 
+// A finest node's job with the cover on carries the frames over the node
+// (0311).
 submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, generate: bool, skirt_faces: Field_Seam_Faces) {
 	streaming.next_revision += 1
 	streaming.mesh_revisions[node] = streaming.next_revision
 	streaming.in_flight[node] = streaming.next_revision
 	streaming.skirt_faces[node] = skirt_faces
-	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid, generate = generate, skirt_faces = skirt_faces})
+	cover_frames: []Cover_Frame
+	if node.level == 0 && streaming.shared.cover.on {
+		minimum, maximum := field_cover_node_box(node, streaming.shared.generation.spacing_millimetres, COVER_FRAME_MARGIN_METRES)
+		cover_frames = cover_frames_meeting(streaming.cover_frames[:], minimum, maximum)
+	}
+	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid, generate = generate, skirt_faces = skirt_faces, cover_frames = cover_frames})
 	streaming.pending_jobs += 1
 }
 
@@ -440,7 +488,8 @@ field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node,
 }
 
 // A finest node whose chunk and every neighbour are simulated meshes from
-// them, and again whenever the chunk is dirty or its skirt faces changed.
+// them, and again whenever the chunk is dirty, its skirt faces changed or
+// a frame over it changed (remesh, 0311).
 // Any other meshes once from a generated grid with the loaded samples it
 // reads (finest_generated), again when an edit beside it marks it or its
 // skirt faces change, and from its chunks once they are all simulated; a
@@ -457,7 +506,7 @@ schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_Wo
 	faces_changed := field_skirt_faces_changed(streaming, node, faces)
 	meshed := node in streaming.mesh_revisions
 	if chunk != nil && field_chunk_neighbours_loaded(world, coordinate) {
-		if !chunk.dirty && meshed && node not_in streaming.finest_generated && !faces_changed {
+		if !chunk.dirty && meshed && node not_in streaming.finest_generated && !faces_changed && node not_in streaming.remesh {
 			return false
 		}
 		submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate, waves), false, faces)
@@ -603,12 +652,73 @@ mark_edited_coarse_nodes :: proc(streaming: ^Field_Streaming, world: ^Field_Worl
 
 // What one frame asks of the streaming: the chunks the next ticks need
 // (field_chunk_requests), the ones generated already and not in the world
-// (held_field_chunk_arrivals), and the nodes the viewports' cameras chose
-// (empty on a server).
+// (held_field_chunk_arrivals), the nodes the viewports' cameras chose
+// (empty on a server) and the frame table the cover clears its instances
+// by (0311, nil on a server).
 Field_Stream_Frame :: struct {
 	requested: []Field_Chunk_Coordinate,
 	held:      map[Field_Chunk_Coordinate]struct{},
 	selection: []Field_Node,
+	frames:    ^Frame_Table,
+}
+
+// When the frame table's revision moved (0311): a new snapshot of its
+// frames, the finest nodes under the changed ones marked
+// (mark_cover_frame_changes), the old snapshot freed.
+update_cover_frames :: proc(streaming: ^Field_Streaming, frames: ^Frame_Table) {
+	if frames.revision == streaming.cover_frames_revision {
+		return
+	}
+	streaming.cover_frames_revision = frames.revision
+	snapshot := snapshot_cover_frames(frames)
+	mark_cover_frame_changes(streaming, streaming.cover_frames[:], snapshot[:])
+	destroy_cover_frames(streaming.cover_frames[:])
+	delete(streaming.cover_frames)
+	streaming.cover_frames = snapshot
+}
+
+// Each frame only in one snapshot, or in both with another pose or other
+// cells, marks every meshed finest node whose box, widened by
+// COVER_FRAME_MARGIN_METRES, meets its old or its new box.
+mark_cover_frame_changes :: proc(streaming: ^Field_Streaming, old, new: []Cover_Frame) {
+	Box :: struct {
+		minimum, maximum: [3]f64,
+	}
+	changed := make([dynamic]Box, context.temp_allocator)
+	old_index, new_index := 0, 0
+	for old_index < len(old) || new_index < len(new) {
+		switch {
+		case new_index >= len(new) || (old_index < len(old) && old[old_index].frame.id < new[new_index].frame.id):
+			append(&changed, Box{old[old_index].minimum, old[old_index].maximum})
+			old_index += 1
+		case old_index >= len(old) || new[new_index].frame.id < old[old_index].frame.id:
+			append(&changed, Box{new[new_index].minimum, new[new_index].maximum})
+			new_index += 1
+		case:
+			before, after := old[old_index], new[new_index]
+			if before.frame != after.frame || !slice.equal(before.cells[:], after.cells[:]) {
+				append(&changed, Box{before.minimum, before.maximum}, Box{after.minimum, after.maximum})
+			}
+			old_index += 1
+			new_index += 1
+		}
+	}
+	if len(changed) == 0 {
+		return
+	}
+	spacing := streaming.shared.generation.spacing_millimetres
+	for node in streaming.mesh_revisions {
+		if node.level != 0 {
+			continue
+		}
+		minimum, maximum := field_cover_node_box(node, spacing, COVER_FRAME_MARGIN_METRES)
+		for box in changed {
+			if cover_boxes_meet(minimum, maximum, box.minimum, box.maximum) {
+				streaming.remesh[node] = {}
+				break
+			}
+		}
+	}
 }
 
 // Main thread, once per frame, before take_current_field_meshes. The
@@ -617,6 +727,9 @@ Field_Stream_Frame :: struct {
 // are the surface waves' heights the finest meshes take (0294), nil for
 // none.
 update_field_streaming :: proc(streaming: ^Field_Streaming, world: ^Field_World, frame: Field_Stream_Frame, arrivals: ^[dynamic]^Field_Chunk, waves: Field_Wave_Heights = nil) {
+	if streaming.shared.cover.on && frame.frames != nil {
+		update_cover_frames(streaming, frame.frames)
+	}
 	mark_edited_coarse_nodes(streaming, world)
 	receive_field_chunks(streaming, world, frame, arrivals)
 	drop_unselected_field_nodes(streaming, frame.selection)

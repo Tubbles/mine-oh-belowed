@@ -86,6 +86,46 @@ test_the_field_trees_config_is_bounded :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0311: the shipped field_cover rows (the phone's shorter reach
+// and thinner cover) and each key one past its bound in either row.
+@(test)
+test_the_field_cover_config_is_bounded :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	cover := config.field_cover
+	testing.expect_value(t, cover.desktop, Field_Cover_Row{distance_percent = 100, density_percent = 100, node_limit = 8192})
+	testing.expect_value(t, cover.android, Field_Cover_Row{distance_percent = 60, density_percent = 45, node_limit = 4096})
+	testing.expect_value(t, field_cover_problem(cover), "")
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		testing.expect_value(t, field_cover_row(cover), cover.android)
+	} else {
+		testing.expect_value(t, field_cover_row(cover), cover.desktop)
+	}
+	testing.expect_value(t, field_cover_problem({}), "field_cover.desktop.distance_percent 0 is outside 10 to 200")
+	cases := [?]struct {
+		change:   proc(row: ^Field_Cover_Row),
+		expected: string,
+	} {
+		{proc(row: ^Field_Cover_Row) {row.distance_percent = 9}, "distance_percent 9 is outside 10 to 200"},
+		{proc(row: ^Field_Cover_Row) {row.distance_percent = 201}, "distance_percent 201 is outside 10 to 200"},
+		{proc(row: ^Field_Cover_Row) {row.density_percent = -1}, "density_percent -1 is outside 0 to 100"},
+		{proc(row: ^Field_Cover_Row) {row.density_percent = 101}, "density_percent 101 is outside 0 to 100"},
+		{proc(row: ^Field_Cover_Row) {row.node_limit = 63}, "node_limit 63 is outside 64 to 65536"},
+		{proc(row: ^Field_Cover_Row) {row.node_limit = 65537}, "node_limit 65537 is outside 64 to 65536"},
+	}
+	for entry in cases {
+		desktop := cover
+		entry.change(&desktop.desktop)
+		testing.expect_value(t, field_cover_problem(desktop), strings.concatenate({"field_cover.desktop.", entry.expected}, context.temp_allocator))
+		android := cover
+		entry.change(&android.android)
+		testing.expect_value(t, field_cover_problem(android), strings.concatenate({"field_cover.android.", entry.expected}, context.temp_allocator))
+	}
+	// A density of 0 turns the cover off and passes.
+	off := cover
+	off.desktop.density_percent = 0
+	testing.expect_value(t, field_cover_problem(off), "")
+}
+
 // The Android asset copy (work item 0114): the list build.sh writes and
 // the stamp that skips the copy on a later start of the same build.
 @(test)

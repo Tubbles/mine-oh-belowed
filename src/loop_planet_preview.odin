@@ -604,7 +604,7 @@ draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, c
 	draw_field_scene(planet_preview_scene(preview, camera, alpha, body_shown), camera, selection)
 	rl.EndMode3D()
 	height := planet_preview_height_metres(preview)
-	line := fmt.ctprintf("%d fps  %s  height %.0f m  nodes %d of %d  vertices %d  chunks %d", rl.GetFPS(), planet_preview_mode_text(preview), height, preview.renderer.drawn_node_count, len(selection), preview.renderer.vertex_count, len(preview.session.simulation.field.world.chunks))
+	line := fmt.ctprintf("%d fps  %s  height %.0f m  nodes %d of %d  vertices %d  chunks %d  cover %d", rl.GetFPS(), planet_preview_mode_text(preview), height, preview.renderer.drawn_node_count, len(selection), preview.renderer.vertex_count, len(preview.session.simulation.field.world.chunks), preview.renderer.cover.drawn_count)
 	rl.DrawText(line, PLANET_PREVIEW_TEXT_SIZE, PLANET_PREVIEW_TEXT_SIZE, PLANET_PREVIEW_TEXT_SIZE, rl.WHITE)
 	if preview.walking {
 		rl.DrawText(fmt.ctprintf("%s", planet_preview_tool_text(preview)), PLANET_PREVIEW_TEXT_SIZE, 5 * PLANET_PREVIEW_TEXT_SIZE / 2, PLANET_PREVIEW_TEXT_SIZE, rl.WHITE)
@@ -806,6 +806,7 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 	if !renderer_ok {
 		return 1
 	}
+	init_field_cover_renderer(&renderer, data_directory, planet, field_cover_row(config.field_cover), f32(level_distances[0]))
 	preview := Planet_Preview {
 		session         = session,
 		content         = content,

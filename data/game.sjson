@@ -61,6 +61,17 @@ field_trees = {
 	desktop = {near_metres = 96, near_limit = 1024, far_metres = 1024, far_limit = 160000, fade_metres = 12, far_fade_metres = 64}
 	android = {near_metres = 96, near_limit = 1024, far_metres = 512, far_limit = 40000, fade_metres = 12, far_fade_metres = 64}
 }
+// The ground cover's draw (work item 0311, doc/presentation.md, The field
+// session), a row for the desktop builds and one for Android: each kind's
+// reach (data/planets.sjson, cover) times distance_percent (10 to 200),
+// clamped 8 m inside field_view's first distance; the instances kept by
+// their rank under density_percent (0 to 100, 0 turns the cover off); a
+// kind's instances in a node at most node_limit (64 to 65536), the lowest
+// ranks kept. The Steam Deck takes the desktop row.
+field_cover = {
+	desktop = {distance_percent = 100, density_percent = 100, node_limit = 8192}
+	android = {distance_percent = 60, density_percent = 45, node_limit = 4096}
+}
 // The player on the terrain field (work item 0170, doc/content.md, World):
 // lengths in millimetres, speeds in millimetres per second, gravity from
 // the planet record. Ground steeper than the walkable angle slows the walk

@@ -34,12 +34,18 @@ GROUND_TINT_WAVELENGTH_METRES :: 256
 FIELD_CUT_TOLERANCE_MILLIMETRES :: 750
 
 // The look's part of a vertex: the grass colour at full light, the snow's
-// and the sand's cover and the natural share, 0 to 255 each.
+// and the sand's cover and the natural share, 0 to 255 each; the varied
+// climate the grass colour took (celsius, moisture 0 to 1) and the
+// distance from the generated surface in millimetres, clamped, 0 without
+// measure_cuts, which the ground cover reads (0311).
 Field_Vertex_Look :: struct {
-	grass:   [3]u8,
-	snow:    u8,
-	sand:    u8,
-	natural: u8,
+	grass:              [3]u8,
+	snow:               u8,
+	sand:               u8,
+	natural:            u8,
+	celsius:            f32,
+	moisture:           f32,
+	offset_millimetres: u16,
 }
 
 // What the mesher reads for the look; on is whether the planet has a
@@ -120,21 +126,31 @@ field_sand_cover :: proc(climate: Planet_Climate, height_metres: f32) -> u8 {
 	return field_share_byte((f32(climate.sand_metres) - height_metres) / f32(climate.sand_fade_metres) + 0.5)
 }
 
-// How natural the ground at a vertex is: 255 within the tolerance (the
-// larger of FIELD_CUT_TOLERANCE_MILLIMETRES and the grid's cell) of the
-// generated surface along its radial, 0 past twice it, linear between.
-// The surface is the relief without the crater, so the arrival's crater
-// reads as cut ground.
-field_natural_share :: proc(generation: Planet_Generation, on_sphere: [3]i64, distance, cell: i64) -> u8 {
-	off := abs(distance - generation.radius - uncratered_relief(generation, on_sphere))
+// How far a point at the distance from the centre lies off the generated
+// surface along its radial, in position units. The surface is the relief
+// without the crater, so the arrival's crater reads as cut ground.
+field_surface_offset :: proc(generation: Planet_Generation, on_sphere: [3]i64, distance: i64) -> i64 {
+	return abs(distance - generation.radius - uncratered_relief(generation, on_sphere))
+}
+
+// How natural the ground at a vertex the offset off the generated surface
+// (field_surface_offset) is: 255 within the tolerance (the larger of
+// FIELD_CUT_TOLERANCE_MILLIMETRES and the grid's cell), 0 past twice it,
+// linear between.
+field_natural_share :: proc(offset, cell: i64) -> u8 {
 	tolerance := max(millimetres_to_position_units(FIELD_CUT_TOLERANCE_MILLIMETRES), cell)
 	switch {
-	case off <= tolerance:
+	case offset <= tolerance:
 		return 255
-	case off >= 2 * tolerance:
+	case offset >= 2 * tolerance:
 		return 0
 	}
-	return u8(255 * (2 * tolerance - off) / tolerance)
+	return u8(255 * (2 * tolerance - offset) / tolerance)
+}
+
+// An offset in position units as millimetres, clamped to a u16.
+field_offset_millimetres :: proc(offset: i64) -> u16 {
+	return u16(min(offset * MILLIMETRES_PER_METRE / POSITION_UNITS_PER_METRE, i64(max(u16))))
 }
 
 // A surface vertex's position in the world: the grid's origin plus the
@@ -164,7 +180,13 @@ field_vertex_ground_look :: proc(look: Field_Ground_Look, position: World_Positi
 	vertex.grass = field_color_bytes(field_grass_color(look.climate, celsius, moisture) * (1 + variation * GROUND_VARIATION_BRIGHTNESS))
 	vertex.snow = field_snow_cover(look.climate, celsius)
 	vertex.sand = field_sand_cover(look.climate, f32(height) / POSITION_UNITS_PER_METRE + variation * GROUND_VARIATION_SAND_METRES)
-	vertex.natural = measure_cuts ? field_natural_share(generation, on_sphere, distance, cell) : 255
+	vertex.celsius, vertex.moisture = celsius, moisture
+	vertex.natural = 255
+	if measure_cuts {
+		offset := field_surface_offset(generation, on_sphere, distance)
+		vertex.natural = field_natural_share(offset, cell)
+		vertex.offset_millimetres = field_offset_millimetres(offset)
+	}
 	return field_ground_tint(generation, look.palette, on_sphere), vertex
 }
 
@@ -172,7 +194,7 @@ field_vertex_ground_look :: proc(look: Field_Ground_Look, position: World_Positi
 // the skirts (append_field_skirts), which copy their border vertex: a
 // skirt's lower vertices would otherwise read as cut and show bare seams.
 // measure_cuts is whether the grid holds loaded samples, which an edit
-// can have moved off the generated surface.
+// can have moved off the generated surface, or is a finest node's (0311).
 write_field_ground_look :: proc(surface: ^Field_Surface, grid: ^Field_Grid, look: Field_Ground_Look, spacing_millimetres: int, measure_cuts: bool) {
 	if !look.on {
 		return
