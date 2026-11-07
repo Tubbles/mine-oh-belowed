@@ -36,7 +36,7 @@ ground_look_test_grid :: proc(generation: Planet_Generation, node: Field_Node) -
 
 // The mesh with the look on, its cuts measured, skirts on every face
 // unless asked otherwise.
-ground_look_test_mesh :: proc(grid: ^Field_Grid, generation: Planet_Generation, planet: Planet, skirt_faces := EVERY_FIELD_FACE) -> Field_Mesh_Data {
+ground_look_test_mesh :: proc(grid: ^Field_Grid, generation: Planet_Generation, planet: Planet, skirt_faces := Field_Seam_Faces{flaps = EVERY_FIELD_FACE}) -> Field_Mesh_Data {
 	look := make_field_ground_look(generation, planet)
 	return mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, skirt_faces, context.temp_allocator, look, true)
 }
@@ -64,7 +64,7 @@ test_the_ground_look_is_off_without_a_climate :: proc(t: ^testing.T) {
 	planet.home = {latitude_degrees = 83, longitude_degrees = 132}
 	generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
 	grid := ground_look_test_grid(generation, ground_look_test_node(generation, planet.home, 200))
-	plain := mesh_field_grid(grid, planet.palette, 1000, EVERY_FIELD_FACE, context.temp_allocator)
+	plain := mesh_field_grid(grid, planet.palette, 1000, {flaps = EVERY_FIELD_FACE}, context.temp_allocator)
 	looked := ground_look_test_mesh(grid, generation, planet)
 	testing.expect(t, len(plain.positions) > 0, "the node holds the surface")
 	testing.expect(t, mesh_data_equal(plain, looked), "the look changes the mesh without a climate")
@@ -362,7 +362,7 @@ when GROUND_LOOK_COST {
 			for _ in 0 ..< 5 {
 				for pass in 0 ..< 3 {
 					begin := time.tick_now()
-					data := mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, EVERY_FIELD_FACE, context.temp_allocator, pass == 0 ? {} : look, pass == 2)
+					data := mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, {flaps = EVERY_FIELD_FACE}, context.temp_allocator, pass == 0 ? {} : look, pass == 2)
 					fastest[pass] = min(fastest[pass], time.tick_since(begin))
 					vertices += pass == 0 ? len(data.positions) : 0
 					free_all(context.temp_allocator)

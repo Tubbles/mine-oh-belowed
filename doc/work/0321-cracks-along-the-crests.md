@@ -1,6 +1,6 @@
 # 0321: Cracks along the crests
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-07)
 
 The captures of 0306 and 0307 from 120 m over the home, looking south west (`tmp/shot_terrain_colours/crest_crop.png`, the same place in both builds), show a dashed line of sky along a contour on a far slope and along a crest's silhouette. The seam between two detail levels opens and the skirts do not close it. It came with 0306's relief: the slopes are steeper and taller than the 34 m relief the skirts were sized for.
 
@@ -111,3 +111,4 @@ The user's decision of 2026-10-02 (`doc/log/2026-10-02.md`) took skirts at the l
 
 1. Skirts on both sides of a level seam, as designed. The user's 2026-10-02 clause ("transition cells only if seams show") gates the costlier fix, it does not require it; the seams come from 0173's one sided rule, and skirts close every probed ray. No skirt between nodes of one level, so 0173's pit rim stays fixed.
 2. The revision (cut and curtain) is approved as designed. The 4 rays of the views that no mode closes graze the ground within 0.1 m of the relief and stand on main too; no item for them unless the captures after the landing show sky through a crest.
+3. The second review found the cut opening rays where the ground meets the cut face at a shallow angle (below about 27 degrees between the ground and the face plane: up to 560 of 48,000 rays at 5 degrees, main none), since the finer flap's first leg then falls short of the plane and the curtain shows its back to the coarser side. The cut applies only where the coarser surface stands steeper than 35.26 degrees to the face plane (the cotangent squared 2, `field_surface_steep_to_face`); shallower cells keep main's lid, as on main. 30 degrees was decided first; the round measured the cut of every cell losing rays up to 31.5 degrees, so the threshold sits above it.

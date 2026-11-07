@@ -78,11 +78,14 @@ Field_Surface_Vertex :: struct {
 }
 
 // Triangles as index triples. The skirts (world_field_lod.odin) come after
-// skirt_index_start.
+// skirt_index_start. cell_vertices holds each cell's vertex
+// (field_vertex_cell_index), -1 for none, which the cut at a level seam
+// reads (cut_field_surface); nil for a uniform grid.
 Field_Surface :: struct {
 	vertices:          [dynamic]Field_Surface_Vertex,
 	indices:           [dynamic]u16,
 	skirt_index_start: int,
+	cell_vertices:     []i32,
 }
 
 // What render_field.odin uploads: positions in metres from the node's
@@ -358,15 +361,15 @@ mesh_field_surface :: proc(grid: ^Field_Grid, palette: [][3]int, allocator := co
 	if field_grid_is_uniform(grid) {
 		return surface
 	}
-	cell_vertices := make([]i32, FIELD_VERTEX_CELL_COUNT, context.temp_allocator)
-	for &slot in cell_vertices {
+	surface.cell_vertices = make([]i32, FIELD_VERTEX_CELL_COUNT, allocator)
+	for &slot in surface.cell_vertices {
 		slot = -1
 	}
 	for z in i32(0) ..< FIELD_GRID_CELLS {
 		for y in i32(0) ..< FIELD_GRID_CELLS {
 			for x in i32(0) ..< FIELD_GRID_CELLS {
 				for axis in 0 ..< 3 {
-					append_field_edge_quad(&surface, cell_vertices, grid, {x, y, z}, axis, palette, light_source)
+					append_field_edge_quad(&surface, surface.cell_vertices, grid, {x, y, z}, axis, palette, light_source)
 				}
 			}
 		}
@@ -425,7 +428,9 @@ make_field_mesh_data :: proc(allocator := context.allocator) -> Field_Mesh_Data 
 // with a climate (write_field_ground_look, 0307; measure_cuts for a grid
 // holding loaded samples), its skirts on skirt_faces
 // (field_node_skirt_faces), the vertex arrays. The surface is temporary.
-mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, skirt_faces: Field_Faces, allocator := context.allocator, look: Field_Ground_Look = {}, measure_cuts := false) -> Field_Mesh_Data {
+// A vertex the cut at a level seam moves keeps the look of where it was,
+// under a cell away along the same surface.
+mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, skirt_faces: Field_Seam_Faces, allocator := context.allocator, look: Field_Ground_Look = {}, measure_cuts := false) -> Field_Mesh_Data {
 	surface := mesh_field_surface(grid, palette, context.temp_allocator)
 	write_field_ground_look(&surface, grid, look, spacing_millimetres, measure_cuts)
 	append_field_skirts(&surface, skirt_faces)

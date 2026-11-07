@@ -114,7 +114,7 @@ test_a_field_without_a_crossing_meshes_to_nothing :: proc(t: ^testing.T) {
 	air := proc(sample: [3]i64) -> i8 {return -MAXIMUM_DENSITY}
 	ground := proc(sample: [3]i64) -> i8 {return MAXIMUM_DENSITY}
 	for density in ([2]Test_Field_Density{air, ground}) {
-		data := mesh_field_grid(fill_test_field_grid({0, 0, 0}, 1, density), TEST_FIELD_PALETTE[:], DEFAULT_SAMPLE_SPACING_MILLIMETRES, EVERY_FIELD_FACE, context.temp_allocator)
+		data := mesh_field_grid(fill_test_field_grid({0, 0, 0}, 1, density), TEST_FIELD_PALETTE[:], DEFAULT_SAMPLE_SPACING_MILLIMETRES, {flaps = EVERY_FIELD_FACE}, context.temp_allocator)
 		testing.expect_value(t, len(data.positions), 0)
 		testing.expect_value(t, len(data.indices), 0)
 	}

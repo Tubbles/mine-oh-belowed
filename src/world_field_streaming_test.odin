@@ -201,13 +201,33 @@ test_a_node_whose_neighbour_changes_level_meshes_again :: proc(t: ^testing.T) {
 	same_level := []Field_Node{node, {1, {2, 124, 0}}}
 	settle_test_field_stream(&streaming, &world, same_level)
 	first := streaming.mesh_revisions[node]
-	testing.expect(t, .Positive_X not_in streaming.skirt_faces[node])
+	testing.expect(t, .Positive_X not_in streaming.skirt_faces[node].flaps)
 	settle_test_field_stream(&streaming, &world, same_level)
 	testing.expect_value(t, streaming.mesh_revisions[node], first)
 	merged := []Field_Node{node, {2, {1, 62, 0}}}
 	settle_test_field_stream(&streaming, &world, merged)
 	testing.expect(t, streaming.mesh_revisions[node] > first, "the node meshes again")
-	testing.expect(t, .Positive_X in streaming.skirt_faces[node])
+	testing.expect(t, .Positive_X in streaming.skirt_faces[node].flaps)
+}
+
+// A coarse node whose neighbour of its level splits into finer nodes
+// meshes again with a curtain on that face (0321).
+@(test)
+test_a_node_whose_neighbour_splits_meshes_again :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	streaming := start_field_streaming(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
+	defer stop_field_streaming(&streaming)
+	world: Field_World
+	defer destroy_field_world(&world)
+	node := Field_Node{2, {0, 62, 0}}
+	same_level := []Field_Node{node, {2, {1, 62, 0}}}
+	settle_test_field_stream(&streaming, &world, same_level)
+	first := streaming.mesh_revisions[node]
+	testing.expect(t, .Positive_X not_in streaming.skirt_faces[node].curtains)
+	split := []Field_Node{node, {1, {2, 124, 0}}}
+	settle_test_field_stream(&streaming, &world, split)
+	testing.expect(t, streaming.mesh_revisions[node] > first, "the node meshes again")
+	testing.expect(t, .Positive_X in streaming.skirt_faces[node].curtains)
 }
 
 // Two eyes far apart: one selection holds the finest nodes under both,

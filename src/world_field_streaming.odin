@@ -64,16 +64,17 @@ field_tree_tile_box :: proc(tile: Field_Tree_Tile, edge: i64) -> (minimum, maxim
 // node whose chunks are simulated carries its grid whole; any other
 // (generate set) carries the samples of the loaded chunks it reads, or
 // none, and generates the rest. skirt_faces are the node's faces that
-// border a coarser node or none (field_node_skirt_faces). A Trees job
-// (0310) carries its tile, the tile's edge in tree cubes and the pitch
-// the instances scale the models by.
+// hang a flap (a coarser node or none beyond) and those that cut and hang
+// a curtain (finer nodes beyond, 0321; field_node_skirt_faces). A Trees
+// job (0310) carries its tile, the tile's edge in tree cubes and the
+// pitch the instances scale the models by.
 Field_Job :: struct {
 	kind:        Field_Job_Kind,
 	node:        Field_Node,
 	revision:    u64,
 	grid:        ^Field_Grid,
 	generate:    bool,
-	skirt_faces: Field_Faces,
+	skirt_faces: Field_Seam_Faces,
 	tree_tile:   Field_Tree_Tile,
 	tree_cells:  i64,
 	tree_pitch_millimetres: int,
@@ -125,9 +126,10 @@ Field_Streaming :: struct {
 	// The latest mesh revision submitted per node; a node leaves when it is
 	// no longer selected, which drops its pending result.
 	mesh_revisions: map[Field_Node]u64,
-	// The skirt faces of each node's latest job; a node whose faces change
-	// (a neighbour split or merged) meshes again, so no seam opens.
-	skirt_faces:    map[Field_Node]Field_Faces,
+	// The flap and curtain faces of each node's latest job; a node whose
+	// faces change (a neighbour split or merged) meshes again, so no seam
+	// opens.
+	skirt_faces:    map[Field_Node]Field_Seam_Faces,
 	// The revision of each node's job still on the workers. A node is not
 	// submitted again while one is, so an edit made every tick (a held
 	// brush) cannot keep dropping each result as stale: the dirty chunk or
@@ -422,7 +424,7 @@ field_chunk_neighbours_loaded :: proc(world: ^Field_World, coordinate: Field_Chu
 	return true
 }
 
-submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, generate: bool, skirt_faces: Field_Faces) {
+submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, generate: bool, skirt_faces: Field_Seam_Faces) {
 	streaming.next_revision += 1
 	streaming.mesh_revisions[node] = streaming.next_revision
 	streaming.in_flight[node] = streaming.next_revision
@@ -431,8 +433,8 @@ submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, gri
 	streaming.pending_jobs += 1
 }
 
-// Whether a meshed node's latest job had other skirt faces.
-field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node, faces: Field_Faces) -> bool {
+// Whether a meshed node's latest job had other flap or curtain faces.
+field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node, faces: Field_Seam_Faces) -> bool {
 	previous, found := streaming.skirt_faces[node]
 	return found && previous != faces
 }
@@ -446,7 +448,7 @@ field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node,
 // The surface waves' heights go into the grid at the gather (0294); a
 // chunk the waves alone marked (wave_dirty) waits for
 // schedule_field_wave_remeshes. Returns whether a job went out.
-schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node, faces: Field_Faces, waves: Field_Wave_Heights = nil) -> bool {
+schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node, faces: Field_Seam_Faces, waves: Field_Wave_Heights = nil) -> bool {
 	if node in streaming.in_flight {
 		return false
 	}

@@ -15,22 +15,38 @@ import "platform"
 // from the loaded chunks.
 //
 // Neighbouring nodes of different levels do not meet, so a node's mesh
-// hangs a skirt from its open border on the faces that border a coarser
-// node or none (field_node_skirt_faces), an L shaped flap out of the node
-// and into the ground (append_field_skirts) that covers the seam seen
-// from above. Nodes of one level meet without a gap and hang none there:
-// a skirt's straight leg leaves a curved surface (a dug pit's rim) and
-// would stand in the air. Everything
-// here is integer: positions in World_Position units, distances squared.
+// hangs skirts from its open border (field_node_skirt_faces,
+// append_field_skirts). On the faces that border a coarser node or none
+// it hangs an L shaped flap out of the node and into the ground that
+// covers the seam seen from above. On the faces that border finer nodes
+// (0321) it keeps its mesh inside its own box (cut_field_surface) and
+// hangs a curtain from its border into its ground in the face's plane,
+// which meets the shallow rays from the finer side that pass over the
+// finer node's flap. Nodes of one level meet without a gap and hang none
+// there: a skirt's straight leg leaves a curved surface (a dug pit's rim)
+// and would stand in the air. Everything here is integer: positions in
+// World_Position units, distances squared.
 
 // FIELD_LEVEL_COUNT is with the data that sets the levels' distances
 // (data_load.odin).
 FIELD_COARSEST_LEVEL :: FIELD_LEVEL_COUNT - 1
 // A skirt reaches one cell of the next coarser level out and down.
 FIELD_SKIRT_REACH :: 2 * FIELD_MESH_POSITION_UNITS
+// A curtain hangs one of the node's cells into its ground.
+FIELD_CURTAIN_DROP :: FIELD_MESH_POSITION_UNITS
+// The cut moves a cell's vertex only where the surface stands steeper
+// than 35.26 degrees to the face plane, the angle whose cotangent squared
+// this is (0321, decision 3). At a shallower angle θ the finer node's
+// flap reaches 2 sin θ - cos θ of its cells along the face's axis,
+// nothing below about 27 degrees, and the curtain shows the coarser side
+// its back, so a cut cell there opens rays that main's lid closes: the
+// cut of every cell lost rays up to 31.5 degrees, none from 32. A
+// shallower cell keeps the lid.
+FIELD_CUT_COTANGENT_SQUARED :: 2
 // The most vertices a node's mesh can hold: one per cell that can carry a
-// vertex, and two more per border cell for the skirt.
-FIELD_MESH_VERTEX_BOUND :: FIELD_VERTEX_CELL_COUNT + 2 * (FIELD_VERTEX_CELL_COUNT - (FIELD_GRID_CELLS - 1) * (FIELD_GRID_CELLS - 1) * (FIELD_GRID_CELLS - 1))
+// vertex, and three more per border cell, two for the flap and one for
+// the curtain.
+FIELD_MESH_VERTEX_BOUND :: FIELD_VERTEX_CELL_COUNT + 3 * (FIELD_VERTEX_CELL_COUNT - (FIELD_GRID_CELLS - 1) * (FIELD_GRID_CELLS - 1) * (FIELD_GRID_CELLS - 1))
 #assert(FIELD_MESH_VERTEX_BOUND <= MESH_PART_VERTEX_LIMIT, "a field node's mesh fits the u16 indices")
 // The planet check of the view distances (field_view_problem) takes the
 // finest node's width at the widest spacing.
@@ -416,19 +432,31 @@ make_field_selection_index :: proc(selection: []Field_Node, allocator := context
 	return index
 }
 
+// The faces that hang a flap (a coarser node or none beyond) and those
+// that cut the surface and hang a curtain (finer nodes beyond). A face
+// in neither borders a node of the same level.
+Field_Seam_Faces :: struct {
+	flaps, curtains: Field_Faces,
+}
+
 // The faces whose neighbour of the same level is neither selected nor
-// split into selected finer nodes: a coarser node or nothing lies there,
-// so the node's skirt covers the seam. The finer side of a seam hangs
-// the skirt, which covers it whichever side the coarser node is on
-// (test_a_level_seam_on_flat_ground_is_closed_from_above).
-field_node_skirt_faces :: proc(index: Field_Selection_Index, node: Field_Node) -> Field_Faces {
-	faces: Field_Faces
+// split into selected finer nodes hang a flap: a coarser node or nothing
+// lies there. Those whose neighbour is split hang a curtain. The finer
+// side's flap closes the seam from above whichever side the coarser node
+// is on (test_a_level_seam_on_flat_ground_is_closed_from_above); the
+// coarser side's curtain meets the shallow rays from the finer side
+// (test_a_level_seam_is_closed_at_grazing_views).
+field_node_skirt_faces :: proc(index: Field_Selection_Index, node: Field_Node) -> Field_Seam_Faces {
+	faces: Field_Seam_Faces
 	for axis in 0 ..< 3 {
 		for positive in ([2]bool{false, true}) {
 			neighbour := node
 			neighbour.coordinate[axis] += positive ? 1 : -1
-			if neighbour not_in index.selected && neighbour not_in index.holds_finer {
-				faces += {field_face(axis, positive)}
+			switch {
+			case neighbour in index.holds_finer:
+				faces.curtains += {field_face(axis, positive)}
+			case neighbour not_in index.selected:
+				faces.flaps += {field_face(axis, positive)}
 			}
 		}
 	}
@@ -559,30 +587,114 @@ field_border_vertex_count :: proc(edges: [][2]u16, vertex_count: int) -> int {
 	return count
 }
 
-// An L shaped flap from every open border edge on faces: out of the node by one
-// coarse cell along the surface's slope and half a cell below it, so it
-// neither stands above the neighbour's ground nor fights it in depth, then
-// down by a coarse cell.
-// A node's surface stops half a cell before its border on one side and
-// half a cell past it on the other, so between levels the strip between
-// the meshes is up to half a coarse cell wide; the outward leg covers it
-// from above whichever side the coarser node is on. Each band continues
-// the winding over its edge, so its front faces out of the node. A node
-// whose skirts would outgrow the u16 indices keeps its surface without
-// them and logs a line; FIELD_MESH_VERTEX_BOUND says this cannot happen
-// with today's grid.
-append_field_skirts :: proc(surface: ^Field_Surface, faces: Field_Faces) {
-	edges := make([dynamic][2]u16, context.temp_allocator)
-	for edge in field_border_edges(surface, context.temp_allocator) {
-		if field_edge_on_faces(surface.vertices[edge[0]], surface.vertices[edge[1]], faces) {
-			append(&edges, edge)
-		}
+// The cells at -1 on an axis that the cut moves run over the other two
+// axes from 0 to this end: the last cell is left when the positive face
+// on that axis borders a node of this level (in neither set), whose quads
+// use it as its cell -1.
+field_cut_cell_end :: proc(axis: int, faces: Field_Seam_Faces) -> i32 {
+	positive := field_face(axis, true)
+	return positive in faces.flaps || positive in faces.curtains ? FIELD_GRID_CELLS : FIELD_GRID_CELLS - 1
+}
+
+// The position moved along the line to inner until its coordinate on axis
+// is 0. The position lies in a cell at -1 on axis and inner in the cell
+// at 0, so inner's coordinate is the larger unless both are 0.
+field_cut_position :: proc(position, inner: [3]i32, axis: int) -> [3]i32 {
+	moved := position
+	if position[axis] < 0 {
+		from := [3]i64{i64(position.x), i64(position.y), i64(position.z)}
+		to := [3]i64{i64(inner.x), i64(inner.y), i64(inner.z)}
+		shifted := from + (to - from) * -from[axis] / (to[axis] - from[axis])
+		moved = {i32(shifted.x), i32(shifted.y), i32(shifted.z)}
 	}
-	skirt_vertex_count := 2 * field_border_vertex_count(edges[:], len(surface.vertices))
-	if len(surface.vertices) + skirt_vertex_count > MESH_PART_VERTEX_LIMIT {
-		platform.log_printf("field: a node's skirts would need %d vertices beyond its %d, drawn without them", skirt_vertex_count, len(surface.vertices))
+	moved[axis] = 0
+	return moved
+}
+
+// Whether the surface at a vertex with the gradient stands steeper than
+// FIELD_CUT_COTANGENT_SQUARED's angle to the plane of a face on axis: the
+// gradient's part along the axis squared under that many times its part
+// across the axis squared, in integers. A zero gradient is not.
+field_surface_steep_to_face :: proc(gradient: [3]i32, axis: int) -> bool {
+	along := i64(gradient[axis])
+	length_squared := i64(gradient.x) * i64(gradient.x) + i64(gradient.y) * i64(gradient.y) + i64(gradient.z) * i64(gradient.z)
+	return along * along < FIELD_CUT_COTANGENT_SQUARED * (length_squared - along * along)
+}
+
+// The surface kept inside the node's box on the negative faces in
+// faces.curtains (0321): the vertex of each cell at -1 on such an axis
+// where the surface stands steep to the face (field_surface_steep_to_face)
+// slides along the surface onto the face, towards the vertex of the cell
+// at 0 beside it, or straight onto the face when that cell holds none;
+// the gradient stays. A shallower cell keeps main's lid. A cell at -1 on
+// another axis is left, and so is the last cell beside a node of this
+// level (field_cut_cell_end): a node of this level beside or diagonal to
+// this one can mesh those cells too, and the copies of one vertex in two
+// meshes would part. The last cell
+// beside a node of another level is cut, though a node of this level
+// diagonally across the cut face and that face can mesh it too: only two
+// viewports select one there, and no ray opened at it (measured for
+// 0321). Positive faces need no cut, since the surface stops in the last
+// cell. A uniform grid's surface (no cell_vertices) holds nothing to
+// cut.
+cut_field_surface :: proc(surface: ^Field_Surface, faces: Field_Seam_Faces) {
+	if surface.cell_vertices == nil {
 		return
 	}
+	for axis in 0 ..< 3 {
+		if field_face(axis, false) not_in faces.curtains {
+			continue
+		}
+		first, second := (axis + 1) % 3, (axis + 2) % 3
+		for first_coordinate in i32(0) ..< field_cut_cell_end(first, faces) {
+			for second_coordinate in i32(0) ..< field_cut_cell_end(second, faces) {
+				cell: [3]i32
+				cell[axis], cell[first], cell[second] = -1, first_coordinate, second_coordinate
+				vertex := surface.cell_vertices[field_vertex_cell_index(cell)]
+				if vertex < 0 || !field_surface_steep_to_face(surface.vertices[vertex].gradient, axis) {
+					continue
+				}
+				inner_cell := cell
+				inner_cell[axis] = 0
+				inner := surface.cell_vertices[field_vertex_cell_index(inner_cell)]
+				position := &surface.vertices[vertex].position
+				if inner >= 0 {
+					position^ = field_cut_position(position^, surface.vertices[inner].position, axis)
+				} else {
+					position^[axis] = 0
+				}
+			}
+		}
+	}
+}
+
+// The curtain's drop below a border vertex: the gradient without its
+// parts on the axes where the vertex sits in a border cell of faces, one
+// cell long, so the curtain runs down into the ground in the face's
+// plane; zero when the gradient lies across the face.
+field_curtain_drop :: proc(vertex: Field_Surface_Vertex, faces: Field_Faces) -> [3]i32 {
+	outward := field_skirt_outward(vertex.position, faces)
+	gradient: [3]i64
+	for axis in 0 ..< 3 {
+		gradient[axis] = outward[axis] == 0 ? i64(vertex.gradient[axis]) : 0
+	}
+	return field_scaled_vector(gradient, FIELD_CURTAIN_DROP)
+}
+
+// Each curtain border vertex's drop by vertex index, taken before the cut
+// moves the vertex out of its border cell.
+field_curtain_drops :: proc(surface: ^Field_Surface, edges: [][2]u16, faces: Field_Faces) -> [][3]i32 {
+	drops := make([][3]i32, len(surface.vertices), context.temp_allocator)
+	for edge in edges {
+		for vertex in edge {
+			drops[vertex] = field_curtain_drop(surface.vertices[vertex], faces)
+		}
+	}
+	return drops
+}
+
+// The flap's two bands below each edge.
+append_field_flaps :: proc(surface: ^Field_Surface, edges: [][2]u16, faces: Field_Faces) {
 	skirt_vertices := make([]i32, len(surface.vertices), context.temp_allocator)
 	for &slot in skirt_vertices {
 		slot = -1
@@ -594,4 +706,74 @@ append_field_skirts :: proc(surface: ^Field_Surface, faces: Field_Faces) {
 		append(&surface.indices, to, from, from_outer, to, from_outer, to_outer)
 		append(&surface.indices, to_outer, from_outer, from_outer + 1, to_outer, from_outer + 1, to_outer + 1)
 	}
+}
+
+// The curtain's vertex below a border vertex: a copy of the (cut) vertex
+// moved by its drop, made the first time an edge asks.
+field_curtain_vertex_index :: proc(surface: ^Field_Surface, lower_vertices: []i32, drops: [][3]i32, vertex: u16) -> u16 {
+	slot := &lower_vertices[vertex]
+	if slot^ < 0 {
+		slot^ = i32(len(surface.vertices))
+		lower := surface.vertices[vertex]
+		lower.position += drops[vertex]
+		append(&surface.vertices, lower)
+	}
+	return u16(slot^)
+}
+
+// The curtain's band below each edge.
+append_field_curtains :: proc(surface: ^Field_Surface, edges: [][2]u16, drops: [][3]i32) {
+	lower_vertices := make([]i32, len(drops), context.temp_allocator)
+	for &slot in lower_vertices {
+		slot = -1
+	}
+	for edge in edges {
+		from, to := edge[0], edge[1]
+		from_lower := field_curtain_vertex_index(surface, lower_vertices, drops, from)
+		to_lower := field_curtain_vertex_index(surface, lower_vertices, drops, to)
+		append(&surface.indices, to, from, from_lower, to, from_lower, to_lower)
+	}
+}
+
+// The skirts of the node's open border on faces. A node's surface stops
+// half a cell before its border on one side and half a cell past it on
+// the other, so between levels the strip between the meshes is up to
+// half a coarse cell wide.
+// On faces.flaps (a coarser node or none beyond) an L shaped flap: out of
+// the node by one coarse cell along the surface's slope and half a cell
+// below it, so it neither stands above the neighbour's ground nor fights
+// it in depth, then down by a coarse cell. The outward leg covers the
+// strip from above whichever side the coarser node is on.
+// On faces.curtains (finer nodes beyond) nothing of the node lies over
+// the finer ground: the surface is cut to the node's box
+// (cut_field_surface) and a curtain one cell long hangs from the border
+// into the ground in the face's plane. A shallow ray from the finer side
+// that passes over the finer node's flap and under this surface, whose
+// back faces are culled, meets the curtain.
+// Each band continues the winding over its edge, so its front faces out
+// of the node. A node whose skirts would outgrow the u16 indices keeps
+// its surface without them or the cut and logs a line;
+// FIELD_MESH_VERTEX_BOUND says this cannot happen with today's grid.
+append_field_skirts :: proc(surface: ^Field_Surface, faces: Field_Seam_Faces) {
+	flap_edges := make([dynamic][2]u16, context.temp_allocator)
+	curtain_edges := make([dynamic][2]u16, context.temp_allocator)
+	for edge in field_border_edges(surface, context.temp_allocator) {
+		from, to := surface.vertices[edge[0]], surface.vertices[edge[1]]
+		if field_edge_on_faces(from, to, faces.flaps) {
+			append(&flap_edges, edge)
+		}
+		if field_edge_on_faces(from, to, faces.curtains) {
+			append(&curtain_edges, edge)
+		}
+	}
+	vertex_count := len(surface.vertices)
+	skirt_vertex_count := 2 * field_border_vertex_count(flap_edges[:], vertex_count) + field_border_vertex_count(curtain_edges[:], vertex_count)
+	if vertex_count + skirt_vertex_count > MESH_PART_VERTEX_LIMIT {
+		platform.log_printf("field: a node's skirts would need %d vertices beyond its %d, drawn without them", skirt_vertex_count, vertex_count)
+		return
+	}
+	drops := field_curtain_drops(surface, curtain_edges[:], faces.curtains)
+	cut_field_surface(surface, faces)
+	append_field_flaps(surface, flap_edges[:], faces.flaps)
+	append_field_curtains(surface, curtain_edges[:], drops)
 }

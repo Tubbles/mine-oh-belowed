@@ -2,6 +2,8 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:math/linalg"
+import "core:slice"
 import "core:testing"
 
 // Skirts on every face, as a node alone in the selection hangs them.
@@ -71,7 +73,7 @@ test_the_skirt_lies_inside_the_surface :: proc(t: ^testing.T) {
 	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
 	surface_vertex_count := len(surface.vertices)
 	border_edges := len(field_border_edges(&surface, context.temp_allocator))
-	append_field_skirts(&surface, EVERY_FIELD_FACE)
+	append_field_skirts(&surface, {flaps = EVERY_FIELD_FACE})
 	testing.expect(t, border_edges > 0)
 	testing.expect_value(t, len(surface.indices) - surface.skirt_index_start, 12 * border_edges)
 	testing.expect(t, len(surface.vertices) > surface_vertex_count)
@@ -173,7 +175,7 @@ point_in_triangle :: proc(point: [2]f64, triangle: [3][2]f64) -> bool {
 }
 
 // The xz projections of a node's surface and skirts near the strip.
-append_strip_triangles :: proc(triangles: ^[dynamic][3][2]f64, grid: ^Field_Grid, faces: Field_Faces) {
+append_strip_triangles :: proc(triangles: ^[dynamic][3][2]f64, grid: ^Field_Grid, faces: Field_Seam_Faces) {
 	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
 	append_field_skirts(&surface, faces)
 	for triangle := 0; triangle < len(surface.indices); triangle += 3 {
@@ -192,23 +194,396 @@ append_strip_triangles :: proc(triangles: ^[dynamic][3][2]f64, grid: ^Field_Grid
 
 // A finest node beside a half resolution one on flat ground, the coarse
 // one on either side: no strip of the seam is open from above, with the
-// skirt on the fine node's face towards the coarse one only, as
-// field_node_skirt_faces gives them. Without the skirts the coarse node
-// on the negative side leaves one open.
+// fine node's flap and the coarse node's cut and curtain on their faces
+// towards each other, as field_node_skirt_faces gives them. Without the
+// skirts the coarse node on the negative side leaves one open.
 @(test)
 test_a_level_seam_on_flat_ground_is_closed_from_above :: proc(t: ^testing.T) {
 	sides := [2][2]Sample_Coordinate{{{0, 0, 0}, {-64, 0, 0}}, {{-32, 0, 0}, {0, 0, 0}}}
 	towards_coarse := [2]Field_Face{.Negative_X, .Positive_X}
+	towards_fine := [2]Field_Face{.Positive_X, .Negative_X}
 	for side, index in sides {
 		triangles := make([dynamic][3][2]f64, context.temp_allocator)
-		append_strip_triangles(&triangles, fill_test_plane_grid(side[0], 1, {0, 0}), {towards_coarse[index]})
-		append_strip_triangles(&triangles, fill_test_plane_grid(side[1], 2, {0, 0}), {})
+		append_strip_triangles(&triangles, fill_test_plane_grid(side[0], 1, {0, 0}), {flaps = {towards_coarse[index]}})
+		append_strip_triangles(&triangles, fill_test_plane_grid(side[1], 2, {0, 0}), {curtains = {towards_fine[index]}})
 		testing.expectf(t, open_strip_points(triangles[:]) == 0, "the seam with the fine node at %v is open from above", side[0])
 	}
 	bare := make([dynamic][3][2]f64, context.temp_allocator)
 	append_strip_triangles(&bare, fill_test_plane_grid(sides[0][0], 1, {0, 0}), {})
 	append_strip_triangles(&bare, fill_test_plane_grid(sides[0][1], 2, {0, 0}), {})
 	testing.expect(t, open_strip_points(bare[:]) > 0, "the check finds the seam's gap without skirts")
+}
+
+// tan(60 degrees) in density steps a sample: steeper than the steepest
+// ground the shipped planets make, 58.5 degrees within 1.2 km of the home
+// (measured for 0321).
+STEEPEST_SHIPPED_RISE :: 222
+
+// A node's surface and skirts, each triangle with a corner within 10
+// samples of the seam x = 0, in samples from the world's origin.
+append_seam_triangles :: proc(triangles: ^[dynamic][3][3]f64, grid: ^Field_Grid, faces: Field_Seam_Faces) {
+	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+	append_field_skirts(&surface, faces)
+	for triangle := 0; triangle < len(surface.indices); triangle += 3 {
+		corners: [3][3]f64
+		near := false
+		for corner in 0 ..< 3 {
+			corners[corner] = test_grid_vertex_samples(grid, surface.vertices[surface.indices[triangle + corner]])
+			near ||= abs(corners[corner].x) < 10
+		}
+		if near {
+			append(triangles, corners)
+		}
+	}
+}
+
+// Möller and Trumbore's test against the triangles that are counter
+// clockwise seen from the origin, the front faces draw_field keeps. The
+// barycentric bounds are widened a little, so a ray along an edge two
+// triangles share meets one of them.
+ray_meets_front_face :: proc(triangles: [][3][3]f64, origin, direction: [3]f64) -> bool {
+	epsilon :: 1e-9
+	for triangle in triangles {
+		first_edge, second_edge := triangle[1] - triangle[0], triangle[2] - triangle[0]
+		across := linalg.cross(direction, second_edge)
+		determinant := linalg.dot(first_edge, across)
+		if determinant <= 1e-12 {
+			continue
+		}
+		offset := origin - triangle[0]
+		first_weight := linalg.dot(offset, across) / determinant
+		offset_across := linalg.cross(offset, first_edge)
+		second_weight := linalg.dot(direction, offset_across) / determinant
+		distance := linalg.dot(second_edge, offset_across) / determinant
+		if first_weight >= -epsilon && second_weight >= -epsilon && first_weight + second_weight <= 1 + epsilon && distance > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Rays at the plane of fill_test_plane_grid with the slope {rise, 0},
+// aimed at x from -4 to 4 on the lines z = 8.25 and 16.75, along x from
+// either side at 2, 10 and 20 degrees to the plane, each from 40 samples
+// back: how many meet no front face.
+open_grazing_rays :: proc(triangles: [][3][3]f64, rise: i64) -> int {
+	gradient := f64(rise) / DENSITY_STEPS_PER_SAMPLE
+	tangent := linalg.normalize([3]f64{1, gradient, 0})
+	normal := linalg.normalize([3]f64{-gradient, 1, 0})
+	open := 0
+	for z in ([2]f64{8.25, 16.75}) {
+		for step in 0 ..= 80 {
+			x := -4 + 0.1 * f64(step)
+			target := [3]f64{x, (2600 + f64(rise) * x) / DENSITY_STEPS_PER_SAMPLE, z}
+			for side in ([2]f64{-1, 1}) {
+				for degrees in ([3]f64{2, 10, 20}) {
+					angle := math.to_radians(degrees)
+					direction := side * math.cos(angle) * tangent - math.sin(angle) * normal
+					open += ray_meets_front_face(triangles, target - 40 * direction, direction) ? 0 : 1
+				}
+			}
+		}
+	}
+	return open
+}
+
+// The two sides of the flat seam test as nodes, on flat ground and at the
+// steepest slope the shipped planets make (0321): with the flaps and the
+// curtains field_node_skirt_faces gives, a ray meeting the ground near
+// the seam at a shallow angle from either side meets a front face. With
+// the finer node's flap alone (0173's rule), rays from the finer side
+// pass over it and under the coarser surface, whose back faces are
+// culled.
+@(test)
+test_a_level_seam_is_closed_at_grazing_views :: proc(t: ^testing.T) {
+	sides := [2][2]Field_Node{{{0, {0, 0, 0}}, {1, {-1, 0, 0}}}, {{0, {-1, 0, 0}}, {1, {0, 0, 0}}}}
+	for rise in ([2]i64{0, STEEPEST_SHIPPED_RISE}) {
+		for &side in sides {
+			index := make_field_selection_index(side[:], context.temp_allocator)
+			triangles := make([dynamic][3][3]f64, context.temp_allocator)
+			for node in side {
+				grid := fill_test_plane_grid(field_node_origin(node), field_node_step(node), {rise, 0})
+				faces := field_node_skirt_faces(index, node)
+				append_seam_triangles(&triangles, grid, {faces.flaps & {.Negative_X, .Positive_X}, faces.curtains & {.Negative_X, .Positive_X}})
+			}
+			open := open_grazing_rays(triangles[:], rise)
+			testing.expectf(t, open == 0, "%d rays pass the seam beside the coarse node %v at the rise %d", open, side[1].coordinate, rise)
+		}
+	}
+	finer_side_only := make([dynamic][3][3]f64, context.temp_allocator)
+	append_seam_triangles(&finer_side_only, fill_test_plane_grid({0, 0, 0}, 1, {0, 0}), {flaps = {.Negative_X}})
+	append_seam_triangles(&finer_side_only, fill_test_plane_grid({-64, 0, 0}, 2, {0, 0}), {})
+	testing.expect(t, open_grazing_rays(finer_side_only[:], 0) > 0, "the check finds the rays the finer node's flap alone leaves open")
+}
+
+// The review's scenes at a level seam (0321), in samples of the finest
+// level, the finer node on the positive side of x = 0: a dug pit of
+// radius 2.5 centred 1.5 samples into the finer node, a placed wall
+// filling its first sample column, and a cliff stepping from y 30 on the
+// coarser side to 20.5 with its top edge 1.5 samples into the finer node.
+Test_Seam_Scene :: enum {
+	Pit,
+	Wall,
+	Cliff,
+}
+
+// Flat ground below y = 20.5, in units of the step's spacing.
+test_seam_flat_density :: proc(y, step: i64) -> i8 {
+	return i8(clamp((41 - 2 * y) * DENSITY_STEPS_PER_SAMPLE / 2 / step, -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
+}
+
+// A coarse grid's density of the scene at the sample: the pit and the
+// wall as edits of the flat ground, which the coarse grid reads through
+// coarse_field_density against the flat generation; the cliff as its
+// depth over the step.
+test_seam_scene_density :: proc(scene: Test_Seam_Scene, sample: [3]i64, step: i64) -> i8 {
+	fine := test_seam_flat_density(sample.y, 1)
+	switch scene {
+	case .Pit:
+		offset := [3]f64{f64(sample.x), f64(sample.y), f64(sample.z)} - {1.5, 19, 16.3}
+		if offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= 2.5 * 2.5 {
+			fine = -MAXIMUM_DENSITY
+		}
+	case .Wall:
+		if sample.x >= 0 && sample.x <= 1 && sample.y >= 20 && sample.y <= 26 && sample.z >= 10 && sample.z <= 22 {
+			fine = MAXIMUM_DENSITY
+		}
+	case .Cliff:
+		top_twice: i64 = sample.x <= 1 ? 60 : 41
+		return i8(clamp((top_twice - 2 * sample.y) * DENSITY_STEPS_PER_SAMPLE / 2 / step, -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
+	}
+	return coarse_field_density(fine, test_seam_flat_density(sample.y, step), i32(step))
+}
+
+// A half resolution grid of the scene, mirrored in x when mirrored.
+fill_test_seam_scene_grid :: proc(origin: Sample_Coordinate, scene: Test_Seam_Scene, mirrored: bool) -> ^Field_Grid {
+	grid := new(Field_Grid, context.temp_allocator)
+	grid.origin, grid.step = origin, 2
+	for z in i32(-1) ..= FIELD_GRID_CELLS {
+		for y in i32(-1) ..= FIELD_GRID_CELLS {
+			for x in i32(-1) ..= FIELD_GRID_CELLS {
+				sample := ([3]i32)(origin) + [3]i32{x, y, z} * grid.step
+				at := [3]i64{i64(sample.x), i64(sample.y), i64(sample.z)}
+				if mirrored {
+					at.x = -at.x
+				}
+				density := test_seam_scene_density(scene, at, i64(grid.step))
+				index := field_grid_index({x, y, z})
+				grid.density[index], grid.material[index] = density, density > 0 ? .Stone : .Air
+			}
+		}
+	}
+	return grid
+}
+
+// Whether the vertex lies in a cell the cut moves when the node's other
+// faces border nodes of its level: y and z from 0 to under the last cell.
+test_vertex_in_cut_rows :: proc(vertex: Field_Surface_Vertex) -> bool {
+	cells := test_vertex_samples(vertex)
+	return cells.y >= 0 && cells.y < FIELD_GRID_CELLS - 1 && cells.z >= 0 && cells.z < FIELD_GRID_CELLS - 1
+}
+
+// The coarser node of a level seam keeps its mesh in its box at the
+// review's scenes (0321): with the cut and the curtain on its face
+// towards the finer node, on either side, no vertex of its surface, cut
+// or curtain lies past the face, outside the cells the cut leaves, and
+// the curtain hangs. A vertex where the surface stands shallow to the
+// face keeps main's lid and is left out (field_surface_steep_to_face):
+// the cliff's face beside the coarse node on +x, parallel to the face
+// plane. main's lid (the coarser cells at -1 over the finer node) and the
+// first round's flap on that face lie past it.
+@(test)
+test_a_coarser_node_stays_out_of_the_finer_node :: proc(t: ^testing.T) {
+	sides := [2]struct {
+		origin:   Sample_Coordinate,
+		faces:    Field_Seam_Faces,
+		mirrored: bool,
+	}{{{-64, 0, 0}, {curtains = {.Positive_X}}, false}, {{0, 0, 0}, {curtains = {.Negative_X}}, true}}
+	for scene in Test_Seam_Scene {
+		for side in sides {
+			grid := fill_test_seam_scene_grid(side.origin, scene, side.mirrored)
+			surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+			append_field_skirts(&surface, side.faces)
+			past := 0
+			for vertex in surface.vertices {
+				x := test_grid_vertex_samples(grid, vertex).x
+				cut_cell := test_vertex_in_cut_rows(vertex) && field_surface_steep_to_face(vertex.gradient, 0)
+				if cut_cell && (side.mirrored ? x < -1e-9 : x > 1e-9) {
+					past += 1
+				}
+			}
+			testing.expectf(t, past == 0, "%v beside the coarse node at %v: %d vertices past the face", scene, side.origin, past)
+			testing.expectf(t, len(surface.indices) > surface.skirt_index_start, "%v: the coarse node at %v hangs no curtain", scene, side.origin)
+		}
+	}
+}
+
+// The cut slides the coarser surface along itself (0321): on the planes
+// of the grazing test, the coarse node's cut vertices at x = 0 lie no
+// farther from the plane than the farthest of its other surface
+// vertices (a cut that only set x would put them over a sample off at
+// the steep rise), and none in the rows the cut moves lies past the face.
+@(test)
+test_the_cut_follows_the_coarser_surface :: proc(t: ^testing.T) {
+	for rise in ([2]i64{0, STEEPEST_SHIPPED_RISE}) {
+		grid := fill_test_plane_grid({0, 0, 0}, 2, {rise, 0})
+		surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+		surface_vertex_count := len(surface.vertices)
+		append_field_skirts(&surface, {curtains = {.Negative_X}})
+		cut_farthest, other_farthest := 0.0, 0.0
+		cut_count, past := 0, 0
+		for vertex in surface.vertices[:surface_vertex_count] {
+			position := test_grid_vertex_samples(grid, vertex)
+			distance := abs(position.y - (2600 + f64(rise) * position.x) / DENSITY_STEPS_PER_SAMPLE)
+			if position.x == 0 {
+				cut_farthest = max(cut_farthest, distance)
+				cut_count += 1
+			} else {
+				other_farthest = max(other_farthest, distance)
+			}
+			past += test_vertex_in_cut_rows(vertex) && position.x < 0 ? 1 : 0
+		}
+		testing.expectf(t, cut_count > 0 && cut_farthest <= other_farthest, "the rise %d: %d cut vertices up to %v samples off the plane, the others up to %v", rise, cut_count, cut_farthest, other_farthest)
+		testing.expectf(t, past == 0, "the rise %d: %d vertices past the face", rise, past)
+	}
+}
+
+// The cut leaves the cells a node of its level meshes too (0321): beside
+// a node of its level on +x, the vertices of the cells at the corner of
+// the cut face and the shared face stay where the neighbour's mesh puts
+// them, so the two meshes do not part.
+@(test)
+test_the_cut_keeps_the_cells_a_neighbour_meshes :: proc(t: ^testing.T) {
+	first := Field_Node{1, {0, 0, 0}}
+	second := Field_Node{1, {1, 0, 0}}
+	first_grid := fill_test_plane_grid(field_node_origin(first), field_node_step(first), {64, 222})
+	second_grid := fill_test_plane_grid(field_node_origin(second), field_node_step(second), {64, 222})
+	first_surface := mesh_field_surface(first_grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+	second_surface := mesh_field_surface(second_grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+	append_field_skirts(&first_surface, {curtains = {.Negative_Z}})
+	append_field_skirts(&second_surface, {})
+	shared, parted := 0, 0
+	for y in i32(-1) ..< FIELD_GRID_CELLS {
+		first_vertex := first_surface.cell_vertices[field_vertex_cell_index({FIELD_GRID_CELLS - 1, y, -1})]
+		second_vertex := second_surface.cell_vertices[field_vertex_cell_index({-1, y, -1})]
+		if first_vertex < 0 || second_vertex < 0 {
+			continue
+		}
+		shared += 1
+		first_position := test_grid_vertex_samples(first_grid, first_surface.vertices[first_vertex])
+		second_position := test_grid_vertex_samples(second_grid, second_surface.vertices[second_vertex])
+		parted += first_position == second_position ? 0 : 1
+	}
+	testing.expect(t, shared > 0, "the two nodes share a cell at the corner")
+	testing.expectf(t, parted == 0, "%d of the %d shared vertices parted", parted, shared)
+}
+
+// The plane through (0, 20.3, z) with the normal, ground behind it, its
+// density the distance in units of the grid's spacing.
+fill_test_tilted_plane_grid :: proc(origin: Sample_Coordinate, step: i32, normal: [3]f64) -> ^Field_Grid {
+	grid := new(Field_Grid, context.temp_allocator)
+	grid.origin, grid.step = origin, step
+	for z in i32(-1) ..= FIELD_GRID_CELLS {
+		for y in i32(-1) ..= FIELD_GRID_CELLS {
+			for x in i32(-1) ..= FIELD_GRID_CELLS {
+				sample := ([3]i32)(origin) + [3]i32{x, y, z} * step
+				offset := [3]f64{f64(sample.x), f64(sample.y) - 20.3, f64(sample.z)}
+				depth := -linalg.dot(normal, offset) * DENSITY_STEPS_PER_SAMPLE / f64(step)
+				density := i8(clamp(math.floor(depth), -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
+				index := field_grid_index({x, y, z})
+				grid.density[index], grid.material[index] = density, density > 0 ? .Stone : .Air
+			}
+		}
+	}
+	return grid
+}
+
+// The triangles with a corner within the distance of the point, nearest
+// first, so a ray at the point meets its face early.
+triangles_near :: proc(triangles: [][3][3]f64, point: [3]f64, distance: f64) -> [][3][3]f64 {
+	Near_Triangle :: struct {
+		triangle:         [3][3]f64,
+		distance_squared: f64,
+	}
+	near := make([dynamic]Near_Triangle, context.temp_allocator)
+	for triangle in triangles {
+		nearest := min(linalg.length2(triangle[0] - point), linalg.length2(triangle[1] - point), linalg.length2(triangle[2] - point))
+		if nearest < distance * distance {
+			append(&near, Near_Triangle{triangle, nearest})
+		}
+	}
+	slice.sort_by(near[:], proc(first, second: Near_Triangle) -> bool {return first.distance_squared < second.distance_squared})
+	sorted := make([][3][3]f64, len(near), context.temp_allocator)
+	for entry, index in near {
+		sorted[index] = entry.triangle
+	}
+	return sorted
+}
+
+// A finest node beside a half resolution one across x = 0, on a plane
+// that meets the face plane at the angle and faces the coarse node: rays
+// from the air at targets on the ground near the face plane, in 400
+// directions spread over the sphere (those from the ground's side left
+// out), each from 16 samples back. Counts the rays that meet a front
+// face of main's meshes (the coarse node without a cut or a curtain) but
+// none of today's. A ray meets only triangles within 24 samples of its
+// target: it starts 16 back, and no triangle spans 8.
+lost_seam_rays :: proc(degrees: f64, coarse_on_positive: bool) -> (lost, aimed: int) {
+	angle := math.to_radians(degrees)
+	facing := coarse_on_positive ? 1.0 : -1.0
+	normal := [3]f64{facing * math.cos(angle), math.sin(angle), 0}
+	along_ground := [3]f64{-facing * math.sin(angle), math.cos(angle), 0}
+	fine_origin := coarse_on_positive ? Sample_Coordinate{-32, 0, 0} : {0, 0, 0}
+	coarse_origin := coarse_on_positive ? Sample_Coordinate{0, 0, 0} : {-64, 0, 0}
+	fine_grid := fill_test_tilted_plane_grid(fine_origin, 1, normal)
+	coarse_grid := fill_test_tilted_plane_grid(coarse_origin, 2, normal)
+	today := make([dynamic][3][3]f64, context.temp_allocator)
+	main_meshes := make([dynamic][3][3]f64, context.temp_allocator)
+	append_seam_triangles(&today, fine_grid, {flaps = {field_face(0, coarse_on_positive)}})
+	append_seam_triangles(&today, coarse_grid, {curtains = {field_face(0, !coarse_on_positive)}})
+	append_seam_triangles(&main_meshes, fine_grid, {flaps = {field_face(0, coarse_on_positive)}})
+	append_seam_triangles(&main_meshes, coarse_grid, {})
+	DIRECTIONS :: 400
+	golden_angle := math.PI * (3 - math.sqrt(5.0))
+	for z in ([2]f64{8.3, 12.9}) {
+		for distance in ([?]f64{-1, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 1}) {
+			target := [3]f64{0, 20.3, z} + distance * along_ground
+			today_near := triangles_near(today[:], target, 24)
+			main_near := triangles_near(main_meshes[:], target, 24)
+			for index in 0 ..< DIRECTIONS {
+				height := 1 - 2 * (f64(index) + 0.5) / DIRECTIONS
+				radius := math.sqrt(1 - height * height)
+				turn := f64(index) * golden_angle
+				direction := [3]f64{radius * math.cos(turn), height, radius * math.sin(turn)}
+				if linalg.dot(direction, normal) > -0.02 {
+					continue
+				}
+				aimed += 1
+				origin := target - 16 * direction
+				if !ray_meets_front_face(today_near, origin, direction) && ray_meets_front_face(main_near, origin, direction) {
+					lost += 1
+				}
+			}
+		}
+	}
+	return lost, aimed
+}
+
+// A level seam stays closed wherever main's was, at every angle between
+// the ground and the face plane and from every direction (0321, decision
+// 3): with the coarse node on either side and the ground facing it, no
+// ray that meets a front face of main's meshes meets none of today's.
+// The cut of every cell opened such rays below about 30 degrees, where
+// the finer node's flap falls short of the face plane and the curtain
+// shows the coarser side its back; the shallow cells keep main's lid.
+@(test) // slow
+test_a_level_seam_is_closed_at_every_angle_to_the_face :: proc(t: ^testing.T) {
+	for degrees in ([?]f64{5, 10, 15, 20, 25, 31.5, 40, 60, 90}) {
+		for coarse_on_positive in ([2]bool{true, false}) {
+			lost, aimed := lost_seam_rays(degrees, coarse_on_positive)
+			testing.expectf(t, aimed > 0 && lost == 0, "at %v degrees, the coarse node on +x %v: %d of %d rays that meet main's meshes meet nothing", degrees, coarse_on_positive, lost, aimed)
+		}
+	}
 }
 
 // A coarse node's grid comes from the generation; at step 1 it holds the
@@ -304,7 +679,7 @@ test_pit_skirt_depth :: proc(origin: Sample_Coordinate, faces: Field_Faces) -> (
 	grid := fill_test_field_grid(origin, 1, test_pit_density)
 	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
 	first_skirt := len(surface.vertices)
-	append_field_skirts(&surface, faces)
+	append_field_skirts(&surface, {flaps = faces})
 	shallowest = max(f64)
 	for vertex in surface.vertices[first_skirt:] {
 		shallowest = min(shallowest, test_pit_trilinear(test_grid_vertex_samples(grid, vertex)))
@@ -331,8 +706,8 @@ test_nodes_of_one_level_hang_no_skirt_between_them :: proc(t: ^testing.T) {
 	testing.expect(t, in_air, "skirts on the shared face stand in the pit's air")
 }
 
-// The faces towards a coarser node or none hang skirts, those towards a
-// node of the same level or finer ones do not.
+// The faces towards a coarser node or none hang flaps, those towards finer
+// nodes curtains, those towards a node of the same level neither.
 @(test)
 test_the_skirt_faces_follow_the_neighbours_levels :: proc(t: ^testing.T) {
 	fine := Field_Node{0, {0, 0, 0}}
@@ -340,9 +715,9 @@ test_the_skirt_faces_follow_the_neighbours_levels :: proc(t: ^testing.T) {
 	coarse := Field_Node{1, {-1, 0, 0}}
 	selection := []Field_Node{fine, same, coarse, {0, {1, 0, 0}}, {0, {1, 1, 0}}, {0, {1, 0, 1}}, {0, {1, 1, 1}}}
 	index := make_field_selection_index(selection, context.temp_allocator)
-	testing.expect_value(t, field_node_skirt_faces(index, fine), Field_Faces{.Negative_X, .Negative_Y, .Positive_Y, .Negative_Z})
+	testing.expect_value(t, field_node_skirt_faces(index, fine), Field_Seam_Faces{flaps = {.Negative_X, .Negative_Y, .Positive_Y, .Negative_Z}})
 	// The coarse node's +x face borders the finer nodes.
-	testing.expect(t, .Positive_X not_in field_node_skirt_faces(index, coarse))
+	testing.expect_value(t, field_node_skirt_faces(index, coarse), Field_Seam_Faces{flaps = EVERY_FIELD_FACE - {.Positive_X}, curtains = {.Positive_X}})
 }
 
 // The sea's free surface lies at the sea level within 0.05 sample at
