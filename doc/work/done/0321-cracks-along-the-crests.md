@@ -1,6 +1,6 @@
 # 0321: Cracks along the crests
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, f77f2cd)
 
 The captures of 0306 and 0307 from 120 m over the home, looking south west (`tmp/shot_terrain_colours/crest_crop.png`, the same place in both builds), show a dashed line of sky along a contour on a far slope and along a crest's silhouette. The seam between two detail levels opens and the skirts do not close it. It came with 0306's relief: the slopes are steeper and taller than the 34 m relief the skirts were sized for.
 
