@@ -178,6 +178,14 @@ sun_path_axis :: proc() -> [3]f32 {
 	return {0, f32(-math.sin(tilt)), f32(math.cos(tilt))}
 }
 
+// The sun path's axis as the field lights by it (0328, the sun's shadow
+// map's basis): sun_path_axis turned back by the inverse of the sky's
+// rotation, as field_sun_world_direction turns the sun, so the field's
+// sun always stands square to it. Unit.
+field_sun_path_world_axis :: proc(up: [3]f32) -> [3]f32 {
+	return linalg.quaternion128_mul_vector3(linalg.quaternion_inverse(up_to_sky_rotation(up)), sun_path_axis())
+}
+
 // 0 at new moon, 0.5 at full moon.
 moon_phase :: proc(day_number: u64) -> f32 {
 	return f32(day_number % MOON_CYCLE_DAYS) / MOON_CYCLE_DAYS

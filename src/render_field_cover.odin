@@ -93,6 +93,8 @@ Field_Cover_Renderer :: struct {
 	open_sky_locations:    [Open_Sky_Uniform]i32,
 	spot_locations:        [6]i32,
 	point_light_locations: [2]i32,
+	// The sun's shadow's uniforms (0328, use_sun_shadow_sampler).
+	sun_shadow_locations:  [Sun_Shadow_Uniform]i32,
 	kinds:                 [MAXIMUM_COVER_KINDS]Field_Cover_Kind_Draw,
 	kind_count:            int,
 	drawn_count:           int,
@@ -391,6 +393,7 @@ init_field_cover_renderer :: proc(renderer: ^Field_Renderer, data_directory: str
 	cover.open_sky_locations = open_sky_locations(shader)
 	cover.spot_locations = spot_light_locations(shader)
 	cover.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors")}
+	cover.sun_shadow_locations = use_sun_shadow_sampler(shader)
 	cover.kind_count = min(len(planet.cover.kinds), MAXIMUM_COVER_KINDS)
 	stone_mean := renderer.material_colors[field_material_slot(.Stone)]
 	for index in 0 ..< cover.kind_count {
@@ -444,14 +447,15 @@ unload_field_cover_node :: proc(draws: [MAXIMUM_COVER_KINDS]Field_Cover_Node_Dra
 	}
 }
 
-// The open sky's and the torchlight's uniforms of the cover's shader
-// (set_field_frame_lights).
+// The open sky's, the torchlight's and the sun's shadow's (0328) uniforms
+// of the cover's shader (set_field_frame_lights).
 set_field_cover_frame_lights :: proc(cover: Field_Cover_Renderer, lights: Field_Frame_Lights) {
 	if !cover.on {
 		return
 	}
 	set_open_sky_uniforms(cover.shader, cover.open_sky_locations, lights)
 	set_spot_light_uniforms(cover.shader, cover.spot_locations, lights.spot)
+	set_sun_shadow_uniforms(cover.shader, cover.sun_shadow_locations, lights.sun_shadow)
 }
 
 // The point lights' uniforms of the cover's shader
@@ -474,8 +478,9 @@ set_cover_float :: proc(cover: Field_Cover_Renderer, uniform: Cover_Uniform, val
 // raylib's instanced draw sets it and the camera; kind by kind its
 // uniforms, both faces for foliage and the back faces culled for the
 // stones, then per node with instances of the kind the prefix its box's
-// nearest point can show.
-draw_field_cover :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, visible: []Field_Node_Render) {
+// nearest point can show. The sun's shadow map (0328, 0 for none) is bound
+// on its unit for the whole draw.
+draw_field_cover :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, visible: []Field_Node_Render, shadow_texture: u32) {
 	cover := &renderer.cover
 	cover.drawn_count = 0
 	if !cover.on || len(visible) == 0 {
@@ -486,6 +491,7 @@ draw_field_cover :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, visible
 	rl.SetShaderValueMatrix(shader, shader.locs[int(rl.ShaderLocationIndex.MATRIX_MVP)], instanced_mvp())
 	position := camera.position
 	rl.SetShaderValue(shader, cover.locations[.Camera_Position], &position, .VEC3)
+	bind_sun_shadow_texture(shader, shadow_texture)
 	node_metres := f32(field_node_samples(0)) * f32(renderer.spacing_millimetres) / MILLIMETRES_PER_METRE
 	for index in 0 ..< cover.kind_count {
 		kind := cover.kinds[index]
@@ -515,6 +521,7 @@ draw_field_cover :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, visible
 			cover.drawn_count += int(count)
 		}
 	}
+	unbind_sun_shadow_texture(shadow_texture)
 	rlgl.EnableBackfaceCulling()
 	rlgl.DisableVertexArray()
 	rlgl.DisableShader()

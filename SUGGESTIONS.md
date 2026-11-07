@@ -45,7 +45,6 @@ Balance and design numbers wait for late beta, just before the first release (us
 ## Follow ups: presentation, input and UI
 
 - Tree roots done properly: the 0059 root logs at the foot of straight trunks were removed after the couch found them obscene (0083). Minecraft's vanilla mangrove (1.19) shows the shape that works: roots as a block type of their own, a tangle arching above ground and water, on a species designed around them. A wetland mangrove and a gnarled badlands tree would be the place to try it, with a root block shape from 0061's pipeline.
-- Sun shadows, if they ever return (0097 removed the 0072 shadow map): soft and low contrast, treating the sun as mostly ambient, never a hard directional map. The sky light propagation already shades under crowns and in gullies.
 - Fonts (0077): the headless UI audit approximates text width with the default face's average advance (`APPROXIMATE_ADVANCE_FACTOR`, 0.37 of the size); Michroma, Orbitron and Oxanium are wider (0.42 to 0.44), so overflow with them can slip past the audit until it takes a per family factor from fonts.sjson.
 - The world overlay's backdrop (`draw_world_overlay`, `src/diagnostics.odin`, the F4 statistics overlay) is `font_size` times 24 wide, narrower than its 79 character hint line.
 - The targeting ray starts at the eye in third person.
@@ -229,3 +228,11 @@ The work the switch left that an agent would do anyway became work items on 2026
 - The cover's wet test reads `grid.water`, which near a disturbed shore holds the waves' offsets, so a narrow band of beach cover may pop in and out while the water moves.
 - The patch noise is one octave of trilinear `value_noise` on world axes; thresholded drifts of flowers and grass may sit on a visible lattice of 7 to 13 m. The landing captures look for it.
 - The streaming keeps placing cover when the cover shaders failed to load, work nothing draws.
+
+## Suggestions from the sun shadows (0328, 2026-11-07)
+
+- The cast pass draws every foundation cell of every frame (`draw_frames` in `draw_field_sun_shadows`), where the machines are culled to its box; a base of thousands of cells doubles that batch work, twice in split screen. A box test per frame or per cell run would bound it.
+- The map is snapped as the eye moves but not as the sun turns, so shadow edges in the outer ring may shimmer slowly through the day; stepping the sun direction the cascade uses is the usual remedy. The captures at dusk would show whether it is visible.
+- The Windows build under Winlator on the phone takes the desktop row, so shadows are on there by default; an Android-like row for Winlator would need a way to tell it apart.
+- Belts, runs and torches neither cast nor receive (as specified), so they stay lit under a tree.
+- `draw_far_tree_cards` still binds and unbinds the shadow map, though the cards no longer read it.

@@ -54,6 +54,8 @@ Model_Renderer :: struct {
 	outdoor_on_location:      i32,
 	daylight_tint_location:   i32,
 	camera_position_location: i32,
+	// The sun's shadow's uniforms (0328, use_sun_shadow_sampler).
+	sun_shadow_locations:     [Sun_Shadow_Uniform]i32,
 	// By Machine_Id; no vertices in the body for a machine drawn as a box.
 	models:                []Uploaded_Machine_Model,
 	// The furnaces' and the torches' flames (render_flames.odin, 0274).
@@ -73,6 +75,9 @@ Model_Renderer :: struct {
 // the pod's interior light share (0225, gather_interior_lights); nil
 // outside a field scene, which leaves every share 1. reduced_motion is
 // the setting: it stills the flames' flicker and the embers' pulse (0274).
+// casters is set by the sun's cast pass (0328, draw_field_sun_shadows):
+// draw_entities leaves out an entity whose box lies outside the casters'
+// box (model_frame_draws_entity); nil draws every one.
 Model_Frame :: struct {
 	world:          ^World,
 	tick:           u64,
@@ -84,6 +89,7 @@ Model_Frame :: struct {
 	reaching_arm:   Entity_Handle,
 	interiors:      []Interior_Light,
 	reduced_motion: bool,
+	casters:        ^Sun_Shadow_Casters,
 }
 
 // The frame's time on the tick clock, so a paused game stills what reads
@@ -282,6 +288,7 @@ use_model_shader :: proc(renderer: ^Model_Renderer, data_directory: string) {
 	renderer.outdoor_on_location = rl.GetShaderLocation(shader, "outdoor_on")
 	renderer.daylight_tint_location = rl.GetShaderLocation(shader, "daylight_tint")
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
+	renderer.sun_shadow_locations = use_sun_shadow_sampler(shader)
 	renderer.point_lights_ready = true
 }
 
@@ -359,14 +366,15 @@ model_frame_daylight_tint :: proc(frame: Model_Frame) -> [3]f32 {
 }
 
 // The field's open sky on the lit layer (0313): the light and the haze
-// for the viewer, the flat light to divide out and the eye; outdoor_on
-// 1. Nothing without the model shader.
+// for the viewer, the sun's shadow (0328), the flat light to divide out
+// and the eye; outdoor_on 1. Nothing without the model shader.
 set_model_open_sky :: proc(renderer: Model_Renderer, lights: Field_Frame_Lights, daylight_tint, eye: [3]f32) {
 	if !renderer.point_lights_ready {
 		return
 	}
 	shader := renderer.material.shader
 	set_open_sky_uniforms(shader, renderer.open_sky_locations, lights)
+	set_sun_shadow_uniforms(shader, renderer.sun_shadow_locations, lights.sun_shadow)
 	daylight_tint, eye := daylight_tint, eye
 	rl.SetShaderValue(shader, renderer.daylight_tint_location, &daylight_tint, .VEC3)
 	rl.SetShaderValue(shader, renderer.camera_position_location, &eye, .VEC3)
@@ -374,6 +382,7 @@ set_model_open_sky :: proc(renderer: Model_Renderer, lights: Field_Frame_Lights,
 	if renderer.trees.ready {
 		trees := renderer.trees
 		set_open_sky_uniforms(trees.material.shader, trees.open_sky_locations, lights)
+		set_sun_shadow_uniforms(trees.material.shader, trees.sun_shadow_locations, lights.sun_shadow)
 		rl.SetShaderValue(trees.material.shader, trees.daylight_tint_location, &daylight_tint, .VEC3)
 		rl.SetShaderValue(trees.material.shader, trees.camera_position_location, &eye, .VEC3)
 	}

@@ -27,6 +27,10 @@ Settings :: struct {
 	// Rain, fog, wind and cloud shadows (work item 0063); off keeps the
 	// weather clear, still and without shadows, for reduced motion.
 	weather:                   bool,
+	// The sun's shadow on the field (work item 0328,
+	// render_sun_shadows.odin): default takes the build's data row
+	// (sun_shadows_row's on), on and off override it.
+	sun_shadows:               Sun_Shadows_Mode,
 	// The first person camera rises and falls with each step (work item
 	// 0066); off for reduced motion.
 	head_bob:                  bool,
@@ -115,6 +119,26 @@ On_Screen_Keyboard :: enum u8 {
 	Game,
 }
 
+// The settings value (settings.sun_shadows, 0328).
+Sun_Shadows_Mode :: enum u8 {
+	Default,
+	On,
+	Off,
+}
+
+// Whether the sun's shadow is drawn: the setting, or the build's data
+// row's default for Default.
+sun_shadows_enabled :: proc(mode: Sun_Shadows_Mode, platform_default: bool) -> bool {
+	switch mode {
+	case .On:
+		return true
+	case .Off:
+		return false
+	case .Default:
+	}
+	return platform_default
+}
+
 // Stacked keeps a 16:9 screen's full width for each of two players, so
 // the field of view stays as wide as at full screen.
 Split_Screen_Layout :: enum u8 {
@@ -142,6 +166,7 @@ DEFAULT_SETTINGS :: Settings {
 	// The camera to the right, so the player stands left of centre.
 	third_person_shoulder     = 0.6,
 	weather                   = true,
+	sun_shadows               = .Default,
 	head_bob                  = true,
 	split_screen              = .Stacked,
 	master_volume             = 0.8,

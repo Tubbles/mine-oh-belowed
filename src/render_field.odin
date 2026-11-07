@@ -44,6 +44,8 @@ FIELD_GROUND_ATLAS_SAMPLER :: "ground_atlas"
 // A uniform of field.fs since the open sky (0313), whose absence marks an
 // older copy.
 FIELD_HAZE_UNIFORM :: "haze_color"
+// A uniform of field.fs since the sun's shadow (0328), likewise.
+FIELD_SUN_SHADOW_UNIFORM :: "sun_shadow_strength"
 
 #assert(FIELD_MATERIAL_TILE_COUNT == FIELD_TEXTURED_MATERIAL_COUNT, "every generated material tile is a tile of the atlas")
 
@@ -94,6 +96,10 @@ Field_Renderer :: struct {
 	grass_color:              [3]f32,
 	// The ground cover's shader and kinds (0311, init_field_cover_renderer).
 	cover:                    Field_Cover_Renderer,
+	// The sun's shadow map (0328, render_sun_shadows.odin) and the field
+	// shader's uniforms that read it.
+	sun_shadows:              Sun_Shadow_Renderer,
+	sun_shadow_locations:     [Sun_Shadow_Uniform]i32,
 }
 
 // A tile's mean texel, 0 to 1.
@@ -142,6 +148,7 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader) {
 	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors")}
 	renderer.open_sky_locations = open_sky_locations(shader)
 	renderer.spot_locations = spot_light_locations(shader)
+	renderer.sun_shadow_locations = use_sun_shadow_sampler(shader)
 	renderer.material.shader = shader
 }
 
@@ -162,9 +169,10 @@ field_globe_color :: proc(planet: Planet, grass_mean: [3]f32) -> rl.Color {
 }
 
 // False with an error line when the shaders do not load or the fragment
-// shader has no ground atlas or no haze: a copy older than the looks
-// (0307) or the open sky (0313) links with today's vertex shader on
-// desktop GL, so the load alone does not catch it.
+// shader has no ground atlas, no haze or no sun's shadow: a copy older
+// than the looks (0307), the open sky (0313) or the shadow (0328) links
+// with today's vertex shader on desktop GL, so the load alone does not
+// catch it.
 // fog_end is the last level of detail distance in metres.
 init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, ok: bool) {
 	shader := load_shader_pair(data_directory, FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, "field") or_return
@@ -175,6 +183,11 @@ init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, p
 	}
 	if rl.GetShaderLocation(shader, FIELD_HAZE_UNIFORM) < 0 {
 		platform.log_printf("error: the field shader from %s and %s has no %s, a copy older than the open sky's light", FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, FIELD_HAZE_UNIFORM)
+		rl.UnloadShader(shader)
+		return {}, false
+	}
+	if rl.GetShaderLocation(shader, FIELD_SUN_SHADOW_UNIFORM) < 0 {
+		platform.log_printf("error: the field shader from %s and %s has no %s, a copy older than the sun's shadow", FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, FIELD_SUN_SHADOW_UNIFORM)
 		rl.UnloadShader(shader)
 		return {}, false
 	}
@@ -272,12 +285,17 @@ upload_streamed_field_meshes :: proc(renderer: ^Field_Renderer, streaming: ^Fiel
 	}
 }
 
-field_node_in_frustum :: proc(frustum: render_frustum.Frustum, render: Field_Node_Render, node: Field_Node, spacing_millimetres: int) -> bool {
+// A node's box in metres: its cube from the origin, widened by the cells
+// below the origin and the skirts, which reach three cells past it.
+field_node_box_metres :: proc(render: Field_Node_Render, node: Field_Node, spacing_millimetres: int) -> (minimum, maximum: [3]f32) {
 	size := f32(f64(field_node_samples(node.level)) * f64(spacing_millimetres) / MILLIMETRES_PER_METRE)
-	// The cells below the origin and the skirts reach three cells past
-	// the box.
 	margin := size / FIELD_GRID_CELLS * 4
-	return render_frustum.frustum_contains_box(frustum, render.origin - margin, render.origin + size + margin)
+	return render.origin - margin, render.origin + size + margin
+}
+
+field_node_in_frustum :: proc(frustum: render_frustum.Frustum, render: Field_Node_Render, node: Field_Node, spacing_millimetres: int) -> bool {
+	minimum, maximum := field_node_box_metres(render, node, spacing_millimetres)
+	return render_frustum.frustum_contains_box(frustum, minimum, maximum)
 }
 
 set_field_water_color :: proc(renderer: ^Field_Renderer, color: [4]f32) {
@@ -388,12 +406,14 @@ set_open_sky_uniforms :: proc(shader: rl.Shader, locations: [Open_Sky_Uniform]i3
 	rl.SetShaderValue(shader, locations[.Fog_End], &haze.fog_end, .FLOAT)
 }
 
-// The open sky's light and haze (0313) and the torchlight (0297), before
-// the terrain so the water pass and the cover (0311) share them.
+// The open sky's light and haze (0313), the torchlight (0297) and the
+// sun's shadow (0328), before the terrain so the water pass and the cover
+// (0311) share them.
 set_field_frame_lights :: proc(renderer: ^Field_Renderer, lights: Field_Frame_Lights) {
 	shader := renderer.material.shader
 	set_open_sky_uniforms(shader, renderer.open_sky_locations, lights)
 	set_spot_light_uniforms(shader, renderer.spot_locations, lights.spot)
+	set_sun_shadow_uniforms(shader, renderer.sun_shadow_locations, lights.sun_shadow)
 	set_field_cover_frame_lights(renderer.cover, lights)
 }
 
@@ -431,12 +451,17 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 		}
 		renderer.drawn_node_count += 1
 	}
-	draw_field_cover(renderer, camera, visible[:])
+	draw_field_cover(renderer, camera, visible[:], lights.sun_shadow.texture)
 	draw_field_water(renderer, visible[:])
 }
 
-// UnloadMaterial also unloads the shader and the ground atlas.
-destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
+// UnloadMaterial also unloads the shader and the ground atlas; the sun's
+// shadow map goes first (0328), the receivers' slots cleared, so no
+// material deletes a texture the map owns. models are the receivers'
+// (sun_shadow_receivers), {} without them.
+destroy_field_renderer :: proc(renderer: ^Field_Renderer, models: Model_Renderer) {
+	receivers := sun_shadow_receivers(renderer, models)
+	release_sun_shadow_map(&renderer.sun_shadows, receivers[:])
 	for _, render in renderer.meshes {
 		unload_field_node_render(render)
 	}

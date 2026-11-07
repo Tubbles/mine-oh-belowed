@@ -152,6 +152,9 @@ Ui_Audit :: struct {
 	settings:           Settings,
 	// The screen context's display fact (work items 0084 and 0085).
 	platform:           Window_Platform,
+	// The build's default of the sun's shadow (0328), false as on the
+	// phone unless a case sets it.
+	sun_shadows_default: bool,
 	fonts:              Loaded_Fonts,
 	bindings:           []Binding,
 	title:              Title_State,
@@ -303,6 +306,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		settings = &audit.settings,
 		monitor_size = UI_AUDIT_MONITOR_SIZE,
 		platform = audit.platform,
+		sun_shadows_default = audit.sun_shadows_default,
 		font_families = audit.fonts.families,
 		bindings = audit.bindings,
 		requests = &audit.requests,

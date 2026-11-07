@@ -196,13 +196,25 @@ scaled_settings_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Inpu
 	ui_resolve(state)
 }
 
-// The Settings screen over the pause menu at UI scale 1, drawn once, and
-// where three quarters along the UI scale slider's track lie, in pixels.
+// The Display tab's scroll region.
+display_settings_region_id :: proc() -> Ui_Id {
+	return ui_hash(ui_hash(0, "settings", -1), "display_settings", -1)
+}
+
+// The Settings screen over the pause menu at UI scale 1 with the focus on
+// the UI scale slider, which scrolls the Display tab to show it whole
+// (the Sun shadows row of 0328 moved it below the tab's first view): a
+// frame for the focus to land, one for the region to scroll to it and
+// one drawn at that scroll; and where three quarters along the slider's
+// track lie, in pixels.
 open_ui_scale_slider :: proc(audit: ^Ui_Audit, state: ^Ui_State) -> [2]f32 {
 	audit.settings.ui_scale = 1
 	push_screen(&state.screens, .Pause)
 	push_screen(&state.screens, .Settings)
-	scaled_settings_frame(audit, state, {})
+	state.requested_focus = settings_row_id("settings_ui_scale")
+	for _ in 0 ..< 3 {
+		scaled_settings_frame(audit, state, {})
+	}
 	row := state.widgets[widget_index(state.widgets[:], settings_row_id("settings_ui_scale"))].rectangle
 	// slider_begin's layout.
 	track_x := row.x + row.width * 0.45
@@ -268,14 +280,15 @@ test_a_vertical_drag_on_a_slider_scrolls :: proc(t: ^testing.T) {
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
 	at := open_ui_scale_slider(audit, &state)
-	region := ui_hash(ui_hash(0, "settings", -1), "display_settings", -1)
+	region := display_settings_region_id()
+	start := state.scroll_offsets[region]
 	scaled_settings_frame(audit, &state, touch_input(at, true, pressed = true))
 	scaled_settings_frame(audit, &state, touch_input(at - [2]f32{5, 60}, true))
 	scaled_settings_frame(audit, &state, touch_input(at - [2]f32{10, 100}, true))
-	testing.expect_value(t, state.scroll_offsets[region], 100)
+	testing.expect_value(t, state.scroll_offsets[region], start + 100)
 	scaled_settings_frame(audit, &state, touch_input(at - [2]f32{10, 100}, false, moved = false))
 	testing.expect_value(t, audit.settings.ui_scale, 1)
-	testing.expect_value(t, state.scroll_offsets[region], 100)
+	testing.expect_value(t, state.scroll_offsets[region], start + 100)
 }
 
 // Finger scrolling reaches the Scroll_List screens: the recipe list.
@@ -924,4 +937,28 @@ test_the_pause_menu_offers_cancel_placement_while_the_editor_runs :: proc(t: ^te
 	testing.expect_value(t, state.screens.count, 0)
 	testing.expect(t, !editor.anchored)
 	testing.expect(t, editor.on)
+}
+
+// Work item 0328: the Sun shadows toggle shows the build's default for
+// default and writes on or off, never default again.
+@(test)
+test_the_sun_shadows_toggle_writes_on_or_off :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Pause)
+	push_screen(&state.screens, .Settings)
+	audit.sun_shadows_default = true
+	audit.settings.sun_shadows = .Default
+	screen_test_frame(audit, &state, {})
+	tap_widget(audit, &state, settings_row_id("settings_sun_shadows"))
+	testing.expect_value(t, audit.settings.sun_shadows, Sun_Shadows_Mode.Off)
+	tap_widget(audit, &state, settings_row_id("settings_sun_shadows"))
+	testing.expect_value(t, audit.settings.sun_shadows, Sun_Shadows_Mode.On)
+	audit.sun_shadows_default = false
+	audit.settings.sun_shadows = .Default
+	screen_test_frame(audit, &state, {})
+	tap_widget(audit, &state, settings_row_id("settings_sun_shadows"))
+	testing.expect_value(t, audit.settings.sun_shadows, Sun_Shadows_Mode.On)
 }

@@ -73,7 +73,8 @@ Field_Haze :: struct {
 // in the world's frame and its light, the sky's light from above and the
 // ground's bounce from below, all 0 to about 1; the open sky's light on
 // an upward face clamped to 1 (the models' CPU light, Model_Frame's
-// sky_tint); the haze and the torchlight.
+// sky_tint); the haze and the torchlight; the sun's shadow (0328, zero
+// from field_frame_lights, filled by the cast pass, draw_field_sun_shadows).
 Field_Frame_Lights :: struct {
 	sun_direction: [3]f32,
 	sun_color:     [3]f32,
@@ -82,6 +83,7 @@ Field_Frame_Lights :: struct {
 	flat_light:    [3]f32,
 	haze:          Field_Haze,
 	spot:          Spot_Light,
+	sun_shadow:    Sun_Shadow_Frame,
 }
 
 // What field_frame_lights reads besides the camera: the clock's sky at

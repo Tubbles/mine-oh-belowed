@@ -30,7 +30,8 @@
 // and its alpha as its opacity, and the sun's glint, in the sun's
 // colour, where the half vector of the sun and the eye meets the
 // normal; the terrain pass sets it to 0. The water's vertices have no
-// weights, so it reads no tile.
+// weights, so it reads no tile. The sun's shadow (sun_shadow_light, work
+// item 0328) scales the open sky's sun term and the water's glint.
 //
 // Texture levels: every read is textureLod at a level computed from the
 // derivatives of the position outside any branch, one level per
@@ -166,10 +167,70 @@ uniform vec3 sun_color;
 uniform vec3 sky_color;
 uniform vec3 bounce_color;
 
-vec3 outdoor_light(vec3 normal, vec3 up)
+vec3 outdoor_light(vec3 normal, vec3 up, float sunlit)
 {
     float upward = 0.5 + 0.5 * dot(normal, up);
-    return mix(bounce_color, sky_color, upward) + sun_color * max(dot(normal, sun_direction), 0.0);
+    return mix(bounce_color, sky_color, upward) + sun_color * (sunlit * max(dot(normal, sun_direction), 0.0));
+}
+
+// The sun's shadow (0328, render_sun_shadows.odin): the casters' depth
+// seen from the sun in sun_shadow_map, reached through sun_shadow_matrix
+// from the world's metres. sun_shadow_shape: x the map's texels a side,
+// y a texel in metres, z and w the distances from the eye where the
+// shadow starts to fade and is gone. The position moves along its normal
+// by sun_shadow_normal_offset_texels and its depth towards the sun by
+// sun_shadow_depth_bias_texels, so a lit face never shadows itself; the
+// comparisons of 4 by 4 texels are weighted as the mean of the 3 by 3
+// bilinear lookups round the position, an edge three texels soft. The
+// strength 0 (the setting off, the sun set) and a face turned from the
+// sun return 1 before any read. The sampler is highp: GLSL ES gives a
+// sampler lowp by default, too coarse for a depth. sun_shadow_light and
+// sun_shadow_tap_weight are the same text in field.fs, model.fs, tree.fs
+// and cover.fs (shader_source_test.odin).
+uniform highp sampler2D sun_shadow_map;
+uniform mat4 sun_shadow_matrix;
+uniform float sun_shadow_strength;
+uniform vec4 sun_shadow_shape;
+
+const float sun_shadow_normal_offset_texels = 2.0;
+const float sun_shadow_depth_bias_texels = 0.5;
+
+// A tap's weight along one axis: the outer two by the fraction, the
+// inner two whole.
+float sun_shadow_tap_weight(uint index, float fraction)
+{
+    if (index == 0u) {
+        return 1.0 - fraction;
+    }
+    return index == 3u ? fraction : 1.0;
+}
+
+// 1 where the sun reaches the position, down to 1 less the strength in
+// full shadow.
+float sun_shadow_light(vec3 position, vec3 normal, vec3 eye)
+{
+    if (sun_shadow_strength <= 0.0 || dot(normal, sun_direction) <= 0.0) {
+        return 1.0;
+    }
+    float fade = 1.0 - smoothstep(sun_shadow_shape.z, sun_shadow_shape.w, length(position - eye));
+    if (fade <= 0.0) {
+        return 1.0;
+    }
+    vec3 moved = position + normal * (sun_shadow_shape.y * sun_shadow_normal_offset_texels);
+    vec3 coordinate = (sun_shadow_matrix * vec4(moved, 1.0)).xyz * 0.5 + 0.5;
+    float depth = coordinate.z - sun_shadow_depth_bias_texels / sun_shadow_shape.x;
+    vec2 texel_position = coordinate.xy * sun_shadow_shape.x - 0.5;
+    vec2 base = floor(texel_position);
+    vec2 fraction = texel_position - base;
+    float lit = 0.0;
+    for (uint row = 0u; row < 4u; row++) {
+        for (uint column = 0u; column < 4u; column++) {
+            vec2 texel = base + vec2(float(column), float(row)) - 0.5;
+            float stored = textureLod(sun_shadow_map, texel / sun_shadow_shape.x, 0.0).r;
+            lit += sun_shadow_tap_weight(column, fraction.x) * sun_shadow_tap_weight(row, fraction.y) * step(depth, stored);
+        }
+    }
+    return 1.0 - sun_shadow_strength * fade * (1.0 - lit / 9.0);
 }
 
 // The aerial haze (0313, Field_Haze): over the reach from the eye the
@@ -217,7 +278,7 @@ vec3 apply_haze(vec3 color, vec3 position, vec3 eye, float sky_share)
     float toward_sun = max(dot(offset, sun_direction) / max(reach, smallest_weight_sum), 0.0);
     vec3 sky = min(haze_color + haze_sun_color * pow(toward_sun, haze_sun_exponent), vec3(1.0));
     vec3 up = position / max(length(position), smallest_weight_sum);
-    vec3 globe = min(globe_color * outdoor_light(up, up), vec3(1.0));
+    vec3 globe = min(globe_color * outdoor_light(up, up, 1.0), vec3(1.0));
     vec3 end_color = mix(globe, sky, haze_end_share);
     vec3 hazed = mix(mix(color, sky, aerial), end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
     return mix(color, hazed, sky_share);
@@ -368,7 +429,8 @@ void main()
     // and take neither sky nor sun, the cheap shadow. Block light stays
     // the brighter per channel, never added, so a torch-lit wall keeps its
     // light whichever way it faces.
-    vec3 outdoor = fragment_color.a * outdoor_light(normal, normalize(fragment_world_position));
+    float sunlit = sun_shadow_light(fragment_world_position, normal, camera_position);
+    vec3 outdoor = fragment_color.a * outdoor_light(normal, normalize(fragment_world_position), sunlit);
     vec3 light = max(vec3(fragment_block_light), outdoor);
     vec3 lit = albedo * light;
     lit += albedo * point_light_sum(fragment_world_position, normal);
@@ -377,6 +439,6 @@ void main()
     // water, not a branch.
     vec3 to_camera = normalize(camera_position - fragment_world_position);
     float glint = water * fragment_color.a * pow(max(dot(normal, normalize(sun_direction + to_camera + vec3(smallest_weight_sum))), 0.0), water_glint_power) * water_glint_strength;
-    lit += sun_color * glint;
+    lit += sun_color * glint * sunlit;
     finalColor = vec4(apply_haze(min(lit, vec3(1.0)), fragment_world_position, camera_position, fragment_color.a), mix(1.0, water_color.a, water));
 }

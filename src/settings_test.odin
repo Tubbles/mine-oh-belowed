@@ -77,3 +77,14 @@ test_gyro_setting_and_sensitivities :: proc(t: ^testing.T) {
 	settings.gyro_enabled = true
 	testing.expect_value(t, sdl3_look_delta(gamepad, gamepad, 1.0 / 60, settings, false), [2]f32{})
 }
+
+// Work item 0328: the Sun shadows setting overrides the build's data row,
+// default takes it.
+@(test)
+test_sun_shadows_follow_the_platform_default :: proc(t: ^testing.T) {
+	testing.expect(t, sun_shadows_enabled(.Default, true), "default takes an on row")
+	testing.expect(t, !sun_shadows_enabled(.Default, false), "default takes an off row")
+	testing.expect(t, sun_shadows_enabled(.On, false), "on overrides an off row")
+	testing.expect(t, !sun_shadows_enabled(.Off, true), "off overrides an on row")
+	testing.expect_value(t, DEFAULT_SETTINGS.sun_shadows, Sun_Shadows_Mode.Default)
+}

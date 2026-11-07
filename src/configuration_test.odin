@@ -257,6 +257,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.vsync = false
 	settings.frame_rate_cap = 144
 	settings.weather = false
+	settings.sun_shadows = .Off
 	settings.head_bob = false
 	settings.field_of_view = 95
 	settings.sprint_field_of_view_kick = 0
@@ -309,6 +310,29 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\texport_on_save = true\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tedits_directory = \"/storage/emulated/0/Download\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tdeck_preset_applied = true\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tsun_shadows = \"off\"\n"), string(written_data))
+}
+
+// Work item 0328: a settings file written before the Sun shadows setting
+// reads default, a written word reads as its mode, and any other word is
+// refused naming the key.
+@(test)
+test_a_settings_file_without_sun_shadows_reads_the_default :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	drop_in := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-shadows.sjson")
+	write_test_file(drop_in, "settings = {weather = false}")
+	loaded, problem := load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, loaded.configuration.settings.sun_shadows, Sun_Shadows_Mode.Default)
+	write_test_file(drop_in, `settings = {sun_shadows = "on"}`)
+	loaded, problem = load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, loaded.configuration.settings.sun_shadows, Sun_Shadows_Mode.On)
+	write_test_file(drop_in, `settings = {sun_shadows = "maybe"}`)
+	_, problem = load_configuration(test_environment(root), {})
+	expect_problem_mentions(t, problem, drop_in, `settings.sun_shadows is "maybe", not one of default, on, off`)
 }
 
 @(test)

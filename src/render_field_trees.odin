@@ -119,6 +119,8 @@ Tree_Draw :: struct {
 	open_sky_locations:       [Open_Sky_Uniform]i32,
 	daylight_tint_location:   i32,
 	camera_position_location: i32,
+	// The sun's shadow's uniforms (0328, use_sun_shadow_sampler).
+	sun_shadow_locations:     [Sun_Shadow_Uniform]i32,
 }
 
 // When the shader does not load, a log line, and the field shows no
@@ -140,6 +142,7 @@ use_tree_shader :: proc(trees: ^Tree_Draw, data_directory: string) {
 	trees.open_sky_locations = open_sky_locations(shader)
 	trees.daylight_tint_location = rl.GetShaderLocation(shader, "daylight_tint")
 	trees.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
+	trees.sun_shadow_locations = use_sun_shadow_sampler(shader)
 	trees.ready = true
 }
 
@@ -645,10 +648,10 @@ draw_field_trees :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 	set_tree_float(trees, .Far_Distance, far_distance)
 	set_tree_float(trees, .Far_Fade_Metres, f32(config.far_fade_metres))
 	draw_near_trees(scene.models, scene.content.field.tree_species, near, brightness_color(sky))
-	draw_far_tree_cards(trees, far, brightness_color(sky))
+	draw_far_tree_cards(trees, far, brightness_color(sky), scene.lights.sun_shadow.texture)
 }
 
-// The near trees instanced, one draw per tree machine with a model.
+// The near trees instanced through the tree shader's material.
 draw_near_trees :: proc(models: Model_Renderer, species_list: []Field_Tree_Species, near: []Near_Tree, daylight: rl.Color) {
 	trees := models.trees
 	if len(near) == 0 || len(species_list) == 0 {
@@ -657,8 +660,18 @@ draw_near_trees :: proc(models: Model_Renderer, species_list: []Field_Tree_Speci
 	set_tree_float(trees, .Card_On, 0)
 	material := trees.material
 	material.maps[rl.MaterialMapIndex.ALBEDO].color = daylight
+	draw_tree_instances(models, species_list, near, material)
+}
+
+// The trees instanced with the material, one draw per tree machine with a
+// model: the near trees with the tree shader's, the sun's casters with
+// the depth material (0328, draw_field_sun_shadows).
+draw_tree_instances :: proc(models: Model_Renderer, species_list: []Field_Tree_Species, trees: []Near_Tree, material: rl.Material) {
+	if len(trees) == 0 || len(species_list) == 0 {
+		return
+	}
 	drawn := make(map[Machine_Id]struct{}, context.temp_allocator)
-	matrices := make([dynamic]rl.Matrix, 0, len(near), context.temp_allocator)
+	matrices := make([dynamic]rl.Matrix, 0, len(trees), context.temp_allocator)
 	for species in species_list {
 		if species.machine in drawn {
 			continue
@@ -669,7 +682,7 @@ draw_near_trees :: proc(models: Model_Renderer, species_list: []Field_Tree_Speci
 			continue
 		}
 		clear(&matrices)
-		for tree in near {
+		for tree in trees {
 			if species_list[tree_instance_species(tree.instance) % len(species_list)].machine == species.machine {
 				append(&matrices, cast(rl.Matrix)tree.instance)
 			}
@@ -681,9 +694,9 @@ draw_near_trees :: proc(models: Model_Renderer, species_list: []Field_Tree_Speci
 }
 
 // The far tiles' cards: the batch flushed, the tree shader with mvp as
-// raylib's instanced draw sets it and the atlas bound, a draw a tile of
-// its instances, both faces.
-draw_far_tree_cards :: proc(trees: Tree_Draw, far: []Far_Tile, daylight: rl.Color) {
+// raylib's instanced draw sets it, the atlas and the sun's shadow map
+// (0328, 0 for none) bound, a draw a tile of its instances, both faces.
+draw_far_tree_cards :: proc(trees: Tree_Draw, far: []Far_Tile, daylight: rl.Color, shadow_texture: u32) {
 	if len(far) == 0 {
 		return
 	}
@@ -698,6 +711,7 @@ draw_far_tree_cards :: proc(trees: Tree_Draw, far: []Far_Tile, daylight: rl.Colo
 	rlgl.EnableShader(shader.id)
 	rlgl.ActiveTextureSlot(0)
 	rlgl.EnableTexture(trees.atlas.id)
+	bind_sun_shadow_texture(shader, shadow_texture)
 	rlgl.DisableBackfaceCulling()
 	for entry in far {
 		rlgl.EnableVertexArray(entry.tile.vao)
@@ -705,6 +719,7 @@ draw_far_tree_cards :: proc(trees: Tree_Draw, far: []Far_Tile, daylight: rl.Colo
 	}
 	rlgl.EnableBackfaceCulling()
 	rlgl.DisableVertexArray()
+	unbind_sun_shadow_texture(shadow_texture)
 	rlgl.DisableTexture()
 	rlgl.DisableShader()
 }

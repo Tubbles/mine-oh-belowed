@@ -526,6 +526,48 @@ test_the_lit_shaders_share_the_open_sky :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0328: the four lit shaders take the same sun's shadow, its
+// uniforms and sun_shadow_light and sun_shadow_tap_weight line for line,
+// with the offset and the bias render_sun_shadows.odin names.
+@(test)
+test_the_lit_shaders_share_the_sun_shadow :: proc(t: ^testing.T) {
+	field, model := read_lit_shaders(t)
+	sources := [4]string{field, model, read_tree_shader(t, "tree.fs"), read_tree_shader(t, "cover.fs")}
+	names := [4]string{"field.fs", "model.fs", "tree.fs", "cover.fs"}
+	uniforms := [?]string{"\nuniform highp sampler2D sun_shadow_map;\n", "\nuniform mat4 sun_shadow_matrix;\n", "\nuniform float sun_shadow_strength;\n", "\nuniform vec4 sun_shadow_shape;\n"}
+	for source, index in sources {
+		for uniform in uniforms {
+			testing.expectf(t, strings.contains(source, uniform), "%s does not declare %s", names[index], strings.trim_space(uniform))
+		}
+		for start in ([?]string{"float sun_shadow_light(", "float sun_shadow_tap_weight("}) {
+			text := shader_function_text(source, start)
+			testing.expectf(t, text != "" && text == shader_function_text(model, start), "%s differs between %s and model.fs", start, names[index])
+		}
+		offset, offset_found := shader_float_constant(source, "sun_shadow_normal_offset_texels")
+		testing.expectf(t, offset_found && offset == SUN_SHADOW_NORMAL_OFFSET_TEXELS, "%s's normal offset %v differs from SUN_SHADOW_NORMAL_OFFSET_TEXELS", names[index], offset)
+		bias, bias_found := shader_float_constant(source, "sun_shadow_depth_bias_texels")
+		testing.expectf(t, bias_found && bias == SUN_SHADOW_DEPTH_BIAS_TEXELS, "%s's depth bias %v differs from SUN_SHADOW_DEPTH_BIAS_TEXELS", names[index], bias)
+	}
+	names_by_uniform := SUN_SHADOW_UNIFORM_NAMES
+	for name in names_by_uniform {
+		testing.expectf(t, strings.contains(field, fmt.tprintf(" %s;\n", name)), "field.fs declares no %s", name)
+	}
+	testing.expect(t, strings.contains(field, fmt.tprintf("\nuniform float %s;\n", FIELD_SUN_SHADOW_UNIFORM)), "field.fs declares the uniform its load checks")
+}
+
+// Work item 0328: the depth shader reads the trees' instances where
+// DrawMeshInstanced puts them and presses a caster nearer the sun than
+// the map's near plane onto it.
+@(test)
+test_the_sun_shadow_shader_presses_casters_onto_the_near_plane :: proc(t: ^testing.T) {
+	vertex := read_tree_shader(t, "sun_shadow.vs")
+	for line in ([?]string{"\nin mat4 instanceTransform;\n", "\nuniform float instanced_on;\n", "\n    gl_Position.z = max(gl_Position.z, -gl_Position.w);\n"}) {
+		testing.expectf(t, strings.contains(vertex, line), "sun_shadow.vs does not hold %s", strings.trim_space(line))
+	}
+	fragment := read_tree_shader(t, "sun_shadow.fs")
+	testing.expect(t, strings.contains(fragment, "\nout vec4 finalColor;\n"), "sun_shadow.fs writes finalColor")
+}
+
 // Work item 0311: cover.vs reads the instance's transform where the
 // node's buffer puts it and the rank's bits for the parts' lean.
 @(test)
@@ -558,7 +600,9 @@ test_the_field_shader_reads_the_ground_atlas_by_level :: proc(t: ^testing.T) {
 	fragment := #load("../data/shaders/field.fs", string)
 	vertex := #load("../data/shaders/field.vs", string)
 	testing.expect(t, strings.contains(fragment, "\nuniform sampler2D ground_atlas;\n"), "field.fs does not declare the ground atlas")
-	testing.expect_value(t, strings.count(fragment, "sampler2D"), 1)
+	// The one ground atlas, and the sun's shadow map (0328).
+	testing.expect_value(t, strings.count(fragment, "sampler2D"), 2)
+	testing.expect(t, strings.contains(fragment, "\nuniform highp sampler2D sun_shadow_map;\n"), "field.fs's second sampler is the sun's shadow map")
 	testing.expect(t, !strings.contains(fragment, "texture("), "field.fs reads a texture with derivatives")
 	testing.expect(t, strings.contains(fragment, "textureLod(ground_atlas,"), "field.fs reads the atlas by level")
 	for declaration in ([?]string{"\nuniform float ground_look_on;\n", "\nuniform vec3 sand_color;\n", "\nuniform vec3 snow_color;\n"}) {

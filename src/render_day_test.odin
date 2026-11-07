@@ -104,6 +104,22 @@ test_the_field_sun_turns_with_the_viewers_up :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0328: the sun path's axis the shadow map's basis takes stays
+// unit and square to the field's sun for every up and time of day, so the
+// basis never degenerates.
+@(test)
+test_the_sun_path_axis_is_square_to_the_sun :: proc(t: ^testing.T) {
+	for up in ([3][3]f32{{0, 1, 0}, {1, 0, 0}, linalg.normalize([3]f32{1, 2, 3})}) {
+		axis := field_sun_path_world_axis(up)
+		testing.expectf(t, abs(linalg.length(axis) - 1) < MOTION_TEST_TOLERANCE, "the axis for up %v has length %v", up, linalg.length(axis))
+		for step in 0 ..= 20 {
+			fraction := f64(step) * 0.05
+			square := linalg.dot(axis, field_sun_world_direction(fraction, up))
+			testing.expectf(t, abs(square) < MOTION_TEST_TOLERANCE, "up %v fraction %v: the axis meets the sun at %v", up, fraction, square)
+		}
+	}
+}
+
 // Work item 0313: the sun's light is the high colour at noon, half the
 // low colour on the horizon as it sets, none at midnight, and scales by
 // the strength.

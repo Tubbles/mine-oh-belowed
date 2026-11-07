@@ -11,7 +11,7 @@ SETTINGS_PANEL_WIDTH :: 960
 // Title, tabs, the longest tab's rows and the back button. The tabs
 // scroll where the panel is shorter (UI scale 1.5).
 SETTINGS_ROW_COUNT :: 14
-DISPLAY_SETTINGS_ROW_COUNT :: 18
+DISPLAY_SETTINGS_ROW_COUNT :: 19
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
 ACCESSIBILITY_SETTINGS_ROW_COUNT :: 10
@@ -58,6 +58,9 @@ Screen_Context :: struct {
 	platform:        Window_Platform,
 	// The Font choices cycle through them (data/fonts/fonts.sjson).
 	font_families:   []Font_Family,
+	// The build's data row's default of the sun's shadow (0328,
+	// sun_shadows_row): the Sun shadows toggle shows it for default.
+	sun_shadows_default: bool,
 	// The effective bindings, shown read only.
 	bindings:        []Binding,
 	// The viewport's request set (Frame_Request).
@@ -507,7 +510,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	case 0:
 		region, rows := scroll_region_begin(state, "display_settings", content, settings_rows_height(DISPLAY_SETTINGS_ROW_COUNT))
 		desktop_scaled := display_is_desktop_scaled(screen_context.platform)
-		display_settings(state, &rows, settings, screen_context.monitor_size, desktop_scaled, screen_context.font_families)
+		display_settings(state, &rows, settings, screen_context.monitor_size, desktop_scaled, screen_context.font_families, screen_context.sun_shadows_default)
 		scroll_region_end(state, region)
 	case 1:
 		region, rows := scroll_region_begin(state, "audio_settings", content, settings_rows_height(AUDIO_SETTINGS_ROW_COUNT))
@@ -543,10 +546,16 @@ settings_rows_height :: proc(row_count: int) -> f32 {
 	return f32(row_count) * (UI_ROW_HEIGHT + UI_GAP)
 }
 
-display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool, font_families: []Font_Family) {
+// The Sun shadows toggle (0328) shows the effective value, the build's
+// default for default, and writes on or off.
+display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool, font_families: []Font_Family, sun_shadows_default: bool) {
 	window_settings(state, content, settings, monitor_size, desktop_scaled)
 	camera_settings(state, content, settings)
 	ui_toggle(state, cut_row(content), text("settings_weather"), &settings.weather, text("settings_weather_tooltip"))
+	shadows := sun_shadows_enabled(settings.sun_shadows, sun_shadows_default)
+	if ui_toggle(state, cut_row(content), text("settings_sun_shadows"), &shadows, text("settings_sun_shadows_tooltip")) {
+		settings.sun_shadows = shadows ? .On : .Off
+	}
 	ui_toggle(state, cut_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
 	// Applied on the release of a drag (ui_layout_slider), since it
 	// changes the layout under the finger.

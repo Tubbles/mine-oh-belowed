@@ -79,6 +79,9 @@ Game_Config :: struct {
 	// The ground cover's draw (work item 0311, world_field_cover.odin), a
 	// row per build target (field_cover_row).
 	field_cover:          Field_Cover_Config,
+	// The sun's shadow (work item 0328, render_sun_shadows.odin), a row
+	// per build target (sun_shadows_row).
+	sun_shadows:          Sun_Shadows_Config,
 	field_player:         Field_Player_Config,
 	field_brushes:        []Field_Brush_Config,
 	field_water:          Field_Water_Config,
@@ -322,6 +325,37 @@ Field_Cover_Config :: struct {
 // The build target's row, as field_trees_row chooses: the Steam Deck and
 // the other desktop builds take the desktop's.
 field_cover_row :: proc(config: Field_Cover_Config) -> Field_Cover_Row {
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		return config.android
+	} else {
+		return config.desktop
+	}
+}
+
+// The sun's shadow (work item 0328, render_sun_shadows.odin): on is the
+// default of settings.sun_shadows; a side of the depth map in texels; the
+// radius round the eye that receives the shadow; how far beyond it
+// towards the sun a caster still casts; the trees that cast, nearest the
+// eye first (0 for none).
+Sun_Shadows_Row :: struct {
+	on:                  bool,
+	map_texels:          int,
+	radius_metres:       int,
+	caster_reach_metres: int,
+	tree_limit:          int,
+}
+
+// The share of the sun's light a full shadow takes away, and one row for
+// the desktop builds and one for Android (sun_shadows_row).
+Sun_Shadows_Config :: struct {
+	strength_percent: int,
+	desktop:          Sun_Shadows_Row,
+	android:          Sun_Shadows_Row,
+}
+
+// The build target's row, as field_trees_row chooses: the Steam Deck and
+// the other desktop builds take the desktop's.
+sun_shadows_row :: proc(config: Sun_Shadows_Config) -> Sun_Shadows_Row {
 	when ODIN_PLATFORM_SUBTARGET == .Android {
 		return config.android
 	} else {
@@ -882,6 +916,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := field_cover_problem(config.field_cover); problem != "" {
 		return problem
 	}
+	if problem := sun_shadows_problem(config.sun_shadows, config.field_view); problem != "" {
+		return problem
+	}
 	if problem := field_player_problem(config.field_player); problem != "" {
 		return problem
 	}
@@ -1318,6 +1355,34 @@ field_cover_problem :: proc(cover: Field_Cover_Config) -> string {
 			if bound.value < bound.minimum || bound.value > bound.maximum {
 				return fmt.tprintf("field_cover.%s.%s %d is outside %d to %d", names[index], bound.name, bound.value, bound.minimum, bound.maximum)
 			}
+		}
+	}
+	return ""
+}
+
+// The strength and each row's values inside their bounds (0328), the
+// map's side a power of two; a missing table reads as zeros and fails the
+// first row's map_texels.
+sun_shadows_problem :: proc(shadows: Sun_Shadows_Config, field_view: Field_View_Config) -> string {
+	if shadows.strength_percent < 0 || shadows.strength_percent > 100 {
+		return fmt.tprintf("sun_shadows.strength_percent %d is outside 0 to 100", shadows.strength_percent)
+	}
+	rows := [2]Sun_Shadows_Row{shadows.desktop, shadows.android}
+	names := [2]string{"desktop", "android"}
+	for row, index in rows {
+		bounds := [?]Config_Bound {
+			{"map_texels", row.map_texels, 512, 4096},
+			{"radius_metres", row.radius_metres, 16, 256},
+			{"caster_reach_metres", row.caster_reach_metres, 0, field_view.level_distances_metres[FIELD_LEVEL_COUNT - 1]},
+			{"tree_limit", row.tree_limit, 0, 16384},
+		}
+		for bound in bounds {
+			if bound.value < bound.minimum || bound.value > bound.maximum {
+				return fmt.tprintf("sun_shadows.%s.%s %d is outside %d to %d", names[index], bound.name, bound.value, bound.minimum, bound.maximum)
+			}
+		}
+		if row.map_texels & (row.map_texels - 1) != 0 {
+			return fmt.tprintf("sun_shadows.%s.map_texels %d is not a power of two from 512 to 4096", names[index], row.map_texels)
 		}
 	}
 	return ""

@@ -72,6 +72,20 @@ field_cover = {
 	desktop = {distance_percent = 100, density_percent = 100, node_limit = 8192}
 	android = {distance_percent = 60, density_percent = 45, node_limit = 4096}
 }
+// The sun's shadow (work item 0328, doc/presentation.md, Light on the
+// field): strength_percent (0 to 100) of the sun's light a full shadow
+// takes away; a row for the desktop builds (the Steam Deck's too) and one
+// for Android: on, the default of settings.sun_shadows; map_texels (512,
+// 1024, 2048 or 4096) a side of the depth map; radius_metres (16 to 256)
+// round the eye that receives the shadow, fading out over its last
+// quarter; caster_reach_metres (0 to field_view's last distance) beyond
+// it towards the sun that still casts; tree_limit (0 to 16384, 0 for
+// none) of the trees that cast, nearest the eye first.
+sun_shadows = {
+	strength_percent = 70
+	desktop = {on = true, map_texels = 2048, radius_metres = 64, caster_reach_metres = 96, tree_limit = 2048}
+	android = {on = false, map_texels = 1024, radius_metres = 48, caster_reach_metres = 64, tree_limit = 512}
+}
 // The player on the terrain field (work item 0170, doc/content.md, World):
 // lengths in millimetres, speeds in millimetres per second, gravity from
 // the planet record. Ground steeper than the walkable angle slows the walk

@@ -134,6 +134,8 @@ Planet_Preview :: struct {
 	level_distances: [FIELD_LEVEL_COUNT]int,
 	// The build target's row of data/game.sjson's field_trees (0310).
 	field_trees:     Field_Trees_Row,
+	// The sun's shadow (0328) as the build's row has it by default.
+	sun_shadows:     Sun_Shadow_Inputs,
 	// The open sky's inputs (0297, 0313): the preview's sun stands at
 	// noon over the camera, its light scaled by
 	// --planet-preview-daylight, and its torchlight stays off.
@@ -595,13 +597,16 @@ planet_preview_scene :: proc(preview: ^Planet_Preview, camera: rl.Camera3D, alph
 }
 
 // With capture set, the frame is saved before it is shown; saved says
-// whether that worked.
+// whether that worked. The sun's shadow map (0328) is drawn before the
+// window's frame begins.
 draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, capture: bool, alpha: f32) -> (saved: bool) {
 	camera, body_shown := planet_preview_raylib_camera(preview, alpha)
+	scene := planet_preview_scene(preview, camera, alpha, body_shown)
+	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, selection, preview.sun_shadows)
 	rl.BeginDrawing()
 	rl.ClearBackground(preview.field_light.sky.colors.horizon)
 	rl.BeginMode3D(camera)
-	draw_field_scene(planet_preview_scene(preview, camera, alpha, body_shown), camera, selection)
+	draw_field_scene(scene, camera, selection)
 	rl.EndMode3D()
 	height := planet_preview_height_metres(preview)
 	line := fmt.ctprintf("%d fps  %s  height %.0f m  nodes %d of %d  vertices %d  chunks %d  cover %d", rl.GetFPS(), planet_preview_mode_text(preview), height, preview.renderer.drawn_node_count, len(selection), preview.renderer.vertex_count, len(preview.session.simulation.field.world.chunks), preview.renderer.cover.drawn_count)
@@ -812,6 +817,7 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 		content         = content,
 		level_distances = level_distances,
 		field_trees     = field_trees_row(config.field_trees),
+		sun_shadows     = sun_shadow_inputs(DEFAULT_SETTINGS, config.sun_shadows, data_directory),
 		field_light     = field_light_inputs(&renderer, day_sky_at(NOON_FRACTION, 0), f32(daylight_percent) / 100, planet.radius_metres, config),
 		camera          = planet_preview_start_camera(home_site, basis, yaw_degrees),
 		renderer        = renderer,
@@ -830,7 +836,7 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 	}
 	platform.log_printf("planet preview: %s, seed %d, radius %d m, home at latitude %d longitude %d", planet.id, seed, planet.radius_metres, planet.home.latitude_degrees, planet.home.longitude_degrees)
 	exit_code := run_planet_preview_frames(&preview)
-	destroy_field_renderer(&preview.renderer)
+	destroy_field_renderer(&preview.renderer, preview.models)
 	destroy_model_renderer(&preview.models)
 	unload_player_model(&preview.player_model)
 	destroy_belt_renderer(&preview.belts)

@@ -126,6 +126,65 @@ test_the_field_cover_config_is_bounded :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_cover_problem(off), "")
 }
 
+// Work item 0328: the shipped sun_shadows block (on for the desktop
+// builds, the Steam Deck's too, off for the phone) and the build's row.
+@(test)
+test_the_shipped_sun_shadows :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	shadows := config.sun_shadows
+	testing.expect_value(t, shadows.strength_percent, 70)
+	testing.expect_value(t, shadows.desktop, Sun_Shadows_Row{on = true, map_texels = 2048, radius_metres = 64, caster_reach_metres = 96, tree_limit = 2048})
+	testing.expect_value(t, shadows.android, Sun_Shadows_Row{on = false, map_texels = 1024, radius_metres = 48, caster_reach_metres = 64, tree_limit = 512})
+	testing.expect_value(t, sun_shadows_problem(shadows, config.field_view), "")
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		testing.expect_value(t, sun_shadows_row(shadows), shadows.android)
+	} else {
+		testing.expect_value(t, sun_shadows_row(shadows), shadows.desktop)
+	}
+}
+
+// Work item 0328: each sun_shadows key one past its bound in the desktop
+// row, a map side that is no power of two, and the missing block.
+@(test)
+test_sun_shadows_bounds :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	shipped := config.sun_shadows
+	testing.expect_value(t, sun_shadows_problem({}, config.field_view), "sun_shadows.desktop.map_texels 0 is outside 512 to 4096")
+	strength := shipped
+	strength.strength_percent = -1
+	testing.expect_value(t, sun_shadows_problem(strength, config.field_view), "sun_shadows.strength_percent -1 is outside 0 to 100")
+	strength.strength_percent = 101
+	testing.expect_value(t, sun_shadows_problem(strength, config.field_view), "sun_shadows.strength_percent 101 is outside 0 to 100")
+	cases := [?]struct {
+		change:   proc(row: ^Sun_Shadows_Row),
+		expected: string,
+	} {
+		{proc(row: ^Sun_Shadows_Row) {row.map_texels = 511}, "map_texels 511 is outside 512 to 4096"},
+		{proc(row: ^Sun_Shadows_Row) {row.map_texels = 4097}, "map_texels 4097 is outside 512 to 4096"},
+		{proc(row: ^Sun_Shadows_Row) {row.map_texels = 1536}, "map_texels 1536 is not a power of two from 512 to 4096"},
+		{proc(row: ^Sun_Shadows_Row) {row.radius_metres = 15}, "radius_metres 15 is outside 16 to 256"},
+		{proc(row: ^Sun_Shadows_Row) {row.radius_metres = 257}, "radius_metres 257 is outside 16 to 256"},
+		{proc(row: ^Sun_Shadows_Row) {row.caster_reach_metres = -1}, "caster_reach_metres -1 is outside 0 to 1024"},
+		{proc(row: ^Sun_Shadows_Row) {row.caster_reach_metres = 1025}, "caster_reach_metres 1025 is outside 0 to 1024"},
+		{proc(row: ^Sun_Shadows_Row) {row.tree_limit = -1}, "tree_limit -1 is outside 0 to 16384"},
+		{proc(row: ^Sun_Shadows_Row) {row.tree_limit = 16385}, "tree_limit 16385 is outside 0 to 16384"},
+	}
+	for entry in cases {
+		desktop := shipped
+		entry.change(&desktop.desktop)
+		testing.expect_value(t, sun_shadows_problem(desktop, config.field_view), strings.concatenate({"sun_shadows.desktop.", entry.expected}, context.temp_allocator))
+		android := shipped
+		entry.change(&android.android)
+		testing.expect_value(t, sun_shadows_problem(android, config.field_view), strings.concatenate({"sun_shadows.android.", entry.expected}, context.temp_allocator))
+	}
+	// The bounds' ends pass.
+	ends := shipped
+	ends.strength_percent = 0
+	ends.desktop = {map_texels = 512, radius_metres = 16, caster_reach_metres = 0, tree_limit = 0}
+	ends.android = {map_texels = 4096, radius_metres = 256, caster_reach_metres = 1024, tree_limit = 16384}
+	testing.expect_value(t, sun_shadows_problem(ends, config.field_view), "")
+}
+
 // The Android asset copy (work item 0114): the list build.sh writes and
 // the stamp that skips the copy on a later start of the same build.
 @(test)

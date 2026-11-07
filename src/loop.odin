@@ -1314,6 +1314,7 @@ make_screen_context :: proc(state: ^Frame_State, index: int) -> Screen_Context {
 		monitor_size    = state.presentation.monitor_size,
 		platform        = state.presentation.platform,
 		font_families   = state.interaction.fonts.families,
+		sun_shadows_default = sun_shadows_row(state.config.sun_shadows).on,
 		bindings        = state.interaction.bindings,
 		requests        = &viewport.requests,
 		split_screen_guest = index > 0,

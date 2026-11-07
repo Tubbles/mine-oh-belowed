@@ -325,58 +325,58 @@ gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 // Between BeginMode3D and EndMode3D, after the chunks.
 draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) {
 	for chest in world.entities.chests.entries {
-		if chest.alive {
+		if chest.alive && model_frame_draws_entity(frame, &world.entities, models, chest.common) {
 			draw_entity_cells(chest.common, machines, models, frame, false, CHEST_COLOR, CHEST_COLOR)
 		}
 	}
 	for furnace in world.entities.furnaces.entries {
-		if furnace.alive {
+		if furnace.alive && model_frame_draws_entity(frame, &world.entities, models, furnace.common) {
 			top := furnace.state == .Burning ? FURNACE_BURNING_TOP_COLOR : FURNACE_COLOR
 			draw_entity_cells(furnace.common, machines, models, frame, furnace_model_working(furnace), FURNACE_COLOR, top)
 		}
 	}
 	for capsule in world.entities.capsules.entries {
-		if capsule.alive {
+		if capsule.alive && model_frame_draws_entity(frame, &world.entities, models, capsule.common) {
 			draw_entity_cells(capsule.common, machines, models, frame, false, CAPSULE_COLOR, CAPSULE_TOP_COLOR)
 		}
 	}
 	for crate in world.entities.schematic_crates.entries {
-		if crate.alive {
+		if crate.alive && model_frame_draws_entity(frame, &world.entities, models, crate.common) {
 			full := !stack_is_empty(crate.slots[0])
 			top := full ? SCHEMATIC_CRATE_FULL_TOP_COLOR : SCHEMATIC_CRATE_COLOR
 			draw_entity_cells(crate.common, machines, models, frame, schematic_crate_model_working(crate), SCHEMATIC_CRATE_COLOR, top)
 		}
 	}
 	for inserter in world.entities.inserters.entries {
-		if inserter.alive {
+		if inserter.alive && model_frame_draws_entity(frame, &world.entities, models, inserter.common) {
 			draw_inserter(inserter, machines.machines[inserter.machine], models, items, frame)
 		}
 	}
 	for drill in world.entities.drills.entries {
-		if drill.alive {
+		if drill.alive && model_frame_draws_entity(frame, &world.entities, models, drill.common) {
 			draw_drill(drill, machines.machines[drill.machine], machines, models, frame)
 		}
 	}
 	for assembler in world.entities.assemblers.entries {
-		if assembler.alive {
+		if assembler.alive && model_frame_draws_entity(frame, &world.entities, models, assembler.common) {
 			color := crafting_machine_colors[machines.machines[assembler.machine].recipe_maker]
 			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : color
 			draw_entity_cells(assembler.common, machines, models, frame, assembler_model_working(assembler), color, top)
 		}
 	}
 	for lab in world.entities.labs.entries {
-		if lab.alive {
+		if lab.alive && model_frame_draws_entity(frame, &world.entities, models, lab.common) {
 			draw_entity_cells(lab.common, machines, models, frame, lab_model_working(lab), LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
 		}
 	}
 	for drill in world.entities.core_sample_drills.entries {
-		if drill.alive {
+		if drill.alive && model_frame_draws_entity(frame, &world.entities, models, drill.common) {
 			top := drill.sample >= 0 ? CORE_SAMPLE_DRILL_REPORTED_TOP_COLOR : CORE_SAMPLE_DRILL_COLOR
 			draw_entity_cells(drill.common, machines, models, frame, core_sample_drill_is_working(drill), CORE_SAMPLE_DRILL_COLOR, top)
 		}
 	}
 	for pad in world.entities.launch_pads.entries {
-		if pad.alive {
+		if pad.alive && model_frame_draws_entity(frame, &world.entities, models, pad.common) {
 			draw_launch_pad(pad, machines, models, frame)
 		}
 	}
@@ -386,7 +386,7 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 	// boxes. A hatch's door follows its state (draw_hatch); the others
 	// work as foundation_model_working says.
 	for foundation in world.entities.foundations.entries {
-		if !foundation.alive {
+		if !foundation.alive || !model_frame_draws_entity(frame, &world.entities, models, foundation.common) {
 			continue
 		}
 		machine := machines.machines[foundation.machine]

@@ -160,6 +160,7 @@ Tabs: Display, Audio, Controls, Accessibility, Bindings (the effective bindings,
 | | Sprint view widening (`sprint_field_of_view_kick`) | 0 to 15 degrees, 6; eased over `SPRINT_KICK_SECONDS` (0.3) while sprinting and moving |
 | | Third person distance, shoulder (`third_person_distance`, `third_person_shoulder`) | 2 to 8 blocks by 0.5, 4; -1 to 1 blocks right by 0.1, 0.6 (follows the yaw; a wall pulls the camera in) |
 | | Weather (`weather`) | On; off: clear, no rain, snow, sway or cloud shadows (0063) |
+| | Sun shadows (`sun_shadows`) | Default: the build's data row (on for the desktop builds and the Steam Deck, off on Android, 0328); the toggle shows the effective value and writes on or off |
 | | Head bob (`head_bob`) | On; 0.03 blocks per step, 0.05 sprinting (0066) |
 | | UI scale (`ui_scale`); Pointer speed (`pointer_speed`) | 0.75 to 1.5 by 0.05, 1; 0.5 to 3, 1.5 |
 | | Bottleneck overlay; Autosave (`autosave_minutes`) | Also O; Off to 60 minutes, 5 |
