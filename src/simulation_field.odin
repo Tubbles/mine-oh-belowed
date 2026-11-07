@@ -567,24 +567,37 @@ field_pod_spawn :: proc(entities: ^Entities, machines: Machine_Registry) -> (pla
 	return {}, false
 }
 
+// The tech demo's spring (0312): the waters' start, the spring whose water
+// falls furthest to the sea, else the record's first; found is false with
+// neither.
+planet_spring_start :: proc(planet: Planet) -> (direction: [3]i64, found: bool) {
+	if planet.water_features.has_start {
+		return planet.water_features.start, true
+	}
+	if len(planet.springs) > 0 {
+		return planet_spring_direction(planet.springs[0]), true
+	}
+	return {}, false
+}
+
 // The tech demo's spring start (0291): standing one sample towards the
 // home along the heading from the spring's source sample, the first air
 // sample over the surface under the spring's point (planet_spring_sample,
 // which makes it a source), so the feet start beside the water, not in
 // it; a spring with no air above its surface falls back to the generated
-// surface under its point, as the surface teleport does. The spring lies
+// surface under its point, as the surface teleport does. The spring is the
+// one whose water falls furthest to the sea (planet_spring_start, 0312),
 // outside the crater's reach, so the baked overlay does not matter.
 // Facing the home. found is false without springs.
 field_spring_spawn :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> (player: Field_Player, found: bool) {
-	if len(planet.springs) == 0 {
+	direction, has_spring := planet_spring_start(planet)
+	if !has_spring {
 		return {}, false
 	}
 	generation := make_planet_generation(seed, planet, spacing_millimetres)
-	spring := planet.springs[0]
-	direction := planet_spring_direction(spring)
 	clearance := millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)
 	feet: World_Position
-	if sample, air := planet_spring_sample(generation, spring); air {
+	if sample, air := planet_spring_sample_at(generation, direction); air {
 		feet = sample_to_world_position(sample, spacing_millimetres) + World_Position(fixed_scale(direction, clearance))
 	} else {
 		feet = field_surface_under(generation, World_Position(fixed_scale(direction, generation.radius)), clearance)

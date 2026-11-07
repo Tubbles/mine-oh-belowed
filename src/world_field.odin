@@ -349,6 +349,7 @@ field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	if world.water_model == .Bodies {
 		thaw_water_body_chunk(world, chunk)
 		seed_water_sea_facing(world, chunk)
+		join_field_chunk_lake_water(world, chunk)
 	}
 	wake_field_water_facing(world, chunk.coordinate)
 	world.light.arrived_chunks[chunk.coordinate] = {}

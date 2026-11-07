@@ -1982,3 +1982,98 @@ test_a_merge_keeps_the_survivors_seed_when_the_lower_one_is_not_loaded :: proc(t
 	merge_water_bodies(&world, survivor, absorbed)
 	testing.expect_value(t, world.water_bodies[survivor].seed, lower_seed)
 }
+
+// Work item 0312: every water sample of the world the body's, none awake.
+expect_body_owns_the_water :: proc(t: ^testing.T, world: ^Field_World, id: Water_Body_Id, location := #caller_location) {
+	for _, chunk in world.chunks {
+		testing.expect(t, !field_sample_bits_any(&chunk.water_awake), "no sample is awake", loc = location)
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			if chunk.water[index] > 0 {
+				testing.expectf(t, chunk.water_owner[index] == water_owner_of(id), "the sample %v is the body's", field_chunk_sample(chunk, index), loc = location)
+			}
+		}
+	}
+}
+
+// Work item 0312: the samples of still water no one owns in the world.
+still_unowned_water_samples :: proc(world: ^Field_World) -> int {
+	count := 0
+	for _, chunk in world.chunks {
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			if field_sample_is_still_unowned_water(chunk, index) {
+				count += 1
+			}
+		}
+	}
+	return count
+}
+
+// Work item 0312: the generated lake of make_test_lake_chunk over x 4 to
+// 12, with a ground ridge at x 8 of ridge_samples layers up from the
+// basin's floor (to the chunk's top it parts the lake in two); the bytes'
+// sum.
+make_split_test_lake_chunk :: proc(ridge_samples: i32) -> (chunk: ^Field_Chunk, total: i64) {
+	chunk, total = make_test_lake_chunk(0, {4, BASIN_LOW.y, BASIN_LOW.z}, {12, BASIN_HIGH.y, BASIN_HIGH.z}, test_lake_level())
+	for z in BASIN_LOW.z ..= BASIN_HIGH.z {
+		for y in BASIN_LOW.y ..< min(BASIN_LOW.y + ridge_samples, FIELD_CHUNK_SIZE) {
+			index := field_local_to_index({8, y, z})
+			total -= i64(chunk.water[index])
+			chunk.water[index] = 0
+			field_chunk_set_sample(chunk, index, {MAXIMUM_DENSITY, .Stone, 0})
+		}
+	}
+	return
+}
+
+// Work item 0312: a generated lake settles into bodies with nothing awake
+// and no still water no one owns, whole or over a ridge under its level
+// (one pocket, one wake, one body); parted to the chunk's top, each half
+// is a pocket of its own, woken and settled into a body of its own.
+@(test)
+test_a_generated_lake_settles_into_its_bodies :: proc(t: ^testing.T) {
+	for ridge in ([4]i32{0, 2, 4, FIELD_CHUNK_SIZE}) {
+		world: Field_World
+		make_bodies_world(&world)
+		chunk, total := make_split_test_lake_chunk(ridge)
+		field_world_insert_chunk(&world, chunk)
+		pockets := ridge == FIELD_CHUNK_SIZE ? 2 : 1
+		testing.expectf(t, field_sample_bits_count(&chunk.water_awake) == pockets, "ridge %d: a sample wakes per pocket (%d)", ridge, field_sample_bits_count(&chunk.water_awake))
+		tick: u64 = 0
+		ticks := settle_body_test_water(&world, water_body_test_tuning(), &tick, 200)
+		testing.expectf(t, ticks < 200, "ridge %d: the lake settles", ridge)
+		testing.expectf(t, alive_water_body_count(&world) == pockets, "ridge %d: %d bodies", ridge, alive_water_body_count(&world))
+		testing.expectf(t, !any_water_awake(&world), "ridge %d: nothing is awake", ridge)
+		testing.expectf(t, still_unowned_water_samples(&world) == 0, "ridge %d: %d samples of still water no one owns", ridge, still_unowned_water_samples(&world))
+		testing.expectf(t, conserved_water(&world) == total, "ridge %d: %d of %d conserved", ridge, conserved_water(&world), total)
+		destroy_field_world(&world)
+	}
+}
+
+// Work item 0312: a lake chunk arriving beside a settled body at its level
+// wakes nothing and floods the body again, which takes its water.
+@(test)
+test_an_arriving_lake_chunk_joins_the_lake_beside_it :: proc(t: ^testing.T) {
+	world: Field_World
+	defer destroy_field_world(&world)
+	make_bodies_world(&world)
+	field_world_insert_chunk(&world, make_ground_water_test_chunk(0))
+	carve_water_test_box(&world, water_test_sample(TWO_CHUNK_BASIN_LOW), water_test_sample({FIELD_CHUNK_SIZE - 1, TWO_CHUNK_BASIN_HIGH.y, TWO_CHUNK_BASIN_HIGH.z}))
+	pour_test_water(&world, water_test_sample(TWO_CHUNK_BASIN_LOW), water_test_sample({FIELD_CHUNK_SIZE - 1, 8, TWO_CHUNK_BASIN_HIGH.z}), FIELD_WATER_FULL)
+	tuning := water_body_test_tuning()
+	tick: u64 = 0
+	testing.expect(t, settle_body_test_water(&world, tuning, &tick, 200) < 200)
+	body, id := only_water_body(t, &world)
+	if body == nil {
+		return
+	}
+	chunk, _ := make_test_lake_chunk(1, {0, TWO_CHUNK_BASIN_LOW.y, TWO_CHUNK_BASIN_LOW.z}, {TWO_CHUNK_BASIN_HIGH.x - FIELD_CHUNK_SIZE, TWO_CHUNK_BASIN_HIGH.y, TWO_CHUNK_BASIN_HIGH.z}, body.level)
+	field_world_insert_chunk(&world, chunk)
+	testing.expect(t, !field_sample_bits_any(&chunk.water_awake), "no sample of the arriving lake wakes")
+	testing.expect(t, world.water_bodies[id].dirty, "the body beside it floods again")
+	total := conserved_water(&world)
+	testing.expect(t, settle_body_test_water(&world, tuning, &tick, 200) < 200)
+	_, joined := only_water_body(t, &world)
+	testing.expect_value(t, joined, id)
+	expect_body_owns_the_water(t, &world, id)
+	testing.expect_value(t, conserved_water(&world), total)
+}

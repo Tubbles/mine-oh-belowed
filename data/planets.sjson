@@ -1,6 +1,6 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
-// required but relief_shape (0189), landforms (0306), landmarks (0323)
-// and climate (0307), which are off without them; the
+// required but relief_shape (0189), landforms (0306), landmarks (0323),
+// climate (0307) and waters (0312), which are off without them; the
 // trees are doc/content.md, Trees (0197); the
 // terrain field generates a planet from its record, the
 // world seed and the sample spacing (generation_planet.odin). A world
@@ -33,7 +33,9 @@ planets = [
 		// stream runs about 390 m down and drops 64 m at 8 km (170 m at
 		// 16 km, 24 m into a hollow at 4 km). The second lies 310 m from
 		// the home at 8 km on the foot of a range: its stream runs about
-		// 260 m down and drops 28 m into the home's plain.
+		// 260 m down and drops 28 m into the home's plain. The waters below
+		// add springs at the highlands' valley heads and lakes, and the tech
+		// demo starts at the spring whose water falls furthest to the sea.
 		springs = [
 			{latitude_degrees = 79, longitude_degrees = 151}
 			{latitude_degrees = 81, longitude_degrees = 139}
@@ -281,6 +283,32 @@ planets = [
 			sand_metres = 1
 			sand_fade_metres = 2
 			sand_color = [208, 188, 142]
+		}
+		// The waters (work item 0312, doc/content.md, Planets), optional:
+		// springs at the valley heads of the highlands and lakes in their
+		// basins round the home, found once per session from the seed; a
+		// world records these keys.
+		waters = {
+			// The finder's reach round the home (at most half the radius)
+			// and its grid's cell.
+			reach_metres = 2500
+			grid_metres = 16
+			// No spring and no lake within this of the home.
+			clearing_metres = 250
+			// A spring heads a channel draining at least this area.
+			spring_catchment_square_metres = 4000
+			// A spring stands at least this high over the sea.
+			spring_minimum_metres = 25
+			// Springs keep this far apart and from the springs above, so a
+			// player's simulated set holds one at most.
+			spring_spacing_metres = 400
+			// A lake is at least this deep and this wide.
+			lake_minimum_depth_millimetres = 1500
+			lake_minimum_area_square_metres = 400
+			// A lake fits a window of this edge round its pit.
+			lake_maximum_metres = 384
+			// A lake stands this far under its pour point.
+			lake_margin_millimetres = 500
 		}
 		// The tints of the ground, red, green and blue from 0 to 255: with
 		// a climate a smooth field of 256 m wavelength blends along them,

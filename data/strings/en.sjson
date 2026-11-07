@@ -162,7 +162,7 @@ tech_demo_model_tooltip = "How the water moves: the cellular rule with teleport 
 tech_demo_start = "Start point"
 tech_demo_start_home = "Home"
 tech_demo_start_spring = "Spring"
-tech_demo_start_tooltip = "Stand at the pod, or at the first spring"
+tech_demo_start_tooltip = "Stand at the pod, or at a high spring"
 tech_demo_start_button = "Start"
 
 // New world screen

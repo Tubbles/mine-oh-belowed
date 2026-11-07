@@ -272,7 +272,9 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // The node's grid from the generation, every step-th sample; a sample the
 // grid took from a loaded chunk (loaded set) goes through
 // coarse_field_sample. The water of a sample not loaded is the sea level
-// rule (planet_sea_density), of a loaded one its owner's plane as the
+// rule (planet_sea_density) and the lakes' (0312, planet_lake_density,
+// the lakes meeting the grid's box listed once, carved air left dry as the
+// chunks leave it), of a loaded one its owner's plane as the
 // gather wrote it (water_exact, 0294) or its fill through
 // coarse_field_water_density, so the sea shows at every level. The light
 // of a loaded sample is its own; a sample not loaded is generated air
@@ -283,14 +285,23 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
 	density_generation := field_grid_generation(generation, grid.step)
+	lakes: []Planet_Lake
+	if len(generation.lakes) > 0 {
+		low := grid.origin - grid.step
+		high := grid.origin + (FIELD_GRID_CELLS + 1) * grid.step
+		lakes = planet_lakes_meeting_box(generation.lakes, cast([3]i64)sample_to_world_position(low, generation.spacing_millimetres), cast([3]i64)sample_to_world_position(high, generation.spacing_millimetres))
+	}
 	for z in i32(-1) ..= FIELD_GRID_CELLS {
 		for y in i32(-1) ..= FIELD_GRID_CELLS {
 			for x in i32(-1) ..= FIELD_GRID_CELLS {
 				sample := grid.origin + Sample_Coordinate([3]i32{x, y, z} * grid.step)
 				position := sample_to_world_position(sample, generation.spacing_millimetres)
-				value, shaded := planet_sample_shaded(density_generation, position)
+				value, shaded, carved := planet_sample_reading(density_generation, position)
 				water := planet_sea_density(density_generation, position, value.density)
 				index := field_grid_index({x, y, z})
+				if len(lakes) > 0 && !carved && !grid.loaded[index] {
+					water = max(water, planet_lake_density(density_generation, lakes, position, value.density))
+				}
 				if grid.loaded[index] {
 					value = coarse_field_sample({grid.density[index], grid.material[index], grid.tint[index]}, value, grid.step)
 					water = grid.water_exact[index] ? grid.water[index] : coarse_field_water_density(grid.water[index], water, grid.step)

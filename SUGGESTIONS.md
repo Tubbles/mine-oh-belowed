@@ -207,3 +207,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the ground cover's design (0311, 2026-11-07)
 
 - Blocking boulders of 1 to 3 m in the generated density, scattered by climate and slope like the cover. They would be ground the player climbs or walks round and digs (the cover's boulders stay under 0.65 m and are walked through), so they change walking and the generation's cost. Yours to decide.
+
+## Suggestions from the springs and lakes (0312, 2026-11-07)
+
+- The waters finder runs for every session, a block world's too (`resolve_session_planet`), where nothing uses it: about 0.3 s of the start at `-o:speed`. Skipping it when the session does not play the field (`session_plays_field`) saves that.
+- At the data's bound of the simulated set (radius 3, margin 2: 11 chunks, a 610 m diagonal) the 400 m spring spacing lets two derived springs into one set; the shipped set holds one.

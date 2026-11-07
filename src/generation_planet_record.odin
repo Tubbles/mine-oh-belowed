@@ -51,6 +51,9 @@ Planet_Generation_Record :: struct {
 	// The climate's field (0307); zero in a file written before it, whose
 	// ground keeps the look without a climate (make_recorded_planet).
 	climate:                                        Planet_Climate_Field,
+	// Zero in a file written before it (0312): no derived springs, no
+	// lakes.
+	waters:                                         Planet_Waters,
 }
 
 // Borrows the planet's springs.
@@ -75,6 +78,7 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		landforms = planet.landforms,
 		landmarks = planet.landmarks,
 		climate = planet_climate_field(planet.climate),
+		waters = planet.waters,
 	}
 }
 
@@ -109,6 +113,10 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	if record.climate != {} && planet.climate != {} {
 		result.climate = with_climate_field(planet.climate, record.climate)
 	}
+	// Set even when zero: the data's waters never reach an old world. The
+	// features are the session's (make_planet_water_features).
+	result.waters = record.waters
+	result.water_features = {}
 	result.springs = slice.clone(record.springs, allocator)
 	if record.home_recorded {
 		result.home = record.home
@@ -168,6 +176,7 @@ clone_tree_species :: proc(source: []Planet_Tree_Species, count: int, allocator 
 }
 
 destroy_recorded_planet :: proc(planet: ^Planet) {
+	destroy_planet_water_features(&planet.water_features)
 	delete(planet.id)
 	delete(planet.springs)
 	delete(planet.palette)
@@ -366,6 +375,16 @@ recorded_climate_note :: proc(recorded: Planet_Generation_Record, planet: Planet
 	return ""
 }
 
+// The log line of a world file recorded before the waters (0312) on a
+// planet whose data has them, or "": zero is off, so the world keeps its
+// springs and has no lakes.
+recorded_waters_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
+	if !planet_generation_is_recorded(recorded) || recorded.waters != {} || planet.waters == {} {
+		return ""
+	}
+	return "world: the world file records no waters, it keeps its springs and has no lakes"
+}
+
 // The planet a world generates on, against the data's planets: the
 // settings' planet, or with a log line the default one when the data has
 // no planet of that id (a loaded world keeps its id in the settings, so
@@ -412,6 +431,9 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 		platform.log_printf("%s", note)
 	}
 	if note := recorded_climate_note(recorded, planet); note != "" {
+		platform.log_printf("%s", note)
+	}
+	if note := recorded_waters_note(recorded, planet); note != "" {
 		platform.log_printf("%s", note)
 	}
 	if planet_generation_is_recorded(recorded) && !recorded.trees_recorded {

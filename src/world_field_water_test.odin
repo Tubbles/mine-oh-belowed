@@ -884,3 +884,45 @@ test_the_fine_and_coarse_sea_cross_at_one_radius :: proc(t: ^testing.T) {
 		testing.expect(t, compared > 0)
 	}
 }
+
+// Work item 0312: a ground chunk at chunk_x whose local box low..high is
+// air holding a generated lake's still bytes under level (field_sea_fill,
+// no owner, no awake bit), not yet in a world; the bytes' sum.
+make_test_lake_chunk :: proc(chunk_x: i32, low, high: [3]i32, level: i64) -> (chunk: ^Field_Chunk, total: i64) {
+	chunk = make_ground_water_test_chunk(chunk_x)
+	for z in low.z ..= high.z {
+		for y in low.y ..= high.y {
+			for x in low.x ..= high.x {
+				index := field_local_to_index({x, y, z})
+				field_chunk_set_sample(chunk, index, FIELD_AIR_SAMPLE)
+				fill := field_sea_fill(level, field_water_span(field_chunk_sample(chunk, index)))
+				chunk.water[index] = u8(fill)
+				total += i64(fill)
+			}
+		}
+	}
+	return
+}
+
+// The level of the test lakes: the middle of the basin's layer 10.
+test_lake_level :: proc() -> i64 {
+	return field_water_span(water_test_sample({7, 10, 7})).middle
+}
+
+// Work item 0312: a generated lake arriving in a teleport world beside a
+// loaded chunk is asleep water: nothing wakes it and its bytes stay.
+@(test)
+test_a_generated_lake_sleeps_under_teleport :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	chunk, total := make_test_lake_chunk(1, BASIN_LOW, BASIN_HIGH, test_lake_level())
+	testing.expect(t, total > 0, "the lake holds water")
+	written := chunk.water
+	field_world_insert_chunk(&world, chunk)
+	tuning := water_pressure_test_tuning()
+	for tick in u64(1) ..= 40 {
+		step_field_water(&world, tuning, tick)
+	}
+	testing.expect(t, !any_water_awake(&world), "the lake sleeps")
+	testing.expect(t, world.chunks[{1, WATER_TEST_CHUNK_Y, 0}].water == written, "the lake's bytes stay as generated")
+}

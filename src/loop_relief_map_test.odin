@@ -78,3 +78,27 @@ test_the_default_springs_stream_runs_downhill :: proc(t: ^testing.T) {
 	second, _ := stream_at(8000, 1)
 	testing.expectf(t, second.length_metres >= 150, "the second spring's stream runs %d m", second.length_metres)
 }
+
+// Work item 0312: the shipped planet at 8 km, 128 pixels over 2000 m round
+// the largest lake's refined pit: its centre pixel is the lake's blue.
+@(test) // slow
+test_the_relief_map_draws_the_lakes :: proc(t: ^testing.T) {
+	planet, problem := relief_map_planet(shipped_test_planets(), DEFAULT_WORLD_SEED, 8000)
+	testing.expect_value(t, problem, "")
+	planet.water_features = make_planet_water_features(DEFAULT_WORLD_SEED, planet)
+	defer destroy_planet_water_features(&planet.water_features)
+	testing.expect(t, len(planet.water_features.lakes) > 0, "the planet has lakes")
+	if len(planet.water_features.lakes) == 0 {
+		return
+	}
+	largest, _ := largest_test_lake(planet.water_features.lakes)
+	direction, _ := normalize_fixed(largest.origin)
+	latitude, longitude := relief_map_degrees(direction)
+	request := Relief_Map_Request{latitude, longitude, 2000, 8000}
+	pixels := 128
+	generation := baked_planet_generation(make_planet_generation(DEFAULT_WORLD_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES))
+	heights := relief_map_heights(generation, request, pixels, context.temp_allocator)
+	colours := relief_map_colours(heights, generation.sea_radius - generation.radius, f64(request.size_metres) / f64(pixels), pixels, context.temp_allocator)
+	relief_map_mark_lakes(colours, heights, generation, request, pixels)
+	testing.expect_value(t, colours[pixels / 2 * pixels + pixels / 2], RELIEF_MAP_LAKE_COLOUR)
+}

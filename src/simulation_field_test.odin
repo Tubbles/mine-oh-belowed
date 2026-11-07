@@ -18,6 +18,11 @@ make_field_test_game_content :: proc() -> Game_Content {
 		simulation_content = make_save_test_content(),
 		planets            = shipped_test_planets(),
 	}
+	// The suite's sessions skip the finder, 1.9 to 2.9 s a preset
+	// unoptimised; the waters' tests use the shipped planets (0312).
+	for &planet in content.planets {
+		planet.waters = {}
+	}
 	content.field_materials = test_field_materials(content.items)
 	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME, context.temp_allocator)
 	assert(problem == "", problem)

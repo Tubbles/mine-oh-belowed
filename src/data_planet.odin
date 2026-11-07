@@ -54,9 +54,24 @@ SINKHOLE_STRETCH_PERCENT :: 140
 GROTTO_STRETCH_PERCENT :: 115
 MUSHROOM_STRETCH_PERCENT :: 115
 // A planet record may leave these out: the relief's shape (0189), the
-// landforms (0306), the landmarks (0323) and the climate (0307), each off
-// at zero, so a planet without them generates and looks as before.
-OPTIONAL_PLANET_KEYS :: [4]string{"relief_shape", "landforms", "landmarks", "climate"}
+// landforms (0306), the landmarks (0323), the climate (0307) and the
+// waters (0312), each off at zero, so a planet without them generates and
+// looks as before.
+OPTIONAL_PLANET_KEYS :: [5]string{"relief_shape", "landforms", "landmarks", "climate", "waters"}
+// The waters' bounds (0312, Planet_Waters). The finder's reach round the
+// home in metres, least and most.
+MINIMUM_WATERS_REACH_METRES :: 256
+MAXIMUM_WATERS_REACH_METRES :: 8192
+// The finder's grid holds at most this many cells either side of the home.
+MAXIMUM_WATERS_GRID_HALF_CELLS :: 512
+// The lakes and the derived springs a planet holds at most.
+MAXIMUM_PLANET_LAKES :: 128
+MAXIMUM_DERIVED_SPRINGS :: 128
+// The space diagonal of the shipped simulated set (a radius of 2 and a
+// margin of 1, 7 chunks of 32 m at 1 m spacing) is 388 m: a player's set
+// holds at most one derived spring. At the data's bounds (a radius of 3
+// and a margin of 2, 11 chunks) it is 610 m, which holds two.
+MINIMUM_SPRING_SPACING_METRES :: 400
 // The climate's bounds (0307, Planet_Climate).
 MINIMUM_CLIMATE_WAVELENGTH_METRES :: 64
 MAXIMUM_CLIMATE_CELSIUS :: 100
@@ -266,6 +281,70 @@ Planet_Climate :: struct {
 	sand_color:                    [3]int,
 }
 
+// The waters (work item 0312, generation_planet_waters.odin): springs at
+// the valley heads of the highlands and lakes in their basins, found once
+// per session on a grid of grid_metres within reach_metres of the home (at
+// most half the radius), none within clearing_metres of it. A spring heads
+// a channel draining spring_catchment_square_metres, stands
+// spring_minimum_metres over the sea at least and spring_spacing_metres
+// from every other; a lake is a basin at least lake_minimum_depth
+// deep and lake_minimum_area wide, within a window of lake_maximum_metres,
+// filled to its pour point less lake_margin. Off at the zero value.
+Planet_Waters :: struct {
+	reach_metres:                    int,
+	grid_metres:                     int,
+	clearing_metres:                 int,
+	spring_catchment_square_metres:  int,
+	spring_minimum_metres:           int,
+	spring_spacing_metres:           int,
+	lake_minimum_depth_millimetres:  int,
+	lake_minimum_area_square_metres: int,
+	lake_maximum_metres:             int,
+	lake_margin_millimetres:         int,
+}
+
+// A derived spring (0312): the unit direction of its grid cell, its
+// relief over the radius and the fall to its outlet (to the sea level when
+// to_sea, else to the grid's border cell), in position units.
+Planet_Water_Spring :: struct {
+	direction:    [3]i64,
+	height, drop: i64,
+	to_sea:       bool,
+}
+
+// A lake (0312): the pit's unit direction and its tangents (the plane its
+// mask lies on, find_planet_lakes), origin the refined pit on the sphere
+// of the radius, the level and the floor over the radius, the mask's half
+// width in LAKE_CELL_METRES cells (side 2 half + 1, bit (v + half) side +
+// u + half), the water cells before the dilation, and the sphere holding
+// every water sample (bound_centre, bound_radius). Position units.
+Planet_Lake :: struct {
+	centre, east, north, origin, bound_centre: [3]i64,
+	level, floor, bound_radius, half:          i64,
+	cells:                                     i32,
+	mask:                                      []u64,
+}
+
+// What the session finds from the seed and the record
+// (make_planet_water_features): the derived springs, the lakes and the
+// tech demo's start, the spring whose water falls furthest to the sea.
+Planet_Water_Features :: struct {
+	springs:   []Planet_Water_Spring,
+	lakes:     []Planet_Lake,
+	start:     [3]i64,
+	has_start: bool,
+}
+
+// Deletes every mask and both slices, and zeroes the features.
+destroy_planet_water_features :: proc(features: ^Planet_Water_Features) {
+	for lake in features.lakes {
+		delete(lake.mask)
+	}
+	delete(features.lakes)
+	delete(features.springs)
+	features^ = {}
+}
+
 // A planet's relief bound (0306, relief_bounds): the lowest and the
 // highest local surface, in position units from the radius.
 Relief_Bounds :: struct {
@@ -384,11 +463,16 @@ Planet :: struct {
 	landmarks:                                      Planet_Landmarks,
 	// Optional in the file, off at zero (0307).
 	climate:                                        Planet_Climate,
+	// Optional in the file, off at zero (0312).
+	waters:                                         Planet_Waters,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
 	// The arrival's hit digs the crater (0271): set only by
 	// make_recorded_planet from the world's record, never by the data.
 	crater_at_impact:                               bool `json:"-"`,
+	// Set by the session from the seed and the record
+	// (make_planet_water_features), never by the data.
+	water_features:                                 Planet_Water_Features `json:"-"`,
 }
 
 Planets_File :: struct {
@@ -436,6 +520,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 		if climate, is_object := record.(json.Object)["climate"].(json.Object); is_object {
 			if key, missing := missing_struct_key(Planet_Climate, climate); missing {
 				return fmt.tprintf("%s: planets[%d].climate is missing %s", source, index, key)
+			}
+		}
+		if waters, is_object := record.(json.Object)["waters"].(json.Object); is_object {
+			if key, missing := missing_struct_key(Planet_Waters, waters); missing {
+				return fmt.tprintf("%s: planets[%d].waters is missing %s", source, index, key)
 			}
 		}
 		for spring, spring_index in record.(json.Object)["springs"].(json.Array) {
@@ -845,6 +934,36 @@ climate_color_problem :: proc(name: string, color: [3]int) -> string {
 	return ""
 }
 
+// The zero value (off: a planet or a world file without them) passes;
+// otherwise every key within its bound, the grid no more than
+// MAXIMUM_WATERS_GRID_HALF_CELLS cells either side of the home.
+waters_problem :: proc(waters: Planet_Waters) -> string {
+	if waters == {} {
+		return ""
+	}
+	bounds := [?]Config_Bound {
+		{"reach_metres", waters.reach_metres, MINIMUM_WATERS_REACH_METRES, MAXIMUM_WATERS_REACH_METRES},
+		{"grid_metres", waters.grid_metres, 4, 64},
+		{"clearing_metres", waters.clearing_metres, 0, waters.reach_metres},
+		{"spring_catchment_square_metres", waters.spring_catchment_square_metres, waters.grid_metres * waters.grid_metres, 4_000_000},
+		{"spring_minimum_metres", waters.spring_minimum_metres, 0, MAXIMUM_RELIEF_HEIGHT_METRES},
+		{"spring_spacing_metres", waters.spring_spacing_metres, MINIMUM_SPRING_SPACING_METRES, 10_000},
+		{"lake_minimum_depth_millimetres", waters.lake_minimum_depth_millimetres, 100, 64_000},
+		{"lake_minimum_area_square_metres", waters.lake_minimum_area_square_metres, 4, 1_000_000},
+		{"lake_maximum_metres", waters.lake_maximum_metres, 16, 1024},
+		{"lake_margin_millimetres", waters.lake_margin_millimetres, 0, 4000},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("waters.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	if cells := waters.reach_metres / waters.grid_metres; cells > MAXIMUM_WATERS_GRID_HALF_CELLS {
+		return fmt.tprintf("waters.reach_metres %d is %d cells of grid_metres %d, more than %d", waters.reach_metres, cells, waters.grid_metres, MAXIMUM_WATERS_GRID_HALF_CELLS)
+	}
+	return ""
+}
+
 // The keys a world records (Planet_Generation_Record.climate).
 planet_climate_field :: proc(climate: Planet_Climate) -> Planet_Climate_Field {
 	return Planet_Climate_Field {
@@ -1017,6 +1136,9 @@ planet_problem :: proc(planet: Planet) -> string {
 		return problem
 	}
 	if problem := climate_problem(planet.climate); problem != "" {
+		return problem
+	}
+	if problem := waters_problem(planet.waters); problem != "" {
 		return problem
 	}
 	// Bedrock lies below every local surface's deep stone, so a valley at

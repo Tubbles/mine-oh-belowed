@@ -766,8 +766,8 @@ field_water_is_front :: proc(chunk: ^Field_Chunk, index: int) -> bool {
 
 // The flood claims a sample: the running sill rises to it, the owner and
 // the curve take it. Another body's dry sample leaves that body; front
-// water there stays front (awake), and old water no one moves wakes as
-// front.
+// water there stays front (awake), and still water no one owns (old
+// water, a generated lake of 0312) wakes as front.
 claim_water_flood_sample :: proc(world: ^Field_World, id: Water_Body_Id, chunk: ^Field_Chunk, index: int, span: Field_Water_Span, bottom: i64) {
 	flood := &world.water_flood
 	flood.sill = max(flood.sill, bottom)
@@ -1346,6 +1346,97 @@ seed_water_sea_facing :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 			}
 		}
 	}
+}
+
+// An arriving chunk's still water no one owns (a generated lake, 0312:
+// water, no owner, no awake or source bit, not ground) joins a flood
+// pocket by pocket (6-connected inside the chunk), so a pocket the lake's
+// mask holds apart from the rest is not left out: every live body (not
+// the sea, not released) whose still sample lies across a face from the
+// pocket floods again (dirty) and claims it; a pocket with no such body
+// wakes its lowest sample by (bottom, sample order), which seeds a body by
+// the front's rule after the still ticks, whose flood claims the rest.
+// Claimed, the pocket's water wakes as front (claim_water_flood_sample).
+join_field_chunk_lake_water :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
+	visited := new(Field_Sample_Bits, context.temp_allocator)
+	pocket := make([dynamic]int, context.temp_allocator)
+	for start in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if field_sample_bit(visited, start) || !field_sample_is_still_unowned_water(chunk, start) {
+			continue
+		}
+		lowest := gather_lake_pocket(chunk, start, visited, &pocket)
+		if !mark_bodies_beside_lake_pocket(world, chunk, pocket[:]) {
+			force_wake_field_water_sample(world, chunk, lowest)
+		}
+	}
+}
+
+// The pocket of still water no one owns 6-connected to the start inside
+// the chunk, gathered into pocket and marked visited; its lowest sample's
+// index by (bottom, sample order).
+gather_lake_pocket :: proc(chunk: ^Field_Chunk, start: int, visited: ^Field_Sample_Bits, pocket: ^[dynamic]int) -> (lowest: int) {
+	clear(pocket)
+	append(pocket, start)
+	set_field_sample_bit(visited, start)
+	lowest = start
+	lowest_sample := field_chunk_sample(chunk, start)
+	lowest_bottom := field_water_bottom(field_water_span(lowest_sample))
+	for head := 0; head < len(pocket); head += 1 {
+		index := pocket[head]
+		sample := field_chunk_sample(chunk, index)
+		if bottom := field_water_bottom(field_water_span(sample)); bottom < lowest_bottom || (bottom == lowest_bottom && field_sample_before(sample, lowest_sample)) {
+			lowest, lowest_sample, lowest_bottom = index, sample, bottom
+		}
+		local := field_index_to_local(index)
+		for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
+			next_local := local + offset
+			if !field_local_in_chunk(next_local) {
+				continue
+			}
+			next := field_local_to_index(next_local)
+			if field_sample_bit(visited, next) || !field_sample_is_still_unowned_water(chunk, next) {
+				continue
+			}
+			set_field_sample_bit(visited, next)
+			append(pocket, next)
+		}
+	}
+	return
+}
+
+// Marks dirty every live body (not the sea, not released) whose still
+// sample lies across a chunk face from one of the pocket's samples; true
+// when it marked any.
+mark_bodies_beside_lake_pocket :: proc(world: ^Field_World, chunk: ^Field_Chunk, pocket: []int) -> (marked: bool) {
+	for index in pocket {
+		local := field_index_to_local(index)
+		for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
+			across := local + offset
+			if field_local_in_chunk(across) {
+				continue
+			}
+			neighbour := world.chunks[chunk.coordinate + Field_Chunk_Coordinate(offset)] or_else nil
+			if neighbour == nil {
+				continue
+			}
+			across_index := field_local_to_index(across - offset * FIELD_CHUNK_SIZE)
+			owner := neighbour.water_owner[across_index]
+			if owner == WATER_OWNER_SEA || owner == WATER_OWNER_RELEASED || field_sample_bit(&neighbour.water_awake, across_index) {
+				continue
+			}
+			if id, owned := water_owner_body(world, owner); owned && id != WATER_BODY_SEA {
+				mark_water_body_dirty(world, id)
+				marked = true
+			}
+		}
+	}
+	return
+}
+
+// Still water no one owns: water, no owner, no awake or source bit, not
+// ground.
+field_sample_is_still_unowned_water :: proc(chunk: ^Field_Chunk, index: int) -> bool {
+	return chunk.water[index] > 0 && chunk.water_owner[index] == WATER_OWNER_NONE && chunk.density[index] <= 0 && !field_sample_bit(&chunk.water_awake, index) && !field_sample_bit(&chunk.water_source, index)
 }
 
 // The simulated set's edges.

@@ -32,6 +32,8 @@ import "platform"
 // arrival digs the crater (0271, Planet.crater_at_impact) generates
 // without the term (crater_baked false); the hit writes the baked
 // generation into the field (dig_impact_crater).
+// The waters (0312, generation_planet_waters.odin) fill the lakes beside
+// the sea and add the derived springs beside the record's.
 
 TOPSOIL_DEPTH_METRES :: 2
 DEEP_STONE_DEPTH_METRES :: 40
@@ -103,6 +105,9 @@ Planet_Generation :: struct {
 	climate:             Planet_Climate_Field,
 	climate_seed:        u64,
 	ground_look_seed:    u64,
+	// The lakes (0312, generation_planet_waters.odin), borrowed from the
+	// planet's water features; none without them.
+	lakes:               []Planet_Lake,
 }
 
 // The starter veins lie round the planet's home (the pod's, 0179,
@@ -134,6 +139,7 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		climate = planet_climate_field(planet.climate),
 		climate_seed = seeds[.Planet_Climate],
 		ground_look_seed = seeds[.Planet_Ground_Look],
+		lakes = planet.water_features.lakes,
 	}
 	generation.crater = make_crater_term(generation, planet.crater, planet_home_direction(planet.home))
 	generation.trees = make_planet_tree_term(seed, planet.trees, planet.home, radius)
@@ -310,6 +316,13 @@ column_shades :: proc(column: Surface_Column, height, spacing: i64) -> bool {
 	return landmark_carve_distance(column.carve, height - column.carve.ground) <= 0 && column_roofed(column, spacing)
 }
 
+// Whether the height over the radius lies in the column's carved air: the
+// height map alone makes it ground and the carve air (0324), which a lake
+// leaves dry (0312). The caller checks the sample is air.
+column_carves :: proc(column: Surface_Column, height: i64, spacing_millimetres: int) -> bool {
+	return column.carve.site.kind in CARVING_KINDS && depth_to_density(column.relief - height, spacing_millimetres) > 0
+}
+
 // The ledges' noise takes the seed after the octaves'.
 relief_octave_noise :: proc(generation: Planet_Generation, index, wavelength_metres: int, point: [3]i64) -> i64 {
 	return value_noise(generation_seed.hash_combine(generation.surface_seed, u64(index)), point, metres_to_position_units(i64(wavelength_metres)))
@@ -473,13 +486,25 @@ planet_sample :: proc(generation: Planet_Generation, position: World_Position) -
 // The sample at the position and whether it is carved air under a roof
 // (column_shades), which the generation leaves without sky (0324).
 planet_sample_shaded :: proc(generation: Planet_Generation, position: World_Position) -> (sample: Field_Sample, shaded: bool) {
+	sample, shaded, _ = planet_sample_reading(generation, position)
+	return
+}
+
+// The sample at the position, whether it is carved air under a roof
+// (column_shades) and whether it is carved air at all (column_carves),
+// which a lake leaves dry (0312).
+planet_sample_reading :: proc(generation: Planet_Generation, position: World_Position) -> (sample: Field_Sample, shaded, carved: bool) {
 	shortcut, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
 	if !needs_relief {
-		return shortcut, false
+		return shortcut, false, false
 	}
 	column := surface_column(generation, on_sphere)
 	sample = planet_sample_at_column(generation, position, distance, on_sphere, column)
-	shaded = sample.density <= 0 && column_shades(column, distance - generation.radius, generation.spacing)
+	if sample.density <= 0 {
+		height := distance - generation.radius
+		shaded = column_shades(column, height, generation.spacing)
+		carved = column_carves(column, height, generation.spacing_millimetres)
+	}
 	return
 }
 
@@ -604,7 +629,12 @@ planet_direction_at :: proc(latitude, longitude: i32) -> [3]i64 {
 // sample nearest each point; found is false when none is air, so a spring
 // never becomes a source inside ground.
 planet_spring_sample :: proc(generation: Planet_Generation, spring: Planet_Spring) -> (sample: Sample_Coordinate, found: bool) {
-	direction := planet_spring_direction(spring)
+	return planet_spring_sample_at(generation, planet_spring_direction(spring))
+}
+
+// planet_spring_sample at a unit direction: a record's spring or a derived
+// one (0312).
+planet_spring_sample_at :: proc(generation: Planet_Generation, direction: [3]i64) -> (sample: Sample_Coordinate, found: bool) {
 	surface := generation.radius + surface_relief(generation, fixed_scale(direction, generation.radius))
 	highest := generation.radius + generation.relief_highest + generation.spacing
 	half := generation.spacing / 2
@@ -618,8 +648,10 @@ planet_spring_sample :: proc(generation: Planet_Generation, spring: Planet_Sprin
 	return {}, false
 }
 
-// The springs whose sample lies in the chunk become full, awake sources;
-// a spring with no air above its surface is skipped with a log line.
+// The springs whose sample lies in the chunk become full, awake sources:
+// the record's, a spring with no air above its surface skipped with a log
+// line, then the derived ones (0312) whose radial passes near the chunk
+// (planet_spring_may_lie_in_chunk), one without air skipped quietly.
 mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, chunk: ^Field_Chunk) {
 	for spring in planet.springs {
 		sample, found := planet_spring_sample(generation, spring)
@@ -627,19 +659,34 @@ mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, 
 			platform.log_printf("field: the spring at latitude %d, longitude %d has no air above its surface, skipped", spring.latitude_degrees, spring.longitude_degrees)
 			continue
 		}
-		if sample_to_field_chunk_coordinate(sample) != chunk.coordinate {
+		mark_field_chunk_spring(chunk, sample)
+	}
+	for spring in planet.water_features.springs {
+		if !planet_spring_may_lie_in_chunk(generation, spring.direction, chunk.coordinate) {
 			continue
 		}
-		index := sample_to_field_index(sample)
-		chunk.water[index] = FIELD_WATER_FULL
-		set_field_sample_bit(&chunk.water_source, index)
-		set_field_sample_bit(&chunk.water_awake, index)
+		if sample, found := planet_spring_sample_at(generation, spring.direction); found {
+			mark_field_chunk_spring(chunk, sample)
+		}
 	}
+}
+
+// The sample, when the chunk holds it, a full, awake source.
+mark_field_chunk_spring :: proc(chunk: ^Field_Chunk, sample: Sample_Coordinate) {
+	if sample_to_field_chunk_coordinate(sample) != chunk.coordinate {
+		return
+	}
+	index := sample_to_field_index(sample)
+	chunk.water[index] = FIELD_WATER_FULL
+	set_field_sample_bit(&chunk.water_source, index)
+	set_field_sample_bit(&chunk.water_awake, index)
 }
 
 // Fills chunk; safe on any thread. The chunk is not marked dirty, the
 // world does that when it takes the chunk (field_world_insert_chunk). The
-// water: the sea below the planet's sea level and the springs (0172); the
+// water: the sea below the planet's sea level, the lakes (0312,
+// fill_field_chunk_lakes, carved air under their level left dry), and the
+// record's and the derived springs (0172, 0312); the
 // light: full sky in every air sample (0173, light_generated_field_chunk)
 // but carved air under a roof (0324, column_shades), which arrives
 // without sky and is lit by the fill from the chunk's lit air
@@ -654,7 +701,7 @@ generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int
 	origin := field_chunk_origin(coordinate)
 	chunk.coordinate = coordinate
 	overlay := crater_overlay && planet.crater_at_impact && impact_crater_reaches_box(generation, field_node_box(field_chunk_node(coordinate), spacing_millimetres))
-	shaded: Field_Sample_Bits
+	shaded, carved: Field_Sample_Bits
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		sample := origin + Sample_Coordinate(field_index_to_local(index))
 		position := sample_to_world_position(sample, spacing_millimetres)
@@ -664,6 +711,9 @@ generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int
 			value = planet_sample_at_column(generation, position, distance, on_sphere, column)
 			if value.density <= 0 && column_shades(column, distance - generation.radius, generation.spacing) {
 				set_field_sample_bit(&shaded, index)
+			}
+			if value.density <= 0 && column_carves(column, distance - generation.radius, spacing_millimetres) {
+				set_field_sample_bit(&carved, index)
 			}
 			if overlay {
 				if baked, changed := impact_crater_baked_sample(generation, position, distance, on_sphere, column.relief, value); changed {
@@ -676,6 +726,7 @@ generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int
 		chunk.tint[index] = value.tint
 	}
 	fill_field_chunk_sea(planet, spacing_millimetres, chunk)
+	fill_field_chunk_lakes(generation, chunk, &carved)
 	mark_field_chunk_springs(generation, planet, chunk)
 	light_generated_field_chunk(chunk)
 	chunk.generated_shade = field_sample_bits_any(&shaded)

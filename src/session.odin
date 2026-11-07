@@ -196,6 +196,10 @@ resolve_session_planet :: proc(plan: Session_Plan, planets: []Planet, session: ^
 		if !plan.loading {
 			session.planet.home = new_world_home(plan.seed, session.planet)
 		}
+		// The waters (0312), found once on this thread: every copy of the
+		// planet (the world's, the workers', the water's generation) borrows
+		// them, destroy_recorded_planet frees them.
+		session.planet.water_features = make_planet_water_features(plan.seed, session.planet)
 		settings.planet_id = session.planet.id
 	}
 	resolved.settings = settings

@@ -11,12 +11,13 @@ import "generation_seed"
 // generated twice. A grove cube holds a grove by the planet's share; a
 // tree cube keeps its candidate with a chance that falls with the square
 // of the distance from the nearest grove's centre, to none at the grove's
-// reach. None within the clearing round the home, below the sea (with a
-// margin) or on ground steeper than the planet's slope. Keys sit on the
-// sphere of the radius, not on the relief, so a relief term never moves a
-// key; each tree has its own yaw, scale and shade from its hash. A
-// standing tree is a pure function of the seed, the recorded planet and
-// the key; the field spacing never moves a tree. Integers only.
+// reach. None within the clearing round the home, below the sea or a
+// lake (0312) (with a margin) or on ground steeper than the planet's
+// slope. Keys sit on the sphere of the radius, not on the relief, so a
+// relief term never moves a key; each tree has its own yaw, scale and
+// shade from its hash. A standing tree is a pure function of the seed,
+// the recorded planet and the key; the field spacing never moves a tree.
+// Integers only.
 
 PLANET_TREE_SEA_MARGIN_METRES :: 1
 PLANET_TREE_SLOPE_PROBE_METRES :: 1
@@ -199,6 +200,9 @@ planet_tree_from_candidate :: proc(generation: Planet_Generation, cell: [3]i64, 
 	}
 	relief := column.relief
 	if relief < generation.sea_radius - generation.radius + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES) {
+		return {}, false
+	}
+	if level, found := planet_lake_level_at(generation.lakes, on_sphere, generation.radius); found && relief < level + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES) {
 		return {}, false
 	}
 	up, _ := normalize_fixed(on_sphere)

@@ -14,7 +14,9 @@ import "platform"
 // generation's integer relief with the crater baked; floats only place
 // the pixels. The sea, contour lines every 10 m (bolder every 50 m), the
 // home and the springs with the streams their water runs down. One PNG,
-// lines on stdout, no window, no world.
+// lines on stdout, no window, no world. With the planet's waters (0312)
+// the lakes in blue, the derived springs with their streams and the tech
+// demo's start.
 
 RELIEF_MAP_PIXELS :: 800
 RELIEF_MAP_MINIMUM_METRES :: 100
@@ -22,6 +24,8 @@ RELIEF_MAP_MAXIMUM_METRES :: 20_000
 // A stream's trail is capped at this many steps of
 // RELIEF_MAP_STREAM_STEP_METRES.
 RELIEF_MAP_STREAM_STEPS :: 4000
+// A derived spring's trail (0312), shorter: up to 128 of them are drawn.
+RELIEF_MAP_DERIVED_STREAM_STEPS :: 500
 RELIEF_MAP_STREAM_STEP_METRES :: 2
 // A stream's steps try this many headings; a pit spills over the lowest
 // of RELIEF_MAP_PIT_HEADINGS on rings out to RELIEF_MAP_PIT_METRES.
@@ -35,6 +39,8 @@ RELIEF_MAP_SPRING_COLOUR :: [4]u8{0, 200, 255, 255}
 RELIEF_MAP_HOME_COLOUR :: [4]u8{255, 255, 255, 255}
 RELIEF_MAP_OUTLINE_COLOUR :: [4]u8{0, 0, 0, 255}
 RELIEF_MAP_COAST_COLOUR :: [3]f64{20, 20, 60}
+RELIEF_MAP_LAKE_COLOUR :: [4]u8{60, 120, 230, 255}
+RELIEF_MAP_START_COLOUR :: [4]u8{255, 230, 0, 255}
 
 Relief_Map_Request :: struct {
 	latitude_degrees, longitude_degrees: f64,
@@ -208,22 +214,10 @@ relief_map_colours :: proc(heights: []i64, sea_level: i64, metres_per_pixel: f64
 	return colours
 }
 
-// The tangent plane at a unit direction: east the cross of +y (+x near
-// the poles) with it, north the cross of it with east.
-relief_map_tangents :: proc(direction: [3]i64) -> (east, north: [3]i64) {
-	reference := [3]i64{0, UNIT_VECTOR_ONE, 0}
-	if abs(direction.y) >= UNIT_VECTOR_ONE * 9 / 10 {
-		reference = {UNIT_VECTOR_ONE, 0, 0}
-	}
-	east, _ = normalize_fixed(fixed_cross(reference, direction))
-	north, _ = normalize_fixed(fixed_cross(direction, east))
-	return
-}
-
 // The lowest of the headings distance out from the direction in the
 // tangent plane, and found when it lies under the height.
 relief_map_lowest_heading :: proc(generation: Planet_Generation, direction: [3]i64, height, distance: i64, headings: int) -> (lowest_direction: [3]i64, lowest: i64, found: bool) {
-	east, north := relief_map_tangents(direction)
+	east, north := planet_tangents(direction)
 	lowest = height
 	for heading in 0 ..< headings {
 		angle := i32(heading * ANGLE_UNITS_PER_TURN / headings)
@@ -242,8 +236,8 @@ relief_map_lowest_heading :: proc(generation: Planet_Generation, direction: [3]i
 // RELIEF_MAP_STREAM_STEP_METRES out, while lower than here; a pit spills
 // over the lowest point of the first ring out to RELIEF_MAP_PIT_METRES
 // that holds one lower. It ends under the sea, in a pit nothing spills
-// from, or at RELIEF_MAP_STREAM_STEPS steps.
-relief_map_stream :: proc(generation: Planet_Generation, start_direction: [3]i64, allocator := context.allocator) -> Relief_Map_Stream {
+// from, or after steps steps.
+relief_map_stream :: proc(generation: Planet_Generation, start_direction: [3]i64, allocator := context.allocator, steps := RELIEF_MAP_STREAM_STEPS) -> Relief_Map_Stream {
 	stream := Relief_Map_Stream {
 		trail = make([dynamic][3]i64, 0, 64, allocator),
 		end   = .Limit,
@@ -252,7 +246,7 @@ relief_map_stream :: proc(generation: Planet_Generation, start_direction: [3]i64
 	direction := start_direction
 	height := surface_relief(generation, fixed_scale(direction, generation.radius))
 	start := height
-	for _ in 0 ..< RELIEF_MAP_STREAM_STEPS {
+	for _ in 0 ..< steps {
 		append(&stream.trail, direction)
 		if height < sea {
 			stream.end = .Sea
@@ -318,6 +312,33 @@ write_relief_map_png :: proc(colours: [][4]u8, pixels: int, path: string) -> str
 	return platform.write_file_replacing(path, ([^]byte)(data)[:size])
 }
 
+// Every pixel whose point a lake holds and whose height lies under that
+// lake's level takes the lake's colour (0312).
+relief_map_mark_lakes :: proc(colours: [][4]u8, heights: []i64, generation: Planet_Generation, request: Relief_Map_Request, pixels: int) {
+	if len(generation.lakes) == 0 {
+		return
+	}
+	radius_metres := int(generation.radius / POSITION_UNITS_PER_METRE)
+	metres_per_pixel := f64(request.size_metres) / f64(pixels)
+	for row in 0 ..< pixels {
+		for column in 0 ..< pixels {
+			east := (f64(column) + 0.5 - f64(pixels) / 2) * metres_per_pixel
+			north := (f64(pixels) / 2 - f64(row) - 0.5) * metres_per_pixel
+			point := relief_map_point(request, radius_metres, east, north)
+			if level, found := planet_lake_level_at(generation.lakes, point, generation.radius); found && heights[row * pixels + column] < level {
+				colours[row * pixels + column] = RELIEF_MAP_LAKE_COLOUR
+			}
+		}
+	}
+}
+
+// A unit direction's latitude and longitude in degrees, laid out as
+// planet_direction_at's.
+relief_map_degrees :: proc(direction: [3]i64) -> (latitude, longitude: f64) {
+	unit := [3]f64{f64(direction.x), f64(direction.y), f64(direction.z)} / UNIT_VECTOR_ONE
+	return math.to_degrees(math.asin(clamp(unit.y, -1, 1))), math.to_degrees(math.atan2(unit.z, unit.x))
+}
+
 relief_map_stream_end_name :: proc(end: Relief_Map_Stream_End) -> string {
 	switch end {
 	case .Sea:
@@ -328,6 +349,32 @@ relief_map_stream_end_name :: proc(end: Relief_Map_Stream_End) -> string {
 		return "limit"
 	}
 	return ""
+}
+
+// The waters' lines and the derived springs' streams (0312): the counts,
+// each derived spring and its fall, each lake, and the tech demo's spring.
+relief_map_waters :: proc(colours: [][4]u8, pixels: int, request: Relief_Map_Request, metres_per_pixel: f64, generation: Planet_Generation, planet: Planet) {
+	features := planet.water_features
+	sea := generation.sea_radius - generation.radius
+	fmt.printfln("relief map: waters: %d derived springs, %d lakes", len(features.springs), len(features.lakes))
+	for spring, index in features.springs {
+		stream := relief_map_stream(generation, spring.direction, steps = RELIEF_MAP_DERIVED_STREAM_STEPS)
+		defer delete(stream.trail)
+		for point in stream.trail {
+			relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, point, RELIEF_MAP_STREAM_COLOUR, 1)
+		}
+		latitude, longitude := relief_map_degrees(spring.direction)
+		fmt.printfln("relief map: derived spring %d at latitude %.1f, longitude %.1f: %.1f m over the sea, falls %.1f m to %s", index, latitude, longitude, f64(spring.height - sea) / POSITION_UNITS_PER_METRE, f64(spring.drop) / POSITION_UNITS_PER_METRE, spring.to_sea ? "the sea" : "the edge")
+	}
+	for lake, index in features.lakes {
+		direction, _ := normalize_fixed(lake.origin)
+		latitude, longitude := relief_map_degrees(direction)
+		fmt.printfln("relief map: lake %d at latitude %.1f, longitude %.1f: %.1f m over the sea, %.1f m deep, %d m2", index, latitude, longitude, f64(lake.level - sea) / POSITION_UNITS_PER_METRE, f64(lake.level - lake.floor) / POSITION_UNITS_PER_METRE, int(lake.cells) * LAKE_CELL_METRES * LAKE_CELL_METRES)
+	}
+	if features.has_start {
+		latitude, longitude := relief_map_degrees(features.start)
+		fmt.printfln("relief map: the tech demo's spring at latitude %.1f, longitude %.1f", latitude, longitude)
+	}
 }
 
 // 2 for a bad argument or radius, 1 when the map cannot be written, 0
@@ -342,6 +389,8 @@ run_relief_map :: proc(argument, path: string, seed: u64, planets: []Planet) -> 
 		platform.log_printf("error: --relief-map=%s: %s", argument, problem)
 		return 2
 	}
+	planet.water_features = make_planet_water_features(seed, planet)
+	defer destroy_planet_water_features(&planet.water_features)
 	generation := baked_planet_generation(make_planet_generation(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES))
 	sea := generation.sea_radius - generation.radius
 	pixels := RELIEF_MAP_PIXELS
@@ -350,6 +399,7 @@ run_relief_map :: proc(argument, path: string, seed: u64, planets: []Planet) -> 
 	defer delete(heights)
 	colours := relief_map_colours(heights, sea, metres_per_pixel, pixels)
 	defer delete(colours)
+	relief_map_mark_lakes(colours, heights, generation, request, pixels)
 	fmt.printfln("relief map: seed %d, radius %d m, relief %.1f to %.1f m from the radius, home at latitude %d, longitude %d, crater floor %.1f m over the sea", seed, planet.radius_metres, f64(generation.relief_lowest) / POSITION_UNITS_PER_METRE, f64(generation.relief_highest) / POSITION_UNITS_PER_METRE, planet.home.latitude_degrees, planet.home.longitude_degrees, f64(generation.crater.floor_height - sea) / POSITION_UNITS_PER_METRE)
 	for spring, index in planet.springs {
 		direction := planet_spring_direction(spring)
@@ -361,9 +411,18 @@ run_relief_map :: proc(argument, path: string, seed: u64, planets: []Planet) -> 
 		ground := surface_relief(generation, fixed_scale(direction, generation.radius)) - sea
 		fmt.printfln("relief map: spring %d at latitude %d, longitude %d: %.1f m over the sea, stream %d m, drop %.1f m, ends at %s", index, spring.latitude_degrees, spring.longitude_degrees, f64(ground) / POSITION_UNITS_PER_METRE, stream.length_metres, f64(stream.drop) / POSITION_UNITS_PER_METRE, relief_map_stream_end_name(stream.end))
 	}
+	relief_map_waters(colours, pixels, request, metres_per_pixel, generation, planet)
 	for spring in planet.springs {
 		relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, planet_spring_direction(spring), RELIEF_MAP_OUTLINE_COLOUR, 5)
 		relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, planet_spring_direction(spring), RELIEF_MAP_SPRING_COLOUR, 3)
+	}
+	for spring in planet.water_features.springs {
+		relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, spring.direction, RELIEF_MAP_OUTLINE_COLOUR, 3)
+		relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, spring.direction, RELIEF_MAP_SPRING_COLOUR, 2)
+	}
+	if features := planet.water_features; features.has_start {
+		relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, features.start, RELIEF_MAP_OUTLINE_COLOUR, 5)
+		relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, features.start, RELIEF_MAP_START_COLOUR, 3)
 	}
 	home := planet_home_direction(planet.home)
 	relief_map_mark(colours, pixels, request, planet.radius_metres, metres_per_pixel, home, RELIEF_MAP_OUTLINE_COLOUR, 5)

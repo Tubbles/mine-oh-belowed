@@ -1,5 +1,6 @@
 package game
 
+import "core:reflect"
 import "core:slice"
 import "core:strings"
 import "core:testing"
@@ -63,6 +64,11 @@ test_the_planet_settings_default :: proc(t: ^testing.T) {
 @(test)
 test_an_unknown_planet_or_radius_falls_back_to_the_defaults :: proc(t: ^testing.T) {
 	planets := shipped_test_planets()
+	// The session below would run the finder, 1.9 to 2.9 s a preset
+	// unoptimised; the waters' tests cover it (0312).
+	for &planet in planets {
+		planet.waters = {}
+	}
 	settings := default_world_file_settings(test_game_config())
 	settings.planet_id, settings.planet_radius_metres = "gone", 16000
 	resolved, planet, record := resolve_world_planet(settings, {}, planets, false)
@@ -139,7 +145,10 @@ test_the_world_file_records_the_planet_generation :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(loaded.palette), len(planet.palette))
 	testing.expect_value(t, loaded.palette[2], [3]int{1, 2, 3})
 	original := make_planet_generation(TEST_PLANET_SEED, recorded, 1000)
-	testing.expect_value(t, make_planet_generation(TEST_PLANET_SEED, loaded, 1000), original)
+	// The generation borrows the lakes (0312), a slice, so it compares by
+	// reflection.
+	reloaded := make_planet_generation(TEST_PLANET_SEED, loaded, 1000)
+	testing.expect(t, reflect.equal(reloaded, original, true), "the loaded world generates as the new one")
 	// A malformed record refuses the file instead of generating from it.
 	file.planet_generation.bedrock_depth_metres = 20000
 	_, problem = parse_world_file(encode_world_file(file, context.temp_allocator), context.temp_allocator)
