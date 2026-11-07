@@ -1,6 +1,6 @@
 # 0328: Sun shadows
 
-Status: verified (2026-11-07)
+Status: landed (2026-11-07, 0c4916f)
 
 0313 lights the landscape by the sun, the sky and the ground's bounce without shadows; its design left the sun's shadow of the terrain and the trees to an item of its own, after 0310's forests. Its estimate (from published hardware figures, not measured): one 2048 square cascade over 256 m adds about 300 draw calls a viewport (50 terrain chunks, 256 trees), 0.3 to 0.5 ms of GPU and 1 to 2 ms of CPU on the couch, 2 to 3.5 ms on the Steam Deck at a 1024 square map, 4 to 8 ms on the phone.
 
