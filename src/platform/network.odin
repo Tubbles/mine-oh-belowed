@@ -290,9 +290,10 @@ poll_connection :: proc(connection: ^Network_Connection) {
 	}
 }
 
-// The next whole message, in the allocator, or ok false. A length above
+// The next whole message as a view into the received bytes, valid until
+// the next take or poll, or ok false. A length above
 // MAXIMUM_NETWORK_MESSAGE_SIZE closes the connection.
-take_message :: proc(connection: ^Network_Connection, allocator := context.allocator) -> (payload: []byte, ok: bool) {
+peek_message :: proc(connection: ^Network_Connection) -> (payload: []byte, ok: bool) {
 	if len(connection.received) < NETWORK_LENGTH_SIZE {
 		return nil, false
 	}
@@ -308,8 +309,14 @@ take_message :: proc(connection: ^Network_Connection, allocator := context.alloc
 	if len(connection.received) < NETWORK_LENGTH_SIZE + length {
 		return nil, false
 	}
-	payload = make([]byte, length, allocator)
-	copy(payload, connection.received[NETWORK_LENGTH_SIZE:][:length])
-	remove_range(&connection.received, 0, NETWORK_LENGTH_SIZE + length)
+	return connection.received[NETWORK_LENGTH_SIZE:][:length], true
+}
+
+// The next whole message (peek_message), in the allocator, or ok false.
+take_message :: proc(connection: ^Network_Connection, allocator := context.allocator) -> (payload: []byte, ok: bool) {
+	view := peek_message(connection) or_return
+	payload = make([]byte, len(view), allocator)
+	copy(payload, view)
+	remove_range(&connection.received, 0, NETWORK_LENGTH_SIZE + len(view))
 	return payload, true
 }

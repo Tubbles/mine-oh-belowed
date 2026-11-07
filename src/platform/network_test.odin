@@ -131,16 +131,46 @@ test_a_length_split_across_two_polls_waits_for_the_rest :: proc(t: ^testing.T) {
 }
 
 // A length prefix over the limit closes the connection before anything
-// is allocated for it.
+// is allocated for it, on a take and on a peek.
 @(test)
 test_an_oversized_length_closes_the_connection :: proc(t: ^testing.T) {
 	connection := Network_Connection{open = false}
 	defer delete(connection.received)
+	append_oversized_length(&connection)
+	_, ok := take_message(&connection)
+	testing.expect(t, !ok)
+	testing.expect_value(t, len(connection.received), 0)
+	append_oversized_length(&connection)
+	_, peeked := peek_message(&connection)
+	testing.expect(t, !peeked)
+	testing.expect_value(t, len(connection.received), 0)
+}
+
+append_oversized_length :: proc(connection: ^Network_Connection) {
 	length := u32(MAXIMUM_NETWORK_MESSAGE_SIZE + 1)
 	for index in 0 ..< NETWORK_LENGTH_SIZE {
 		append(&connection.received, byte(length >> (8 * uint(index))))
 	}
-	_, ok := take_message(&connection)
-	testing.expect(t, !ok)
-	testing.expect_value(t, len(connection.received), 0)
+}
+
+// A peeked message stays in the received bytes until it is taken, and
+// the take gives the same bytes.
+@(test)
+test_a_peeked_message_stays_until_taken :: proc(t: ^testing.T) {
+	connection := Network_Connection{open = false}
+	defer delete(connection.received)
+	bytes := [?]byte{3, 0, 0, 0, 'o', 'n', 'e', 3, 0, 0, 0, 't', 'w', 'o'}
+	append(&connection.received, ..bytes[:])
+	for _ in 0 ..< 2 {
+		payload, ok := peek_message(&connection)
+		testing.expect(t, ok)
+		testing.expect_value(t, string(payload), "one")
+		testing.expect_value(t, len(connection.received), len(bytes))
+	}
+	taken, taken_ok := take_message(&connection, context.temp_allocator)
+	testing.expect(t, taken_ok)
+	testing.expect_value(t, string(taken), "one")
+	next, next_ok := peek_message(&connection)
+	testing.expect(t, next_ok)
+	testing.expect_value(t, string(next), "two")
 }

@@ -1,6 +1,6 @@
 # 0325: Records out of order after a second local player
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-07)
 
 CI run 42364333774 (the nix job, on a994f07) failed `test_a_joined_machine_adds_and_removes_a_local_player`: the host closed the joined machine's connection with "an input record for player 0 tick 245 out of order or out of range", 183 ticks after the machine's second local player joined at tick 62. The same code passed on the next run and locally (4.7 s). The check is `record_tick_expected` (`src/session_network.odin`). A host that drops a couch machine in split screen is a bug players meet, not only a flaky test.
 

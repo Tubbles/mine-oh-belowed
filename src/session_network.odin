@@ -75,13 +75,15 @@ NETWORK_KEEPALIVE_INTERVAL :: time.Second
 NETWORK_TIMEOUT :: 10 * time.Second
 // A client whose unsent bytes on the host pass this (beyond its join
 // snapshot) is too far behind and is dropped, so a stalled reader cannot
-// grow the host's memory without bound.
+// grow the host's memory without bound. It also caps the received bytes
+// of a client whose records wait for the host's tick.
 MAXIMUM_CLIENT_BACKLOG_BYTES :: 32 * 1024 * 1024
 // Hash reports one machine may have waiting for the host's own hash.
 MAXIMUM_PENDING_HASH_REPORTS :: 16
 // The window a joiner may ask for (two seconds at 60 Hz), and how far
-// past the host's tick plus its window a client's record may be stamped
-// (other clients' records run ahead of the host by their windows).
+// past the host's tick plus its window a client's record may run before
+// it waits for the host (other clients' records run ahead of the host by
+// their windows, and a server's tick may wait for its chunks).
 MAXIMUM_JOIN_WINDOW :: 120
 RECORD_TICK_MARGIN :: MAXIMUM_JOIN_WINDOW + 60
 
@@ -605,10 +607,17 @@ update_host_network :: proc(session: ^Session, content: Simulation_Content, name
 		peer := &network.peers[index]
 		platform.poll_connection(&peer.connection)
 		for {
-			payload, ok := platform.take_message(&peer.connection, context.temp_allocator)
+			next, ok := platform.peek_message(&peer.connection)
 			if !ok {
 				break
 			}
+			if record_waits_for_host(peer^, next, session.simulation.tick) {
+				if len(peer.connection.received) > MAXIMUM_CLIENT_BACKLOG_BYTES {
+					platform.close_connection(&peer.connection, "too far ahead of the host (its waiting bytes passed the cap)")
+				}
+				break
+			}
+			payload, _ := platform.take_message(&peer.connection, context.temp_allocator)
 			handle_client_message(session, content, name, index, payload)
 		}
 		keep_peer_alive(peer)
@@ -681,8 +690,8 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 	case .Input_Record:
 		record, ok := decode_input_record(&reader)
 		index := ok ? find_peer_player(peer^, record.player) : -1
-		if !ok || index < 0 || !record_tick_expected(peer.players[index], peer.window, record.tick, session.simulation.tick) {
-			problem := ok ? fmt.tprintf("an input record for player %d tick %d out of order or out of range", record.player, record.tick) : "a malformed input record"
+		if !ok || index < 0 || !record_tick_expected(peer.players[index], record.tick) {
+			problem := ok ? fmt.tprintf("an input record for player %d tick %d out of order", record.player, record.tick) : "a malformed input record"
 			if ok {
 				destroy_input_record(record)
 			}
@@ -714,11 +723,35 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 }
 
 // A client player's records come one tick after another from its join
-// tick, and no further ahead of the host's tick than the client's window
-// and the other clients' lead (RECORD_TICK_MARGIN) allow: one record far
-// in the future would hold every machine at that tick.
-record_tick_expected :: proc(peer_player: Peer_Player, window: int, tick, host_tick: u64) -> bool {
-	return tick == peer_player.last_tick + 1 && tick <= max(host_tick, peer_player.joined_tick) + u64(window) + RECORD_TICK_MARGIN
+// tick; one out of order drops the client.
+record_tick_expected :: proc(peer_player: Peer_Player, tick: u64) -> bool {
+	return tick == peer_player.last_tick + 1
+}
+
+// The last tick a client player's record may carry before it waits for
+// the host's tick: the client's window and the other clients' lead
+// (RECORD_TICK_MARGIN) past the host. Relayed at once, one record far in
+// the future would hold every machine at that tick.
+record_tick_bound :: proc(peer_player: Peer_Player, window: int, host_tick: u64) -> u64 {
+	return max(host_tick, peer_player.joined_tick) + u64(window) + RECORD_TICK_MARGIN
+}
+
+// The message is an input record of one of the peer's players past its
+// bound (record_tick_bound): it waits on the connection, with every
+// message after it, until the host's tick catches up (a server whose tick
+// waits for its chunks holds its clients, 0325). Any other message, one
+// too short for the record's header or of a player the peer lacks, does
+// not wait, so handle_client_message judges it.
+record_waits_for_host :: proc(peer: Network_Peer, payload: []byte, host_tick: u64) -> bool {
+	reader := Byte_Reader{data = payload}
+	kind, kind_ok := read_u8(&reader)
+	tick, tick_ok := read_u64(&reader)
+	player, player_ok := read_u32(&reader)
+	if !kind_ok || Lockstep_Message_Kind(kind) != .Input_Record || !tick_ok || !player_ok {
+		return false
+	}
+	index := find_peer_player(peer, int(player))
+	return index >= 0 && tick > record_tick_bound(peer.players[index], peer.window, host_tick)
 }
 
 pending_reports_of :: proc(network: Session_Network, machine: string) -> int {

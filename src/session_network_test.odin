@@ -548,17 +548,22 @@ test_a_second_joiner_arrives_while_the_first_restores :: proc(t: ^testing.T) {
 	testing.expect(t, len(host.session.network.hashes) > 0)
 }
 
-// A client's records come one after another and not past its window and
-// the margin: one far ahead would hold every machine.
+// A client's records come one after another, and one past its window and
+// the margin waits for the host's tick (relayed at once it would hold
+// every machine); another player's record or another message never waits.
 @(test)
-test_a_client_record_out_of_order_or_too_far_ahead_is_refused :: proc(t: ^testing.T) {
+test_a_client_record_out_of_order_is_refused_and_one_too_far_ahead_waits :: proc(t: ^testing.T) {
 	peer := Peer_Player{last_tick = 99, joined_tick = 50}
-	testing.expect(t, record_tick_expected(peer, 3, 100, 98))
-	testing.expect(t, !record_tick_expected(peer, 3, 99, 98))
-	testing.expect(t, !record_tick_expected(peer, 3, 101, 98))
-	far := Peer_Player{last_tick = 1000, joined_tick = 5}
-	testing.expect(t, !record_tick_expected(far, 3, 1001, 10))
-	testing.expect(t, record_tick_expected(far, 3, 1001, 1001 - 3 - RECORD_TICK_MARGIN))
+	testing.expect(t, record_tick_expected(peer, 100))
+	testing.expect(t, !record_tick_expected(peer, 99))
+	testing.expect(t, !record_tick_expected(peer, 101))
+	far := Network_Peer{window = 3, player_count = 1}
+	far.players[0] = Peer_Player{last_tick = 1000, joined_tick = 5}
+	testing.expect(t, record_waits_for_host(far, record_message(Input_Record{tick = 1001}), 10))
+	testing.expect(t, !record_waits_for_host(far, record_message(Input_Record{tick = 1001}), 1001 - 3 - RECORD_TICK_MARGIN))
+	testing.expect(t, !record_waits_for_host(far, record_message(Input_Record{tick = 1001, player = 4}), 10))
+	ping := message_of(.Ping)
+	testing.expect(t, !record_waits_for_host(far, ping[:], 10))
 }
 
 // Another build or other content tables are refused with the reason.
@@ -645,4 +650,73 @@ test_the_join_snapshot_carries_free_crafting :: proc(t: ^testing.T) {
 	defer destroy_lockstep(&lockstep)
 	adopt_join_snapshot(&simulation, &lockstep, snapshot, chunk_set_enabled, 1)
 	testing.expect(t, simulation.free_crafting)
+}
+
+// A server whose tick waits (for a chunk, 0325) while a joined machine
+// with two local players plays on: past the machine's window and
+// RECORD_TICK_MARGIN ahead of the server its records wait on the
+// connection instead of dropping it, and once the server runs again both
+// play on to one hash.
+@(test) // slow
+test_a_stalled_server_holds_a_joined_machine_instead_of_dropping_it :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	host := make_loopback_test_server(content)
+	defer destroy_loopback_test_server(host)
+	address := fmt.tprintf("127.0.0.1:%d", host.session.network.listener.port)
+	couch := make_joining_test_frame(content, address)
+	defer destroy_joining_test_frame(couch)
+	if !testing.expect(t, run_join_test_frames(host, {couch}, Join_Test_Goal{entered = 1, tick = u64(TEST_TICK_RATE)})) {
+		return
+	}
+	testing.expect(t, add_viewport(couch, 9, {}))
+	if !testing.expect(t, run_join_test_frames(host, {couch}, Join_Test_Goal{tick = host.session.simulation.tick + u64(TEST_TICK_RATE)})) {
+		return
+	}
+	testing.expect_value(t, host.session.network.peers[0].player_count, 2)
+	stalled_tick := host.session.simulation.tick
+	window := u64(host.session.network.peers[0].window)
+	bound := stalled_tick + window + RECORD_TICK_MARGIN
+	// The machine has stamped a record past the bound once it ran this tick.
+	if !testing.expect(t, run_stalled_server_frames(host, couch, bound - window, time.Minute)) {
+		return
+	}
+	run_stalled_server_frames(host, couch, max(u64), time.Second)
+	testing.expect_value(t, host.session.simulation.tick, stalled_tick)
+	if !testing.expect_value(t, len(host.session.network.peers), 1) || !testing.expect(t, !couch.session.network.host_lost) {
+		return
+	}
+	testing.expect(t, couch.session.simulation.tick <= bound)
+	played_to := bound + STATE_HASH_INTERVAL_TICKS
+	testing.expect(t, run_join_test_frames(host, {couch}, Join_Test_Goal{tick = played_to}))
+	testing.expect(t, host.session.simulation.tick >= played_to - window - 1)
+	testing.expect_value(t, host.session.network.peers[0].player_count, 2)
+	testing.expect_value(t, host.session.network.mismatch_count, 0)
+	testing.expect_value(t, couch.session.network.mismatch_count, 0)
+}
+
+// Frames of a server whose tick waits (its network alone runs, as while
+// its tick waits for a chunk) and of the client, until the client's tick
+// reached tick or for the duration; false then, or once the client lost
+// the server.
+run_stalled_server_frames :: proc(server: ^Server_State, client: ^Frame_State, tick: u64, duration: time.Duration) -> bool {
+	start := time.tick_now()
+	for time.tick_since(start) < duration && !client.session.network.host_lost {
+		run_stalled_server_frame(server)
+		run_client_test_frame(client)
+		run_stalled_server_frame(server)
+		if client.session.simulation.tick >= tick {
+			return true
+		}
+		time.sleep(100 * time.Microsecond)
+	}
+	return false
+}
+
+// The server's frame without its ticks or its chunk streaming: the
+// network with the content run_server_frame builds.
+run_stalled_server_frame :: proc(server: ^Server_State) {
+	session := server.session
+	content := session_simulation_content(server.content, session.technologies, session.field_content)
+	content.generator = &session.generator
+	update_host_network(session, content, session.save.location.display_name)
 }
