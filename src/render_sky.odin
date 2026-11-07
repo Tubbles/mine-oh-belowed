@@ -8,8 +8,10 @@ import "generation_seed"
 
 // The sky pass (work item 0064), drawn first inside BeginMode3D, centred
 // on the camera, without depth test or depth writes, so everything else
-// draws over it: a hemisphere dome coloured from the horizon to the zenith
-// colour, stars at night turning with the day, then the sun and the moon
+// draws over it: a dome coloured from the horizon to the zenith colour,
+// reaching SKY_DOME_RINGS_BELOW rings under the horizon in the horizon's
+// colour, on the field warmed towards a low sun by the haze's glow
+// (0313, Sky_Glow), stars at night turning with the day, then the sun and the moon
 // as discs facing the camera along their own direction, so they stay
 // round anywhere in the sky (work item 0092), the moon's phase a second disc in the sky colour
 // overlapping it, and during a survey satellite's pass (work item 0069) a
@@ -21,10 +23,19 @@ import "generation_seed"
 // Well inside the far plane; with the depth test off the size only sets
 // the scale of the discs and stars.
 SKY_DOME_RADIUS :: 50.0
-SKY_DOME_SEGMENTS :: 24
+// A 7.5 degree step keeps the glow's lobe smooth under the vertex
+// colours' interpolation (0313).
+SKY_DOME_SEGMENTS :: 48
+// The rings from the horizon to the apex, each 90 / SKY_DOME_RINGS
+// degrees apart, and the rings at the same step under the horizon, so
+// the glow continues below it where the hazed terrain meets the sky.
 SKY_DOME_RINGS :: 8
-SKY_DOME_VERTEX_COUNT :: SKY_DOME_SEGMENTS * SKY_DOME_RINGS + 1
-SKY_DOME_TRIANGLE_COUNT :: (SKY_DOME_RINGS - 1) * SKY_DOME_SEGMENTS * 2 + SKY_DOME_SEGMENTS
+SKY_DOME_RINGS_BELOW :: 2
+SKY_DOME_VERTEX_COUNT :: SKY_DOME_SEGMENTS * (SKY_DOME_RINGS + SKY_DOME_RINGS_BELOW) + 1
+SKY_DOME_TRIANGLE_COUNT :: (SKY_DOME_RINGS + SKY_DOME_RINGS_BELOW - 1) * SKY_DOME_SEGMENTS * 2 + SKY_DOME_SEGMENTS
+// The glow's narrowness towards the sun, the shaders' haze_sun_exponent
+// (0313, field.fs and model.fs).
+HAZE_SUN_EXPONENT :: 6.0
 // raylib's vertex buffer slot for colours
 // (RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR).
 MESH_COLOR_BUFFER_INDEX :: 3
@@ -54,23 +65,26 @@ Sky_Renderer :: struct {
 	disc:     rl.Texture2D,
 }
 
-// Ring 0 lies on the horizon, ring SKY_DOME_RINGS - 1 just below the apex,
-// which is the last vertex.
+// Ring -SKY_DOME_RINGS_BELOW is the lowest, ring 0 lies on the horizon,
+// ring SKY_DOME_RINGS - 1 just below the apex, which is the last vertex;
+// a ring's vertices start at (ring + SKY_DOME_RINGS_BELOW) *
+// SKY_DOME_SEGMENTS.
 sky_dome_vertex_direction :: proc(index: int) -> [3]f32 {
 	if index == SKY_DOME_VERTEX_COUNT - 1 {
 		return {0, 1, 0}
 	}
-	ring := index / SKY_DOME_SEGMENTS
+	ring := index / SKY_DOME_SEGMENTS - SKY_DOME_RINGS_BELOW
 	segment := index % SKY_DOME_SEGMENTS
 	elevation := f32(ring) / SKY_DOME_RINGS * math.PI / 2
 	azimuth := f32(segment) / SKY_DOME_SEGMENTS * math.TAU
 	return {math.cos(azimuth) * math.cos(elevation), math.sin(elevation), math.sin(azimuth) * math.cos(elevation)}
 }
 
-// Two triangles per segment between neighbouring rings, a fan to the apex
-// above the last ring, wound counter clockwise seen from inside.
+// Two triangles per segment between neighbouring rings, from the lowest
+// ring up, a fan to the apex above the last ring, wound counter
+// clockwise seen from inside.
 append_sky_dome_triangles :: proc(indices: ^[dynamic]u16) {
-	for ring in 0 ..< SKY_DOME_RINGS - 1 {
+	for ring in 0 ..< SKY_DOME_RINGS + SKY_DOME_RINGS_BELOW - 1 {
 		for segment in 0 ..< SKY_DOME_SEGMENTS {
 			next := (segment + 1) % SKY_DOME_SEGMENTS
 			a := u16(ring * SKY_DOME_SEGMENTS + segment)
@@ -80,7 +94,7 @@ append_sky_dome_triangles :: proc(indices: ^[dynamic]u16) {
 			append(indices, a, b, c, b, d, c)
 		}
 	}
-	top := (SKY_DOME_RINGS - 1) * SKY_DOME_SEGMENTS
+	top := (SKY_DOME_RINGS + SKY_DOME_RINGS_BELOW - 1) * SKY_DOME_SEGMENTS
 	for segment in 0 ..< SKY_DOME_SEGMENTS {
 		next := (segment + 1) % SKY_DOME_SEGMENTS
 		append(indices, u16(top + segment), u16(top + next), u16(SKY_DOME_VERTEX_COUNT - 1))
@@ -110,9 +124,29 @@ sky_color_towards :: proc(colors: Sky_Colors, direction: [3]f32) -> rl.Color {
 	return mix_color(colors.horizon, colors.zenith, clamp(direction.y, 0, 1))
 }
 
-fill_sky_dome_colors :: proc(colors: Sky_Colors, vertex_colors: []rl.Color) {
+// The field's warm glow round a low sun (0313): the sun's direction in
+// the sky's frame and the lobe's colour, 0 to 1, the haze's
+// (Field_Haze.sun_color). The zero glow adds nothing.
+Sky_Glow :: struct {
+	direction, color: [3]f32,
+}
+
+// The glow's colour seen in a direction, 0 to 1: the haze's lobe,
+// apply_haze's in field.fs and model.fs.
+sky_glow_towards :: proc(glow: Sky_Glow, direction: [3]f32) -> [3]f32 {
+	return glow.color * math.pow(max(linalg.dot(direction, glow.direction), 0), HAZE_SUN_EXPONENT)
+}
+
+// The colour with the glow added, each channel clamped at 255.
+add_sky_glow :: proc(color: rl.Color, glow: [3]f32) -> rl.Color {
+	added := [3]f32{f32(color.r), f32(color.g), f32(color.b)} + glow * 255
+	return {u8(math.round(min(added.r, 255))), u8(math.round(min(added.g, 255))), u8(math.round(min(added.b, 255))), color.a}
+}
+
+fill_sky_dome_colors :: proc(colors: Sky_Colors, vertex_colors: []rl.Color, glow := Sky_Glow{}) {
 	for &color, index in vertex_colors {
-		color = sky_color_towards(colors, sky_dome_vertex_direction(index))
+		direction := sky_dome_vertex_direction(index)
+		color = add_sky_glow(sky_color_towards(colors, direction), sky_glow_towards(glow, direction))
 	}
 }
 
@@ -238,9 +272,9 @@ end_sky_pass :: proc() {
 	rlgl.EnableDepthTest()
 }
 
-draw_sky_dome :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, colors: Sky_Colors) {
+draw_sky_dome :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, colors: Sky_Colors, glow := Sky_Glow{}) {
 	vertex_colors := (cast([^]rl.Color)renderer.dome.colors)[:SKY_DOME_VERTEX_COUNT]
-	fill_sky_dome_colors(colors, vertex_colors)
+	fill_sky_dome_colors(colors, vertex_colors, glow)
 	rl.UpdateMeshBuffer(renderer.dome, MESH_COLOR_BUFFER_INDEX, raw_data(vertex_colors), SKY_DOME_VERTEX_COUNT * size_of(rl.Color), 0)
 	position := camera.position
 	rl.DrawMesh(renderer.dome, renderer.material, rl.MatrixTranslate(position.x, position.y, position.z))
@@ -376,13 +410,26 @@ altitude_day_sky :: proc(sky: Day_Sky, share: f32) -> Day_Sky {
 	return altitude_sky
 }
 
-// Between BeginMode3D and EndMode3D, before anything else.
-draw_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky, satellite: Satellite_Pass) {
+// The sun disc's colour (0313): the disc tinted by the sun's tint with the
+// glow towards the sun added, and per channel at least the dome's colour
+// in the sun's direction, so the disc never shows darker than the sky or
+// the glow round it.
+sun_disc_color :: proc(colors: Sky_Colors, direction: [3]f32, glow: Sky_Glow) -> rl.Color {
+	toward_sun := sky_glow_towards(glow, direction)
+	disc := add_sky_glow(multiply_color(SUN_DISC_COLOR, colors.sun_tint), toward_sun)
+	dome := add_sky_glow(sky_color_towards(colors, direction), toward_sun)
+	return {max(disc.r, dome.r), max(disc.g, dome.g), max(disc.b, dome.b), disc.a}
+}
+
+// Between BeginMode3D and EndMode3D, before anything else. The block
+// world passes no glow.
+draw_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky, satellite: Satellite_Pass, glow := Sky_Glow{}) {
 	begin_sky_pass()
 	defer end_sky_pass()
-	draw_sky_dome(renderer, camera, sky.colors)
+	draw_sky_dome(renderer, camera, sky.colors, glow)
 	draw_stars(camera, sky)
-	draw_sky_disc(renderer, camera, sun_direction(sky.fraction), SUN_RADIUS_SHARE, multiply_color(SUN_DISC_COLOR, sky.colors.sun_tint))
+	direction := sun_direction(sky.fraction)
+	draw_sky_disc(renderer, camera, direction, SUN_RADIUS_SHARE, sun_disc_color(sky.colors, direction, glow))
 	draw_moon(renderer, camera, sky)
 	draw_satellite(camera, satellite)
 }

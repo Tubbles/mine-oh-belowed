@@ -11,7 +11,12 @@ import rl "shared:raylib"
 // torches glow the same at night. On the field the sun also lights the
 // slopes (0297, field_sun_world_direction): the sky is drawn about the
 // viewer's up, so the sun the field shades by is the sky's turned back
-// into the world's frame.
+// into the world's frame. The field's open sky light (0313,
+// field_frame_lights) takes its colours from here: the sun's from the
+// data's high and low colours by the sun's height (sun_light_color),
+// the sky's from the dome's colours (sky_light_color), the ground's
+// bounce from both (ground_bounce_color) and the haze's warm glow
+// towards a low sun (haze_sun_glow_color).
 
 DAY_SKY_COLOR :: rl.Color{150, 190, 230, 255}
 NIGHT_SKY_COLOR :: rl.Color{12, 16, 32, 255}
@@ -41,6 +46,17 @@ TWILIGHT_GLOW_HALF_WIDTH :: 0.2
 SUN_PATH_TILT_DEGREES :: 20.0
 // Days from one new moon to the next.
 MOON_CYCLE_DAYS :: 8
+// The field's sun light (0313, sun_light_color), by the sun's height
+// (sun_direction's y): off below SUN_LIGHT_SET_HEIGHT, full above
+// SUN_LIGHT_RISEN_HEIGHT, the low colour on the horizon turning to the
+// high one by SUN_HIGH_HEIGHT.
+SUN_LIGHT_SET_HEIGHT :: -0.05
+SUN_LIGHT_RISEN_HEIGHT :: 0.05
+SUN_HIGH_HEIGHT :: 0.5
+// The zenith's share of the sky's light on an upward face: the cosine
+// weighted mean of a dome whose colour is linear in the sine of the
+// elevation, as sky_color_towards draws it.
+SKY_LIGHT_ZENITH_SHARE :: 2.0 / 3.0
 
 Sky_Colors :: struct {
 	zenith:   rl.Color,
@@ -165,4 +181,36 @@ sun_path_axis :: proc() -> [3]f32 {
 // 0 at new moon, 0.5 at full moon.
 moon_phase :: proc(day_number: u64) -> f32 {
 	return f32(day_number % MOON_CYCLE_DAYS) / MOON_CYCLE_DAYS
+}
+
+// The sun's light on a face turned to it (0313), 0 to the strength: the
+// low colour on the horizon to the high one by SUN_HIGH_HEIGHT, faded
+// out as the sun sets, scaled by sun_strength_percent.
+sun_light_color :: proc(fraction: f64, light: Sun_And_Torchlight_Config) -> [3]f32 {
+	height := f64(sun_direction(fraction).y)
+	high := field_color_float(light.sun_high_color)
+	low := field_color_float(light.sun_low_color)
+	color := high + (low - high) * f32(1 - smoothstep(0, SUN_HIGH_HEIGHT, height))
+	return color / 255 * f32(smoothstep(SUN_LIGHT_SET_HEIGHT, SUN_LIGHT_RISEN_HEIGHT, height)) * f32(light.sun_strength_percent) / 100
+}
+
+// The sky's light on an upward face (0313): the dome's horizon and
+// zenith mixed by SKY_LIGHT_ZENITH_SHARE, scaled by sky_light_percent.
+sky_light_color :: proc(colors: Sky_Colors, light: Sun_And_Torchlight_Config) -> [3]f32 {
+	horizon, zenith := color_to_vector3(colors.horizon), color_to_vector3(colors.zenith)
+	return (horizon + (zenith - horizon) * SKY_LIGHT_ZENITH_SHARE) * f32(light.sky_light_percent) / 100
+}
+
+// The ground's bounce on a downward face (0313): the ground's colour lit
+// by the sun at its height and by the sky, scaled by
+// ground_bounce_percent.
+ground_bounce_color :: proc(ground, sun, sky: [3]f32, sun_height: f32, light: Sun_And_Torchlight_Config) -> [3]f32 {
+	return ground * (sun * max(sun_height, 0) + sky) * f32(light.ground_bounce_percent) / 100
+}
+
+// The haze's and the dome's glow towards the sun (0313), 0 to 1: the
+// sun's low colour while the sun is near the horizon (twilight_share),
+// scaled by sun_glow_percent.
+haze_sun_glow_color :: proc(fraction: f64, light: Sun_And_Torchlight_Config, haze: Haze_Config) -> [3]f32 {
+	return field_color_float(light.sun_low_color) / 255 * twilight_share(sun_height(fraction)) * f32(haze.sun_glow_percent) / 100
 }

@@ -17,19 +17,23 @@ test_fog_ends_one_chunk_inside_the_load_radius :: proc(t: ^testing.T) {
 	testing.expect(t, end < LOAD_RADIUS_HORIZONTAL * CHUNK_SIZE)
 }
 
+// Work item 0313: the dome reaches SKY_DOME_RINGS_BELOW rings under the
+// horizon, 22.5 degrees, and is closed but for its lowest ring.
 @(test)
-test_the_sky_dome_is_a_closed_hemisphere :: proc(t: ^testing.T) {
+test_the_sky_dome_closes_down_to_its_lowest_ring :: proc(t: ^testing.T) {
 	geometry := build_sky_dome()
 	defer destroy_sky_dome(geometry)
 	testing.expect_value(t, len(geometry.positions), SKY_DOME_VERTEX_COUNT)
-	testing.expect_value(t, len(geometry.positions), 24 * 8 + 1)
+	testing.expect_value(t, len(geometry.positions), 481)
 	testing.expect_value(t, len(geometry.indices), SKY_DOME_TRIANGLE_COUNT * 3)
+	lowest := -SKY_DOME_RADIUS * math.sin(f32(22.5 * math.RAD_PER_DEG))
 	for position in geometry.positions {
 		testing.expect(t, abs(linalg.length(position) - SKY_DOME_RADIUS) < 1e-3)
-		testing.expect(t, position.y >= 0)
+		testing.expect(t, position.y >= lowest - 1e-3)
 	}
+	testing.expect(t, abs(geometry.positions[0].y - lowest) < 1e-3, "the first ring is the lowest")
 	testing.expect_value(t, geometry.positions[SKY_DOME_VERTEX_COUNT - 1], [3]f32{0, SKY_DOME_RADIUS, 0})
-	// Every edge is shared by two triangles, except the horizon ring's,
+	// Every edge is shared by two triangles, except the lowest ring's,
 	// which each belong to one: no holes, no seam.
 	uses := make(map[[2]u16]int)
 	defer delete(uses)
@@ -44,7 +48,7 @@ test_the_sky_dome_is_a_closed_hemisphere :: proc(t: ^testing.T) {
 	for edge, count in uses {
 		if count == 1 {
 			open_edges += 1
-			testing.expect(t, int(edge[1]) < SKY_DOME_SEGMENTS, "an open edge off the horizon ring")
+			testing.expect(t, int(edge[1]) < SKY_DOME_SEGMENTS, "an open edge off the lowest ring")
 		} else {
 			testing.expect_value(t, count, 2)
 		}
@@ -59,7 +63,66 @@ test_the_dome_blends_horizon_to_zenith :: proc(t: ^testing.T) {
 	defer delete(vertex_colors)
 	fill_sky_dome_colors(colors, vertex_colors)
 	testing.expect_value(t, vertex_colors[0], colors.horizon)
+	testing.expect_value(t, vertex_colors[SKY_DOME_RINGS_BELOW * SKY_DOME_SEGMENTS], colors.horizon)
 	testing.expect_value(t, vertex_colors[SKY_DOME_VERTEX_COUNT - 1], colors.zenith)
+}
+
+// Work item 0313: the field's glow adds the haze's lobe round the sun:
+// the horizon towards a setting sun takes the whole glow, the opposite
+// side none, and the zero glow changes nothing.
+@(test)
+test_the_dome_glows_towards_a_low_sun :: proc(t: ^testing.T) {
+	colors := sky_colors(0.25)
+	glow := Sky_Glow{direction = sun_direction(0.5), color = {0.1, 0.05, 0.02}}
+	glowing := make([]rl.Color, SKY_DOME_VERTEX_COUNT)
+	defer delete(glowing)
+	fill_sky_dome_colors(colors, glowing, glow)
+	horizon := SKY_DOME_RINGS_BELOW * SKY_DOME_SEGMENTS
+	towards := glowing[horizon + SKY_DOME_SEGMENTS / 2]
+	expected := color_to_vector3(colors.horizon) * 255 + glow.color * 255
+	got := [3]f32{f32(towards.r), f32(towards.g), f32(towards.b)}
+	for channel in 0 ..< 3 {
+		testing.expectf(t, abs(got[channel] - expected[channel]) <= 1, "towards the sun %v, expected %v", got, expected)
+	}
+	testing.expect_value(t, glowing[horizon], colors.horizon)
+	plain := make([]rl.Color, SKY_DOME_VERTEX_COUNT)
+	defer delete(plain)
+	unglowing := make([]rl.Color, SKY_DOME_VERTEX_COUNT)
+	defer delete(unglowing)
+	fill_sky_dome_colors(colors, plain)
+	fill_sky_dome_colors(colors, unglowing, Sky_Glow{})
+	for color, index in plain {
+		testing.expect_value(t, unglowing[index], color)
+		testing.expect_value(t, color, sky_color_towards(colors, sky_dome_vertex_direction(index)))
+	}
+}
+
+// Work item 0313: with the field's shipped glow the sun disc is per
+// channel at least the dome beside it, the vertex nearest the sun and
+// the colour in its direction, from sunrise to noon and at sunset.
+@(test)
+test_the_sun_disc_is_no_darker_than_the_dome_beside_it :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	vertex_colors := make([]rl.Color, SKY_DOME_VERTEX_COUNT)
+	defer delete(vertex_colors)
+	for fraction in ([4]f64{0, 0.02, 0.5, NOON_FRACTION}) {
+		colors := sky_colors(fraction)
+		direction := sun_direction(fraction)
+		glow := Sky_Glow{direction = direction, color = haze_sun_glow_color(fraction, config.sun_and_torchlight, config.haze)}
+		fill_sky_dome_colors(colors, vertex_colors, glow)
+		nearest := 0
+		for index in 1 ..< SKY_DOME_VERTEX_COUNT {
+			if linalg.dot(sky_dome_vertex_direction(index), direction) > linalg.dot(sky_dome_vertex_direction(nearest), direction) {
+				nearest = index
+			}
+		}
+		disc := sun_disc_color(colors, direction, glow)
+		beside := add_sky_glow(sky_color_towards(colors, direction), sky_glow_towards(glow, direction))
+		for dome in ([2]rl.Color{vertex_colors[nearest], beside}) {
+			testing.expectf(t, disc.r >= dome.r && disc.g >= dome.g && disc.b >= dome.b, "fraction %v: the disc %v is darker than the dome %v", fraction, disc, dome)
+		}
+	}
 }
 
 @(test)

@@ -131,15 +131,15 @@ test_field_material_textures_need_every_material_once :: proc(t: ^testing.T) {
 // Stands in for load_field_presentation, whose shaders need GL: the tiles
 // load for real, and a shader fails as an older copy does, a field.vs
 // without the look's outputs as GLSL ES fails to link it (desktop Mesa
-// links it) and a field.fs without the ground atlas by
-// init_field_renderer's check. The renderer carries the tiles' mean
+// links it) and a field.fs without the ground atlas or the haze (0313)
+// by init_field_renderer's check. The renderer carries the tiles' mean
 // colours.
 test_load_field_presentation :: proc(data_directory: string, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, problem: string) {
 	tiles: Field_Ground_Tiles
 	if tiles, problem = load_field_material_tiles(data_directory); problem != "" {
 		return {}, problem
 	}
-	markers := [2][2]string{{FIELD_VERTEX_SHADER_PATH, "out vec3 fragment_look;"}, {FIELD_FRAGMENT_SHADER_PATH, "uniform sampler2D " + FIELD_GROUND_ATLAS_SAMPLER + ";"}}
+	markers := [3][2]string{{FIELD_VERTEX_SHADER_PATH, "out vec3 fragment_look;"}, {FIELD_FRAGMENT_SHADER_PATH, "uniform sampler2D " + FIELD_GROUND_ATLAS_SAMPLER + ";"}, {FIELD_FRAGMENT_SHADER_PATH, "uniform vec3 " + FIELD_HAZE_UNIFORM + ";"}}
 	for marker in markers {
 		source, source_path, error := read_data_file(data_directory, marker[0], context.temp_allocator)
 		if error != nil || !strings.contains(string(source), marker[1]) {

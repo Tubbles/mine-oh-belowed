@@ -18,8 +18,8 @@ import rl "shared:raylib"
 // turned away from it, so the hull of a machine with a lamp inside stays
 // dark outside; the arm's lamp has no box.
 // The torchlight (0297, Spot_Light, torchlight_spot): a cone from the
-// viewer's eye along its view, and the sun's direction and shares
-// (Field_Frame_Lights, field_frame_lights), set per draw on both shaders.
+// viewer's eye along its view, and the open sky's light and haze (0313,
+// Field_Frame_Lights, field_frame_lights), set per draw on both shaders.
 // Pure; the shader uploads are in render_field.odin and render_models.odin.
 
 // Matches the array size in data/shaders/field.fs and model.fs.
@@ -54,15 +54,50 @@ Spot_Light :: struct {
 	color:     [3]f32,
 }
 
-// What draw_field sets on the field shader each frame beside the
-// daylight (set_field_frame_lights): the sun's unit direction in the
-// world's frame, the sky light's share without the sun and the sun's,
-// and the torchlight.
+// The aerial haze as the shaders' haze uniforms take it (0313,
+// apply_haze in field.fs and model.fs): the horizon colour of the sky at
+// the eye's altitude and the glow towards the sun, 0 to 1; the air's
+// density at the planet's radius per metre and its scale height; the end
+// fade's share of the sky colour (the sky's share at the eye: 1 in the
+// air, 0 above the atmosphere's top, where the end fade goes to the
+// globe's colour lit by the open sky instead); the globe's colour, 0 to
+// 1; the planet's radius and the eye's height above it; the end fade's
+// start and end in metres from the eye.
+Field_Haze :: struct {
+	color, sun_color, globe_color:                                                   [3]f32,
+	density, scale_height, end_share, planet_radius, eye_height, fog_start, fog_end: f32,
+}
+
+// What the field and the model shaders take each frame for a viewer
+// (set_open_sky_uniforms, set_model_open_sky): the sun's unit direction
+// in the world's frame and its light, the sky's light from above and the
+// ground's bounce from below, all 0 to about 1; the open sky's light on
+// an upward face clamped to 1 (the models' CPU light, Model_Frame's
+// sky_tint); the haze and the torchlight.
 Field_Frame_Lights :: struct {
 	sun_direction: [3]f32,
-	sky_ambient:   f32,
-	sun_strength:  f32,
+	sun_color:     [3]f32,
+	sky_color:     [3]f32,
+	bounce_color:  [3]f32,
+	flat_light:    [3]f32,
+	haze:          Field_Haze,
 	spot:          Spot_Light,
+}
+
+// What field_frame_lights reads besides the camera: the clock's sky at
+// the ground, the daylight share (1 in a session, the planet preview's
+// --planet-preview-daylight), the ground's colour 0 to 1 (the globe's),
+// the planet's radius and the last level of detail's distance in metres,
+// and the data's light, haze and atmosphere.
+Field_Light_Inputs :: struct {
+	sky:                  Day_Sky,
+	daylight:             f32,
+	ground_color:         [3]f32,
+	planet_radius_metres: f32,
+	last_distance_metres: f32,
+	light:                Sun_And_Torchlight_Config,
+	haze:                 Haze_Config,
+	atmosphere:           Atmosphere_Config,
 }
 
 // The torchlight from the camera: off, the zero spot; on, the eye along
@@ -81,15 +116,44 @@ torchlight_spot :: proc(camera: rl.Camera3D, config: Sun_And_Torchlight_Config, 
 	}
 }
 
-// The frame's lights for a viewer with the camera: the sun of the day
-// fraction turned into the world's frame for the camera's up, the
-// config's shares and the torchlight when on.
-field_frame_lights :: proc(fraction: f64, camera: rl.Camera3D, torchlight: bool, config: Sun_And_Torchlight_Config) -> Field_Frame_Lights {
+// The haze for an eye at the altitude above the planet's radius: the
+// sky's share there (atmosphere_sky_share) scales the glow and the end
+// fade's sky colour, the horizon of the sky at that share its colour.
+field_haze :: proc(inputs: Field_Light_Inputs, altitude: f32) -> Field_Haze {
+	share := atmosphere_sky_share(altitude, inputs.atmosphere)
+	return Field_Haze {
+		color = color_to_vector3(altitude_day_sky(inputs.sky, share).colors.horizon),
+		sun_color = haze_sun_glow_color(inputs.sky.fraction, inputs.light, inputs.haze) * share,
+		globe_color = inputs.ground_color,
+		density = 1 / f32(inputs.haze.metres),
+		scale_height = f32(inputs.atmosphere.scale_height_metres),
+		end_share = share,
+		planet_radius = inputs.planet_radius_metres,
+		eye_height = altitude,
+		fog_start = inputs.last_distance_metres * FOG_START_SHARE,
+		fog_end = inputs.last_distance_metres,
+	}
+}
+
+// The frame's lights for a viewer with the camera: the sun of the clock's
+// fraction turned into the world's frame for the camera's up, its light
+// and the sky's scaled by the daylight, the ground's bounce from both,
+// the light on an upward face, the haze at the camera's altitude and the
+// torchlight when on.
+field_frame_lights :: proc(inputs: Field_Light_Inputs, camera: rl.Camera3D, torchlight: bool) -> Field_Frame_Lights {
+	fraction := inputs.sky.fraction
+	height := sun_direction(fraction).y
+	sun := sun_light_color(fraction, inputs.light) * inputs.daylight
+	sky := sky_light_color(inputs.sky.colors, inputs.light) * inputs.daylight
+	altitude := linalg.length(camera.position) - inputs.planet_radius_metres
 	return Field_Frame_Lights {
 		sun_direction = field_sun_world_direction(fraction, camera.up),
-		sky_ambient   = f32(config.sky_ambient_percent) / 100,
-		sun_strength  = f32(config.sun_strength_percent) / 100,
-		spot          = torchlight_spot(camera, config, torchlight),
+		sun_color = sun,
+		sky_color = sky,
+		bounce_color = ground_bounce_color(inputs.ground_color, sun, sky, height, inputs.light),
+		flat_light = linalg.clamp(sky + sun * max(height, 0), 0, 1),
+		haze = field_haze(inputs, altitude),
+		spot = torchlight_spot(camera, inputs.light, torchlight),
 	}
 }
 

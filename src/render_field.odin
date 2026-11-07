@@ -12,20 +12,21 @@ import "render_frustum"
 // (texture_field_materials.odin), and the globe, a sphere in the ground's
 // colour (field_globe_color) drawn every frame below the lowest ground
 // the relief can make, so the meshed nodes cover it where they exist and
-// it fills the planet's silhouette beyond the last distance.
+// it fills the planet's silhouette beyond the last distance; it draws
+// through the model shader's lit material (draw_field_globe), lit and
+// hazed as the terrain is.
 // Each node also carries the water's mesh (0172), drawn after every
 // node's terrain through the same shader with water_color set:
 // translucent, alpha blended and without depth writes, so the terrain
 // shows through and the water never hides the water behind it. The
-// field light (0173) reaches the shader per vertex, the sky light scaled
-// by the daylight uniform (Field_Renderer.daylight, 1 until the day cycle
-// of 0179 sets it) and shaded by the sun's direction; the sun and the
-// torchlight (0297, render_point_lights.odin) are set per draw
+// field light (0173) reaches the shader per vertex, the sky light gating
+// the open sky's light (0313: the sun, the sky from above and the
+// ground's bounce from below) and its haze; those and the torchlight
+// (0297, render_point_lights.odin) are set per draw
 // (set_field_frame_lights), since each viewer's up turns the sun.
 
 FIELD_VERTEX_SHADER_PATH :: "shaders/field.vs"
 FIELD_FRAGMENT_SHADER_PATH :: "shaders/field.fs"
-FIELD_FOG_COLOR :: rl.Color{150, 180, 210, 255}
 FIELD_GLOBE_RINGS :: 64
 FIELD_GLOBE_SLICES :: 128
 // Below the lowest relief: a coarsest cell, which also holds the sphere's
@@ -38,6 +39,9 @@ FIELD_WATER_COLOR :: [4]f32{0.16, 0.36, 0.52, 0.62}
 // The ground atlas's sampler, bound to the material's map 0 (DrawMesh
 // binds map i to the shader location MAP_ALBEDO + i).
 FIELD_GROUND_ATLAS_SAMPLER :: "ground_atlas"
+// A uniform of field.fs since the open sky (0313), whose absence marks an
+// older copy.
+FIELD_HAZE_UNIFORM :: "haze_color"
 
 #assert(FIELD_MATERIAL_TILE_COUNT == FIELD_TEXTURED_MATERIAL_COUNT, "every generated material tile is a tile of the atlas")
 
@@ -56,19 +60,20 @@ Field_Renderer :: struct {
 	material:                 rl.Material,
 	camera_position_location: i32,
 	water_color_location:     i32,
-	daylight_location:        i32,
-	// The sky light's share, 0 at night to 1 at noon.
-	daylight:                 f32,
 	// The point lights' uniforms (0175, set_field_point_lights).
 	point_light_locations:    [2]i32,
-	// The sun's and the torchlight's (0297, set_field_frame_lights): the
-	// spot's position, direction, cos_inner, cos_outer, range and colour.
-	sun_direction_location:   i32,
-	sky_ambient_location:     i32,
-	sun_strength_location:    i32,
+	// The open sky's (0313) and the torchlight's (0297,
+	// set_field_frame_lights): the spot's position, direction, cos_inner,
+	// cos_outer, range and colour.
+	open_sky_locations:       [Open_Sky_Uniform]i32,
 	spot_locations:           [6]i32,
 	globe:                    rl.Mesh,
-	globe_material:           rl.Material,
+	// The globe's colour, 0 to 1 (field_globe_color): its albedo and the
+	// ground's bounce (Field_Light_Inputs.ground_color).
+	globe_color:              [3]f32,
+	// The last level of detail's distance in metres, where the haze's end
+	// fade ends.
+	last_distance_metres:     f32,
 	spacing_millimetres:      int,
 	meshes:                   map[Field_Node]Field_Node_Render,
 	vertex_count:             int,
@@ -121,20 +126,12 @@ set_field_ground_look_uniforms :: proc(shader: rl.Shader, planet: Planet) {
 	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "snow_color"), &snow, .VEC3)
 }
 
-// fog_end is the last level of detail distance in metres.
-use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: f32) {
+use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader) {
 	shader.locs[int(rl.ShaderLocationIndex.MAP_ALBEDO)] = rl.GetShaderLocation(shader, FIELD_GROUND_ATLAS_SAMPLER)
-	fog := color_to_vector3(FIELD_FOG_COLOR)
-	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, "fog_color"), &fog, .VEC3)
-	set_shader_float(shader, "fog_start", fog_end * FOG_START_SHARE)
-	set_shader_float(shader, "fog_end", fog_end)
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
 	renderer.water_color_location = rl.GetShaderLocation(shader, "water_color")
-	renderer.daylight_location = rl.GetShaderLocation(shader, "daylight")
 	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors")}
-	renderer.sun_direction_location = rl.GetShaderLocation(shader, "sun_direction")
-	renderer.sky_ambient_location = rl.GetShaderLocation(shader, "sky_ambient")
-	renderer.sun_strength_location = rl.GetShaderLocation(shader, "sun_strength")
+	renderer.open_sky_locations = open_sky_locations(shader)
 	renderer.spot_locations = spot_light_locations(shader)
 	renderer.material.shader = shader
 }
@@ -156,8 +153,10 @@ field_globe_color :: proc(planet: Planet, grass_mean: [3]f32) -> rl.Color {
 }
 
 // False with an error line when the shaders do not load or the fragment
-// shader has no ground atlas: a copy older than the looks (0307) links
-// with today's vertex shader, so the load alone does not catch it.
+// shader has no ground atlas or no haze: a copy older than the looks
+// (0307) or the open sky (0313) links with today's vertex shader on
+// desktop GL, so the load alone does not catch it.
+// fog_end is the last level of detail distance in metres.
 init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, ok: bool) {
 	shader := load_shader_pair(data_directory, FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, "field") or_return
 	if rl.GetShaderLocation(shader, FIELD_GROUND_ATLAS_SAMPLER) < 0 {
@@ -165,18 +164,22 @@ init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, p
 		rl.UnloadShader(shader)
 		return {}, false
 	}
+	if rl.GetShaderLocation(shader, FIELD_HAZE_UNIFORM) < 0 {
+		platform.log_printf("error: the field shader from %s and %s has no %s, a copy older than the open sky's light", FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, FIELD_HAZE_UNIFORM)
+		rl.UnloadShader(shader)
+		return {}, false
+	}
 	renderer.material = rl.LoadMaterialDefault()
-	use_field_shader(&renderer, shader, fog_end)
+	use_field_shader(&renderer, shader)
 	set_field_ground_look_uniforms(shader, planet)
 	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_field_ground_atlas(tiles))
 	for slot in 0 ..< FIELD_MATERIAL_TILE_COUNT {
 		renderer.material_colors[slot] = tile_mean_color(tiles[slot])
 	}
 	renderer.globe = rl.GenMeshSphere(field_globe_radius_metres(planet), FIELD_GLOBE_RINGS, FIELD_GLOBE_SLICES)
-	renderer.globe_material = rl.LoadMaterialDefault()
-	renderer.globe_material.maps[rl.MaterialMapIndex.ALBEDO].color = field_globe_color(planet, tile_mean_color(tiles[field_look_tile(.Grass)]))
+	renderer.globe_color = color_to_vector3(field_globe_color(planet, tile_mean_color(tiles[field_look_tile(.Grass)])))
+	renderer.last_distance_metres = fog_end
 	renderer.spacing_millimetres = spacing_millimetres
-	renderer.daylight = 1
 	return renderer, true
 }
 
@@ -307,29 +310,98 @@ set_spot_light_uniforms :: proc(shader: rl.Shader, locations: [6]i32, spot: Spot
 	rl.SetShaderValue(shader, locations[5], &spot.color, .VEC3)
 }
 
-// The sun and the torchlight (0297), before the terrain so the water
-// pass shares them.
-set_field_frame_lights :: proc(renderer: ^Field_Renderer, lights: Field_Frame_Lights) {
+// The open sky's uniforms of field.fs and model.fs (0313, the same
+// declarations in both): the light's and the haze's.
+Open_Sky_Uniform :: enum {
+	Sun_Direction,
+	Sun_Color,
+	Sky_Color,
+	Bounce_Color,
+	Haze_Color,
+	Haze_Sun_Color,
+	Haze_Density,
+	Haze_Scale_Height,
+	Haze_End_Share,
+	Globe_Color,
+	Planet_Radius,
+	Eye_Height,
+	Fog_Start,
+	Fog_End,
+}
+
+OPEN_SKY_UNIFORM_NAMES :: [Open_Sky_Uniform]cstring {
+	.Sun_Direction     = "sun_direction",
+	.Sun_Color         = "sun_color",
+	.Sky_Color         = "sky_color",
+	.Bounce_Color      = "bounce_color",
+	.Haze_Color        = "haze_color",
+	.Haze_Sun_Color    = "haze_sun_color",
+	.Haze_Density      = "haze_density",
+	.Haze_Scale_Height = "haze_scale_height",
+	.Haze_End_Share    = "haze_end_share",
+	.Globe_Color       = "globe_color",
+	.Planet_Radius     = "planet_radius",
+	.Eye_Height        = "eye_height",
+	.Fog_Start         = "fog_start",
+	.Fog_End           = "fog_end",
+}
+
+open_sky_locations :: proc(shader: rl.Shader) -> (locations: [Open_Sky_Uniform]i32) {
+	names := OPEN_SKY_UNIFORM_NAMES
+	for name, uniform in names {
+		locations[uniform] = rl.GetShaderLocation(shader, name)
+	}
+	return locations
+}
+
+// Every frame, on both shaders, for the viewer the lights are for.
+set_open_sky_uniforms :: proc(shader: rl.Shader, locations: [Open_Sky_Uniform]i32, lights: Field_Frame_Lights) {
 	lights := lights
+	haze := &lights.haze
+	rl.SetShaderValue(shader, locations[.Sun_Direction], &lights.sun_direction, .VEC3)
+	rl.SetShaderValue(shader, locations[.Sun_Color], &lights.sun_color, .VEC3)
+	rl.SetShaderValue(shader, locations[.Sky_Color], &lights.sky_color, .VEC3)
+	rl.SetShaderValue(shader, locations[.Bounce_Color], &lights.bounce_color, .VEC3)
+	rl.SetShaderValue(shader, locations[.Haze_Color], &haze.color, .VEC3)
+	rl.SetShaderValue(shader, locations[.Haze_Sun_Color], &haze.sun_color, .VEC3)
+	rl.SetShaderValue(shader, locations[.Haze_Density], &haze.density, .FLOAT)
+	rl.SetShaderValue(shader, locations[.Haze_Scale_Height], &haze.scale_height, .FLOAT)
+	rl.SetShaderValue(shader, locations[.Haze_End_Share], &haze.end_share, .FLOAT)
+	rl.SetShaderValue(shader, locations[.Globe_Color], &haze.globe_color, .VEC3)
+	rl.SetShaderValue(shader, locations[.Planet_Radius], &haze.planet_radius, .FLOAT)
+	rl.SetShaderValue(shader, locations[.Eye_Height], &haze.eye_height, .FLOAT)
+	rl.SetShaderValue(shader, locations[.Fog_Start], &haze.fog_start, .FLOAT)
+	rl.SetShaderValue(shader, locations[.Fog_End], &haze.fog_end, .FLOAT)
+}
+
+// The open sky's light and haze (0313) and the torchlight (0297), before
+// the terrain so the water pass shares them.
+set_field_frame_lights :: proc(renderer: ^Field_Renderer, lights: Field_Frame_Lights) {
 	shader := renderer.material.shader
-	rl.SetShaderValue(shader, renderer.sun_direction_location, &lights.sun_direction, .VEC3)
-	rl.SetShaderValue(shader, renderer.sky_ambient_location, &lights.sky_ambient, .FLOAT)
-	rl.SetShaderValue(shader, renderer.sun_strength_location, &lights.sun_strength, .FLOAT)
+	set_open_sky_uniforms(shader, renderer.open_sky_locations, lights)
 	set_spot_light_uniforms(shader, renderer.spot_locations, lights.spot)
 }
 
-// Must run between BeginMode3D and EndMode3D. The globe, then the
-// selected nodes' terrain, then their water, lit by the frame's sun and
-// torchlight.
+// The globe through the model shader's lit material (0313), lit and
+// hazed as an open sky model: its albedo times the flat light the CPU
+// gives a model (daylight_tint), which the shader divides out again.
+// GenMeshSphere has normals and no colours, which default to white. The
+// model shader's open sky must be set first (set_model_open_sky).
+draw_field_globe :: proc(renderer: ^Field_Renderer, models: Model_Renderer, daylight_tint: [3]f32) {
+	material := model_layer_material(models, .Lit)
+	material.maps[rl.MaterialMapIndex.ALBEDO].color = brightness_color(renderer.globe_color * daylight_tint)
+	rl.DrawMesh(renderer.globe, material, rl.Matrix(1))
+}
+
+// Must run between BeginMode3D and EndMode3D, after the globe. The
+// selected nodes' terrain, then their water, lit by the frame's open sky
+// and torchlight.
 draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights) {
 	renderer.drawn_node_count = 0
-	rl.DrawMesh(renderer.globe, renderer.globe_material, rl.Matrix(1))
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
 	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
 	position := camera.position
 	rl.SetShaderValue(renderer.material.shader, renderer.camera_position_location, &position, .VEC3)
-	daylight := renderer.daylight
-	rl.SetShaderValue(renderer.material.shader, renderer.daylight_location, &daylight, .FLOAT)
 	set_field_frame_lights(renderer, lights)
 	set_field_water_color(renderer, {})
 	visible := make([dynamic]Field_Node_Render, 0, len(selection), context.temp_allocator)
@@ -356,7 +428,6 @@ destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 	destroy_field_tree_cache(&renderer.trees)
 	delete(renderer.crouch_progress)
 	rl.UnloadMesh(renderer.globe)
-	rl.UnloadMaterial(renderer.globe_material)
 	rl.UnloadMaterial(renderer.material)
 	renderer^ = {}
 }

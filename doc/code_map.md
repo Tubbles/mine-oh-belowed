@@ -223,7 +223,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `render_field.odin`, `texture_field_materials.odin`: `Field_Renderer`, the field's triplanar shader, node meshes and the globe (0169); the field materials' and looks' generated tiles and their atlas (0307).
   - `render_atlas.odin`, `texture_generate.odin`, `texture_variation.odin`: `Atlas_Layout`, `load_rgba_texture` (the hashes are the `generation_seed` package); procedural ore tiles and texture edits; the Odin mirror of the shader's tile variation.
   - `render_water.odin`: `Water_Renderer`, underwater fog; the frustum test is the `render_frustum` package (Packages).
-  - `render_day.odin`, `render_sky.odin`: `Day_Sky`, sun and moon, `up_to_sky_rotation` and the field's sun `field_sun_world_direction` (0297); the sky dome, stars, the survey satellite.
+  - `render_day.odin`, `render_sky.odin`: `Day_Sky`, sun and moon, `up_to_sky_rotation` and the field's sun `field_sun_world_direction` (0297), the open sky's colours `sun_light_color`, `sky_light_color`, `ground_bounce_color` and `haze_sun_glow_color` (0313); the sky dome reaching below the horizon with the field's `Sky_Glow` (0313), stars, the survey satellite.
   - `weather.odin`, `render_weather.odin`: `weather_at`, the hourly schedule; `Weather_Look`, rain, snow, clouds.
   - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers, the models' working procedures (`foundation_model_working` and the others) and `gather_machine_lights` (0224); `Model_Renderer`, posed and ghost models, the model shader for the lit layer (0224), the pods' interior light (`gather_interior_lights`, `posed_model_light`, 0225).
   - `render_frames.odin`: the frames' placeholder boxes per occupied cell and the placement ghost (0174), `frame_render_matrix`.
@@ -232,7 +232,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `model_check.odin`: the workbench's checks (0207): budget, sweep, a pod's fixture parts, arm clearance, open cells, collision volumes (0230).
   - `render_collision_wires.odin`: the collision volumes as wires for the model preview's `_collision` shots (0230).
   - `model_arm.odin`, `render_arm.odin`: the inserter's arm (0175): its part files, `arm_pose_at` from the cycle, the joint transforms; its draw and its lamp's light.
-  - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader and the model shader (0175), machine lights in the world and the uniform packing (0224), the clip boxes (0229), the torchlight's `Spot_Light` and the frame's sun and torchlight `Field_Frame_Lights` (0297).
+  - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader and the model shader (0175), machine lights in the world and the uniform packing (0224), the clip boxes (0229), the torchlight's `Spot_Light` and the frame's lights `Field_Frame_Lights` (0297), with the open sky's light and haze from `Field_Light_Inputs` (`Field_Haze`, 0313).
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.
   - `render_belt_runs.odin`: belt and pipe runs swept along their polylines, their items and the belt poles (0176), `draw_belt_runs`, `draw_belt_run_ghost`.
   - `render_icons.odin`: `Item_Atlas` for items and UI icons, item billboards.

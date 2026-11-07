@@ -25,7 +25,6 @@ in vec4 vertexTangent;
 
 uniform mat4 mvp;
 uniform mat4 matModel;
-uniform vec3 camera_position;
 
 out vec3 fragment_world_position;
 out vec3 fragment_normal;
@@ -37,7 +36,6 @@ out vec3 fragment_ore_weights;
 out vec3 fragment_grass_color;
 out vec3 fragment_look;
 out float fragment_block_light;
-out float fragment_distance;
 
 // Three bytes packed as the lowest plus 256 times the middle plus 65536
 // times the highest, each over 255.
@@ -61,6 +59,5 @@ void main()
     fragment_grass_color = unpack_bytes(vertexTexCoord2.x);
     fragment_look = unpack_bytes(vertexTexCoord2.y);
     fragment_block_light = vertexTexCoord.x;
-    fragment_distance = length(world_position.xyz - camera_position);
     gl_Position = mvp * vec4(vertexPosition, 1.0);
 }

@@ -17,18 +17,20 @@
 // look (world_field_ground_look.odin). The tiles blend by their weights,
 // only the most_tiles_read largest read; the strata take the vertex's
 // tint, the grass its grass colour, the sand and the snow their uniform
-// colours; then the light is multiplied in: the brighter of the
-// block light and the sky light times daylight (work item 0173), the sky
-// light's share being the ambient plus the sun's term on a slope facing
-// sun_direction (the day clock's sun in the world's frame, work item
-// 0297), so a cave's samples, with no sky light, take no sun; then the
-// point lights and the torchlight (spot_light, 0297) add on top, and the
-// fog fades to the sky colour towards the last level of detail distance.
-// With water_color's alpha above 0 (the water pass, work item 0172) the
-// surface takes water_color's colour instead of the materials and its
-// alpha as its opacity, and the sun's glint, white, where the half vector
-// of the sun and the eye meets the normal; the terrain pass sets it to 0.
-// The water's vertices have no weights, so it reads no tile.
+// colours; then the light is multiplied in: per channel the brighter of
+// the block light and the open sky's light (outdoor_light, work item
+// 0313: the sun's on a face turned to sun_direction, the day clock's sun
+// in the world's frame, 0297, and the sky's from above and the ground's
+// bounce from below) times the vertex's sky light (work item 0173), so
+// a cave's samples, with no sky light, take neither; then the point
+// lights and the torchlight (spot_light, 0297) add on top, and the
+// aerial haze (apply_haze, 0313) brings the far surface to the sky's
+// colour. With water_color's alpha above 0 (the water pass, work item
+// 0172) the surface takes water_color's colour instead of the materials
+// and its alpha as its opacity, and the sun's glint, in the sun's
+// colour, where the half vector of the sun and the eye meets the
+// normal; the terrain pass sets it to 0. The water's vertices have no
+// weights, so it reads no tile.
 //
 // Texture levels: every read is textureLod at a level computed from the
 // derivatives of the position outside any branch, one level per
@@ -47,7 +49,6 @@ in vec3 fragment_grass_color;
 // Snow, sand and the natural share (0307).
 in vec3 fragment_look;
 in float fragment_block_light;
-in float fragment_distance;
 
 // Every tile in cells of the atlas (field_ground_atlas_pixels).
 uniform sampler2D ground_atlas;
@@ -56,19 +57,9 @@ uniform sampler2D ground_atlas;
 uniform float ground_look_on;
 uniform vec3 sand_color;
 uniform vec3 snow_color;
-// The sun's unit direction in the world's frame (field_sun_world_direction,
-// 0297), the sky light's share without the sun and the sun's.
-uniform vec3 sun_direction;
-uniform float sky_ambient;
-uniform float sun_strength;
-uniform vec3 fog_color;
-uniform float fog_start;
-uniform float fog_end;
 uniform vec4 water_color;
-// The sky light's share: 1 by day, 0 at night.
-uniform float daylight;
-// The eye in the world's metres, the same uniform field.vs declares (one
-// location in the program), for the water's glint (0297).
+// The eye in the world's metres, for the water's glint (0297) and the
+// haze (0313).
 uniform vec3 camera_position;
 
 out vec4 finalColor;
@@ -162,6 +153,74 @@ vec3 tile_tint(uint tile)
         return sand_color;
     }
     return snow_color;
+}
+
+// The open sky's light (0313, Field_Frame_Lights): the sky's light from
+// above and the ground's bounce from below, shared by the normal's facing
+// of the local up, and the sun's by its facing of sun_direction (the day
+// clock's sun in the world's frame, 0297). The colours carry the time of
+// day; the sun's is zero once it has set. outdoor_light is model.fs's
+// line for line (shader_source_test.odin).
+uniform vec3 sun_direction;
+uniform vec3 sun_color;
+uniform vec3 sky_color;
+uniform vec3 bounce_color;
+
+vec3 outdoor_light(vec3 normal, vec3 up)
+{
+    float upward = 0.5 + 0.5 * dot(normal, up);
+    return mix(bounce_color, sky_color, upward) + sun_color * max(dot(normal, sun_direction), 0.0);
+}
+
+// The aerial haze (0313, Field_Haze): over the reach from the eye the
+// surface takes the sky's colour at the horizon (haze_color), warmed
+// towards a low sun (haze_sun_color), by the air's optical depth: the air
+// thins with the height above planet_radius by haze_scale_height, so a
+// valley holds more haze than a ridge and the view from above less. The
+// end fade between fog_start and fog_end, the last level of detail's
+// distance, brings it to the full sky colour inside the atmosphere and
+// to the globe's colour (globe_color) lit by the open sky above its top,
+// mixed by haze_end_share (the sky's share at the eye), so the far
+// nodes, the globe and the horizon read as one from the ground and the
+// drawn terrain blends into the globe from above the air.
+// sky_share scales it: air the sky does not light (a cave's, by its
+// samples' sky light) scatters no sky colour.
+// apply_haze is model.fs's line for line.
+uniform vec3 haze_color;
+uniform vec3 haze_sun_color;
+uniform float haze_density;
+uniform float haze_scale_height;
+uniform float haze_end_share;
+uniform vec3 globe_color;
+uniform float planet_radius;
+uniform float eye_height;
+uniform float fog_start;
+uniform float fog_end;
+
+// The glow's narrowness towards the sun (HAZE_SUN_EXPONENT, the dome's);
+// a rise under haze_level_rise scale heights takes the mean height's
+// density, where the exact form divides by nearly nothing. The scale
+// height is at least 1 m, so the zero uniforms outside a field session
+// divide by no zero.
+const float haze_sun_exponent = 6.0;
+const float haze_level_rise = 0.01;
+
+vec3 apply_haze(vec3 color, vec3 position, vec3 eye, float sky_share)
+{
+    vec3 offset = position - eye;
+    float reach = length(offset);
+    float height = length(position) - planet_radius;
+    float scale_height = max(haze_scale_height, 1.0);
+    float rise = (height - eye_height) / scale_height;
+    float mean_density = abs(rise) < haze_level_rise ? exp(-0.5 * (height + eye_height) / scale_height) : (exp(-eye_height / scale_height) - exp(-height / scale_height)) / rise;
+    float aerial = 1.0 - exp(-reach * haze_density * mean_density);
+    float toward_sun = max(dot(offset, sun_direction) / max(reach, smallest_weight_sum), 0.0);
+    vec3 sky = min(haze_color + haze_sun_color * pow(toward_sun, haze_sun_exponent), vec3(1.0));
+    vec3 up = position / max(length(position), smallest_weight_sum);
+    vec3 globe = min(globe_color * outdoor_light(up, up), vec3(1.0));
+    vec3 end_color = mix(globe, sky, haze_end_share);
+    vec3 hazed = mix(mix(color, sky, aerial), end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
+    return mix(color, hazed, sky_share);
 }
 
 // Point lights of working parts (work item 0175, render_point_lights.odin):
@@ -305,19 +364,19 @@ void main()
     albedo *= tint_scale / max(picked, smallest_weight_sum);
     float water = step(smallest_weight_sum, water_color.a);
     albedo = mix(albedo, water_color.rgb, water);
-    // The sky light gates the sun: a cave's samples have none and take
-    // no sun, the cheap shadow. Block light stays the brighter, never
-    // added, so a torch-lit wall keeps its light whichever way it faces.
-    float sun_facing = max(dot(normal, sun_direction), 0.0);
-    float sun_light = fragment_color.a * daylight * (sky_ambient + sun_strength * sun_facing);
-    float light = max(fragment_block_light, sun_light);
+    // The sky light gates the open sky's light: a cave's samples have none
+    // and take neither sky nor sun, the cheap shadow. Block light stays
+    // the brighter per channel, never added, so a torch-lit wall keeps its
+    // light whichever way it faces.
+    vec3 outdoor = fragment_color.a * outdoor_light(normal, normalize(fragment_world_position));
+    vec3 light = max(vec3(fragment_block_light), outdoor);
     vec3 lit = albedo * light;
     lit += albedo * point_light_sum(fragment_world_position, normal);
     lit += albedo * spot_light(fragment_world_position, normal);
-    // The sun on the water: paid as a multiply by water, not a branch.
+    // The sun on the water, in the sun's colour: paid as a multiply by
+    // water, not a branch.
     vec3 to_camera = normalize(camera_position - fragment_world_position);
-    float glint = water * fragment_color.a * daylight * pow(max(dot(normal, normalize(sun_direction + to_camera + vec3(smallest_weight_sum))), 0.0), water_glint_power) * water_glint_strength;
-    lit += vec3(glint);
-    float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);
-    finalColor = vec4(mix(min(lit, vec3(1.0)), fog_color, fog), mix(1.0, water_color.a, water));
+    float glint = water * fragment_color.a * pow(max(dot(normal, normalize(sun_direction + to_camera + vec3(smallest_weight_sum))), 0.0), water_glint_power) * water_glint_strength;
+    lit += sun_color * glint;
+    finalColor = vec4(apply_haze(min(lit, vec3(1.0)), fragment_world_position, camera_position, fragment_color.a), mix(1.0, water_color.a, water));
 }

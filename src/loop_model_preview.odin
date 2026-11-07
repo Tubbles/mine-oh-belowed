@@ -22,6 +22,8 @@ import "platform"
 
 // The Xvfb screen of tools/model_preview.sh.
 MODEL_PREVIEW_WINDOW_WIDTH :: 1280
+// The shots' background, the field's old fog colour (before 0313).
+MODEL_PREVIEW_BACKGROUND_COLOR :: rl.Color{150, 180, 210, 255}
 MODEL_PREVIEW_WINDOW_HEIGHT :: 720
 // Vertical degrees: less distortion than the planet preview's 70.
 MODEL_PREVIEW_FIELD_OF_VIEW :: 40
@@ -240,7 +242,7 @@ draw_model_preview_frame :: proc(renderer: Model_Renderer, machine: Machine, mac
 	camera := model_preview_camera(view, model_preview_bounds(machine, top_cells, pitch_millimetres))
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
-	rl.ClearBackground(FIELD_FOG_COLOR)
+	rl.ClearBackground(MODEL_PREVIEW_BACKGROUND_COLOR)
 	rl.BeginMode3D(rl.Camera3D{position = camera.position, target = camera.target, up = camera.up, fovy = MODEL_PREVIEW_FIELD_OF_VIEW, projection = .PERSPECTIVE})
 	draw_model_preview_scene(renderer, machine, machine_id, pose, pitch_millimetres)
 	rl.EndMode3D()

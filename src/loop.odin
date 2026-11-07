@@ -947,8 +947,9 @@ render_frame :: proc(state: ^Frame_State) {
 		}
 		rl.EndBlendMode()
 	} else {
-		// The horizon colour, which is the fog colour: the dome covers the
-		// upper hemisphere alone, so the clear colour shows below the horizon.
+		// The horizon colour, which is the fog colour: the dome reaches
+		// 22.5 degrees below the horizon (SKY_DOME_RINGS_BELOW), so the
+		// clear colour shows below that.
 		rl.ClearBackground(sky.colors.horizon)
 		release_viewport_target(&state.viewports[0].presentation)
 		counts, cues = draw_viewport_world(state, &state.viewports[0], content, sky, weather)
@@ -1230,11 +1231,12 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 	torch_flickers, _ := block_torch_flicker_uniform(chunk_torch_cells(&state.presentation.renderer), camera.position, model_frame_seconds(frame), frame.reduced_motion)
 	apply_torch_flickers(&state.presentation.renderer, torch_flickers)
 	draw_chunks(&state.presentation.renderer, camera)
-	// The block world takes no point lights and no torchlight; the model
-	// renderer lives for the process, so a field session's lights are
-	// cleared (0224, 0297).
+	// The block world takes no point lights, no torchlight and no open
+	// sky; the model renderer lives for the process, so a field
+	// session's lights are cleared (0224, 0297, 0313).
 	set_model_point_lights(state.presentation.model_renderer, {})
 	set_model_spot_light(state.presentation.model_renderer, {})
+	clear_model_open_sky(state.presentation.model_renderer)
 	draw_entities(world, content.machines, state.presentation.model_renderer, content.items, frame)
 	if state.settings.bottleneck_overlay {
 		draw_machine_markers(world, content.machines, state.presentation.model_renderer, camera.position, bottleneck_marker_colors(ui_theme(&viewport.interaction.ui), state.settings.palette))

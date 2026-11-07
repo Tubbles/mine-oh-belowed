@@ -14,7 +14,9 @@ import "platform"
 // emissive ones (model_motion.odin). The lit layer draws with the model
 // shader (data/shaders/model.vs, model.fs, work item 0224), which adds the
 // point lights (set_model_point_lights) and the torchlight (0297,
-// set_model_spot_light); the emissive layer draws with
+// set_model_spot_light), and on the field takes the open sky's light by
+// the normal in place of the CPU's flat light, and the haze (0313,
+// set_model_open_sky); the emissive layer draws with
 // raylib's default material, so it never takes them. A model shader that
 // fails to load leaves the lit layer on the default material too.
 
@@ -43,6 +45,12 @@ Model_Renderer :: struct {
 	// The torchlight's uniforms (0297, set_model_spot_light, the order of
 	// spot_light_locations).
 	spot_locations:        [6]i32,
+	// The open sky's uniforms (0313, set_model_open_sky) and the switch,
+	// the flat light divided out and the eye.
+	open_sky_locations:       [Open_Sky_Uniform]i32,
+	outdoor_on_location:      i32,
+	daylight_tint_location:   i32,
+	camera_position_location: i32,
 	// By Machine_Id; no vertices in the body for a machine drawn as a box.
 	models:                []Uploaded_Machine_Model,
 	// The furnaces' and the torches' flames (render_flames.odin, 0274).
@@ -263,6 +271,10 @@ use_model_shader :: proc(renderer: ^Model_Renderer, data_directory: string) {
 	renderer.material.shader = shader
 	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors"), rl.GetShaderLocation(shader, "point_light_boxes")}
 	renderer.spot_locations = spot_light_locations(shader)
+	renderer.open_sky_locations = open_sky_locations(shader)
+	renderer.outdoor_on_location = rl.GetShaderLocation(shader, "outdoor_on")
+	renderer.daylight_tint_location = rl.GetShaderLocation(shader, "daylight_tint")
+	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
 	renderer.point_lights_ready = true
 }
 
@@ -318,6 +330,42 @@ set_model_spot_light :: proc(renderer: Model_Renderer, spot: Spot_Light) {
 		return
 	}
 	set_spot_light_uniforms(renderer.material.shader, renderer.spot_locations, spot)
+}
+
+// The flat light the CPU multiplies into an open sky model's diffuse
+// colour (0313): what model_light_tint gives a full sky light, before
+// its clamp; the model shader divides it out.
+model_frame_daylight_tint :: proc(frame: Model_Frame) -> [3]f32 {
+	return frame.day_factor * frame.sky_tint
+}
+
+// The field's open sky on the lit layer (0313): the light and the haze
+// for the viewer, the flat light to divide out and the eye; outdoor_on
+// 1. Nothing without the model shader.
+set_model_open_sky :: proc(renderer: Model_Renderer, lights: Field_Frame_Lights, daylight_tint, eye: [3]f32) {
+	if !renderer.point_lights_ready {
+		return
+	}
+	shader := renderer.material.shader
+	set_open_sky_uniforms(shader, renderer.open_sky_locations, lights)
+	daylight_tint, eye := daylight_tint, eye
+	rl.SetShaderValue(shader, renderer.daylight_tint_location, &daylight_tint, .VEC3)
+	rl.SetShaderValue(shader, renderer.camera_position_location, &eye, .VEC3)
+	set_model_outdoor_on(renderer, 1)
+}
+
+// The lit layer back to the CPU's light (0313): the ghosts and the block
+// world. Nothing without the model shader.
+clear_model_open_sky :: proc(renderer: Model_Renderer) {
+	if !renderer.point_lights_ready {
+		return
+	}
+	set_model_outdoor_on(renderer, 0)
+}
+
+set_model_outdoor_on :: proc(renderer: Model_Renderer, on: f32) {
+	on := on
+	rl.SetShaderValue(renderer.material.shader, renderer.outdoor_on_location, &on, .FLOAT)
 }
 
 brightness_color :: proc(brightness: [3]f32) -> rl.Color {

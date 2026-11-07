@@ -290,18 +290,36 @@ field_simulation = {
 	torch_emitter = "torch"
 	pad_foundation = "wooden_foundation"
 }
-// The sun and the torchlight on the field (0297, doc/presentation.md,
-// Light on the field): the sky light's share without the sun and the
-// sun's, both in percent; the torchlight's brightness in percent of
-// TORCHLIGHT_COLOR, its cone's full and outer half angles in degrees
-// (outer above inner) and its reach in metres.
+// The sun and the torchlight on the field (0297, 0313,
+// doc/presentation.md, Light on the field): sun_strength_percent (0 to
+// 400) scales the sun's light, whose colour runs from sun_high_color
+// with the sun high to sun_low_color on the horizon (0 to 255 per
+// channel, neither black); sky_light_percent (0 to 400) is the sky's
+// light on an upward face in percent of the dome's colours, and
+// ground_bounce_percent (0 to 100) the light the ground throws back up
+// in percent of the light it takes. The torchlight's brightness in
+// percent of TORCHLIGHT_COLOR, its cone's full and outer half angles in
+// degrees (outer above inner) and its reach in metres.
 sun_and_torchlight = {
-	sky_ambient_percent = 35
 	sun_strength_percent = 100
+	sun_high_color = [255, 243, 222]
+	sun_low_color = [255, 150, 72]
+	sky_light_percent = 60
+	ground_bounce_percent = 60
 	torchlight_strength_percent = 100
 	torchlight_inner_cone_degrees = 28
 	torchlight_outer_cone_degrees = 36
 	torchlight_range_metres = 40
+}
+// The aerial haze on the field (0313, doc/presentation.md, Light on the
+// field): metres (100 to 1000000) is the distance over which air at the
+// planet's radius takes 63 percent of the sky's horizon colour; the air
+// thins with height as the atmosphere's does. sun_glow_percent (0 to
+// 100) warms the haze and the sky towards a low sun, in percent of
+// sun_low_color.
+haze = {
+	metres = 1500
+	sun_glow_percent = 50
 }
 // The water's look (0294, doc/presentation.md, The water's look): the
 // surface wave layer, presentation only, never in the simulation or the

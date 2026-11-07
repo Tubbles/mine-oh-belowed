@@ -103,3 +103,67 @@ test_the_field_sun_turns_with_the_viewers_up :: proc(t: ^testing.T) {
 		testing.expect(t, abs(linalg.length(field_sun_world_direction(fraction, up)) - 1) < MOTION_TEST_TOLERANCE)
 	}
 }
+
+// Work item 0313: the sun's light is the high colour at noon, half the
+// low colour on the horizon as it sets, none at midnight, and scales by
+// the strength.
+@(test)
+test_the_sun_light_warms_low_and_sets :: proc(t: ^testing.T) {
+	light := shipped_sun_and_torchlight(t)
+	high := field_color_float(light.sun_high_color) / 255
+	low := field_color_float(light.sun_low_color) / 255
+	expect_near_color(t, sun_light_color(NOON_FRACTION, light), high, 1e-6, "noon")
+	expect_near_color(t, sun_light_color(0, light), low / 2, 1e-6, "sunrise")
+	testing.expect_value(t, sun_light_color(0.75, light), [3]f32{})
+	doubled := light
+	doubled.sun_strength_percent = 200
+	expect_near_color(t, sun_light_color(NOON_FRACTION, doubled), 2 * high, 1e-6, "doubled")
+}
+
+// Work item 0313: the sky's light is the dome's horizon and zenith mixed
+// two thirds towards the zenith, at sky_light_percent; at midnight it is
+// dim and blue.
+@(test)
+test_the_sky_light_takes_the_zenith_two_thirds :: proc(t: ^testing.T) {
+	light := shipped_sun_and_torchlight(t)
+	noon := sky_colors(NOON_FRACTION)
+	expected := (color_to_vector3(noon.horizon) + 2 * color_to_vector3(noon.zenith)) / 3 * 0.6
+	expect_near_color(t, sky_light_color(noon, light), expected, 1e-5, "noon")
+	midnight := sky_light_color(sky_colors(0.75), light)
+	for channel in midnight {
+		testing.expectf(t, channel > 0 && channel < 0.1, "midnight's sky light %v", midnight)
+	}
+	testing.expectf(t, midnight.b > midnight.r && midnight.b > midnight.g, "midnight's sky light %v is not blue", midnight)
+}
+
+// Work item 0313: the bounce is the ground's colour lit by the sun above
+// the horizon and by the sky, at ground_bounce_percent.
+@(test)
+test_the_bounce_is_the_ground_lit_from_above :: proc(t: ^testing.T) {
+	light := shipped_sun_and_torchlight(t)
+	testing.expect_value(t, light.ground_bounce_percent, 60)
+	expect_near_color(t, ground_bounce_color(0.5, 1, 0.2, 0.5, light), 0.21, 1e-6, "sun up")
+	expect_near_color(t, ground_bounce_color(0.5, 1, 0.2, -0.3, light), 0.06, 1e-6, "sun down")
+}
+
+// Work item 0313: the haze's glow is half the sun's low colour at
+// sunrise and sunset, none at noon and midnight.
+@(test)
+test_the_haze_glows_towards_a_low_sun_only :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	low := field_color_float(config.sun_and_torchlight.sun_low_color) / 255
+	expect_near_color(t, haze_sun_glow_color(0, config.sun_and_torchlight, config.haze), low / 2, 1e-6, "sunrise")
+	expect_near_color(t, haze_sun_glow_color(0.5, config.sun_and_torchlight, config.haze), low / 2, 1e-6, "sunset")
+	testing.expect_value(t, haze_sun_glow_color(NOON_FRACTION, config.sun_and_torchlight, config.haze), [3]f32{})
+	testing.expect_value(t, haze_sun_glow_color(0.75, config.sun_and_torchlight, config.haze), [3]f32{})
+}
+
+expect_near_color :: proc(t: ^testing.T, got, expected: [3]f32, tolerance: f32, message: string, location := #caller_location) {
+	for channel in 0 ..< 3 {
+		if abs(got[channel] - expected[channel]) > tolerance {
+			testing.expectf(t, false, "%s: got %v, expected %v", message, got, expected, loc = location)
+			return
+		}
+	}
+}

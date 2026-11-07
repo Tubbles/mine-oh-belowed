@@ -207,18 +207,72 @@ test_the_torchlight_spot_follows_the_camera :: proc(t: ^testing.T) {
 	testing.expect_value(t, torchlight_spot(camera, half, true).color, TORCHLIGHT_COLOR / 2)
 }
 
-// Work item 0297: the frame's sun follows the clock, up at noon and down
-// at midnight for an up on +y, with the shipped shares.
+// Field_Light_Inputs on a planet of 8 km with the shipped light, haze
+// and atmosphere, a last distance of 1024 m and a ground colour.
+test_field_light_inputs :: proc(t: ^testing.T, fraction: f64) -> Field_Light_Inputs {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	return Field_Light_Inputs {
+		sky = day_sky_at(fraction, 0),
+		daylight = 1,
+		ground_color = {0.3, 0.5, 0.2},
+		planet_radius_metres = 8000,
+		last_distance_metres = 1024,
+		light = config.sun_and_torchlight,
+		haze = config.haze,
+		atmosphere = config.atmosphere,
+	}
+}
+
+// Work items 0297 and 0313: the frame's sun follows the clock, up at
+// noon and down at midnight for an up on +y, with its light, the sky's
+// and the ground's bounce from the clock, all scaled by the daylight.
 @(test)
 test_field_frame_lights_follow_the_clock :: proc(t: ^testing.T) {
-	config := shipped_sun_and_torchlight(t)
-	camera := rl.Camera3D{position = {0, 100, 0}, target = {1, 100, 0}, up = {0, 1, 0}}
-	noon := field_frame_lights(0.25, camera, false, config)
+	camera := rl.Camera3D{position = {0, 8002, 0}, target = {1, 8002, 0}, up = {0, 1, 0}}
+	noon_inputs := test_field_light_inputs(t, NOON_FRACTION)
+	noon := field_frame_lights(noon_inputs, camera, false)
 	testing.expect(t, noon.sun_direction.y > 0.9, "noon up")
-	midnight := field_frame_lights(0.75, camera, true, config)
-	testing.expect(t, midnight.sun_direction.y < -0.9, "midnight down")
-	testing.expect_value(t, noon.sky_ambient, 0.35)
-	testing.expect_value(t, noon.sun_strength, 1)
+	testing.expect_value(t, noon.sun_color, sun_light_color(NOON_FRACTION, noon_inputs.light))
+	testing.expect_value(t, noon.sky_color, sky_light_color(noon_inputs.sky.colors, noon_inputs.light))
+	testing.expect_value(t, noon.flat_light, [3]f32{1, 1, 1})
 	testing.expect_value(t, noon.spot, Spot_Light{})
+	midnight := field_frame_lights(test_field_light_inputs(t, 0.75), camera, true)
+	testing.expect(t, midnight.sun_direction.y < -0.9, "midnight down")
+	testing.expect_value(t, midnight.sun_color, [3]f32{})
+	testing.expect_value(t, midnight.flat_light, midnight.sky_color)
 	testing.expect_value(t, midnight.spot.range, 40)
+	dim_inputs := noon_inputs
+	dim_inputs.daylight = 0.5
+	dim := field_frame_lights(dim_inputs, camera, false)
+	expect_near_color(t, dim.sun_color, noon.sun_color / 2, 1e-6, "half the sun")
+	expect_near_color(t, dim.sky_color, noon.sky_color / 2, 1e-6, "half the sky")
+	expect_near_color(t, dim.bounce_color, noon.bounce_color / 2, 1e-6, "half the bounce")
+}
+
+// Work item 0313: in the air the haze takes the ground's horizon colour,
+// the full end fade and at dusk the glow; above the atmosphere's top the
+// end fade's sky share and the glow are gone and the colour is space's.
+@(test)
+test_field_haze_follows_the_altitude :: proc(t: ^testing.T) {
+	low := rl.Camera3D{position = {0, 8002, 0}, target = {1, 8002, 0}, up = {0, 1, 0}}
+	noon_inputs := test_field_light_inputs(t, NOON_FRACTION)
+	noon := field_frame_lights(noon_inputs, low, false).haze
+	testing.expect_value(t, noon.end_share, 1)
+	testing.expect_value(t, noon.color, color_to_vector3(noon_inputs.sky.colors.horizon))
+	testing.expect_value(t, noon.globe_color, noon_inputs.ground_color)
+	testing.expect_value(t, noon.density, f32(1) / 1500)
+	testing.expect(t, abs(noon.fog_start - 614.4) < 1e-3, "the end fade starts at 0.6 of the last distance")
+	testing.expect_value(t, noon.fog_end, 1024)
+	testing.expect_value(t, noon.planet_radius, 8000)
+	testing.expect_value(t, noon.eye_height, 2)
+	testing.expect_value(t, noon.scale_height, f32(noon_inputs.atmosphere.scale_height_metres))
+	dusk_inputs := test_field_light_inputs(t, 0.5)
+	dusk := field_frame_lights(dusk_inputs, low, false).haze
+	testing.expect_value(t, dusk.sun_color, haze_sun_glow_color(0.5, dusk_inputs.light, dusk_inputs.haze))
+	high := rl.Camera3D{position = {0, 8800, 0}, target = {1, 8800, 0}, up = {0, 1, 0}}
+	above := field_frame_lights(dusk_inputs, high, false).haze
+	testing.expect_value(t, above.end_share, 0)
+	testing.expect_value(t, above.sun_color, [3]f32{})
+	testing.expect_value(t, above.color, color_to_vector3(SPACE_SKY_COLOR))
 }

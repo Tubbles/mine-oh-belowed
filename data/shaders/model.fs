@@ -3,15 +3,16 @@
 // Machine model fragment shader (work item 0224, render_models.odin), for
 // the lit layer only. The vertex colour (pre-shaded per face on the CPU)
 // times colDiffuse (the light tint, a ghost's colour or the broken tint),
-// as raylib's default shader draws it, plus the vertex colour's rgb times
-// the point lights' sum, each machine lamp clipped to its machine's box
-// (work item 0229), and the torchlight's cone (spot_light, work item
-// 0297), so a dug-out machine at night shows in the beam. No directional
-// sun: the faces are pre-shaded on the CPU. point_light_sum and
-// spot_light are copied from field.fs: keep the two in step (the sum
-// differs in the clip line alone, the spot not at all). Without a
-// texture sampler: raylib's default texture is white, so leaving it out
-// changes nothing.
+// as raylib's default shader draws it, on the field's open sky (0313,
+// outdoor_on) with the CPU's flat light divided out and the open sky's
+// light by the normal in its place, then hazed as the terrain is; plus
+// the vertex colour's rgb times the point lights' sum, each machine lamp
+// clipped to its machine's box (work item 0229), and the torchlight's
+// cone (spot_light, work item 0297), so a dug-out machine at night shows
+// in the beam. point_light_sum, spot_light, outdoor_light and apply_haze
+// are copied from field.fs: keep them in step (the sum differs in the
+// clip line alone, the others not at all). Without a texture sampler:
+// raylib's default texture is white, so leaving it out changes nothing.
 //
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin), as the point lights' array sizes and loop do.
@@ -46,6 +47,84 @@ const float point_light_wrap = 0.5;
 // a curved fixture shows no hard edge.
 const float back_face_fade = 0.25;
 const float smallest_weight_sum = 0.0001;
+
+// The field's open sky (0313, set_model_open_sky): with outdoor_on
+// at 1 the lit layer takes the open sky's light by its normal in place of
+// the flat daylight the CPU multiplied into colDiffuse (daylight_tint, the
+// day factor times the sky tint of model_light_tint at full sky light),
+// and the haze; 0 in the block world and for the ghosts, which keep
+// colDiffuse as their light.
+uniform float outdoor_on;
+uniform vec3 daylight_tint;
+uniform vec3 camera_position;
+
+// The open sky's light (0313, Field_Frame_Lights): the sky's light from
+// above and the ground's bounce from below, shared by the normal's facing
+// of the local up, and the sun's by its facing of sun_direction (the day
+// clock's sun in the world's frame, 0297). The colours carry the time of
+// day; the sun's is zero once it has set. outdoor_light is field.fs's
+// line for line (shader_source_test.odin).
+uniform vec3 sun_direction;
+uniform vec3 sun_color;
+uniform vec3 sky_color;
+uniform vec3 bounce_color;
+
+vec3 outdoor_light(vec3 normal, vec3 up)
+{
+    float upward = 0.5 + 0.5 * dot(normal, up);
+    return mix(bounce_color, sky_color, upward) + sun_color * max(dot(normal, sun_direction), 0.0);
+}
+
+// The aerial haze (0313, Field_Haze): over the reach from the eye the
+// surface takes the sky's colour at the horizon (haze_color), warmed
+// towards a low sun (haze_sun_color), by the air's optical depth: the air
+// thins with the height above planet_radius by haze_scale_height, so a
+// valley holds more haze than a ridge and the view from above less. The
+// end fade between fog_start and fog_end, the last level of detail's
+// distance, brings it to the full sky colour inside the atmosphere and
+// to the globe's colour (globe_color) lit by the open sky above its top,
+// mixed by haze_end_share (the sky's share at the eye), so the far
+// nodes, the globe and the horizon read as one from the ground and the
+// drawn terrain blends into the globe from above the air.
+// sky_share scales it: air the sky does not light (a cave's, by its
+// samples' sky light) scatters no sky colour.
+// apply_haze is field.fs's line for line.
+uniform vec3 haze_color;
+uniform vec3 haze_sun_color;
+uniform float haze_density;
+uniform float haze_scale_height;
+uniform float haze_end_share;
+uniform vec3 globe_color;
+uniform float planet_radius;
+uniform float eye_height;
+uniform float fog_start;
+uniform float fog_end;
+
+// The glow's narrowness towards the sun (HAZE_SUN_EXPONENT, the dome's);
+// a rise under haze_level_rise scale heights takes the mean height's
+// density, where the exact form divides by nearly nothing. The scale
+// height is at least 1 m, so the zero uniforms outside a field session
+// divide by no zero.
+const float haze_sun_exponent = 6.0;
+const float haze_level_rise = 0.01;
+
+vec3 apply_haze(vec3 color, vec3 position, vec3 eye, float sky_share)
+{
+    vec3 offset = position - eye;
+    float reach = length(offset);
+    float height = length(position) - planet_radius;
+    float scale_height = max(haze_scale_height, 1.0);
+    float rise = (height - eye_height) / scale_height;
+    float mean_density = abs(rise) < haze_level_rise ? exp(-0.5 * (height + eye_height) / scale_height) : (exp(-eye_height / scale_height) - exp(-height / scale_height)) / rise;
+    float aerial = 1.0 - exp(-reach * haze_density * mean_density);
+    float toward_sun = max(dot(offset, sun_direction) / max(reach, smallest_weight_sum), 0.0);
+    vec3 sky = min(haze_color + haze_sun_color * pow(toward_sun, haze_sun_exponent), vec3(1.0));
+    vec3 up = position / max(length(position), smallest_weight_sum);
+    vec3 globe = min(globe_color * outdoor_light(up, up), vec3(1.0));
+    vec3 end_color = mix(globe, sky, haze_end_share);
+    vec3 hazed = mix(mix(color, sky, aerial), end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
+    return mix(color, hazed, sky_share);
+}
 
 bool point_light_inside_box(uint index, vec3 position)
 {
@@ -112,6 +191,11 @@ void main()
 {
     vec3 normal = normalize(fragment_normal);
     vec4 base = fragment_color * colDiffuse;
-    vec3 lit = base.rgb + fragment_color.rgb * (point_light_sum(fragment_world_position, normal) + spot_light(fragment_world_position, normal));
-    finalColor = vec4(min(lit, vec3(1.0)), base.a);
+    // Selected, not mixed by outdoor_on: the open sky's uniforms are zero
+    // until a field session sets them, and the haze of zero uniforms is
+    // not a number, which a mix by 0 would keep.
+    bool outdoor = outdoor_on > 0.5;
+    vec3 light = outdoor ? outdoor_light(normal, normalize(fragment_world_position)) / max(daylight_tint, vec3(smallest_weight_sum)) : vec3(1.0);
+    vec3 lit = min(base.rgb * light + fragment_color.rgb * (point_light_sum(fragment_world_position, normal) + spot_light(fragment_world_position, normal)), vec3(1.0));
+    finalColor = vec4(outdoor ? apply_haze(lit, fragment_world_position, camera_position, 1.0) : lit, base.a);
 }

@@ -392,18 +392,23 @@ test_the_wake_shader_takes_its_uniforms :: proc(t: ^testing.T) {
 	}
 }
 
-// The spot light of a shader: from `vec3 spot_light(` to its closing
-// brace; "" without it.
-shader_spot_light :: proc(source: string) -> string {
-	start := strings.index(source, "vec3 spot_light(")
-	if start < 0 {
+// A function of a shader: from its start (`vec3 spot_light(`) to its
+// closing brace; "" without it.
+shader_function_text :: proc(source, start: string) -> string {
+	offset := strings.index(source, start)
+	if offset < 0 {
 		return ""
 	}
-	length := strings.index(source[start:], "\n}\n")
+	length := strings.index(source[offset:], "\n}\n")
 	if length < 0 {
 		return ""
 	}
-	return source[start:][:length + 3]
+	return source[offset:][:length + 3]
+}
+
+// The spot light of a shader; "" without it.
+shader_spot_light :: proc(source: string) -> string {
+	return shader_function_text(source, "vec3 spot_light(")
 }
 
 read_lit_shaders :: proc(t: ^testing.T) -> (field, model: string) {
@@ -429,17 +434,50 @@ test_the_lit_shaders_share_the_spot_light :: proc(t: ^testing.T) {
 	testing.expect(t, field_spot != "" && field_spot == model_spot, "spot_light differs between field.fs and model.fs")
 }
 
-// Work item 0297: the field shader lights by the clock's sun and the two
-// shares, the old ambient share is gone, and the model shader takes no
-// sun.
+// Work items 0297 and 0313: the field shader lights by the clock's sun,
+// the sky and the bounce in colour, the old ambient and daylight shares
+// and the fog colour are gone, and the model shader takes the open sky
+// with the flat light to divide out.
 @(test)
 test_the_field_shader_lights_by_the_sun :: proc(t: ^testing.T) {
 	field, model := read_lit_shaders(t)
 	testing.expect(t, strings.contains(field, "uniform vec3 sun_direction;"), "field.fs declares the sun")
-	testing.expect(t, strings.contains(field, "uniform float sky_ambient;"), "field.fs declares the ambient share")
-	testing.expect(t, strings.contains(field, "uniform float sun_strength;"), "field.fs declares the sun's share")
+	testing.expect(t, strings.contains(field, "uniform vec3 sun_color;"), "field.fs declares the sun's light")
+	testing.expect(t, strings.contains(field, "uniform vec3 sky_color;"), "field.fs declares the sky's light")
+	testing.expect(t, strings.contains(field, "uniform vec3 bounce_color;"), "field.fs declares the bounce")
+	testing.expect(t, !strings.contains(field, "sky_ambient"), "field.fs keeps the ambient share")
+	testing.expect(t, !strings.contains(field, "uniform float daylight;"), "field.fs keeps the daylight share")
+	testing.expect(t, !strings.contains(field, "fog_color"), "field.fs keeps the fog colour")
 	testing.expect(t, !strings.contains(field, "ambient_share"), "field.fs keeps no ambient_share")
-	testing.expect(t, !strings.contains(model, "sun_direction"), "model.fs takes no sun")
+	testing.expect(t, strings.contains(model, "uniform float outdoor_on;"), "model.fs declares the open sky's switch")
+	testing.expect(t, strings.contains(model, "uniform vec3 daylight_tint;"), "model.fs declares the flat light")
+}
+
+// Work item 0313: the field and model shaders take the same open sky,
+// every uniform of OPEN_SKY_UNIFORM_NAMES and outdoor_light and
+// apply_haze line for line.
+@(test)
+test_the_lit_shaders_share_the_open_sky :: proc(t: ^testing.T) {
+	field, model := read_lit_shaders(t)
+	names := OPEN_SKY_UNIFORM_NAMES
+	for name in names {
+		vector, scalar := fmt.tprintf("\nuniform vec3 %s;\n", name), fmt.tprintf("\nuniform float %s;\n", name)
+		testing.expectf(t, strings.contains(field, vector) || strings.contains(field, scalar), "field.fs declares no %s", name)
+		testing.expectf(t, strings.contains(model, vector) || strings.contains(model, scalar), "model.fs declares no %s", name)
+	}
+	for start in ([?]string{"vec3 outdoor_light(", "vec3 apply_haze("}) {
+		field_text, model_text := shader_function_text(field, start), shader_function_text(model, start)
+		testing.expectf(t, field_text != "" && field_text == model_text, "%s differs between field.fs and model.fs", start)
+	}
+}
+
+// Work item 0313: the shaders' haze glow is as narrow as the dome's.
+@(test)
+test_the_haze_glow_is_the_domes :: proc(t: ^testing.T) {
+	field, model := read_lit_shaders(t)
+	line := fmt.tprintf("\nconst float haze_sun_exponent = %.1f;\n", HAZE_SUN_EXPONENT)
+	testing.expectf(t, strings.contains(field, line), "field.fs does not hold %s", strings.trim_space(line))
+	testing.expectf(t, strings.contains(model, line), "model.fs does not hold %s", strings.trim_space(line))
 }
 
 // Work item 0307: the field shader reads every tile from the one ground

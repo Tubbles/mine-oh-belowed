@@ -11,7 +11,8 @@ import "platform"
 // the drawing of one viewport's field. The block renderer is not called
 // for a field session. A viewport draws, in order: the sky dome turned
 // about its player's up (a second camera that maps the up to +y, drawn
-// first without depth), the field's terrain and water, the foundations,
+// first without depth, warmed round a low sun, 0313), the globe and the
+// field's terrain and water, the foundations,
 // the machines on their frames (draw_entities, lit by the open sky, a
 // pod's box at its interior light share), the trees (0197,
 // draw_field_trees), the belt and pipe runs, the torches, the
@@ -63,9 +64,27 @@ Field_Scene :: struct {
 	// The viewer's placement editor (0215): its outline or anchored ghost
 	// replaces Place's ghost; zero draws today's ghosts.
 	placement_editor: Placement_Editor,
-	// The sun and the viewer's torchlight (0297, field_frame_lights),
-	// filled by the callers for the camera they draw with.
+	// The open sky's light and haze (0313) and the viewer's torchlight
+	// (0297, field_frame_lights), filled by the callers for the camera
+	// they draw with.
 	lights:       Field_Frame_Lights,
+}
+
+// What field_frame_lights reads for a field drawn by the renderer: the
+// clock's sky at the ground, the daylight share, the globe's colour as
+// the ground's, the planet's radius, the last distance and the data's
+// light, haze and atmosphere.
+field_light_inputs :: proc(renderer: ^Field_Renderer, sky: Day_Sky, daylight: f32, planet_radius_metres: int, config: Game_Config) -> Field_Light_Inputs {
+	return Field_Light_Inputs {
+		sky = sky,
+		daylight = daylight,
+		ground_color = renderer.globe_color,
+		planet_radius_metres = f32(planet_radius_metres),
+		last_distance_metres = renderer.last_distance_metres,
+		light = config.sun_and_torchlight,
+		haze = config.haze,
+		atmosphere = config.atmosphere,
+	}
 }
 
 // A player as the scene draws it: the prediction of a local one while the
@@ -566,12 +585,17 @@ draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_
 	}
 }
 
-// Inside BeginMode3D with the field camera.
+// Inside BeginMode3D with the field camera. The lit models up to the
+// players take the open sky (set_model_open_sky), the ghosts their own
+// colour.
 draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node) {
 	scene := scene
 	scene.frame.interiors = gather_interior_lights(&scene.state.world.entities, scene.content.machines)
 	set_field_scene_point_lights(scene, camera)
 	set_model_spot_light(scene.models, scene.lights.spot)
+	daylight_tint := model_frame_daylight_tint(scene.frame)
+	set_model_open_sky(scene.models, scene.lights, daylight_tint, camera.position)
+	draw_field_globe(scene.renderer, scene.models, daylight_tint)
 	draw_field(scene.renderer, camera, selection, scene.lights)
 	world := &scene.state.world
 	push_pod_transform(scene.pod_transform)
@@ -584,6 +608,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	push_pod_transform(scene.pod_transform)
 	draw_field_players(scene)
 	pop_pod_transform(scene.pod_transform)
+	clear_model_open_sky(scene.models)
 	// Before the ghosts, so a ghost cube's depth does not hide them.
 	draw_field_flames(scene, camera)
 	push_pod_transform(scene.pod_transform)
@@ -591,10 +616,11 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	pop_pod_transform(scene.pod_transform)
 }
 
-// The sky about the camera's up, before the scene.
-draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky, satellite: Satellite_Pass) {
+// The sky about the camera's up, before the scene, with the haze's glow
+// round a low sun (0313).
+draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky, satellite: Satellite_Pass, glow: Sky_Glow) {
 	rl.BeginMode3D(field_sky_camera(camera, camera.up))
-	draw_sky(renderer, field_sky_camera(camera, camera.up), sky, satellite)
+	draw_sky(renderer, field_sky_camera(camera, camera.up), sky, satellite, glow)
 	rl.EndMode3D()
 }
 
@@ -710,7 +736,8 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	if sky_share < 1 {
 		rl.ClearBackground(field_sky.colors.horizon)
 	}
-	draw_field_sky(&state.presentation.renderer.sky, camera, field_sky, viewport.presentation.particle_memory.satellite)
+	lights := field_frame_lights(field_light_inputs(&state.presentation.field_renderer, sky, 1, session.planet.radius_metres, state.config), camera, viewport.presentation.torchlight)
+	draw_field_sky(&state.presentation.renderer.sky, camera, field_sky, viewport.presentation.particle_memory.satellite, Sky_Glow{direction = sun_direction(sky.fraction), color = lights.haze.sun_color})
 	rlgl.SetClipPlanes(FIELD_NEAR_METRES, f64(session.planet.radius_metres * FIELD_FAR_RADII))
 	scene := Field_Scene {
 		state        = &session.simulation,
@@ -719,14 +746,14 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		models       = state.presentation.model_renderer,
 		belts        = &state.presentation.belt_renderer,
 		player_model = state.presentation.player_model,
-		frame        = Model_Frame{world = &session.simulation.world, tick = session.simulation.tick, alpha = alpha, tick_rate = session.simulation.tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint), open_sky = true, reaching_arm = NO_ENTITY, reduced_motion = state.settings.reduced_motion},
+		frame        = Model_Frame{world = &session.simulation.world, tick = session.simulation.tick, alpha = alpha, tick_rate = session.simulation.tick_rate, day_factor = 1, sky_tint = lights.flat_light, open_sky = true, reaching_arm = NO_ENTITY, reduced_motion = state.settings.reduced_motion},
 		viewer       = viewport.player,
 		viewer_body_shown = body_shown,
 		lockstep     = &session.lockstep,
 		pod_transform = pod_transform,
 		window_lights = window_lights[:window_light_count],
 		placement_editor = viewport.interaction.placement_editor,
-		lights       = field_frame_lights(sky.fraction, camera, viewport.presentation.torchlight, state.config.sun_and_torchlight),
+		lights       = lights,
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
@@ -766,8 +793,8 @@ field_arrival_debris_site :: proc(simulation: ^Simulation_State, content: Simula
 }
 
 // Before the viewports draw: the finished meshes up, the trees round the
-// eyes (update_field_tree_cache), the daylight of the shared clock and
-// each player's crouch progress (0218), read by value by the draws.
+// eyes (update_field_tree_cache) and each player's crouch progress
+// (0218), read by value by the draws.
 prepare_field_frame :: proc(state: ^Frame_State) {
 	session := state.session
 	if !state.presentation.field_renderer_ready {
@@ -775,7 +802,6 @@ prepare_field_frame :: proc(state: ^Frame_State) {
 	}
 	upload_streamed_field_meshes(&state.presentation.field_renderer, &session.field_streaming)
 	update_field_tree_cache(&state.presentation.field_renderer.trees, field_tree_generation(&session.simulation.field), field_viewport_eyes(state))
-	state.presentation.field_renderer.daylight = daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
 	crouch_progress := &state.presentation.field_renderer.crouch_progress
 	resize(crouch_progress, len(session.simulation.players))
 	for index in 0 ..< len(crouch_progress) {

@@ -293,13 +293,14 @@ test_reachable_data_edits_refusal_cases :: proc(t: ^testing.T) {
 	testing.expect_value(t, reachable_data_edits_refusal("/storage/emulated/0/Download", true, true), Reachable_Data_Edits_Refusal.None)
 }
 
-// The sun and the torchlight (0297): the shipped table loads, the cones
-// must be ordered, every key is bounded.
+// Work items 0297 and 0313: the shipped table passes, each value past
+// its bound and a black sun colour are refused by name, and a missing
+// table fails.
 @(test)
 test_sun_and_torchlight_is_range_checked :: proc(t: ^testing.T) {
 	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	testing.expect_value(t, error, nil)
-	testing.expect_value(t, config.sun_and_torchlight, Sun_And_Torchlight_Config{sky_ambient_percent = 35, sun_strength_percent = 100, torchlight_strength_percent = 100, torchlight_inner_cone_degrees = 28, torchlight_outer_cone_degrees = 36, torchlight_range_metres = 40})
+	testing.expect_value(t, config.sun_and_torchlight, Sun_And_Torchlight_Config{sun_strength_percent = 100, sun_high_color = {255, 243, 222}, sun_low_color = {255, 150, 72}, sky_light_percent = 60, ground_bounce_percent = 60, torchlight_strength_percent = 100, torchlight_inner_cone_degrees = 28, torchlight_outer_cone_degrees = 36, torchlight_range_metres = 40})
 	testing.expect_value(t, sun_and_torchlight_problem(config.sun_and_torchlight), "")
 	flat := config.sun_and_torchlight
 	flat.torchlight_outer_cone_degrees = 28
@@ -308,11 +309,42 @@ test_sun_and_torchlight_is_range_checked :: proc(t: ^testing.T) {
 	short.torchlight_range_metres = 0
 	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(short), "sun_and_torchlight.torchlight_range_metres "))
 	bright := config.sun_and_torchlight
-	bright.sky_ambient_percent = 101
-	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(bright), "sun_and_torchlight.sky_ambient_percent "))
+	bright.sky_light_percent = 401
+	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(bright), "sun_and_torchlight.sky_light_percent "))
+	bounced := config.sun_and_torchlight
+	bounced.ground_bounce_percent = 101
+	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(bounced), "sun_and_torchlight.ground_bounce_percent "))
+	overflowing := config.sun_and_torchlight
+	overflowing.sun_low_color = {255, 256, 72}
+	testing.expect(t, strings.has_prefix(sun_and_torchlight_problem(overflowing), "sun_and_torchlight.sun_low_color "))
+	black := config.sun_and_torchlight
+	black.sun_high_color = {}
+	testing.expect_value(t, sun_and_torchlight_problem(black), "sun_and_torchlight.sun_high_color is black")
 	config.sun_and_torchlight = bright
-	testing.expect(t, strings.has_prefix(validate_game_config(config), "sun_and_torchlight.sky_ambient_percent "))
+	testing.expect(t, strings.has_prefix(validate_game_config(config), "sun_and_torchlight.sky_light_percent "))
 	testing.expect(t, sun_and_torchlight_problem({}) != "", "a missing table fails")
+}
+
+// Work item 0313: the shipped haze passes, a distance or a glow past its
+// bound is refused by name, and a missing table fails.
+@(test)
+test_haze_is_range_checked :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, config.haze, Haze_Config{metres = 1500, sun_glow_percent = 50})
+	testing.expect_value(t, haze_problem(config.haze), "")
+	thick := config.haze
+	thick.metres = 99
+	testing.expect(t, strings.has_prefix(haze_problem(thick), "haze.metres "))
+	thin := config.haze
+	thin.metres = 1_000_001
+	testing.expect(t, strings.has_prefix(haze_problem(thin), "haze.metres "))
+	glowing := config.haze
+	glowing.sun_glow_percent = 101
+	testing.expect(t, strings.has_prefix(haze_problem(glowing), "haze.sun_glow_percent "))
+	testing.expect(t, haze_problem({}) != "", "a missing table fails")
+	config.haze = glowing
+	testing.expect(t, strings.has_prefix(validate_game_config(config), "haze.sun_glow_percent "))
 }
 
 // The water's look (0294): the shipped table passes, and each percent

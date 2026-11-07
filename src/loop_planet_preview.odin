@@ -132,9 +132,10 @@ Planet_Preview :: struct {
 	session:         ^Session,
 	content:         Game_Content,
 	level_distances: [FIELD_LEVEL_COUNT]int,
-	// The sun's shares and the torchlight's cone (0297); the preview's
-	// sun stands at noon over the camera and its torchlight stays off.
-	sun_and_torchlight: Sun_And_Torchlight_Config,
+	// The open sky's inputs (0297, 0313): the preview's sun stands at
+	// noon over the camera, its light scaled by
+	// --planet-preview-daylight, and its torchlight stays off.
+	field_light:     Field_Light_Inputs,
 	camera:          Fly_Camera,
 	renderer:        Field_Renderer,
 	input_bindings:  Input_Bindings,
@@ -573,10 +574,10 @@ planet_preview_tool_text :: proc(preview: ^Planet_Preview) -> string {
 }
 
 // camera is the one the scene is drawn with: the sun stands at noon over
-// its up, scaled by --planet-preview-daylight through the renderer's
-// daylight as before.
+// its up, the open sky's light scaled by --planet-preview-daylight.
 planet_preview_scene :: proc(preview: ^Planet_Preview, camera: rl.Camera3D, alpha: f32, body_shown: bool) -> Field_Scene {
 	simulation := planet_preview_simulation(preview)
+	lights := field_frame_lights(preview.field_light, camera, false)
 	return Field_Scene {
 		state = simulation,
 		content = planet_preview_content(preview),
@@ -584,10 +585,10 @@ planet_preview_scene :: proc(preview: ^Planet_Preview, camera: rl.Camera3D, alph
 		models = preview.models,
 		belts = &preview.belts,
 		player_model = preview.player_model,
-		frame = Model_Frame{world = &simulation.world, tick = simulation.tick, alpha = alpha, tick_rate = simulation.tick_rate, day_factor = preview.renderer.daylight, sky_tint = {1, 1, 1}, open_sky = true, reaching_arm = preview.reaching_arm},
+		frame = Model_Frame{world = &simulation.world, tick = simulation.tick, alpha = alpha, tick_rate = simulation.tick_rate, day_factor = 1, sky_tint = lights.flat_light, open_sky = true, reaching_arm = preview.reaching_arm},
 		viewer = preview.walking ? 0 : NO_PLAYER,
 		viewer_body_shown = body_shown,
-		lights = field_frame_lights(NOON_FRACTION, camera, false, preview.sun_and_torchlight),
+		lights = lights,
 	}
 }
 
@@ -596,7 +597,7 @@ planet_preview_scene :: proc(preview: ^Planet_Preview, camera: rl.Camera3D, alph
 draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, capture: bool, alpha: f32) -> (saved: bool) {
 	camera, body_shown := planet_preview_raylib_camera(preview, alpha)
 	rl.BeginDrawing()
-	rl.ClearBackground(FIELD_FOG_COLOR)
+	rl.ClearBackground(preview.field_light.sky.colors.horizon)
 	rl.BeginMode3D(camera)
 	draw_field_scene(planet_preview_scene(preview, camera, alpha, body_shown), camera, selection)
 	rl.EndMode3D()
@@ -801,12 +802,11 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 	if !renderer_ok {
 		return 1
 	}
-	renderer.daylight = f32(daylight_percent) / 100
 	preview := Planet_Preview {
 		session         = session,
 		content         = content,
 		level_distances = level_distances,
-		sun_and_torchlight = config.sun_and_torchlight,
+		field_light     = field_light_inputs(&renderer, day_sky_at(NOON_FRACTION, 0), f32(daylight_percent) / 100, planet.radius_metres, config),
 		camera          = planet_preview_start_camera(home_site, basis, yaw_degrees),
 		renderer        = renderer,
 		input_bindings  = make_backend_bindings(bindings, .Raylib),

@@ -130,6 +130,9 @@ Game_Config :: struct {
 	// The sun and the torchlight on the field (0297,
 	// render_point_lights.odin, sun_and_torchlight_problem).
 	sun_and_torchlight:               Sun_And_Torchlight_Config,
+	// The aerial haze on the field (0313, render_point_lights.odin,
+	// haze_problem).
+	haze:                             Haze_Config,
 	// The water's surface waves (0294, render_field_waves.odin,
 	// water_look_problem).
 	water_look:                       Water_Look_Config,
@@ -161,18 +164,32 @@ Pod_Airlock_Config :: struct {
 	reach_millimetres: int,
 }
 
-// The sun and the torchlight on the field (work item 0297,
-// doc/presentation.md, Light on the field): the sky light's share
-// without the sun and the sun's, both in percent; the torchlight's
-// brightness in percent of TORCHLIGHT_COLOR, its cone's full and outer
-// half angles in degrees (outer above inner) and its reach in metres.
+// The sun and the torchlight on the field (work items 0297 and 0313,
+// doc/presentation.md, Light on the field): the sun's strength in
+// percent, its colour high in the sky and on the horizon (0 to 255 per
+// channel), the sky's light in percent of the dome's colours and the
+// ground's bounce in percent; the torchlight's brightness in percent of
+// TORCHLIGHT_COLOR, its cone's full and outer half angles in degrees
+// (outer above inner) and its reach in metres.
 Sun_And_Torchlight_Config :: struct {
-	sky_ambient_percent:           int,
 	sun_strength_percent:          int,
+	sun_high_color:                [3]int,
+	sun_low_color:                 [3]int,
+	sky_light_percent:             int,
+	ground_bounce_percent:         int,
 	torchlight_strength_percent:   int,
 	torchlight_inner_cone_degrees: int,
 	torchlight_outer_cone_degrees: int,
 	torchlight_range_metres:       int,
+}
+
+// The aerial haze on the field (work item 0313, doc/presentation.md,
+// Light on the field): the distance in metres over which air at the
+// planet's radius takes 63 percent of the sky's colour, and the warm
+// glow towards a low sun in percent of the sun's low colour.
+Haze_Config :: struct {
+	metres:           int,
+	sun_glow_percent: int,
 }
 
 // The water's look (work item 0294, doc/presentation.md, The water's
@@ -834,6 +851,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := sun_and_torchlight_problem(config.sun_and_torchlight); problem != "" {
 		return problem
 	}
+	if problem := haze_problem(config.haze); problem != "" {
+		return problem
+	}
 	if problem := water_look_problem(config.water_look); problem != "" {
 		return problem
 	}
@@ -1015,13 +1035,20 @@ pod_airlock_problem :: proc(airlock: Pod_Airlock_Config) -> string {
 MAXIMUM_SUN_SHARE_PERCENT :: 400
 MAXIMUM_TORCHLIGHT_RANGE_METRES :: 200
 
-// Every sun_and_torchlight value inside its bound and the outer cone
-// above the inner; a missing table reads as zeros and fails on the
-// inner cone.
+// Every sun_and_torchlight value inside its bound, neither sun colour
+// black (a missing key reads as black) and the outer cone above the
+// inner; a missing table reads as zeros and fails on the inner cone.
 sun_and_torchlight_problem :: proc(config: Sun_And_Torchlight_Config) -> string {
 	bounds := [?]Config_Bound {
-		{"sun_and_torchlight.sky_ambient_percent", config.sky_ambient_percent, 0, 100},
 		{"sun_and_torchlight.sun_strength_percent", config.sun_strength_percent, 0, MAXIMUM_SUN_SHARE_PERCENT},
+		{"sun_and_torchlight.sun_high_color", config.sun_high_color[0], 0, MAXIMUM_COLOR_COMPONENT},
+		{"sun_and_torchlight.sun_high_color", config.sun_high_color[1], 0, MAXIMUM_COLOR_COMPONENT},
+		{"sun_and_torchlight.sun_high_color", config.sun_high_color[2], 0, MAXIMUM_COLOR_COMPONENT},
+		{"sun_and_torchlight.sun_low_color", config.sun_low_color[0], 0, MAXIMUM_COLOR_COMPONENT},
+		{"sun_and_torchlight.sun_low_color", config.sun_low_color[1], 0, MAXIMUM_COLOR_COMPONENT},
+		{"sun_and_torchlight.sun_low_color", config.sun_low_color[2], 0, MAXIMUM_COLOR_COMPONENT},
+		{"sun_and_torchlight.sky_light_percent", config.sky_light_percent, 0, MAXIMUM_SUN_SHARE_PERCENT},
+		{"sun_and_torchlight.ground_bounce_percent", config.ground_bounce_percent, 0, 100},
 		{"sun_and_torchlight.torchlight_strength_percent", config.torchlight_strength_percent, 0, MAXIMUM_SUN_SHARE_PERCENT},
 		{"sun_and_torchlight.torchlight_inner_cone_degrees", config.torchlight_inner_cone_degrees, 1, 89},
 		{"sun_and_torchlight.torchlight_outer_cone_degrees", config.torchlight_outer_cone_degrees, 2, 90},
@@ -1032,8 +1059,37 @@ sun_and_torchlight_problem :: proc(config: Sun_And_Torchlight_Config) -> string 
 			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
 		}
 	}
+	sun_colors := [?]struct {
+		name:  string,
+		color: [3]int,
+	}{{"sun_high_color", config.sun_high_color}, {"sun_low_color", config.sun_low_color}}
+	for entry in sun_colors {
+		if entry.color == {0, 0, 0} {
+			return fmt.tprintf("sun_and_torchlight.%s is black", entry.name)
+		}
+	}
 	if config.torchlight_outer_cone_degrees <= config.torchlight_inner_cone_degrees {
 		return fmt.tprintf("sun_and_torchlight.torchlight_outer_cone_degrees %d is not above torchlight_inner_cone_degrees %d", config.torchlight_outer_cone_degrees, config.torchlight_inner_cone_degrees)
+	}
+	return ""
+}
+
+// The bounds of data/game.sjson's haze distance (0313): from a short
+// fog to air that barely tints the last distance.
+MINIMUM_HAZE_METRES :: 100
+MAXIMUM_HAZE_METRES :: 1_000_000
+
+// Every haze value inside its bound; a missing table reads as zeros and
+// fails on the distance.
+haze_problem :: proc(config: Haze_Config) -> string {
+	bounds := [?]Config_Bound {
+		{"haze.metres", config.metres, MINIMUM_HAZE_METRES, MAXIMUM_HAZE_METRES},
+		{"haze.sun_glow_percent", config.sun_glow_percent, 0, 100},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
 	}
 	return ""
 }
