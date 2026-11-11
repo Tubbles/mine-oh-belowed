@@ -10,7 +10,7 @@ The new world screen offers the water model, teleport by default.
 
 ## Controls
 
-No binding. The world setup screen gains a row "Water" with the two values "Flowing" (teleport) and "Pooling" (bodies), stepped like its other choice rows by focus navigation and by the pointer.
+No binding. The world setup screen gains a row "Water" with the two values "Teleport" and "Bodies" (user, 2026-11-11: "Change the water model names back to teleport and bodies"), stepped like its other choice rows by focus navigation and by the pointer.
 
 ## Change
 
@@ -160,3 +160,4 @@ The capture of the screen with the row is the main agent's.
 1. The tech demo is left as it is; the item's premise was wrong and is corrected above.
 2. This item adds the `spring_bodies` view. 0367 lands without it.
 3. `--water-model` is kept: a developer flag, listed in `doc/build.md` only.
+4. The values are named Teleport and Bodies (user, 2026-11-11); wherever the specification says Flowing or Pooling, in strings, keys, the audit case and the docs, read Teleport and Bodies. The implementer was told.
