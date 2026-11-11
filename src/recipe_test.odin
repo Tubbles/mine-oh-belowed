@@ -25,7 +25,7 @@ test_recipe :: proc(recipes: Recipe_Registry, id: string) -> int {
 test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	recipes, technologies := make_test_recipes(items)
-	testing.expect_value(t, len(recipes.recipes), 135)
+	testing.expect_value(t, len(recipes.recipes), 144)
 	testing.expect_value(t, len(technologies.technologies), 27)
 	plank := recipes.recipes[test_recipe(recipes, "plank")]
 	testing.expect_value(t, plank.outputs[0], Item_Stack{test_item(items, "plank"), 4})
@@ -205,7 +205,9 @@ test_graph_queries_on_shipped_data :: proc(t: ^testing.T) {
 		testing.expectf(t, slice.contains(used_in, test_recipe(recipes, id)), "iron gear not used in %s", id)
 	}
 	testing.expect(t, !slice.contains(used_in, test_recipe(recipes, "iron_gear")))
-	testing.expect_value(t, len(recipes_using(recipes, test_item(items, "iron_rod"), context.temp_allocator)), 0)
+	// The rod goes into the vessel structure alone (0361): the truss, the
+	// deck plate and the two fuselage rings.
+	testing.expect_value(t, len(recipes_using(recipes, test_item(items, "iron_rod"), context.temp_allocator)), 4)
 }
 
 test_recipe_definition :: proc() -> Recipe_Definition {

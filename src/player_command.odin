@@ -510,9 +510,10 @@ placement_normal_valid :: proc(normal: World_Coordinate) -> bool {
 }
 
 // A machine the placement editor commits: one with an item, not a run
-// (a belt, a belt pole or a pipe goes through the run tools).
+// (a belt, a belt pole or a pipe goes through the run tools) and not a
+// vessel part (0361: a slot or a structure face fixes its place).
 machine_takes_placement_command :: proc(machine: Machine) -> bool {
-	return machine.item != NO_ITEM && machine.kind != .Belt && machine.kind != .Belt_Pole && machine.kind != .Pipe
+	return machine.item != NO_ITEM && machine.kind != .Belt && machine.kind != .Belt_Pole && machine.kind != .Pipe && !machine_kind_is_vessel(machine.kind)
 }
 
 // Every component within FAR_LIMIT_METRES of the centre (0183).

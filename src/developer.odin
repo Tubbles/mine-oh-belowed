@@ -533,8 +533,10 @@ set_field_seat_for_developer :: proc(state: ^Simulation_State, content: Simulati
 // A machine with its minimum corner at a frame's cell (0183), by the
 // frame's rules and the field's (no trunk in a cell, no player buried),
 // without taking an item or counting a placement, as place_for_developer.
-// A foundation takes one cell and no rotation. Runs, and a machine no item
-// places, are refused, as is frame 0, the block world's.
+// A foundation takes one cell and no rotation. Runs, vessel parts (0361:
+// a slot or a face places them), and a machine no item places, are
+// refused, as is frame 0, the block world's, and any of them on a
+// vessel's frame.
 place_on_frame_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> string {
 	if frame == BLOCK_FRAME {
 		return "no block world"
@@ -545,7 +547,7 @@ place_on_frame_for_developer :: proc(state: ^Simulation_State, content: Simulati
 	}
 	definition := content.machines.machines[machine]
 	if !machine_takes_placement_command(definition) {
-		return fmt.tprintf("%s is not placed on a frame (a run's belt, pole or pipe, or a machine no item places)", definition.id)
+		return not_placed_on_a_frame_text(definition)
 	}
 	placement := Field_Placement{kind = .Machine, machine = machine, rotation = definition.kind == .Foundation ? 0 : rotation % 4, frame = frame, cell = origin}
 	switch snapped_placement_refusal(state, content, placement) {
@@ -558,6 +560,8 @@ place_on_frame_for_developer :: proc(state: ^Simulation_State, content: Simulati
 		return "a bottom cell has no solid cell under it"
 	case .No_Vein:
 		return "a drill must stand over a vein's disc"
+	case .Vessel_Frame:
+		return "only vessel parts go on a vessel"
 	}
 	if placement_cells_meet_a_trunk(state, content, record, footprint_cells(origin, definition.footprint, placement.rotation)) {
 		return "a tree is in the way"
@@ -601,11 +605,22 @@ add_vein_for_developer :: proc(world: ^World, generator: ^Generator, type_index,
 	return ""
 }
 
+// The refusal of a machine the place command does not put on a frame
+// (machine_takes_placement_command), on either world.
+not_placed_on_a_frame_text :: proc(definition: Machine) -> string {
+	return fmt.tprintf("%s is not placed on a frame (a run's belt, pole or pipe, a vessel part, or a machine no item places)", definition.id)
+}
+
 // By the rules of the player's ghost and through the player's commit,
-// without taking an item or counting a placement.
+// without taking an item or counting a placement. A vessel part (0361)
+// stands on a vessel's frame only, never in the block world, which
+// neither saves nor hashes it: refused with the field's words.
 place_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> string {
 	if content.machines.machines[machine].item == NO_ITEM {
 		return "no item places this machine"
+	}
+	if machine_kind_is_vessel(content.machines.machines[machine].kind) {
+		return not_placed_on_a_frame_text(content.machines.machines[machine])
 	}
 	placement := command_placement(&state.world, content, state.players[:], machine, origin, rotation)
 	if !placement.valid {

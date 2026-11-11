@@ -43,6 +43,7 @@ write_test_data_directory :: proc(directory, items, recipes: string) {
 		{ITEMS_FILE_NAME, items},
 		{FLUIDS_FILE_NAME, #load("../data/fluids.sjson", string)},
 		{MACHINES_FILE_NAME, #load("../data/machines.sjson", string)},
+		{VESSEL_PARTS_FILE_NAME, #load("../data/vessel_parts.sjson", string)},
 		{RECIPES_FILE_NAME, recipes},
 		{TECHNOLOGIES_FILE_NAME, #load("../data/technologies.sjson", string)},
 		{CONTRACTS_FILE_NAME, #load("../data/contracts.sjson", string)},

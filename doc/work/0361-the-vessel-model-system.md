@@ -1,6 +1,6 @@
 # 0361: The vessel model system
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-11)
 
 The user (2026-11-11): "I want to have some \"Theseus model system for vessels\" that includes the crawler among other vessels, space ship, rocket etc.", "Think generic slots and keep the cables for power and fluids, so we need to hook it all up as we place it down. E.g. liquid rocket stage: place fuselage, place tanks for fuel and oxygen, place engine, hook up fluid pipes, place batteries, hook up power lines", and before it "I don't like prebaked slots on the vessel though, I want to capture the sandbox feel from TLC". The draft the user was sent is `work/vessel_model_system.md`; the user then asked for the design. Its six questions are not answered, so the design takes the draft's proposals and marks each as the main agent's, for the user to overturn.
 

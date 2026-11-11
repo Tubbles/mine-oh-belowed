@@ -102,6 +102,41 @@ occupant_counts :: proc(occupant: Occupant, required, excluded: Occupant_Flags) 
 	return required <= occupant.flags && excluded & occupant.flags == {}
 }
 
+// Where a ray enters a box (work item 0361, the vessel's slot aim): the
+// slab test of ray_box_entry (world_raycast.odin) in integers, position
+// units, the direction a unit vector in
+// UNIT_VECTOR_ONE, so each axis's crossing is (bound - origin) times
+// UNIT_VECTOR_ONE over the direction. low and high are the box's corners,
+// inclusive. No hit when the ray misses, when the box lies behind, or
+// when the origin is inside the box.
+fixed_ray_box_entry :: proc(origin, direction, low, high: [3]i64) -> (distance: i64, hit: bool) {
+	inside := true
+	for axis in 0 ..< 3 {
+		if origin[axis] < low[axis] || origin[axis] > high[axis] {
+			inside = false
+		}
+	}
+	if inside {
+		return 0, false
+	}
+	near, far := i64(min(i64)), i64(max(i64))
+	for axis in 0 ..< 3 {
+		if direction[axis] == 0 {
+			if origin[axis] < low[axis] || origin[axis] > high[axis] {
+				return 0, false
+			}
+			continue
+		}
+		first := (low[axis] - origin[axis]) * UNIT_VECTOR_ONE / direction[axis]
+		second := (high[axis] - origin[axis]) * UNIT_VECTOR_ONE / direction[axis]
+		near, far = max(near, min(first, second)), min(far, max(first, second))
+	}
+	if near > far || near < 0 {
+		return 0, false
+	}
+	return near, true
+}
+
 // The nearest hit over every frame with a cell, in frame order; none for
 // a nil table.
 raycast_frames :: proc(table: ^Frame_Table, origin: World_Position, direction: [3]i64, reach: i64, required: Occupant_Flags = {}, excluded: Occupant_Flags = {}) -> Frame_Raycast_Hit {

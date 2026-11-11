@@ -323,3 +323,10 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 
 - Under `--input=none` with developer mode on by the setting alone, a Settings change made through the socket that switches developer mode off closes the socket and leaves the game with no input at all. Refusing that one change under the none backend would close the hole; it takes a deliberate sequence to reach, so it is left until a script trips on it.
 - No test replays a recorded input stream of an injected session against its state hash. The review's comparison of a held action under `tick` with the same frames run free stands in for one.
+
+## Suggestions from the vessel parts (0361 part A, 2026-11-11)
+
+- A vessel's occupancy is checked on its own frame only, as a factory frame's is: a part placed into the terrain, a tree or another frame's cells is not refused. Decide whether vessels need the cross-frame check before the crawler moves (0357), where it becomes a collision question.
+- `Holds_The_Vessel_Together` refuses whenever the other structure pieces are more than one set, not only when the removal is what splits them. No placement can build a split vessel today; the decoupler's split will, and then the rule must compare before and after.
+- Parts are drawn as boxes, unlit and without haze, so they stand out at a distance. Worth lighting only if the modelled parts are far off.
+- The slot aim skips a box that holds the eye. It could skip every box that overlaps the player's capsule, so a part is never aimed where the drain then refuses `Would_Bury_Player`.

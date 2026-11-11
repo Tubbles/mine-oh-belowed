@@ -512,6 +512,20 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return fmt.tprintf("  %s needs a pickaxe", name)
 	case .Needs_Axe:
 		return "  the tree needs an axe"
+	case .No_Free_Slot:
+		return "  no free slot of its size there"
+	case .Vessel_Parts_Only:
+		return "  only vessel parts go on a vessel"
+	case .Needs_Vessel_Structure:
+		return "  vessel structure joins a vessel's structure"
+	case .One_Control_Unit:
+		return "  a vessel has one control unit"
+	case .Holds_Equipment:
+		return "  it holds equipment"
+	case .Holds_The_Vessel_Together:
+		return "  it holds the vessel together"
+	case .Inside_A_Vessel:
+		return "  that is inside a vessel"
 	}
 	return ""
 }
@@ -539,6 +553,8 @@ field_held_name :: proc(player: Field_Player) -> string {
 		return "water bucket"
 	case .Drain:
 		return "drain bucket"
+	case .Vessel_Part:
+		return fmt.tprintf("vessel part, %d quarter turns", player.placement_rotation)
 	}
 	return ""
 }

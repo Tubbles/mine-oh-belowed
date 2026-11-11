@@ -10,6 +10,7 @@
 - [quests.md](quests.md): quest principles, objective types, the runtime, spawn requirements, each chapter's intent, Mission Control's tone.
 - [presentation.md](presentation.md): what is drawn and heard: chunk meshes, textures and shaders, sky, weather, water, ambient life, particles, the player, machine models, sound.
 - [input.md](input.md): input backends, the input frame, the Steam Controller through SDL3 and Steam Input, the Deck, Android, bindings, hold or toggle, fly mode, what is not built yet.
+- [vessels.md](vessels.md): the vessel model system: structure with generic slots, equipment, ports, placing and removing parts, the vessel record and its save.
 - [touch_overlay.md](touch_overlay.md): the touch screen's virtual gamepad, gestures and aiming, its layout file, user layouts and the editor.
 - [ui.md](ui.md): the immediate mode UI, focus and pointer as one model, item slots, the touch button row, widgets, settings, the screens, text, theme and the on-screen keyboard.
 - [hud.md](hud.md): the HUD over the world, targeting and placement ghosts, Mission Control and the notices, the player's hands.

@@ -7,8 +7,8 @@ import "core:strings"
 import "platform"
 
 // Loading the game data, at start and again on a content reload (work
-// item 0054). The content tables (blocks, items, fluids, machines,
-// recipes, technologies, quests, contracts, notes, developer kits,
+// item 0054). The content tables (blocks, items, fluids, machines, vessel
+// parts, recipes, technologies, quests, contracts, notes, developer kits,
 // the touch overlay, planets, biomes, tree species and veins) load into one arena, so a reload frees the data it replaces in
 // one go once nothing points into it any more.
 //
@@ -106,6 +106,7 @@ load_content_registries :: proc(data_directory: string, string_entries: map[stri
 	content.items = load_item_registry(data_directory, content.blocks) or_return
 	content.fluids = load_fluid_registry(data_directory) or_return
 	content.machines = load_machine_registry(data_directory, content.items, content.fluids) or_return
+	content.vessel_parts = load_vessel_part_registry(data_directory, content.machines) or_return
 	content.recipes = load_recipe_registry(data_directory, content.items, content.fluids) or_return
 	if problem := validate_crafting_machine_recipes(content.machines, content.recipes); problem != "" {
 		platform.log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)

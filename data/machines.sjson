@@ -1293,4 +1293,130 @@ machines = [
 		stands_on_ground = true
 		footprint = {width = 1, depth = 2, height = 3}
 	}
+	// Vessel parts (work item 0361, doc/vessels.md): structure brings
+	// part_slots, equipment goes into a slot of its footprint's size (the
+	// sizes and the roles are data/vessel_parts.sjson's). Boxes until the
+	// models come: a box per held cell in the color.
+	{
+		id = "iron_truss"
+		name_key = "machine_iron_truss"
+		description_key = "describe_machine_iron_truss"
+		item = "iron_truss"
+		kind = "vessel_part"
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [118, 124, 132]
+		part_slots = [
+			{side = "outside", from = {x = 0, y = 1, z = 0}, to = {x = 0, y = 1, z = 0}}
+		]
+	}
+	{
+		id = "iron_deck_plate"
+		name_key = "machine_iron_deck_plate"
+		description_key = "describe_machine_iron_deck_plate"
+		item = "iron_deck_plate"
+		kind = "vessel_part"
+		footprint = {width = 2, depth = 2, height = 1}
+		color = [104, 110, 118]
+		part_slots = [
+			{side = "outside", from = {x = 0, y = 1, z = 0}, to = {x = 1, y = 2, z = 1}}
+			{side = "underneath", from = {x = 0, y = -2, z = 0}, to = {x = 1, y = -1, z = 1}}
+		]
+	}
+	{
+		id = "iron_fuselage_ring"
+		name_key = "machine_iron_fuselage_ring"
+		description_key = "describe_machine_iron_fuselage_ring"
+		item = "iron_fuselage_ring"
+		kind = "vessel_part"
+		footprint = {width = 4, depth = 4, height = 2}
+		color = [128, 134, 140]
+		// The hollow and one cell on each side, the four mapping onto each
+		// other under a quarter turn.
+		part_slots = [
+			{side = "inside", from = {x = 1, y = 0, z = 1}, to = {x = 2, y = 1, z = 2}}
+			{side = "outside", from = {x = -1, y = 0, z = 1}, to = {x = -1, y = 0, z = 1}}
+			{side = "outside", from = {x = 2, y = 0, z = -1}, to = {x = 2, y = 0, z = -1}}
+			{side = "outside", from = {x = 4, y = 0, z = 2}, to = {x = 4, y = 0, z = 2}}
+			{side = "outside", from = {x = 1, y = 0, z = 4}, to = {x = 1, y = 0, z = 4}}
+		]
+	}
+	{
+		id = "steel_fuselage_ring"
+		name_key = "machine_steel_fuselage_ring"
+		description_key = "describe_machine_steel_fuselage_ring"
+		item = "steel_fuselage_ring"
+		kind = "vessel_part"
+		footprint = {width = 4, depth = 4, height = 2}
+		color = [172, 178, 186]
+		part_slots = [
+			{side = "inside", from = {x = 1, y = 0, z = 1}, to = {x = 2, y = 1, z = 2}}
+			{side = "outside", from = {x = -1, y = 0, z = 1}, to = {x = -1, y = 0, z = 1}}
+			{side = "outside", from = {x = 2, y = 0, z = -1}, to = {x = 2, y = 0, z = -1}}
+			{side = "outside", from = {x = 4, y = 0, z = 2}, to = {x = 4, y = 0, z = 2}}
+			{side = "outside", from = {x = 1, y = 0, z = 4}, to = {x = 1, y = 0, z = 4}}
+		]
+	}
+	{
+		id = "lead_battery"
+		name_key = "machine_lead_battery"
+		description_key = "describe_machine_lead_battery"
+		item = "lead_battery"
+		kind = "vessel_part"
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [70, 76, 92]
+		ports = [
+			{id = "power_a", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 2000}
+			{id = "power_b", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 2000}
+		]
+	}
+	{
+		id = "nickel_battery"
+		name_key = "machine_nickel_battery"
+		description_key = "describe_machine_nickel_battery"
+		item = "nickel_battery"
+		kind = "vessel_part"
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [90, 120, 104]
+		ports = [
+			{id = "power_a", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 3000}
+			{id = "power_b", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 3000}
+		]
+	}
+	{
+		id = "iron_tank"
+		name_key = "machine_iron_tank"
+		description_key = "describe_machine_iron_tank"
+		item = "iron_tank"
+		kind = "vessel_part"
+		footprint = {width = 2, depth = 2, height = 2}
+		color = [150, 120, 84]
+		ports = [
+			{id = "fluid", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "positive_z", capacity_litres_per_second = 10}
+		]
+	}
+	{
+		id = "control_unit"
+		name_key = "machine_control_unit"
+		description_key = "describe_machine_control_unit"
+		item = "control_unit"
+		kind = "vessel_control_unit"
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [60, 150, 170]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 200}
+		]
+	}
+	{
+		id = "docking_connector"
+		name_key = "machine_docking_connector"
+		description_key = "describe_machine_docking_connector"
+		item = "docking_connector"
+		kind = "vessel_part"
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [200, 160, 60]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 5000}
+			{id = "fluid", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_litres_per_second = 20}
+		]
+	}
 ]

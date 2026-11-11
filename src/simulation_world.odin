@@ -12,6 +12,9 @@ Simulation_Content :: struct {
 	blocks:       Block_Registry,
 	items:        Item_Registry,
 	machines:     Machine_Registry,
+	// The vessel parts' table (0361, vessel_part_registry.odin), keyed by
+	// machine.
+	vessel_parts: Vessel_Part_Registry,
 	fluids:       Fluid_Registry,
 	recipes:      Recipe_Registry,
 	technologies: Technology_Registry,

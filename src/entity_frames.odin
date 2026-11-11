@@ -33,6 +33,9 @@ Frame_Placement_Refusal :: enum u8 {
 	Unsupported,
 	// A drill stands off every vein's disc (0179, place_drill_on_frame).
 	No_Vein,
+	// A machine other than a vessel part on a vessel's frame (0361): a
+	// vessel takes vessel parts only.
+	Vessel_Frame,
 }
 
 frame_placement_refusal :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> Frame_Placement_Refusal {
@@ -40,6 +43,9 @@ frame_placement_refusal :: proc(entities: ^Entities, machines: Machine_Registry,
 		return .Unknown_Frame
 	}
 	definition := machines.machines[machine]
+	if vessel_index(entities, frame) >= 0 && !machine_kind_is_vessel(definition.kind) {
+		return .Vessel_Frame
+	}
 	for cell in footprint_cells(origin, definition.footprint, rotation) {
 		if frame_cell_is_occupied(&entities.frames, frame, cell) {
 			return .Occupied
@@ -192,7 +198,8 @@ field_placement_cells :: proc(content: Simulation_Content, placement: Field_Plac
 // belt_run_placement.odin) its two candidates instead; a torch and its
 // removal (0179, simulation_field.odin) its sample; a pick up (0195,
 // advance_field_pick_up) the frame and the cell held; a felling (0197,
-// advance_field_felling) the tree's key.
+// advance_field_felling) the tree's key; a vessel part (0361,
+// vessel_placement.odin) its Vessel_Placement.
 Field_Placement_Kind :: enum u8 {
 	Machine,
 	Run,
@@ -200,6 +207,7 @@ Field_Placement_Kind :: enum u8 {
 	Torch_Removal,
 	Pick_Up,
 	Fell,
+	Vessel_Part,
 }
 
 Field_Placement :: struct {
@@ -221,6 +229,7 @@ Field_Placement :: struct {
 	heading:   [3]i64,
 	sample:    Sample_Coordinate,
 	tree:      Tree_Key,
+	vessel:    Vessel_Placement,
 }
 
 // The placement editor's commit (0215, player_command.odin) of a
@@ -433,6 +442,8 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 		case .None:
 		case .No_Vein:
 			return .No_Vein
+		case .Vessel_Frame:
+			return .Vessel_Parts_Only
 		case:
 			return .Frame_Cell_Taken
 		}
@@ -472,7 +483,11 @@ foundation_block_refusal :: proc(state: ^Simulation_State, content: Simulation_C
 	}
 	if !placement.new_frame {
 		for cell in cells {
-			if frame_placement_refusal(entities, content.machines, placement.machine, placement.frame, cell, 0) != .None {
+			#partial switch frame_placement_refusal(entities, content.machines, placement.machine, placement.frame, cell, 0) {
+			case .None:
+			case .Vessel_Frame:
+				return .Vessel_Parts_Only
+			case:
 				return .Frame_Cell_Taken
 			}
 		}
@@ -561,6 +576,9 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 		case .Fell:
 			drain_field_felling(state, content, player, placement.tree)
 			continue
+		case .Vessel_Part:
+			drain_vessel_placement(state, content, player, placement.vessel)
+			continue
 		case .Machine:
 		}
 		if refusal := field_placement_refusal(state, content, player^, placement); refusal != .None {
@@ -638,11 +656,13 @@ pole_holds_run :: proc(entities: ^Entities, pole: Entity_Handle) -> bool {
 // Something stands on the entity or hangs from it: in a cell right above
 // one of its cells, a machine other than a foundation, a run's end or a
 // torch, or for a pole a run on it. Taking the entity would leave it in
-// the air or lose the run silently; the player takes those first.
+// the air or lose the run silently; the player takes those first. A
+// vessel part is held by the vessel's rules instead
+// (vessel_part_removal_refusal, 0361).
 field_entity_is_held_up :: proc(state: ^Simulation_State, content: Simulation_Content, handle: Entity_Handle) -> bool {
 	entities := &state.world.entities
 	common := entity_common(entities, handle)
-	if common == nil {
+	if common == nil || handle.kind == .Vessel_Part {
 		return false
 	}
 	if handle.kind == .Belt_Pole && pole_holds_run(entities, handle) {
@@ -670,8 +690,10 @@ field_entity_is_held_up :: proc(state: ^Simulation_State, content: Simulation_Co
 // entity placed by the world gets no progress; one held up gets none and
 // tells Something_Stands_On_It, one the inventory has no room for gets
 // none and tells Inventory_Full, every tick, so a held Mine toasts once
-// (field_refusal_is_news). The drain checks both again. Mine released or aimed off a frame
-// clears the progress. The prediction (0182) never runs this, so the
+// (field_refusal_is_news). The drain checks both again. A vessel's
+// structure piece that holds equipment or the vessel together gets none
+// and tells why (vessel_part_removal_refusal, 0361). Mine released or
+// aimed off a frame clears the progress. The prediction (0182) never runs this, so the
 // progress the HUD draws is the confirmed tick's.
 advance_field_pick_up :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, input: Field_Player_Input) -> (placement: Field_Placement, finished: bool) {
 	target := player.field.frame_target
@@ -685,7 +707,13 @@ advance_field_pick_up :: proc(state: ^Simulation_State, content: Simulation_Cont
 		player.mining = {}
 		player.field_refusal = .Something_Stands_On_It
 		return {}, false
-	case !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)):
+	}
+	if refusal := vessel_part_removal_refusal(entities, content, handle); refusal != .None {
+		player.mining = {}
+		player.field_refusal = refusal
+		return {}, false
+	}
+	if !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)) {
 		player.mining = {}
 		player.field_refusal = .Inventory_Full
 		return {}, false
@@ -713,7 +741,12 @@ drain_field_pick_up :: proc(state: ^Simulation_State, content: Simulation_Conten
 	case field_entity_is_held_up(state, content, handle):
 		player.field_refusal = .Something_Stands_On_It
 		return
-	case !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)):
+	}
+	if refusal := vessel_part_removal_refusal(entities, content, handle); refusal != .None {
+		player.field_refusal = refusal
+		return
+	}
+	if !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)) {
 		player.field_refusal = .Inventory_Full
 		return
 	}
@@ -730,11 +763,13 @@ Entity_Frame_Record :: struct {
 }
 
 // Every live entity off frame 0, in pool order. The belt poles' frames
-// are saved with their pool after these tables (write_belt_run_tables).
+// are saved with their pool after these tables (write_belt_run_tables),
+// the vessel parts' with theirs after the field's (write_vessel_tables,
+// 0361).
 entity_frame_records :: proc(entities: ^Entities) -> []Entity_Frame_Record {
 	records := make([dynamic]Entity_Frame_Record, context.temp_allocator)
 	for kind in Entity_Kind {
-		if kind == .Belt_Pole {
+		if kind == .Belt_Pole || kind == .Vessel_Part {
 			continue
 		}
 		for index in 0 ..< entity_pool_length(entities, kind) {

@@ -49,6 +49,9 @@ Entity_Kind :: enum u8 {
 	// lets a run stand in a belt line beside the belts.
 	Belt_Pole,
 	Belt_Run,
+	// A vessel's parts (work item 0361, vessel.odin): structure and
+	// equipment on a vessel's frame, of their common data only.
+	Vessel_Part,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -137,6 +140,11 @@ Entities :: struct {
 	// them keeps its bytes.
 	belt_poles:     Entity_Pool(Belt_Pole),
 	belt_runs:      Entity_Pool(Belt_Run),
+	// The vessels (0361, vessel.odin): their parts, and one record per
+	// vessel keyed by its frame, sorted by frame id. Saved in the vessel
+	// table after the field's (write_vessel_tables).
+	vessel_parts:   Entity_Pool(Vessel_Part),
+	vessels:        [dynamic]Vessel,
 	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
@@ -223,6 +231,8 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.foundations)
 	destroy_pool(&entities.belt_poles)
 	destroy_pool(&entities.belt_runs)
+	destroy_pool(&entities.vessel_parts)
+	delete(entities.vessels)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
 	destroy_electric_networks(&entities.electric_networks)
@@ -310,12 +320,17 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 		}
 	case .Belt_Run:
 		return nil
+	case .Vessel_Part:
+		if part := pool_get(&entities.vessel_parts, handle); part != nil {
+			return &part.common
+		}
 	}
 	return nil
 }
 
-// Belts, foundations, the pod, its hatches, belt poles and the water pump
-// (0295) have no panel:
+// Belts, foundations, the pod, its hatches, belt poles, the water pump
+// (0295) and vessel parts (0361; the control unit's panel is 0365's) have
+// no panel:
 // Open_Aimed does nothing on them (the inventory opens instead, 0194).
 // In the foundations' pool a crafting station (work item 0196), the pod's
 // crafting bench and its charge controller (work items 0198, 0358) have one.
@@ -334,7 +349,7 @@ entity_has_panel :: proc(entities: ^Entities, machines: Machine_Registry, handle
 	if entity_is_water_pump(entities, machines, handle) {
 		return false
 	}
-	return handle.kind != .Belt && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
+	return handle.kind != .Belt && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && handle.kind != .Vessel_Part && entity_is_alive(entities, handle)
 }
 
 entity_is_alive :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
@@ -590,10 +605,11 @@ cell_in_fixture_box :: proc(machine: Machine, cell: [3]i32) -> bool {
 }
 
 // The cells a machine holds itself: its footprint less its fixtures'
-// boxes (work item 0198), in footprint_cells' order and the temp
-// allocator. footprint_cells for a machine without fixtures.
+// boxes (work item 0198) and its inside slots (0361, cell_in_inside_slot,
+// so an empty ring is hollow), in footprint_cells' order and the temp
+// allocator. footprint_cells for a machine with neither.
 machine_held_cells :: proc(origin: World_Coordinate, machine: Machine, rotation: u8) -> []World_Coordinate {
-	if machine.fixture_count == 0 {
+	if machine.fixture_count == 0 && !machine_has_inside_slot(machine) {
 		return footprint_cells(origin, machine.footprint, rotation)
 	}
 	footprint := machine.footprint
@@ -601,7 +617,7 @@ machine_held_cells :: proc(origin: World_Coordinate, machine: Machine, rotation:
 	for y in 0 ..< footprint.y {
 		for z in 0 ..< footprint.z {
 			for x in 0 ..< footprint.x {
-				if cell_in_fixture_box(machine, {x, y, z}) {
+				if cell_in_fixture_box(machine, {x, y, z}) || cell_in_inside_slot(machine, {x, y, z}) {
 					continue
 				}
 				offset := rotate_footprint_cell({x, z}, footprint.x, footprint.z, rotation)
@@ -692,6 +708,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 	case .Tree:
 		// A tree is the generation's (0197), never an entity.
 		return NO_ENTITY
+	case .Vessel_Part, .Vessel_Control_Unit:
+		handle = pool_add(&entities.vessel_parts, .Vessel_Part, Vessel_Part{common = common})
 	}
 	common.handle = handle
 	occupy_entity_cells(entities, machines, common)
@@ -781,6 +799,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return removed
 	case .Belt_Pole:
 		return pool_remove(&entities.belt_poles, handle)
+	case .Vessel_Part:
+		return pool_remove(&entities.vessel_parts, handle)
 	case .Belt, .Splitter, .Belt_Run:
 		// Handled by remove_belt, remove_splitter and remove_belt_run above.
 		return false

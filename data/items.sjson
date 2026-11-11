@@ -255,4 +255,16 @@ items = [
 	{id = "rocket_structure", name_key = "item_rocket_structure", description_key = "describe_item_rocket_structure", category = "intermediate", stack_size = 50, price = 160}
 	{id = "guidance_unit", name_key = "item_guidance_unit", description_key = "describe_item_guidance_unit", category = "intermediate", stack_size = 50, price = 80}
 	{id = "cargo_capsule", name_key = "item_cargo_capsule", description_key = "describe_item_cargo_capsule", category = "intermediate", stack_size = 50, price = 290}
+
+	// Vessel parts (work item 0361, doc/vessels.md), each placing its
+	// machine; the price is the sum of its recipe's inputs.
+	{id = "iron_truss", name_key = "item_iron_truss", description_key = "describe_item_iron_truss", category = "machine", stack_size = 50, price = 6}
+	{id = "iron_deck_plate", name_key = "item_iron_deck_plate", description_key = "describe_item_iron_deck_plate", category = "machine", stack_size = 50, price = 14}
+	{id = "iron_fuselage_ring", name_key = "item_iron_fuselage_ring", description_key = "describe_item_iron_fuselage_ring", category = "machine", stack_size = 50, price = 48}
+	{id = "steel_fuselage_ring", name_key = "item_steel_fuselage_ring", description_key = "describe_item_steel_fuselage_ring", category = "machine", stack_size = 50, price = 152}
+	{id = "lead_battery", name_key = "item_lead_battery", description_key = "describe_item_lead_battery", category = "machine", stack_size = 50, price = 20}
+	{id = "nickel_battery", name_key = "item_nickel_battery", description_key = "describe_item_nickel_battery", category = "machine", stack_size = 50, price = 34}
+	{id = "iron_tank", name_key = "item_iron_tank", description_key = "describe_item_iron_tank", category = "machine", stack_size = 50, price = 36}
+	{id = "control_unit", name_key = "item_control_unit", description_key = "describe_item_control_unit", category = "machine", stack_size = 50, price = 34}
+	{id = "docking_connector", name_key = "item_docking_connector", description_key = "describe_item_docking_connector", category = "machine", stack_size = 50, price = 36}
 ]

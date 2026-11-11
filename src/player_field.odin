@@ -81,7 +81,8 @@ Field_Player_Button :: enum u8 {
 // material's item, the foundation (0174), a belt or a pipe for the run
 // tools (0176), another machine to place on a frame, the torch, nothing
 // Place uses (the hand, which digs nothing), or a shovel, pickaxe or axe
-// (0265), whose role and tier the player carries.
+// (0265), whose role and tier the player carries; a vessel part (0361,
+// vessel_placement.odin) goes to a vessel's face or slot or starts one.
 Field_Held_Tool :: enum u8 {
 	Material,
 	Foundation,
@@ -95,6 +96,7 @@ Field_Held_Tool :: enum u8 {
 	// pours water where it is aimed, or takes it away.
 	Water,
 	Drain,
+	Vessel_Part,
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]

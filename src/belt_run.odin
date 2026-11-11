@@ -563,8 +563,9 @@ belt_pole_endpoint :: proc(entities: ^Entities, pole: Entity_Handle, chord: [3]i
 
 // A frame whose last occupant has left and that no run's endpoint names
 // loses its record (remove_frame), so a free entity leaves no frame
-// behind. A belt end's frame stays while a run names it, so the run
-// reconnects when a belt returns to its cell.
+// behind, and a vessel's last part takes the vessel's record with it
+// (remove_vessel_record, 0361). A belt end's frame stays while a run
+// names it, so the run reconnects when a belt returns to its cell.
 release_empty_frame :: proc(entities: ^Entities, frame: Frame_Id) {
 	if frame == BLOCK_FRAME || frame_cell_count(&entities.frames, frame) > 0 {
 		return
@@ -575,6 +576,7 @@ release_empty_frame :: proc(entities: ^Entities, frame: Frame_Id) {
 		}
 	}
 	remove_frame(&entities.frames, frame)
+	remove_vessel_record(entities, frame)
 }
 
 // The lines.

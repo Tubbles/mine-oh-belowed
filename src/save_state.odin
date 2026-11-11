@@ -160,8 +160,8 @@ write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
 // then writes its field tables, the machines' wear (0201,
 // write_machine_wear_table), the felled trees (0197,
 // write_felled_tree_table), the arrival (0200,
-// write_field_arrival_table) and the water bodies (0293,
-// write_water_body_table).
+// write_field_arrival_table), the water bodies (0293,
+// write_water_body_table) and the vessels (0361, write_vessel_tables).
 write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) {
 	write_world_state(bytes, &state.world, &state.records)
 	write_value_of(bytes, &state.unlocks)
@@ -177,6 +177,7 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 		write_felled_tree_table(bytes, &state.field)
 		write_field_arrival_table(bytes, &state.field)
 		write_water_body_table(bytes, &state.field.world)
+		write_vessel_tables(bytes, &state.world.entities)
 	}
 }
 
@@ -470,6 +471,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 		read_felled_tree_table(reader, &state.field) or_return
 		read_field_arrival_table(reader, &state.field) or_return
 		read_water_body_table(reader, &state.field.world) or_return
+		read_vessel_tables(reader, &state.world.entities, content.machines) or_return
 	}
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false
@@ -543,6 +545,8 @@ entity_pool_length :: proc(entities: ^Entities, kind: Entity_Kind) -> int {
 		return len(entities.belt_poles.entries)
 	case .Belt_Run:
 		return len(entities.belt_runs.entries)
+	case .Vessel_Part:
+		return len(entities.vessel_parts.entries)
 	}
 	return 0
 }
@@ -591,6 +595,8 @@ entity_common_at :: proc(entities: ^Entities, kind: Entity_Kind, index: int) -> 
 	case .Belt_Run:
 		// A run has no Entity_Common: it occupies no cell.
 		return nil
+	case .Vessel_Part:
+		return &entities.vessel_parts.entries[index].common
 	}
 	return nil
 }

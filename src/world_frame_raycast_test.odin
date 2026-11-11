@@ -55,3 +55,31 @@ test_a_ray_along_a_frame_stops_at_the_first_occupied_cell :: proc(t: ^testing.T)
 	testing.expect_value(t, from_between.cell, World_Coordinate{2, 0, 0})
 	testing.expect(t, !raycast_frames(&table, start, -right, metres_to_position_units(4)).hit)
 }
+
+// Work item 0361's slab test (the vessel's slot aim), in position units
+// with the direction in UNIT_VECTOR_ONE: an entry along a diagonal, a
+// miss, a box behind, the origin inside, and a ray parallel to an axis
+// inside and outside the other slabs.
+@(test)
+test_fixed_ray_box_entry :: proc(t: ^testing.T) {
+	metre := i64(POSITION_UNITS_PER_METRE)
+	low, high := [3]i64{10, 10, 10} * metre, [3]i64{20, 20, 20} * metre
+	diagonal, _ := normalize_fixed({UNIT_VECTOR_ONE, UNIT_VECTOR_ONE, UNIT_VECTOR_ONE})
+	distance, hit := fixed_ray_box_entry({}, diagonal, low, high)
+	testing.expect(t, hit)
+	// Ten metres a side, so the root of 300 metres.
+	testing.expectf(t, abs(distance - 70_945) <= 4, "%d", distance)
+	away, _ := normalize_fixed({UNIT_VECTOR_ONE, -UNIT_VECTOR_ONE, 0})
+	_, hit = fixed_ray_box_entry({}, away, low, high)
+	testing.expect(t, !hit, "a miss")
+	along := [3]i64{UNIT_VECTOR_ONE, 0, 0}
+	_, hit = fixed_ray_box_entry({30 * metre, 15 * metre, 15 * metre}, along, low, high)
+	testing.expect(t, !hit, "the box behind")
+	_, hit = fixed_ray_box_entry({15 * metre, 15 * metre, 15 * metre}, along, low, high)
+	testing.expect(t, !hit, "the origin inside")
+	distance, hit = fixed_ray_box_entry({0, 15 * metre, 15 * metre}, along, low, high)
+	testing.expect(t, hit)
+	testing.expect_value(t, distance, 10 * metre)
+	_, hit = fixed_ray_box_entry({0, 25 * metre, 15 * metre}, along, low, high)
+	testing.expect(t, !hit, "parallel outside the y slab")
+}

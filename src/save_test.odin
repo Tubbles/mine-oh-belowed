@@ -375,9 +375,11 @@ labs_in_progress :: proc(entities: ^Entities) -> int {
 	return count
 }
 
+// Vessel parts stand in a field world only (0361), whose round trip
+// covers them (test_a_vessel_round_trips_a_save_and_an_older_save_loads_without_vessels).
 expect_every_pool_used :: proc(t: ^testing.T, entities: ^Entities) {
 	for kind in Entity_Kind {
-		if kind != .None {
+		if kind != .None && kind != .Vessel_Part {
 			testing.expectf(t, entity_pool_length(entities, kind) > 0, "no %v in the test site", kind)
 		}
 	}

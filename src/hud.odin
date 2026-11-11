@@ -834,9 +834,10 @@ field_held_tool_places :: proc(tool: Field_Held_Tool) -> bool {
 	return tool != .Hand && tool != .Tool
 }
 
-// Next_Brush turns a held machine a quarter (update_field_held_tool).
+// Next_Brush turns a held machine or vessel part (0361) a quarter
+// (update_field_held_tool).
 field_held_tool_turns :: proc(tool: Field_Held_Tool) -> bool {
-	return tool == .Machine
+	return tool == .Machine || tool == .Vessel_Part
 }
 
 // Next_Brush cycles the brush with a material, the hand, a shovel,

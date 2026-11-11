@@ -1,0 +1,37 @@
+// The vessel parts (work item 0361, doc/vessels.md, doc/content.md,
+// Vessel parts). Every key is checked strictly: an unknown key or a wrong
+// type refuses the file.
+//
+// slot_sizes: the boxes a slot and an equipment's footprint come in,
+// width = depth by height in cells, every key required; at most 4, no two
+// alike, each side 1 to 12. name_key names the size in the string table.
+//
+// parts: one record per machine of kind vessel_part or
+// vessel_control_unit in machines.sjson. machine, role (structure or
+// equipment), line, tier (1 to 15) and mass_kilograms (1 to 1,000,000)
+// are required. The figures are optional, 0 to 1,000,000,000:
+// supplies_watts, draws_watts, stores_watt_hours, stores_litres, and
+// connector (true for the part that joins a vessel's lines to the
+// ground's, which needs a port). Structure has no figure and no port, and
+// each of its part_slots is of a size; equipment has no part_slots and its
+// footprint is a size. One line has one role, one machine kind and one
+// footprint (and for structure the same part_slots), so a better part of
+// the line swaps in place (0365) without moving a cell.
+slot_sizes = [
+	{id = "small", name_key = "vessel_slot_small", width = 1, height = 1, depth = 1}
+	{id = "medium", name_key = "vessel_slot_medium", width = 2, height = 2, depth = 2}
+	{id = "large", name_key = "vessel_slot_large", width = 4, height = 4, depth = 4}
+]
+parts = [
+	{machine = "iron_truss", role = "structure", line = "truss", tier = 1, mass_kilograms = 40}
+	{machine = "iron_deck_plate", role = "structure", line = "deck_plate", tier = 1, mass_kilograms = 160}
+	{machine = "iron_fuselage_ring", role = "structure", line = "fuselage_ring", tier = 1, mass_kilograms = 420}
+	{machine = "steel_fuselage_ring", role = "structure", line = "fuselage_ring", tier = 2, mass_kilograms = 300}
+	{machine = "lead_battery", role = "equipment", line = "battery", tier = 1, mass_kilograms = 60, supplies_watts = 2000, stores_watt_hours = 2000}
+	{machine = "nickel_battery", role = "equipment", line = "battery", tier = 2, mass_kilograms = 45, supplies_watts = 3000, stores_watt_hours = 3000}
+	{machine = "iron_tank", role = "equipment", line = "tank", tier = 1, mass_kilograms = 150, stores_litres = 1000}
+	// 60 W, not 50: 50 W floors to no joule a tick at 60 ticks a second
+	// (0355's design).
+	{machine = "control_unit", role = "equipment", line = "control_unit", tier = 1, mass_kilograms = 20, draws_watts = 60}
+	{machine = "docking_connector", role = "equipment", line = "docking_connector", tier = 1, mass_kilograms = 30, connector = true}
+]

@@ -140,6 +140,13 @@ Machine_Kind :: enum u8 {
 	// generator of 0198 renamed), placed by the world: the foundations'
 	// pool. The charge itself is the survival milestone's.
 	Charge_Controller,
+	// A part of a vessel (work item 0361, vessel.odin): structure that
+	// brings slots, or equipment that goes into one, its role and figures
+	// in data/vessel_parts.sjson. The vessel parts' pool, on a vessel's
+	// frame only.
+	Vessel_Part,
+	// A vessel's control unit (0361): equipment, one a vessel.
+	Vessel_Control_Unit,
 }
 
 @(rodata)
@@ -179,6 +186,13 @@ machine_kind_names := [Machine_Kind]string {
 	.Locker        = "locker",
 	.Crafting_Bench = "crafting_bench",
 	.Charge_Controller = "charge_controller",
+	.Vessel_Part   = "vessel_part",
+	.Vessel_Control_Unit = "vessel_control_unit",
+}
+
+// The kinds of a vessel's parts (0361).
+machine_kind_is_vessel :: proc(kind: Machine_Kind) -> bool {
+	return kind == .Vessel_Part || kind == .Vessel_Control_Unit
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -382,6 +396,8 @@ Machine_Definition :: struct {
 	bare_ground_life_minutes:     int,
 	color:                        [3]int,
 	former_ids:                   []string,
+	part_slots:                   []Part_Slot_Definition,
+	ports:                        []Machine_Port_Definition,
 }
 
 Machines_File :: struct {
@@ -528,10 +544,18 @@ Machine :: struct {
 	// operation on bare ground before a breakdown, 0 for game.sjson's.
 	stands_on_ground:            bool,
 	bare_ground_life_minutes:    int,
-	// Foundations: the flat colour of the slab (work item 0196).
+	// Foundations: the flat colour of the slab (work item 0196); vessel
+	// parts: the colour of their box per held cell (0361).
 	color:                       [3]u8,
 	// The ids the machine had in an older build (save_remap.odin, 0196).
 	former_ids:                  []string,
+	// A vessel's structure piece (0361, machine_part_slots.odin): the
+	// slots it brings.
+	part_slots:                  [MAXIMUM_PART_SLOTS]Part_Slot,
+	part_slot_count:             int,
+	// The ends of cables and pipes (0361, machine_ports.odin).
+	ports:                       [MAXIMUM_MACHINE_PORTS]Machine_Port,
+	port_count:                  int,
 }
 
 // A resolved pod fixture: the machine, its minimum corner in the pod's
@@ -662,6 +686,24 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition_lists_slots_power_or_ports(definition) {
 			return fmt.tprintf("charge controller %q may not list slots, power or fluid ports", definition.id)
 		}
+	case .Vessel_Part, .Vessel_Control_Unit:
+		return validate_vessel_kind_definition(definition)
+	}
+	return ""
+}
+
+// A vessel part (0361): placed by an item, drawn as a box per held cell in
+// its color, and no participant in the factory's networks (no item slots,
+// power or fluid ports; its ports are the cables' and pipes').
+validate_vessel_kind_definition :: proc(definition: Machine_Definition) -> string {
+	if definition.item == "" {
+		return fmt.tprintf("vessel part %q needs an item", definition.id)
+	}
+	if !foundation_color_is_valid(definition.color) {
+		return fmt.tprintf("vessel part %q needs a color of three channels from 0 to 255", definition.id)
+	}
+	if definition_lists_slots_power_or_ports(definition) {
+		return fmt.tprintf("vessel part %q may not list item slots, power or fluid_ports", definition.id)
 	}
 	return ""
 }
@@ -880,6 +922,12 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 		return problem
 	}
 	if problem := validate_dispatch_order(definition, kind); problem != "" {
+		return problem
+	}
+	if problem := validate_part_slots(definition, kind); problem != "" {
+		return problem
+	}
+	if problem := validate_machine_ports(definition, kind); problem != "" {
 		return problem
 	}
 	if definition.bare_ground_life_minutes < 0 || definition.bare_ground_life_minutes > MAXIMUM_BARE_GROUND_LIFE_MINUTES {
@@ -1531,6 +1579,8 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 			machine.seat = resolve_pod_place(definition.seat)
 			machine.cradle = resolve_pod_place(definition.cradle)
 			machine.windows, machine.window_count = resolve_pod_windows(definition.windows)
+			machine.part_slots, machine.part_slot_count = resolve_part_slots(definition.part_slots)
+			machine.ports, machine.port_count = resolve_machine_ports(definition.ports)
 			problem = resolve_fluid_ports(&machine, definition, fluids)
 		}
 		if problem == "" {

@@ -308,11 +308,13 @@ test_the_wear_round_trips_a_save_and_an_older_save_loads_unworn :: proc(t: ^test
 	files := encode_save_files(state, simulation_content, "wear", 0)
 	table := make([dynamic]byte, context.temp_allocator)
 	write_machine_wear_table(&table, &state.world.entities)
-	// The felled trees' table (0197), the arrival's (0200) and the water
-	// bodies' (0293) follow the wear's; an older save ends before them all.
+	// The felled trees' table (0197), the arrival's (0200), the water
+	// bodies' (0293) and the vessels' (0361) follow the wear's; an older
+	// save ends before them all.
 	write_felled_tree_table(&table, &state.field)
 	write_field_arrival_table(&table, &state.field)
 	write_water_body_table(&table, &state.field.world)
+	write_vessel_tables(&table, &state.world.entities)
 	end_session(session)
 
 	for older in ([2]bool{false, true}) {

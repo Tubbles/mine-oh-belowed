@@ -104,6 +104,20 @@ Field_Edit_Refusal :: enum u8 {
 	Needs_Pickaxe,
 	// A tree larger than the hand fells (0265, field_felling_ticks).
 	Needs_Axe,
+	// Vessels (0361, vessel_placement.odin, vessel.odin): equipment aimed
+	// at no free slot of its size; any other machine on a vessel's frame;
+	// structure aimed at neither a vessel's structure nor bare ground, or
+	// not face to face with the structure; a second control unit; a
+	// structure piece taken off while a slot of it holds equipment no
+	// other piece offers a slot for, or while the rest would fall apart;
+	// a new vessel begun in another vessel's extent.
+	No_Free_Slot,
+	Vessel_Parts_Only,
+	Needs_Vessel_Structure,
+	One_Control_Unit,
+	Holds_Equipment,
+	Holds_The_Vessel_Together,
+	Inside_A_Vessel,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -128,6 +142,13 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Needs_Shovel      = "field_refused_needs_shovel",
 	.Needs_Pickaxe     = "field_refused_needs_pickaxe",
 	.Needs_Axe         = "field_refused_needs_axe",
+	.No_Free_Slot      = "field_refused_no_free_slot",
+	.Vessel_Parts_Only = "field_refused_vessel_parts_only",
+	.Needs_Vessel_Structure = "field_refused_needs_vessel_structure",
+	.One_Control_Unit  = "field_refused_one_control_unit",
+	.Holds_Equipment   = "field_refused_holds_equipment",
+	.Holds_The_Vessel_Together = "field_refused_holds_the_vessel_together",
+	.Inside_A_Vessel   = "field_refused_inside_a_vessel",
 }
 
 Queued_Field_Edit :: struct {
@@ -595,12 +616,13 @@ drain_field_edits :: proc(state: ^Simulation_State, content: Simulation_Content)
 	update_field_sky_after_edits(&state.field.world)
 }
 
-// One player moves and queues its brush edit, its placements and a
-// finished pick up (advance_field_pick_up) or, aimed at a trunk, a
-// finished felling (advance_field_felling, 0197); nothing edits the field
-// yet. The tool follows the hotbar (simulation_field.odin) before this
-// runs. The move counts for the walk counter unless the player flies, as
-// the block world's (0187).
+// One player moves and queues its brush edit, its placements (a vessel
+// part's on Place's press, queue_vessel_placement, 0361) and a finished
+// pick up (advance_field_pick_up) or, aimed at a trunk, a finished
+// felling (advance_field_felling, 0197); nothing edits the field yet.
+// The tool follows the hotbar (simulation_field.odin) before this runs.
+// The move counts for the walk counter unless the player flies, as the
+// block world's (0187).
 queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, input: Field_Player_Input) {
 	field := &state.field
 	player := &state.players[index]
@@ -630,6 +652,9 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 	}
 	if placement, wanted := update_field_run_tool(&player.field, entities, content, input); wanted {
 		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
+	}
+	if player.field.tool == .Vessel_Part && .Place in input.just_pressed {
+		queue_vessel_placement(state, content, index)
 	}
 }
 

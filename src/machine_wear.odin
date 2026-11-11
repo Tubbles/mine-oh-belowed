@@ -335,10 +335,14 @@ Machine_Wear_Record :: struct {
 	broken:     bool,
 }
 
-// Every live entity with wear, in pool order.
+// Every live entity with wear, in pool order. Vessel parts never wear
+// (0361), and their pool is read after this table.
 machine_wear_records :: proc(entities: ^Entities) -> []Machine_Wear_Record {
 	records := make([dynamic]Machine_Wear_Record, context.temp_allocator)
 	for kind in Entity_Kind {
+		if kind == .Vessel_Part {
+			continue
+		}
 		for index in 0 ..< entity_pool_length(entities, kind) {
 			common := entity_common_at(entities, kind, index)
 			if common != nil && common.alive && (common.wear_ticks > 0 || common.broken) {

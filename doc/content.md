@@ -219,6 +219,34 @@ Machines without foundations (0201, `machine_wear.odin`; [architecture.md](archi
 - Water pumps (0295, `field_water_pump.odin`): the record `water_pump` (kind `water_pump`, the offshore pump's model and so its 2 by 1 by 1 footprint, `stands_on_ground`, its rate in `fluid_litres_per_second`, 1 to `MAXIMUM_WATER_PUMP_LITRES_PER_SECOND`, shipped 300; no slots, power or fluid ports, refused naming the pump otherwise) stands on the aimed ground or a lake bed on a frame of its own, still refused where it would bury a player. Its intake is the lowest sample that is not ground from the centre of its bottom row down to two samples below it (the water it stands in, or the bed's first air sample; on a slope that puts the centre in the ground, the first open sample up from it within 4 samples), its outlet the sample half a sample over its top. Interact cycles Off, Sink (takes the rate from the water at the intake), Source (adds the rate into the room over the outlet); the sea is infinite both ways. It has no panel; the crosshair's line names the mode, the state (Idle, Pumping, No water for a dry intake, Output full) and the litres moved ("Water pump  Sink  Pumping  3000 L moved"). The tick's rules are in [architecture.md](architecture.md), The water field, Tools and pumps.
 - `data/game.sjson`, each required and bounded (`bare_ground_problem`): `bare_ground_flatness_millimetres` (0 to 2000, shipped 250), `bare_ground_life_minutes` (1 to 10080, a week; shipped 60) and `salvage_percent` (1 to 100, shipped 80). A machine record's own `bare_ground_life_minutes` (1 to 10080) overrides the life for that machine.
 
+## Vessel parts
+
+The first set (0361). The keys and their rules are in [vessels.md](vessels.md), Data; the boxes are drawn in each record's `color` until the models come.
+
+- Slot sizes: `small` 1 by 1 by 1, `medium` 2 by 2 by 2, `large` 4 by 4 by 4 cells (width by depth by height).
+- Structure (kind `vessel_part`), boxes `from` to `to` in the unrotated footprint:
+
+  | machine | footprint w×d×h | slots | line, tier | kg |
+  |---|---|---|---|---|
+  | `iron_truss` | 1×1×1 | outside (0, 1, 0), small, on top | truss 1 | 40 |
+  | `iron_deck_plate` | 2×2×1 | outside (0, 1, 0) to (1, 2, 1), medium, on top; underneath (0, -2, 0) to (1, -1, 1), medium | deck_plate 1 | 160 |
+  | `iron_fuselage_ring` | 4×4×2 | inside (1, 0, 1) to (2, 1, 2), medium, the hollow; outside (-1, 0, 1), (2, 0, -1), (4, 0, 2), (1, 0, 4), small, one beside each wall, mapping onto each other under a quarter turn | fuselage_ring 1 | 420 |
+  | `steel_fuselage_ring` | as the iron ring | as the iron ring | fuselage_ring 2 | 300 |
+
+- Equipment, ports as id, kind, cell, face, capacity:
+
+  | machine | kind | footprint | ports | line, tier | kg | figures |
+  |---|---|---|---|---|---|---|
+  | `lead_battery` | `vessel_part` | 1×1×1 | `power_a` power (0, 0, 0) +z 2000 W, `power_b` power (0, 0, 0) -z 2000 W | battery 1 | 60 | supplies 2000 W, stores 2000 Wh |
+  | `nickel_battery` | `vessel_part` | 1×1×1 | as the lead battery at 3000 W | battery 2 | 45 | supplies 3000 W, stores 3000 Wh |
+  | `iron_tank` | `vessel_part` | 2×2×2 | `fluid` fluid (0, 0, 1) +z 10 L/s | tank 1 | 150 | stores 1000 L |
+  | `control_unit` | `vessel_control_unit` | 1×1×1 | `power` power (0, 0, 0) +z 200 W | control_unit 1 | 20 | draws 60 W |
+  | `docking_connector` | `vessel_part` | 1×1×1 | `power` power (0, 0, 0) +z 5000 W, `fluid` fluid (0, 0, 0) +x 20 L/s | docking_connector 1 | 30 | connector |
+
+- The control unit draws 60 W, not 50: 50 W floors to no joule a tick at 60 ticks a second (0355's design).
+- Items: category `machine`, stack 50 as every machine (Items), the price the sum of the recipe's inputs' prices: truss 6, deck plate 14, iron ring 48, steel ring 152, lead battery 20, nickel battery 34, tank 36, control unit 34, docking connector 36.
+- Recipes, discovered, by hand or in an assembler, category `machines`, tagged `vessel` and the main metal: truss 2 iron plates and 2 iron rods (0.5 s); deck plate 6 plates and 2 rods; iron ring 20 plates and 8 rods; steel ring 12 steel and 8 rods; lead battery 6 lead plates, 4 copper wire, 2 iron plates; nickel battery 6 nickel plates, 4 copper wire, 1 steel; tank 16 iron plates and 2 pipes; control unit 4 electronic circuits, 6 copper wire, 2 iron plates; docking connector 8 copper wire, 2 pipes, 2 steel (2 s each but the truss). The iron rod goes into the vessel structure alone.
+
 ## The pod
 
 The start on the field (0179, 0199, 0198, 0221, `entity_pod.odin`).

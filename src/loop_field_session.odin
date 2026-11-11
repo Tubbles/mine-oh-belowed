@@ -549,10 +549,11 @@ field_viewer_ghosts_drawn :: proc(scene: Field_Scene) -> bool {
 	return field_scene_player(scene, scene.viewer).field.seat == .Standing
 }
 
-// Where the viewer's Place would put a run, a foundation's whole block
-// (0193) or a machine, on a frame or on bare ground on a frame of its own
-// (0201, field_bare_ground_placement), red where the drain would refuse
-// it (field_placement_refusal: a drill off every vein, a taken cell, a
+// Where the viewer's Place would put a vessel part (0361,
+// draw_vessel_placement_ghost), a run, a foundation's whole block (0193)
+// or a machine, on a frame or on bare ground on a frame of its own (0201,
+// field_bare_ground_placement), red where the drain would refuse it
+// (field_placement_refusal: a drill off every vein, a taken cell, a
 // buried player, too few foundations, ground too steep).
 draw_field_ghosts :: proc(scene: Field_Scene) {
 	if !field_viewer_ghosts_drawn(scene) {
@@ -560,6 +561,10 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 	}
 	player := field_scene_player(scene, scene.viewer)
 	entities := &scene.state.world.entities
+	if player.field.tool == .Vessel_Part {
+		draw_vessel_placement_ghost(scene, player)
+		return
+	}
 	if curve, geometry, refusal, found := field_run_ghost(player.field, entities, scene.content); found {
 		draw_belt_run_ghost(curve, geometry, refusal == .None)
 	}
@@ -582,6 +587,25 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 	color := frame_ghost_color(field_placement_refusal(scene.state, scene.content, player, placement))
 	for ghost_cell in field_placement_cells(scene.content, placement, cell) {
 		draw_frame_ghost(frame, ghost_cell, color)
+	}
+}
+
+// A held vessel part's place (field_vessel_placement): its model see
+// through, or a box per held cell, red where the drain would refuse it
+// (vessel_placement_refusal); nothing where Place would place nothing.
+draw_vessel_placement_ghost :: proc(scene: Field_Scene, player: Player) {
+	entities := &scene.state.world.entities
+	placement, _ := field_vessel_placement(entities, scene.content, player.field)
+	frame, cells, found := vessel_placement_cells(entities, scene.content, placement)
+	if !found {
+		return
+	}
+	color := frame_ghost_color(vessel_placement_refusal(scene.state, scene.content, player, placement))
+	if draw_frame_ghost_model(scene.models, scene.content.machines, frame, placement.machine, placement.origin, placement.rotation, color) {
+		return
+	}
+	for cell in cells {
+		draw_frame_ghost(frame, cell, color)
 	}
 }
 

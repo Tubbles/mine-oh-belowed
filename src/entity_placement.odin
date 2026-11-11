@@ -108,12 +108,18 @@ footprint_is_valid :: proc(world: ^World, registry: Block_Registry, players: []P
 	return footprint_is_supported(world, registry, cells, bottom) && !footprint_hits_player(players, cells)
 }
 
+// The block world's placed machine: a vessel part (0361) stands on a
+// vessel's frame only, never in the block world.
 selected_placed_machine :: proc(player: Player, machines: Machine_Registry) -> Machine_Id {
 	stack := selected_hotbar_stack(player)
 	if stack_is_empty(stack) {
 		return NO_MACHINE
 	}
-	return item_places_machine(machines, stack.item)
+	machine := item_places_machine(machines, stack.item)
+	if machine != NO_MACHINE && machine_kind_is_vessel(machines.machines[machine].kind) {
+		return NO_MACHINE
+	}
+	return machine
 }
 
 // The ghost for the player's selected hotbar item and current target.
@@ -147,14 +153,15 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 // vein's disc, work item 0035), an offshore pump only with
 // water in front of its intake, a tar pit pump only with a tar pit there,
 // a hydro turbine only in flowing water (work item 0037).
-// A pipe may also stand on a pipe.
+// A pipe may also stand on a pipe. A vessel part never: it stands on a
+// vessel's frame only (0361).
 placement_at :: proc(world: ^World, content: Simulation_Content, players: []Player, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Placement {
 	footprint := content.machines.machines[machine].footprint
 	kind := content.machines.machines[machine].kind
 	cells := footprint_cells(origin, footprint, rotation)
 	placement := Placement {
 		shown    = true,
-		valid    = footprint_is_valid(world, content.blocks, players, cells, origin.y),
+		valid    = footprint_is_valid(world, content.blocks, players, cells, origin.y) && !machine_kind_is_vessel(kind),
 		machine  = machine,
 		origin   = origin,
 		rotation = rotation,

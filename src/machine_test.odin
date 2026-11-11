@@ -22,6 +22,15 @@ make_test_fluids :: proc() -> Fluid_Registry {
 	return registry
 }
 
+// The shipped vessel parts over the shipped machines (0361).
+make_test_vessel_parts :: proc(machines: Machine_Registry) -> Vessel_Part_Registry {
+	file, file_problem := parse_vessel_parts_file(#load("../data/vessel_parts.sjson"), VESSEL_PARTS_FILE_NAME, context.temp_allocator)
+	assert(file_problem == "", file_problem)
+	registry, problem := resolve_vessel_part_registry(file, machines, context.temp_allocator)
+	assert(problem == "", problem)
+	return registry
+}
+
 make_test_content :: proc() -> Simulation_Content {
 	items := make_test_items()
 	recipes, technologies := make_test_recipes(items)
@@ -36,6 +45,7 @@ make_test_content :: proc() -> Simulation_Content {
 		blocks = make_test_registry(),
 		items = items,
 		machines = machines,
+		vessel_parts = make_test_vessel_parts(machines),
 		fluids = make_test_fluids(),
 		recipes = recipes,
 		technologies = technologies,
@@ -57,7 +67,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 63)
+	testing.expect_value(t, len(machines.machines), 72)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)

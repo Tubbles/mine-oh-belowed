@@ -20,7 +20,8 @@ import "shared:raylib/rlgl"
 // machine works (the green of its bottleneck marker), an inserter's arm
 // follows its swing and carries the held item at the part's hand, and a
 // launch pad's model is the platform, with the tower and the rocket drawn
-// as before.
+// as before. A vessel part (0361) without a model is a box per held cell
+// in its record's colour, so an empty ring shows its hollow.
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
@@ -398,6 +399,29 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 			working := foundation_model_working(&frame.world.entities, foundation, machine)
 			draw_entity_cells(foundation.common, machines, models, frame, working, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
 		}
+	}
+	// The vessels' parts (0361) on their frames; the field session draws
+	// them through here like every machine of draw_entities.
+	for part in world.entities.vessel_parts.entries {
+		if part.alive && model_frame_draws_entity(frame, &world.entities, models, part.common) {
+			draw_vessel_part(part, machines, models, frame)
+		}
+	}
+}
+
+// A vessel part's model, or a box per held cell (entity_held_cells) in its
+// record's colour under its frame's matrix, as a foundation's slab.
+draw_vessel_part :: proc(part: Vessel_Part, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	if draw_machine_model(models, machines, part.common, frame, false) {
+		return
+	}
+	machine := machines.machines[part.machine]
+	flat := transmute([16]f32)entity_frame_matrix(&frame.world.entities, part.frame)
+	rlgl.PushMatrix()
+	defer rlgl.PopMatrix()
+	rlgl.MultMatrixf(raw_data(flat[:]))
+	for cell in entity_held_cells(part.common, machine) {
+		draw_frame_cell(cell, foundation_slab_color(machine))
 	}
 }
 

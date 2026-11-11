@@ -496,6 +496,33 @@ test_blueprint_runs_relative_and_stops_at_the_first_error :: proc(t: ^testing.T)
 	testing.expect(t, !run_blueprint(command_test_context(test), blueprint).ok)
 }
 
+// Work item 0361: a vessel part stands on a vessel's frame only. The block
+// world's place, and a blueprint's place line, answer the field's
+// refusal and place nothing, and the player's ghost there is never valid.
+@(test)
+test_the_block_world_refuses_vessel_parts :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	world := &test.simulation.world
+	words := "iron_truss is not placed on a frame (a run's belt, pole or pipe, a vessel part, or a machine no item places)"
+	response := expect_command_error(t, test, "place iron_truss 5 1 5 0")
+	testing.expect_value(t, response.text, words)
+	blueprint := Blueprint {
+		origin_kind = .Cell,
+		cell        = {4, 1, 4},
+		commands    = {"place control_unit 0 0 0 0"},
+	}
+	response = run_blueprint(command_test_context(test), blueprint)
+	testing.expect(t, !response.ok)
+	testing.expect(t, strings.has_prefix(response.text, "blueprint command 1 ") && strings.contains(response.text, "control_unit is not placed on a frame"), response.text)
+	testing.expect_value(t, entity_at(&world.entities, {5, 1, 5}), NO_ENTITY)
+	testing.expect_value(t, entity_at(&world.entities, {4, 1, 4}), NO_ENTITY)
+	testing.expect_value(t, pool_alive_count(world.entities.vessel_parts), 0)
+	truss := test_machine(test.content.machines, "iron_truss")
+	testing.expect(t, !placement_at(world, test.content, test.simulation.players[:], truss, {5, 1, 5}, 0).valid, "the block world's placement refuses a vessel part")
+	testing.expect(t, placement_at(world, test.content, test.simulation.players[:], test_machine(test.content.machines, "wooden_chest"), {5, 1, 5}, 0).valid, "a chest stands there")
+}
+
 // A blueprint runs on every machine of a session, so it never carries as
 // (0342), which moves another local player.
 @(test)

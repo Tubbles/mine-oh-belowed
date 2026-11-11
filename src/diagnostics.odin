@@ -344,6 +344,7 @@ entity_counts :: proc(entities: ^Entities) -> [Entity_Kind]int {
 		.Foundation = pool_alive_count(entities.foundations),
 		.Belt_Pole = pool_alive_count(entities.belt_poles),
 		.Belt_Run = pool_alive_count(entities.belt_runs),
+		.Vessel_Part = pool_alive_count(entities.vessel_parts),
 	}
 }
 

@@ -185,14 +185,16 @@ field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool
 		return .Belt_Run, .Air, machine
 	case .Pipe:
 		return .Pipe_Run, .Air, machine
+	case .Vessel_Part, .Vessel_Control_Unit:
+		return .Vessel_Part, .Air, machine
 	}
 	return .Machine, .Air, machine
 }
 
 // The tool follows the selected hotbar stack, a Tool's role and tier
 // with it (0265); a change of tool forgets a run's first endpoint.
-// Next_Brush turns a held machine a quarter, and cycles the brushes
-// otherwise.
+// Next_Brush turns a held machine or vessel part (0361) a quarter, and
+// cycles the brushes otherwise.
 update_field_held_tool :: proc(player: ^Player, content: Simulation_Content, input: Field_Player_Input) {
 	stack := selected_hotbar_stack(player^)
 	item := stack_is_empty(stack) ? NO_ITEM : stack.item
@@ -210,7 +212,7 @@ update_field_held_tool :: proc(player: ^Player, content: Simulation_Content, inp
 	if .Next_Brush not_in input.just_pressed {
 		return
 	}
-	if tool == .Machine {
+	if tool == .Machine || tool == .Vessel_Part {
 		body.placement_rotation = (body.placement_rotation + 1) % 4
 	} else if len(content.field.brushes) > 0 {
 		body.brush = u8((int(body.brush) + 1) % len(content.field.brushes))
