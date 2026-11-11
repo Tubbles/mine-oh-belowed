@@ -1,6 +1,6 @@
 # 0353: The Last Caretaker studied
 
-Status: implemented (2026-11-11)
+Status: landed (2026-11-11, 66172de)
 
 The user (2026-11-11) named The Last Caretaker "a new major influence and inspiration", and of its parts: "The look, the lone machine's tone, the vessel as a base, the power and cable play, all of it!". The docs name it (`doc/inspiration.md`, `DESIGN.md`, Lore and tone) without saying what any of the four is in that game or changes in ours, and each meets a decision the design already holds (`SUGGESTIONS.md`, Decisions The Last Caretaker opens).
 
