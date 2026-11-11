@@ -1,6 +1,6 @@
 # 0334: Bodies that share a spill saddle settle
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, 6a58a2c)
 
 From 0312's second review. Under the bodies model (the tech demo's), three of the 31 lakes at 8 km never settle when their chunks arrive one by one, as they do while the player walks: lake 0 (65.166, 151.403), 234 samples awake after 2000 ticks; lake 5 (72.018, 143.041), 893; lake 6 (71.694, 136.821), 1,758. All 31 settle when the 27 chunks arrive together. Water is conserved. The fault lies in 0300's merge rules; 0312's generated lakes are what reach it.
 
