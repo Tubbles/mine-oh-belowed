@@ -895,10 +895,10 @@ when COVER_COST {
 				data: Field_Cover_Data
 				for _ in 0 ..< 3 {
 					begin := time.tick_now()
-					mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, EVERY_FIELD_FACE, context.temp_allocator, look, true)
+					mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, {flaps = EVERY_FIELD_FACE}, context.temp_allocator, look, true)
 					fastest[0] = min(fastest[0], time.tick_since(begin))
 					begin = time.tick_now()
-					mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, EVERY_FIELD_FACE, context.temp_allocator, look, true, &data, table)
+					mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, {flaps = EVERY_FIELD_FACE}, context.temp_allocator, look, true, &data, table)
 					fastest[1] = min(fastest[1], time.tick_since(begin))
 				}
 				without += fastest[0]
