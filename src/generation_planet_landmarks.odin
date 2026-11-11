@@ -25,6 +25,11 @@ import "generation_seed"
 // the carve, so no two sites and no two sides of one site match. Each
 // kind's carved air in a column is one span from the ground up, which
 // the roof test (column_roofed) relies on.
+//
+// The notches (0327, generation_planet_caves.odin): a gorge's column and a
+// mesa's hand their wall's place to gorge_undercut and mesa_undercut,
+// which notch it at half its height where the undercut noise leaves one
+// (undercut_presence), so the wall above overhangs.
 
 // The bits of the site hash that jitter each axis.
 SITE_JITTER_BITS :: 21
@@ -146,11 +151,12 @@ Landmark_Carve :: struct {
 // cuts stop at the floor, dry_metres over the sea (the bound's lowest at
 // least), so the relief stays within the planet's bound. The carve of a
 // carving site's column comes with its ground, the relief with the mesas
-// clamped as the result.
-landmark_relief :: proc(generation: Planet_Generation, point: [3]i64, relief: i64, reading: Landform_Reading) -> (result: i64, carve: Landmark_Carve) {
+// clamped as the result; the notch (0327) of a gorge's wall, else of a
+// mesa's cliff, through the undercut noise.
+landmark_relief :: proc(generation: Planet_Generation, point: [3]i64, relief: i64, reading: Landform_Reading) -> (result: i64, carve: Landmark_Carve, undercut: Wall_Undercut) {
 	landmarks := generation.landmarks
 	if landmarks.site_spacing_metres == 0 || reading.wildness == 0 {
-		return relief, {}
+		return relief, {}, {}
 	}
 	floor := max(generation.sea_radius - generation.radius + metres_to_position_units(i64(landmarks.dry_metres)), generation.relief_lowest)
 	fade := i64(landmarks.mask_fade_percent) * NOISE_ONE / 100
@@ -158,7 +164,9 @@ landmark_relief :: proc(generation: Planet_Generation, point: [3]i64, relief: i6
 	if landmarks.gorge_metres > 0 && landmarks.gorge_width_permille > 0 {
 		patch := landmark_ramp(-reading.mask, i64(landmarks.gorge_mask_percent) * NOISE_ONE / 100, fade)
 		if patch > 0 && relief > floor {
-			gorge = landmark_gorge(generation, reading, patch, relief - floor)
+			cut := landmark_gorge(generation, reading, patch, relief, floor)
+			gorge = cut.cut
+			undercut = gorge_undercut(generation, cut, relief, floor)
 		}
 	}
 	if landmarks.mesa_metres > 0 {
@@ -166,9 +174,16 @@ landmark_relief :: proc(generation: Planet_Generation, point: [3]i64, relief: i6
 		if patch > 0 {
 			strength := patch * (landform_curve(landmarks.region_mesas_percent, reading.region, NOISE_ONE) / 100) / NOISE_ONE * reading.wildness / NOISE_ONE
 			if strength > 0 {
-				raise = landmark_mesa_raise(generation, point, reading.hill, strength)
+				noise: i64
+				raise, noise = landmark_mesa_raise(generation, point, reading.hill, strength)
+				if undercut.reach == 0 {
+					undercut = mesa_undercut(generation, noise, strength, relief)
+				}
 			}
 		}
+	}
+	if undercut.reach > 0 {
+		undercut = undercut_presence(generation, point, undercut)
 	}
 	site_raise, site_cut: i64
 	site_raise, site_cut, carve = landmark_site_relief(generation, point)
@@ -185,18 +200,19 @@ landmark_relief :: proc(generation: Planet_Generation, point: [3]i64, relief: i6
 	return
 }
 
-// The gorge's cut in a patch of strength patch, over ground above_floor
-// over the floor: only ground at least half the depth over it is cut,
-// fully from the whole depth, then the region's share and the wildness.
-landmark_gorge :: proc(generation: Planet_Generation, reading: Landform_Reading, patch, above_floor: i64) -> i64 {
+// The gorge's cut in a patch of strength patch, over the relief before
+// the landmarks and the floor: only ground at least half the depth over
+// the floor is cut, fully from the whole depth, then the region's share
+// and the wildness; {} where it has no strength.
+landmark_gorge :: proc(generation: Planet_Generation, reading: Landform_Reading, patch, relief, floor: i64) -> Gorge_Cut {
 	landmarks := generation.landmarks
 	depth := metres_to_position_units(i64(landmarks.gorge_metres))
-	strength := patch * landmark_ramp(above_floor, depth / 2, depth / 2) / NOISE_ONE
+	strength := patch * landmark_ramp(relief - floor, depth / 2, depth / 2) / NOISE_ONE
 	if strength > 0 {
 		strength = strength * (landform_curve(landmarks.region_gorges_percent, reading.region, NOISE_ONE) / 100) / NOISE_ONE * reading.wildness / NOISE_ONE
 	}
 	if strength <= 0 {
-		return 0
+		return {}
 	}
 	return landmark_gorge_cut(generation, reading, strength)
 }
@@ -211,18 +227,19 @@ landmark_ramp :: proc(value, threshold, fade: i64) -> i64 {
 // with the root to none at the width. Width and depth go by the root of
 // the strength, so a patch's edge narrows the gorge as it shallows. At
 // least one unit inside, so the band clips what the mesas and the sites
-// raise.
-landmark_gorge_cut :: proc(generation: Planet_Generation, reading: Landform_Reading, strength: i64) -> i64 {
+// raise. The cut comes with the meandered noise's absolute value, the
+// width and the root, which the notches read (0327), the cut 0 outside.
+landmark_gorge_cut :: proc(generation: Planet_Generation, reading: Landform_Reading, strength: i64) -> Gorge_Cut {
 	landmarks := generation.landmarks
 	root := i64(integer_square_root(u64(strength * NOISE_ONE)))
 	width := i64(landmarks.gorge_width_permille) * NOISE_ONE / 1000 * root / NOISE_ONE
 	if width <= 0 {
-		return 0
+		return {root = root}
 	}
 	noise := gradient_noise(generation_seed.hash_combine(generation.landmark_seed, 1), reading.warped, metres_to_position_units(i64(landmarks.gorge_wavelength_metres)))
 	noise = abs(noise + i64(landmarks.gorge_meander_percent) * reading.hill / 100)
 	if noise >= width {
-		return 0
+		return {0, noise, width, root}
 	}
 	across := noise * NOISE_ONE / width
 	floor := i64(landmarks.gorge_floor_percent) * NOISE_ONE / 100
@@ -230,19 +247,20 @@ landmark_gorge_cut :: proc(generation: Planet_Generation, reading: Landform_Read
 	if across > floor {
 		shape = i64(integer_square_root(u64((NOISE_ONE - across) * NOISE_ONE / (NOISE_ONE - floor) * NOISE_ONE)))
 	}
-	return max(metres_to_position_units(i64(landmarks.gorge_metres)) * shape / NOISE_ONE * root / NOISE_ONE, 1)
+	return {max(metres_to_position_units(i64(landmarks.gorge_metres)) * shape / NOISE_ONE * root / NOISE_ONE, 1), noise, width, root}
 }
 
 // Two tiers of mesa_metres where the mesa noise (the point unwarped: the
 // warp drew the mesas into ribbons) roughened by the hills passes the
 // threshold and the threshold plus the tier, each edge steep. A weaker
 // strength raises the threshold, so the patch's edge holds smaller mesas,
-// never lower ones.
-landmark_mesa_raise :: proc(generation: Planet_Generation, point: [3]i64, hill, strength: i64) -> i64 {
+// never lower ones. The raise comes with the roughened noise, which the
+// notches read (0327).
+landmark_mesa_raise :: proc(generation: Planet_Generation, point: [3]i64, hill, strength: i64) -> (raise, noise: i64) {
 	landmarks := generation.landmarks
-	noise := gradient_noise(generation_seed.hash_combine(generation.landmark_seed, 2), point, metres_to_position_units(i64(landmarks.mesa_wavelength_metres)))
+	noise = gradient_noise(generation_seed.hash_combine(generation.landmark_seed, 2), point, metres_to_position_units(i64(landmarks.mesa_wavelength_metres)))
 	noise += i64(landmarks.mesa_rough_percent) * hill / 100
-	return mesa_raise_at(landmarks, noise, strength)
+	return mesa_raise_at(landmarks, noise, strength), noise
 }
 
 // The mesas' raise at the roughened noise and the strength, which it

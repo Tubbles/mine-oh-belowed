@@ -55,11 +55,25 @@ SPIRE_STRETCH_PERCENT :: 130
 SINKHOLE_STRETCH_PERCENT :: 140
 GROTTO_STRETCH_PERCENT :: 115
 MUSHROOM_STRETCH_PERCENT :: 115
+// The caves' bounds (0327, Planet_Caves): the shell under the height map
+// they lie in, under DEEP_STONE_DEPTH_METRES less a spacing, so the
+// shortcut's deep stone and the bedrock lie under every cave; the
+// wavelength of each of their noises.
+MAXIMUM_CAVE_SHELL_METRES :: 32
+MAXIMUM_CAVE_WAVELENGTH_METRES :: 2048
+// The caves' tunnels narrow and their chambers shrink over the shell's
+// last this many metres.
+CAVE_SHELL_FADE_METRES :: 8
+// The coarsest spacing a grid with caves has (field_grid_generation): a
+// tunnel of a few metres sampled at 4 m or more aliases into dents.
+CAVE_GRID_MOST_SPACING_MILLIMETRES :: 2000
+// The least reach of a tunnel's width and of a notch, when on.
+CAVE_LEAST_SIZE_MILLIMETRES :: 500
 // A planet record may leave these out: the relief's shape (0189), the
 // landforms (0306), the landmarks (0323), the climate (0307), the
-// waters (0312) and the ground cover (0311), each off at zero, so a
-// planet without them generates and looks as before.
-OPTIONAL_PLANET_KEYS :: [6]string{"relief_shape", "landforms", "landmarks", "climate", "waters", "cover"}
+// waters (0312), the ground cover (0311) and the caves (0327), each off
+// at zero, so a planet without them generates and looks as before.
+OPTIONAL_PLANET_KEYS :: [7]string{"relief_shape", "landforms", "landmarks", "climate", "waters", "cover", "caves"}
 // The waters' bounds (0312, Planet_Waters). The finder's reach round the
 // home in metres, least and most.
 MINIMUM_WATERS_REACH_METRES :: 256
@@ -337,6 +351,43 @@ Planet_Waters :: struct {
 	// The tiles' edge on the cube faces' grids (0326); 0 keeps 0312's
 	// finder round the home only, as a world recorded before it does.
 	tile_metres:                     int,
+}
+
+// The caves and the walls' undercuts (work item 0327,
+// generation_planet_caves.odin), off at the zero value and needing the
+// landforms. The share at the landforms' region knots times the
+// wildness, under a presence noise of presence_wavelength_metres above
+// presence_threshold_percent, within shell_metres under the height map
+// and over the sea level plus dry_metres: tunnels on levels level_metres
+// apart, swung up and down by a noise of level_wavelength_metres by up to
+// level_swing_metres, along the zero lines of a noise of
+// tunnel_wavelength_metres, ellipses of tunnel_width_millimetres by
+// tunnel_height_millimetres in half axes (no tunnels at a width of 0);
+// chambers where a noise of chamber_wavelength_metres lies under minus
+// chamber_threshold_percent (none at 100), under roof_metres of rock;
+// notches at half a gorge wall's or a mesa cliff's height,
+// undercut_reach_millimetres into the rock and undercut_height_millimetres
+// in half height, where a noise of undercut_wavelength_metres lies above
+// undercut_threshold_percent (none at a reach of 0).
+Planet_Caves :: struct {
+	region_caves_percent:        [LANDFORM_KNOT_COUNT]int,
+	shell_metres:                int,
+	dry_metres:                  int,
+	presence_wavelength_metres:  int,
+	presence_threshold_percent:  int,
+	level_metres:                int,
+	level_wavelength_metres:     int,
+	level_swing_metres:          int,
+	tunnel_wavelength_metres:    int,
+	tunnel_width_millimetres:    int,
+	tunnel_height_millimetres:   int,
+	chamber_wavelength_metres:   int,
+	chamber_threshold_percent:   int,
+	roof_metres:                 int,
+	undercut_wavelength_metres:  int,
+	undercut_threshold_percent:  int,
+	undercut_reach_millimetres:  int,
+	undercut_height_millimetres: int,
 }
 
 // A derived spring (0312): the unit direction of its grid cell, its
@@ -711,6 +762,8 @@ Planet :: struct {
 	climate:                                        Planet_Climate,
 	// Optional in the file, off at zero (0312).
 	waters:                                         Planet_Waters,
+	// Optional in the file, off at zero (0327), needs the landforms.
+	caves:                                          Planet_Caves,
 	// Optional in the file, off without kinds (0311); needs the climate;
 	// presentation only, never recorded.
 	cover:                                          Planet_Cover,
@@ -777,6 +830,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 		if waters, is_object := record.(json.Object)["waters"].(json.Object); is_object {
 			if key, missing := missing_struct_key(Planet_Waters, waters); missing {
 				return fmt.tprintf("%s: planets[%d].waters is missing %s", source, index, key)
+			}
+		}
+		if caves, is_object := record.(json.Object)["caves"].(json.Object); is_object {
+			if key, missing := missing_struct_key(Planet_Caves, caves); missing {
+				return fmt.tprintf("%s: planets[%d].caves is missing %s", source, index, key)
 			}
 		}
 		if problem := missing_cover_key_problem(record.(json.Object), index, source); problem != "" {
@@ -1287,6 +1345,74 @@ waters_planet_problem :: proc(planet: Planet) -> string {
 	return ""
 }
 
+// The zero value (off: a planet or a world file without them) passes;
+// otherwise the caves need the landforms, every key lies within its
+// bound, a tunnel and a notch are off at 0 or at least
+// CAVE_LEAST_SIZE_MILLIMETRES, two tunnels' heights and two of the
+// coarsest spacing with caves fit between two levels and under the
+// chambers' roof (carved_air_roofed's shortcut), and a notch is at least
+// half as high as deep.
+caves_problem :: proc(caves: Planet_Caves, landforms: Planet_Landforms) -> string {
+	if caves == {} {
+		return ""
+	}
+	if landforms == {} {
+		return "caves need landforms"
+	}
+	for knot, index in caves.region_caves_percent {
+		if knot < 0 || knot > 100 {
+			return fmt.tprintf("caves.region_caves_percent[%d] %d is outside 0 to 100", index, knot)
+		}
+	}
+	bounds := [?]Config_Bound {
+		{"shell_metres", caves.shell_metres, CAVE_SHELL_FADE_METRES, MAXIMUM_CAVE_SHELL_METRES},
+		{"dry_metres", caves.dry_metres, 0, MAXIMUM_RELIEF_HEIGHT_METRES},
+		{"presence_wavelength_metres", caves.presence_wavelength_metres, 1, MAXIMUM_CAVE_WAVELENGTH_METRES},
+		{"presence_threshold_percent", caves.presence_threshold_percent, -100, 100},
+		{"level_metres", caves.level_metres, 4, 64},
+		{"level_wavelength_metres", caves.level_wavelength_metres, 1, MAXIMUM_CAVE_WAVELENGTH_METRES},
+		{"level_swing_metres", caves.level_swing_metres, 0, caves.level_metres},
+		{"tunnel_wavelength_metres", caves.tunnel_wavelength_metres, 1, MAXIMUM_CAVE_WAVELENGTH_METRES},
+		{"tunnel_width_millimetres", caves.tunnel_width_millimetres, 0, 8000},
+		{"tunnel_height_millimetres", caves.tunnel_height_millimetres, CAVE_LEAST_SIZE_MILLIMETRES, 8000},
+		{"chamber_wavelength_metres", caves.chamber_wavelength_metres, 1, MAXIMUM_CAVE_WAVELENGTH_METRES},
+		{"chamber_threshold_percent", caves.chamber_threshold_percent, 0, 100},
+		{"roof_metres", caves.roof_metres, 0, caves.shell_metres},
+		{"undercut_wavelength_metres", caves.undercut_wavelength_metres, 1, MAXIMUM_CAVE_WAVELENGTH_METRES},
+		{"undercut_threshold_percent", caves.undercut_threshold_percent, -100, 100},
+		{"undercut_reach_millimetres", caves.undercut_reach_millimetres, 0, 8000},
+		{"undercut_height_millimetres", caves.undercut_height_millimetres, 1000, 8000},
+	}
+	if problem := cave_bounds_problem(bounds[:]); problem != "" {
+		return problem
+	}
+	for size in ([2]Config_Bound{{"tunnel_width_millimetres", caves.tunnel_width_millimetres, CAVE_LEAST_SIZE_MILLIMETRES, 8000}, {"undercut_reach_millimetres", caves.undercut_reach_millimetres, CAVE_LEAST_SIZE_MILLIMETRES, 8000}}) {
+		if size.value != 0 && size.value < size.minimum {
+			return fmt.tprintf("caves.%s %d is outside %d to %d", size.name, size.value, size.minimum, size.maximum)
+		}
+	}
+	band := 2 * caves.tunnel_height_millimetres + 2 * CAVE_GRID_MOST_SPACING_MILLIMETRES
+	if band > caves.level_metres * MILLIMETRES_PER_METRE {
+		return fmt.tprintf("caves.tunnel_height_millimetres %d leaves no rock between levels %d m apart", caves.tunnel_height_millimetres, caves.level_metres)
+	}
+	if caves.roof_metres * MILLIMETRES_PER_METRE < band {
+		return fmt.tprintf("caves.roof_metres %d leaves no rock between a chamber and the tunnel over it", caves.roof_metres)
+	}
+	if 2 * caves.undercut_height_millimetres < caves.undercut_reach_millimetres {
+		return fmt.tprintf("caves.undercut_height_millimetres %d is under half the reach %d", caves.undercut_height_millimetres, caves.undercut_reach_millimetres)
+	}
+	return ""
+}
+
+cave_bounds_problem :: proc(bounds: []Config_Bound) -> string {
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("caves.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	return ""
+}
+
 // The cover (0311): none passes; kinds need the climate, at most
 // MAXIMUM_COVER_KINDS of them, each with a unique id and every key within
 // its bound (cover_kind_problem).
@@ -1583,6 +1709,9 @@ planet_problem :: proc(planet: Planet) -> string {
 		return problem
 	}
 	if problem := waters_planet_problem(planet); problem != "" {
+		return problem
+	}
+	if problem := caves_problem(planet.caves, planet.landforms); problem != "" {
 		return problem
 	}
 	if problem := cover_problem(planet.cover, planet.climate); problem != "" {

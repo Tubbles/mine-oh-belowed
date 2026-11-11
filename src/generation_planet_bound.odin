@@ -19,7 +19,13 @@ import "generation_seed"
 // gets exactly the bytes its column gives, so no record changes and old
 // and new worlds generate the same bytes. The boxes the crater may reach
 // and the ground of a box a carving site may reach are left to the
-// column.
+// column. The caves and the notches (0327, generation_planet_caves.odin)
+// add their own ranges: the caves' steps on the box's ranges flag a box a
+// cave may reach (cave_box_bound), whose stone bands then hold only under
+// the cave floor or where the cave noises at the sample clear it
+// (cave_sample_clear), and the gorges' and the mesas' walls flag a box a
+// notch may reach (undercut_box_bound), whose stone bands hold only under
+// the notch floor; a box neither flags reads no cave at its columns.
 
 // A closed range of integers.
 Value_Range :: struct {
@@ -34,11 +40,21 @@ Point_Box :: struct {
 // Every column of the box's samples has its surface_column relief in
 // relief; carving when a carving site (0324) may reach one of them; crater
 // when the crater may change a sample (impact_crater_reaches_box), and
-// then nothing is decided and relief is not computed.
+// then nothing is decided and relief is not computed. caves when a cave
+// (0327) may change a sample of the box, none at or under cave_floor,
+// cave_strength the columns' strength's highest before the shell's fade
+// and cave_offset their swing's range (cave_sample_clear); undercut when
+// a notch may change one, none at or under undercut_floor.
 Relief_Box_Bound :: struct {
-	relief:  Value_Range,
-	carving: bool,
-	crater:  bool,
+	relief:         Value_Range,
+	carving:        bool,
+	crater:         bool,
+	caves:          bool,
+	cave_floor:     i64,
+	cave_strength:  i64,
+	cave_offset:    Value_Range,
+	undercut:       bool,
+	undercut_floor: i64,
 }
 
 // The ranges of Landform_Reading's fields over a box of points; mask,
@@ -544,8 +560,10 @@ landmark_sites_most :: proc(generation: Planet_Generation, box: Point_Box) -> (r
 // uncratered_column's relief over a box of points on the sphere: the
 // octaves (the first through long_octave_relief, monotone in its noise),
 // the ledges (ledge_profile, monotone), the landforms and then the
-// landmarks over the sum.
-uncratered_relief_range :: proc(generation: Planet_Generation, box: Point_Box) -> (relief: Value_Range, carving: bool) {
+// landmarks over the sum; with the landforms' reading and the sum before
+// the landmarks (ground), which the caves' and the notches' ranges read
+// (0327).
+uncratered_relief_range :: proc(generation: Planet_Generation, box: Point_Box) -> (relief: Value_Range, carving: bool, reading: Landform_Range, ground: Value_Range) {
 	for octave, index in generation.relief_octaves {
 		noise := lattice_noise_range(generation_seed.hash_combine(generation.surface_seed, u64(index)), box, metres_to_position_units(i64(octave.wavelength_metres)), false)
 		if index == 0 {
@@ -560,19 +578,211 @@ uncratered_relief_range :: proc(generation: Planet_Generation, box: Point_Box) -
 		profile := Value_Range{ledge_profile(noise.lowest, shape.ledge_sharpness), ledge_profile(noise.highest, shape.ledge_sharpness)}
 		relief = range_add(relief, range_scaled(profile, millimetres_to_position_units(shape.ledge_amplitude_millimetres), NOISE_ONE))
 	}
-	reading := landform_reading_range(generation, box)
-	return landmark_relief_range(generation, box, range_add(relief, reading.relief), reading)
+	reading = landform_reading_range(generation, box)
+	ground = range_add(relief, reading.relief)
+	relief, carving = landmark_relief_range(generation, box, ground, reading)
+	return
 }
 
 // The bound of the samples between two positions (both corners samples):
 // nothing decided when the crater may reach them, otherwise the
-// uncratered relief's range over their projections.
+// uncratered relief's range over their projections, then the caves' and
+// the notches' (0327).
 relief_box_bound :: proc(generation: Planet_Generation, lowest, highest: World_Position) -> Relief_Box_Bound {
 	if impact_crater_reaches_box(generation, {lowest, highest}) {
 		return {crater = true}
 	}
-	relief, carving := uncratered_relief_range(generation, projected_box(generation, lowest, highest))
-	return {relief = relief, carving = carving}
+	box := projected_box(generation, lowest, highest)
+	bound: Relief_Box_Bound
+	reading: Landform_Range
+	ground: Value_Range
+	bound.relief, bound.carving, reading, ground = uncratered_relief_range(generation, box)
+	bound.caves, bound.cave_floor, bound.cave_strength, bound.cave_offset = cave_box_bound(generation, lowest, highest, box, bound.relief, reading)
+	bound.undercut, bound.undercut_floor = undercut_box_bound(generation, box, ground, reading)
+	return bound
+}
+
+// The heights over the radius of every point of the box of positions:
+// their distances from the centre between the roots of the squared
+// chord's ends, less the radius.
+position_height_range :: proc(generation: Planet_Generation, lowest, highest: World_Position) -> Value_Range {
+	squared := squared_chord_range({cast([3]i64)lowest, cast([3]i64)highest}, {})
+	return {i64(integer_square_root(u64(squared.lowest))) - generation.radius, i64(integer_square_root(u64(squared.highest))) + 1 - generation.radius}
+}
+
+// The least absolute value over a range.
+range_least_magnitude :: proc(range: Value_Range) -> i64 {
+	if range.lowest <= 0 && range.highest >= 0 {
+		return 0
+	}
+	return min(abs(range.lowest), abs(range.highest))
+}
+
+// The least distance from a multiple of the level over a range of
+// heights: 0 when one lies in it, else the nearer gap (the least |up| of
+// cave_tunnel_distance).
+level_offset_least :: proc(heights: Value_Range, level: i64) -> i64 {
+	below := floor_divide_i64(heights.lowest, level)
+	if below * level == heights.lowest || (below + 1) * level <= heights.highest {
+		return 0
+	}
+	return min(heights.lowest - below * level, (below + 1) * level - heights.highest)
+}
+
+// A box holding cave_squashed_point of every point of the box on the
+// sphere at every height of the range.
+cave_squashed_box :: proc(generation: Planet_Generation, box: Point_Box, heights: Value_Range) -> Point_Box {
+	factor := Value_Range{heights.lowest * (CAVE_CHAMBER_SQUASH_PERCENT - 100) / 100, heights.highest * (CAVE_CHAMBER_SQUASH_PERCENT - 100) / 100}
+	squashed: Point_Box
+	for axis in 0 ..< 3 {
+		term := range_product({box.lowest[axis], box.highest[axis]}, factor, generation.radius)
+		squashed.lowest[axis] = box.lowest[axis] + term.lowest
+		squashed.highest[axis] = box.highest[axis] + term.highest
+	}
+	return squashed
+}
+
+// cave_column's and cave_distance's steps on the ranges of a box of
+// samples (positions lowest to highest, box their projections, relief
+// the columns' and reading the landforms'): caves false when the caves
+// are off, the share, the presence or the shell's fade leave no strength,
+// the box lies a spacing or more under the dry level, or the least tunnel
+// and the least chamber distance are both a spacing or more. Else floor,
+// at or under which no cave changes a sample (the shell's bottom under
+// the relief's lowest, the dry level less a spacing), strength the
+// strength's highest before the shell's fade and offset the swing's
+// range, which cave_sample_clear reads. The lakes are not read: they only
+// take caves away.
+cave_box_bound :: proc(generation: Planet_Generation, lowest, highest: World_Position, box: Point_Box, relief: Value_Range, reading: Landform_Range) -> (caves: bool, floor, strength: i64, offset: Value_Range) {
+	record := generation.caves
+	if record == {} || reading.wildness.highest == 0 {
+		return
+	}
+	share := landform_curve_range(record.region_caves_percent, reading.region, NOISE_ONE).highest / 100
+	if share <= 0 {
+		return
+	}
+	share = share * reading.wildness.highest / NOISE_ONE
+	presence := lattice_noise_range(generation_seed.hash_combine(generation.cave_seed, CAVE_PRESENCE_SALT), box, metres_to_position_units(i64(record.presence_wavelength_metres)), true)
+	most := share * landmark_ramp(presence.highest, i64(record.presence_threshold_percent) * NOISE_ONE / 100, CAVE_PRESENCE_FADE_PERCENT * NOISE_ONE / 100) / NOISE_ONE
+	heights := position_height_range(generation, lowest, highest)
+	faded := most * cave_shell_fade(record, relief.lowest - heights.highest) / NOISE_ONE
+	dry := generation.sea_radius - generation.radius + metres_to_position_units(i64(record.dry_metres))
+	if faded <= 0 || dry - heights.highest >= generation.spacing {
+		return
+	}
+	level := lattice_noise_range(generation_seed.hash_combine(generation.cave_seed, CAVE_LEVEL_SALT), box, metres_to_position_units(i64(record.level_wavelength_metres)), true)
+	swing := range_scaled(level, metres_to_position_units(i64(record.level_swing_metres)), NOISE_ONE)
+	tunnel, chamber := CAVE_NONE, CAVE_NONE
+	if record.tunnel_width_millimetres > 0 {
+		up := level_offset_least({heights.lowest - swing.highest, heights.highest - swing.lowest}, metres_to_position_units(i64(record.level_metres)))
+		wavelength := metres_to_position_units(i64(record.tunnel_wavelength_metres))
+		noise := lattice_noise_range(generation_seed.hash_combine(generation.cave_seed, CAVE_TUNNEL_SALT), {cast([3]i64)lowest, cast([3]i64)highest}, wavelength, true)
+		tunnel = cave_tunnel_from(record, faded, up, cave_noise_distance(range_least_magnitude(noise), wavelength))
+	}
+	if record.chamber_threshold_percent < 100 {
+		noise := lattice_noise_range(generation_seed.hash_combine(generation.cave_seed, CAVE_CHAMBER_SALT), cave_squashed_box(generation, box, heights), metres_to_position_units(i64(record.chamber_wavelength_metres)), true)
+		chamber = cave_chamber_distance(record, faded, relief.highest - heights.lowest, noise.lowest)
+	}
+	if min(tunnel, chamber) >= generation.spacing {
+		return
+	}
+	return true, max(relief.lowest - metres_to_position_units(i64(record.shell_metres)), dry - generation.spacing), most, swing
+}
+
+// Whether no cave changes a stone sample its box's bands decided, from
+// the box's ranges and the two noises at the sample: a spacing or more
+// under the dry level, at a shell's fade of 0 at the depth's lowest, or
+// when the least tunnel (the strength's highest faded there, the least
+// offset from a level over the swing's range, the tunnel noise at the
+// position) and the least chamber (the roof less the depth's highest,
+// and only while that is under a spacing the chamber noise at the
+// squashed point) are both a spacing or more.
+cave_sample_clear :: proc(generation: Planet_Generation, bound: Relief_Box_Bound, position: World_Position, distance: i64, on_sphere: [3]i64) -> bool {
+	record := generation.caves
+	height := distance - generation.radius
+	if generation.sea_radius - generation.radius + metres_to_position_units(i64(record.dry_metres)) - height >= generation.spacing {
+		return true
+	}
+	faded := bound.cave_strength * cave_shell_fade(record, bound.relief.lowest - height) / NOISE_ONE
+	if faded <= 0 {
+		return true
+	}
+	if record.tunnel_width_millimetres > 0 {
+		up := level_offset_least({height - bound.cave_offset.highest, height - bound.cave_offset.lowest}, metres_to_position_units(i64(record.level_metres)))
+		noise := planet_cave_noise(generation, CAVE_TUNNEL_SALT, cast([3]i64)position, record.tunnel_wavelength_metres)
+		if cave_tunnel_from(record, faded, up, abs(cave_noise_distance(noise, metres_to_position_units(i64(record.tunnel_wavelength_metres))))) < generation.spacing {
+			return false
+		}
+	}
+	deepest := bound.relief.highest - height
+	if record.chamber_threshold_percent < 100 && metres_to_position_units(i64(record.roof_metres)) - deepest < generation.spacing {
+		noise := planet_cave_noise(generation, CAVE_CHAMBER_SALT, cave_squashed_point(generation, on_sphere, height), record.chamber_wavelength_metres)
+		if cave_chamber_distance(record, faded, deepest, noise) < generation.spacing {
+			return false
+		}
+	}
+	return true
+}
+
+// Whether a notch may change a sample of the box, and the floor at or
+// under which none does, from the relief before the landmarks (ground,
+// which every notch's centre is measured from) and the landforms'
+// reading: a gorge's when its patch may hold the box and the meandered
+// noise comes within its full width and the band of 0, its lowest notch
+// half the full depth and the half height under the ground's lowest; a
+// mesa's when its strength may be above 0 and the roughened noise meets
+// a tier edge's middle within the band, its lowest notch half a tier
+// over it less the half height. undercut_distance is at least the gap
+// under the notch, so the floor lies a spacing under the lowest notch.
+undercut_box_bound :: proc(generation: Planet_Generation, box: Point_Box, ground: Value_Range, reading: Landform_Range) -> (undercut: bool, floor: i64) {
+	record := generation.caves
+	landmarks := generation.landmarks
+	if record.undercut_reach_millimetres == 0 || landmarks.site_spacing_metres == 0 || reading.wildness.highest == 0 {
+		return
+	}
+	band := millimetres_to_position_units(record.undercut_reach_millimetres) + metres_to_position_units(UNDERCUT_BAND_METRES)
+	half := millimetres_to_position_units(record.undercut_height_millimetres)
+	fade := i64(landmarks.mask_fade_percent) * NOISE_ONE / 100
+	floor = max(i64)
+	if landmarks.gorge_metres > 0 && landmarks.gorge_width_permille > 0 && landmark_ramp(-reading.mask.lowest, i64(landmarks.gorge_mask_percent) * NOISE_ONE / 100, fade) > 0 {
+		wavelength := metres_to_position_units(i64(landmarks.gorge_wavelength_metres))
+		noise := lattice_noise_range(generation_seed.hash_combine(generation.landmark_seed, 1), reading.warped, wavelength, true)
+		noise = range_add(noise, range_scaled(reading.hill, i64(landmarks.gorge_meander_percent), 100))
+		if range_least_magnitude(noise) < i64(landmarks.gorge_width_permille) * NOISE_ONE / 1000 + undercut_band_noise(band, wavelength) {
+			undercut = true
+			floor = ground.lowest - metres_to_position_units(i64(landmarks.gorge_metres)) / 2 - half
+		}
+	}
+	if landmarks.mesa_metres > 0 {
+		threshold := i64(landmarks.mesa_mask_percent) * NOISE_ONE / 100
+		patch := Value_Range{landmark_ramp(reading.mask.lowest, threshold, fade), landmark_ramp(reading.mask.highest, threshold, fade)}
+		share := range_scaled(landform_curve_range(landmarks.region_mesas_percent, reading.region, NOISE_ONE), 1, 100)
+		share.lowest = max(share.lowest, 0)
+		strength := range_product(range_product(patch, share, NOISE_ONE), reading.wildness, NOISE_ONE)
+		if patch.highest > 0 && strength.highest > 0 {
+			wavelength := metres_to_position_units(i64(landmarks.mesa_wavelength_metres))
+			noise := lattice_noise_range(generation_seed.hash_combine(generation.landmark_seed, 2), box, wavelength, true)
+			noise = range_add(noise, range_scaled(reading.hill, i64(landmarks.mesa_rough_percent), 100))
+			edge := i64(landmarks.mesa_edge_permille) * NOISE_ONE / 1000
+			base := i64(landmarks.mesa_threshold_percent) * NOISE_ONE / 100 + edge / 2
+			lowest_middle := base + (NOISE_ONE - strength.highest) * MESA_SHRINK_PERCENT / 100
+			highest_middle := base + (NOISE_ONE - max(strength.lowest, 0)) * MESA_SHRINK_PERCENT / 100 + i64(landmarks.mesa_tier_percent) * NOISE_ONE / 100
+			reach := undercut_band_noise(band, wavelength)
+			if noise.highest > lowest_middle - reach && noise.lowest < highest_middle + reach {
+				undercut = true
+				floor = min(floor, ground.lowest + metres_to_position_units(i64(landmarks.mesa_metres)) / 2 - half)
+			}
+		}
+	}
+	floor -= generation.spacing
+	return
+}
+
+// The noise a distance of the band spans at the wavelength
+// (cave_noise_distance backwards), rounded up past its truncation.
+undercut_band_noise :: proc(band, wavelength: i64) -> i64 {
+	return (band + 1) * (CAVE_NOISE_SLOPE_PERCENT * NOISE_ONE / 100) / wavelength + 1
 }
 
 // The bound of the box of RELIEF_BOX_SAMPLES (with half of
@@ -603,6 +813,12 @@ relief_box_bound_at :: proc(generation: Planet_Generation, boxes: ^Relief_Boxes,
 		if !whole.crater {
 			bound.relief = {max(bound.relief.lowest, whole.relief.lowest), min(bound.relief.highest, whole.relief.highest)}
 			bound.carving = bound.carving && whole.carving
+			bound.caves = bound.caves && whole.caves
+			bound.cave_floor = max(bound.cave_floor, whole.cave_floor)
+			bound.cave_strength = min(bound.cave_strength, whole.cave_strength)
+			bound.cave_offset = {max(bound.cave_offset.lowest, whole.cave_offset.lowest), min(bound.cave_offset.highest, whole.cave_offset.highest)}
+			bound.undercut = bound.undercut && whole.undercut
+			bound.undercut_floor = max(bound.undercut_floor, whole.undercut_floor)
 		}
 	}
 	computed^ = true
@@ -610,15 +826,33 @@ relief_box_bound_at :: proc(generation: Planet_Generation, boxes: ^Relief_Boxes,
 	return bound
 }
 
+// Whether a cave of the bound may change a sample at the height: over
+// the cave floor and under the air band.
+cave_may_change :: proc(bound: Relief_Box_Bound, height, spacing: i64) -> bool {
+	return bound.caves && height > bound.cave_floor && height < bound.relief.highest + spacing
+}
+
 // The sample at the position, offset from boxes.first, when its box of 8
-// decides it, else when its box of 4 does (not under a crater's 8).
-planet_sample_by_boxes :: proc(generation: Planet_Generation, boxes: ^Relief_Boxes, offset: [3]i32, position: World_Position, distance: i64) -> (sample: Field_Sample, decided: bool) {
+// decides it and no cave of it may change it, else when its box of 4
+// does (not under a crater's 8), a sample a cave of the 4 may change only
+// when cave_sample_clear holds. caves is the flag of the bound read last
+// (true under the crater): whether the column reads the caves.
+planet_sample_by_boxes :: proc(generation: Planet_Generation, boxes: ^Relief_Boxes, offset: [3]i32, position: World_Position, distance: i64, on_sphere: [3]i64) -> (sample: Field_Sample, decided, caves: bool) {
+	height := distance - generation.radius
 	whole := relief_box_bound_at(generation, boxes, offset, false)
 	sample, decided = planet_sample_by_bound(generation, whole, position, distance)
-	if decided || whole.crater {
-		return
+	if whole.crater {
+		return sample, decided, true
 	}
-	return planet_sample_by_bound(generation, relief_box_bound_at(generation, boxes, offset, true), position, distance)
+	if decided && !cave_may_change(whole, height, generation.spacing) {
+		return sample, true, whole.caves
+	}
+	half := relief_box_bound_at(generation, boxes, offset, true)
+	sample, decided = planet_sample_by_bound(generation, half, position, distance)
+	if decided && cave_may_change(half, height, generation.spacing) {
+		decided = cave_sample_clear(generation, half, position, distance, on_sphere)
+	}
+	return sample, decided, half.caves || half.crater
 }
 
 // The sample at the position when the bound decides it, the bytes
@@ -634,6 +868,9 @@ planet_sample_by_boxes :: proc(generation: Planet_Generation, boxes: ^Relief_Box
 // either stone bedrock within the bedrock's radius, as planet_stratum
 // and the outcrop keep it. A carving site's carved air lies under the
 // top, so only the air is decided in its box; nothing under the crater.
+// The air band stands where a notch or a cave may reach, since they lie
+// under the height map's top (0327); under their floors the bands stand,
+// the caves' through planet_sample_by_boxes.
 planet_sample_by_bound :: proc(generation: Planet_Generation, bound: Relief_Box_Bound, position: World_Position, distance: i64) -> (sample: Field_Sample, decided: bool) {
 	if bound.crater {
 		return
@@ -642,7 +879,7 @@ planet_sample_by_bound :: proc(generation: Planet_Generation, bound: Relief_Box_
 	if height >= bound.relief.highest + generation.spacing {
 		return FIELD_AIR_SAMPLE, true
 	}
-	if bound.carving {
+	if bound.carving || (bound.undercut && height > bound.undercut_floor) {
 		return
 	}
 	topsoil := generation_topsoil_depth(generation)
@@ -664,14 +901,16 @@ planet_sample_by_bound :: proc(generation: Planet_Generation, bound: Relief_Box_
 }
 
 // planet_sample_reading with the boxes: the shortcut, then the sample the
-// box bound decides (neither shaded nor carved), then the column.
+// box bound decides (neither shaded nor carved), then the column, with
+// the caves where the boxes say one may reach it.
 planet_sample_reading_boxed :: proc(generation: Planet_Generation, position: World_Position, boxes: ^Relief_Boxes, offset: [3]i32) -> (sample: Field_Sample, shaded, carved: bool) {
 	shortcut, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
 	if !needs_relief {
 		return shortcut, false, false
 	}
-	if bounded, decided := planet_sample_by_boxes(generation, boxes, offset, position, distance); decided {
+	bounded, decided, caves := planet_sample_by_boxes(generation, boxes, offset, position, distance, on_sphere)
+	if decided {
 		return bounded, false, false
 	}
-	return planet_sample_reading_at(generation, position, distance, on_sphere)
+	return planet_sample_reading_at(generation, position, distance, on_sphere, caves)
 }

@@ -732,7 +732,8 @@ COVER_TEST_SNOW_LINE :: [4][2]i64{{-256, -672}, {-256, -640}, {-256, -608}, {-25
 // Nodes' cover against field.fs's snow: the instances found on no
 // triangle; per band of the triangles' centroid weight (under
 // COVER_SNOW_THIN_WEIGHT, under COVER_SNOW_GONE_WEIGHT, over) the grass
-// standing on them and their area in square metres; the boulders standing
+// standing on them and their area in square metres, of the triangles near
+// the relief; the boulders standing
 // at the gone weight or over; the most snow under an instance of a kind
 // growing on none.
 Cover_Test_Snow_Tally :: struct {
@@ -783,7 +784,18 @@ cover_test_instance_snow :: proc(mesh: Field_Mesh_Data, origin: [3]f64, centroid
 	return -1, 0
 }
 
-// The node's generated grid's cover added to the tally.
+// Whether a point, in metres, lies within 1.5 m of the surface relief
+// under it, the ground's surface and not a cave's wall (0327).
+cover_test_near_relief :: proc(generation: Planet_Generation, point: [3]f64) -> bool {
+	position := World_Position{i64(math.round(point.x * POSITION_UNITS_PER_METRE)), i64(math.round(point.y * POSITION_UNITS_PER_METRE)), i64(math.round(point.z * POSITION_UNITS_PER_METRE))}
+	distance := vector_length(cast([3]i64)position)
+	relief := surface_relief(generation, project_onto_sphere(position, distance, generation.radius))
+	return abs(distance - generation.radius - relief) <= millimetres_to_position_units(1500)
+}
+
+// The node's generated grid's cover added to the tally, the area and the
+// grass over the triangles within 1.5 m of the relief
+// (cover_test_near_relief).
 cover_test_tally_snow :: proc(generation: Planet_Generation, planet: Planet, node: Field_Node, tally: ^Cover_Test_Snow_Tally) {
 	grid := new(Field_Grid, context.temp_allocator)
 	generate_field_grid(generation, node, grid)
@@ -793,12 +805,16 @@ cover_test_tally_snow :: proc(generation: Planet_Generation, planet: Planet, nod
 	triangle_count := len(mesh.indices) / 3
 	centroids := make([][3]f64, triangle_count, context.temp_allocator)
 	bands := make([]int, triangle_count, context.temp_allocator)
+	near := make([]bool, triangle_count, context.temp_allocator)
 	for triangle in 0 ..< triangle_count {
 		corners := cover_test_triangle_indices(mesh, triangle)
 		a, b, c := cover_test_vector(mesh.positions[corners[0]]), cover_test_vector(mesh.positions[corners[1]]), cover_test_vector(mesh.positions[corners[2]])
 		centroids[triangle] = (a + b + c) / 3
 		bands[triangle] = cover_test_snow_band(cover_test_fragment_snow(mesh, origin, corners, [3]f64{1, 1, 1} / 3))
-		tally.area[bands[triangle]] += linalg.length(cover_cross(b - a, c - a)) / 2
+		near[triangle] = cover_test_near_relief(generation, origin + centroids[triangle])
+		if near[triangle] {
+			tally.area[bands[triangle]] += linalg.length(cover_cross(b - a, c - a)) / 2
+		}
 	}
 	grass, boulders := cover_test_kind(planet, "grass"), cover_test_kind(planet, "boulders")
 	for kind, kind_index in data.kinds {
@@ -808,7 +824,7 @@ cover_test_tally_snow :: proc(generation: Planet_Generation, planet: Planet, nod
 				tally.missing += 1
 				continue
 			}
-			if kind_index == grass {
+			if kind_index == grass && near[triangle] {
 				tally.grass[bands[triangle]] += 1
 			}
 			if kind_index == boulders && snow >= COVER_SNOW_GONE_WEIGHT {

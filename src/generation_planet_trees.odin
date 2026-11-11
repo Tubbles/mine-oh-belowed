@@ -29,6 +29,9 @@ import "generation_seed"
 
 PLANET_TREE_SEA_MARGIN_METRES :: 1
 PLANET_TREE_SLOPE_PROBE_METRES :: 1
+// A tree stands only where the ground this far under its relief is ground
+// (0327, planet_tree_ground), so none stands over a cave or a notch.
+PLANET_TREE_CAVE_PROBE_MILLIMETRES :: 1000
 // The trunk's base lies this far below the generated surface, which
 // covers a 35 degree slope under a 207 mm trunk.
 PLANET_TREE_BASE_SINK_MILLIMETRES :: 300
@@ -251,7 +254,11 @@ tree_hash_percent :: proc(hash: u64, minimum, maximum: i64) -> u8 {
 // The ground a tree may stand on, both placements' rule: the relief
 // there, not ok on a carving site (0324: a fin, a knoll or a cap, nor
 // over an arch's flank where the carve opens the column), below the sea
-// or under a lake's level (0312), each with the margin.
+// or under a lake's level (0312), each with the margin, nor where a cave
+// or a notch (0327) leaves air PLANET_TREE_CAVE_PROBE_MILLIMETRES under
+// the relief. The caves are read without the lakes, so the rule may
+// refuse a tree by a lake whose fade took the cave away, never keep one
+// over a cave.
 planet_tree_ground :: proc(generation: Planet_Generation, on_sphere: [3]i64) -> (relief: i64, ok: bool) {
 	column := surface_column(generation, on_sphere)
 	if column.carve.site.kind in CARVING_KINDS {
@@ -264,7 +271,23 @@ planet_tree_ground :: proc(generation: Planet_Generation, on_sphere: [3]i64) -> 
 	if level, found := planet_lake_level_at(generation.lakes, on_sphere, generation.radius); found && column.relief < level + margin {
 		return 0, false
 	}
+	if (column.cave_share > 0 || column.undercut.reach > 0) && !planet_tree_cave_probe_ground(generation, column, on_sphere) {
+		return 0, false
+	}
 	return column.relief, true
+}
+
+// Whether the sample PLANET_TREE_CAVE_PROBE_MILLIMETRES under the column's
+// relief along its radial is ground with the caves and the notches, read
+// with a copy of the generation without lakes or tiles.
+planet_tree_cave_probe_ground :: proc(generation: Planet_Generation, column: Surface_Column, on_sphere: [3]i64) -> bool {
+	dry := generation
+	dry.lakes = nil
+	dry.water_tiles = nil
+	up, _ := normalize_fixed(on_sphere)
+	distance := dry.radius + column.relief - millimetres_to_position_units(PLANET_TREE_CAVE_PROBE_MILLIMETRES)
+	depth := sample_depth(dry, column, cave_column(dry, column, on_sphere), World_Position(fixed_scale(up, distance)), distance, on_sphere)
+	return depth_to_density(depth, dry.spacing_millimetres) > 0
 }
 
 // The tree of a candidate kept by a placement: its trunk's base the

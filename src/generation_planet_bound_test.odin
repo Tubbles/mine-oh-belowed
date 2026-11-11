@@ -376,8 +376,9 @@ test_the_projected_box_holds_every_sample :: proc(t: ^testing.T) {
 }
 
 // The places of the bound tests on the generation's sphere: the home, the
-// spring at (79, 151), the nearest site of each kind and hashed
-// directions.
+// spring at (79, 151), the nearest site of each kind, with caves (0327)
+// the spring's cave mouth and the nearest notch of each kind
+// (test_cave_places), and hashed directions.
 test_bound_places :: proc(generation: Planet_Generation, hashed: int) -> [dynamic][3]i64 {
 	places := make([dynamic][3]i64, context.temp_allocator)
 	append(&places, generation.landform_home)
@@ -392,6 +393,9 @@ test_bound_places :: proc(generation: Planet_Generation, hashed: int) -> [dynami
 			}
 		}
 	}
+	for position in test_cave_places(generation) {
+		append(&places, projected_position(position, generation.radius))
+	}
 	for index in 0 ..< hashed {
 		append(&places, fixed_scale(test_bound_direction(1000 + index), generation.radius))
 	}
@@ -403,13 +407,47 @@ test_bound_places :: proc(generation: Planet_Generation, hashed: int) -> [dynami
 // flag.
 test_relief_box_misses :: proc(generation: Planet_Generation, first: Sample_Coordinate, size, step: i32) -> int {
 	lowest, highest := test_box_positions(first, size, step, generation.spacing_millimetres)
-	relief, carving := uncratered_relief_range(generation, projected_box(generation, lowest, highest))
+	relief, carving, _, _ := uncratered_relief_range(generation, projected_box(generation, lowest, highest))
 	misses := 0
 	for index in 0 ..< int(size * size * size) {
 		local := [3]i32{i32(index) % size, i32(index) / size % size, i32(index) / (size * size)}
 		position := sample_to_world_position(first + Sample_Coordinate(local * step), generation.spacing_millimetres)
 		column := uncratered_column(generation, projected_position(position, generation.radius))
 		if column.relief < relief.lowest || column.relief > relief.highest || (column.carve.site.kind in CARVING_KINDS && !carving) {
+			misses += 1
+		}
+	}
+	return misses
+}
+
+// The samples of the box whose density a cave changes (sample_depth
+// against the same without the cave) while the box's bound says no cave,
+// the sample lies at or under its cave floor or cave_sample_clear holds;
+// and those a notch changes (against column_depth) while the bound says
+// no notch or the sample lies at or under its notch floor (0327).
+test_cave_box_misses :: proc(generation: Planet_Generation, first: Sample_Coordinate, size, step: i32) -> int {
+	lowest, highest := test_box_positions(first, size, step, generation.spacing_millimetres)
+	bound := relief_box_bound(generation, lowest, highest)
+	if bound.crater {
+		return 0
+	}
+	misses := 0
+	for index in 0 ..< int(size * size * size) {
+		local := [3]i32{i32(index) % size, i32(index) / size % size, i32(index) / (size * size)}
+		position := sample_to_world_position(first + Sample_Coordinate(local * step), generation.spacing_millimetres)
+		_, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+		if !needs_relief {
+			continue
+		}
+		height := distance - generation.radius
+		column := surface_column(generation, on_sphere)
+		caved := depth_to_density(sample_depth(generation, column, cave_column(generation, column, on_sphere), position, distance, on_sphere), generation.spacing_millimetres)
+		notched := depth_to_density(sample_depth(generation, column, {}, position, distance, on_sphere), generation.spacing_millimetres)
+		plain := depth_to_density(column_depth(column, height), generation.spacing_millimetres)
+		if caved != notched && (!bound.caves || height <= bound.cave_floor || cave_sample_clear(generation, bound, position, distance, on_sphere)) {
+			misses += 1
+		}
+		if notched != plain && (!bound.undercut || height <= bound.undercut_floor) {
 			misses += 1
 		}
 	}
@@ -425,6 +463,7 @@ test_the_relief_box_bound_holds_every_sample :: proc(t: ^testing.T) {
 		design_landform_test_planet(8000),
 		design_landmark_test_planet(8000),
 		design_carving_test_planet(8000),
+		design_caves_test_planet(8000),
 		pre_0306_test_home_at(8000),
 	}
 	for planet, planet_index in planets {
@@ -439,6 +478,7 @@ test_the_relief_box_bound_holds_every_sample :: proc(t: ^testing.T) {
 				for size in ([2]i32{8, 4}) {
 					for step in ([2]i32{1, 8}) {
 						misses += test_relief_box_misses(generation, first, size, step)
+						misses += test_cave_box_misses(generation, first, size, step)
 					}
 				}
 			}
@@ -453,9 +493,9 @@ test_the_relief_box_bound_holds_every_sample :: proc(t: ^testing.T) {
 // the overlay, which with the crater at the impact lists exactly the
 // samples impact_crater_sample changes, in index order. Returns the
 // samples that differ.
-test_bounded_chunk_differences :: proc(planet: Planet, generation: Planet_Generation, coordinate: Field_Chunk_Coordinate) -> int {
+test_bounded_chunk_differences :: proc(planet: Planet, generation: Planet_Generation, coordinate: Field_Chunk_Coordinate, seed: u64 = DEFAULT_WORLD_SEED) -> int {
 	chunk := new(Field_Chunk, context.temp_allocator)
-	generate_field_chunk(DEFAULT_WORLD_SEED, planet, generation.spacing_millimetres, coordinate, chunk, crater_overlay = true)
+	generate_field_chunk(seed, planet, generation.spacing_millimetres, coordinate, chunk, crater_overlay = true)
 	defer drop_field_crater_overlay(chunk)
 	origin := field_chunk_origin(coordinate)
 	differences := 0
@@ -522,7 +562,9 @@ test_surface_position :: proc(generation: Planet_Generation, point: [3]i64, heig
 
 // The positions the generation test reads round: the home's surface, a
 // chunk over it and one and two under it, the spring's surface, an
-// arch's and a grotto's, and four hashed directions' surfaces.
+// arch's and a grotto's, with caves the spring's cave mouth and the
+// nearest notches (test_cave_places), and four hashed directions'
+// surfaces.
 test_bounded_positions :: proc(generation: Planet_Generation) -> [dynamic]World_Position {
 	positions := make([dynamic]World_Position, context.temp_allocator)
 	home := generation.landform_home
@@ -538,8 +580,30 @@ test_bounded_positions :: proc(generation: Planet_Generation) -> [dynamic]World_
 			}
 		}
 	}
+	for position in test_cave_places(generation) {
+		append(&positions, position)
+	}
 	for index in 0 ..< 4 {
 		append(&positions, test_surface_position(generation, fixed_scale(test_bound_direction(2000 + index), generation.radius), 0))
+	}
+	return positions
+}
+
+// With caves (0327) the spring's cave mouth (its open sample) and the
+// centres of the nearest gorge's and mesa's notches, those found.
+test_cave_places :: proc(generation: Planet_Generation) -> [dynamic]World_Position {
+	positions := make([dynamic]World_Position, context.temp_allocator)
+	if generation.caves == {} {
+		return positions
+	}
+	if open, _, found := test_cave_mouth(generation, test_bound_camera(generation, 79, 151)); found {
+		append(&positions, sample_to_world_position(open, generation.spacing_millimetres))
+	}
+	for kind in Notch_Kind {
+		if point, notch, found := test_nearest_notch(generation, kind); found {
+			up, _ := normalize_fixed(point)
+			append(&positions, World_Position(fixed_scale(up, generation.radius + notch.centre)))
+		}
 	}
 	return positions
 }
@@ -567,7 +631,8 @@ test_bounded_generation_differences :: proc(planet: Planet) -> (chunk_difference
 }
 
 // The shipped home with the crater dug at the impact, so the chunks list
-// its overlay.
+// its overlay; with its caves (0327), whose mouth and notches the places
+// hold.
 @(test) // slow
 test_the_bounded_generation_matches_the_samples :: proc(t: ^testing.T) {
 	planet := shipped_test_home_at(8000)
@@ -584,6 +649,45 @@ test_the_bounded_generation_matches_the_samples_with_the_crater_baked :: proc(t:
 	chunk_differences, grid_differences := test_bounded_generation_differences(planet)
 	testing.expect_value(t, chunk_differences, 0)
 	testing.expect_value(t, grid_differences, 0)
+}
+
+// The shipped home without its caves: 0314's case.
+@(test) // slow
+test_the_bounded_generation_matches_the_samples_without_the_caves :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	planet.crater_at_impact = true
+	planet.caves = {}
+	chunk_differences, grid_differences := test_bounded_generation_differences(planet)
+	testing.expect_value(t, chunk_differences, 0)
+	testing.expect_value(t, grid_differences, 0)
+}
+
+// Notch air whose box of 4 holds no cave, open to the sky through a
+// tunnel 3 m up its radial (seed 7, found by 0327's verification): the
+// chunk leaves it unshaded as the samples do, the march reading the
+// column's caves whatever the box's flag.
+@(test) // slow
+test_the_bounded_chunk_shades_notch_air_under_a_tunnel :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	generation := make_planet_generation(7, planet, 1000)
+	sample := Sample_Coordinate{-1630, 7759, 1289}
+	coordinate := sample_to_field_chunk_coordinate(sample)
+	testing.expect_value(t, coordinate, Field_Chunk_Coordinate{-51, 242, 40})
+	position := sample_to_world_position(sample, 1000)
+	_, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+	testing.expect(t, needs_relief, "the sample reads its column")
+	boxes := new(Relief_Boxes, context.temp_allocator)
+	boxes^ = {
+		first               = field_chunk_origin(coordinate),
+		step                = 1,
+		samples             = FIELD_CHUNK_SIZE,
+		spacing_millimetres = 1000,
+	}
+	_, decided, caves := planet_sample_by_boxes(generation, boxes, cast([3]i32)(sample - boxes.first), position, distance, on_sphere)
+	testing.expect(t, !decided && !caves, "the box of 4 leaves the sample to its column without caves")
+	value, shaded, _ := planet_sample_reading(generation, position)
+	testing.expect(t, value.density <= 0 && !shaded, "the sample is air open through the tunnel")
+	testing.expect_value(t, test_bounded_chunk_differences(planet, generation, coordinate, 7), 0)
 }
 
 @(test) // slow
@@ -623,12 +727,12 @@ test_box_bound_left :: proc(generation: Planet_Generation, camera: World_Positio
 				for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 					local := field_index_to_local(index)
 					position := sample_to_world_position(origin + Sample_Coordinate(local), generation.spacing_millimetres)
-					_, distance, _, needs_relief := planet_sample_shortcut(generation, position)
+					_, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
 					if !needs_relief {
 						continue
 					}
 					needing += 1
-					if _, decided := planet_sample_by_boxes(generation, boxes, local, position, distance); !decided {
+					if _, decided, _ := planet_sample_by_boxes(generation, boxes, local, position, distance, on_sphere); !decided {
 						left += 1
 					}
 				}
@@ -638,7 +742,8 @@ test_box_bound_left :: proc(generation: Planet_Generation, camera: World_Positio
 	return
 }
 
-// The bound leaves 1.33M of 8.43M (15.8 percent) round the spring.
+// The bound leaves 1.33M of 8.43M (15.8 percent) round the spring, 1.49M
+// (17.7 percent) with the caves (0327).
 @(test) // slow
 test_the_box_bound_leaves_few_columns :: proc(t: ^testing.T) {
 	generation := make_planet_generation(DEFAULT_WORLD_SEED, shipped_test_home_at(8000), 1000)

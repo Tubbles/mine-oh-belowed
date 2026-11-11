@@ -54,6 +54,9 @@ Planet_Generation_Record :: struct {
 	// Zero in a file written before it (0312): no derived springs, no
 	// lakes.
 	waters:                                         Planet_Waters,
+	// Zero in a file written before them (0327): no caves and no
+	// undercuts.
+	caves:                                          Planet_Caves,
 }
 
 // Borrows the planet's springs.
@@ -79,6 +82,7 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		landmarks = planet.landmarks,
 		climate = planet_climate_field(planet.climate),
 		waters = planet.waters,
+		caves = planet.caves,
 	}
 }
 
@@ -119,6 +123,8 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	result.waters = record.waters
 	result.water_features = {}
 	result.water_tiles = nil
+	// Set even when zero: the data's caves never reach an old world.
+	result.caves = record.caves
 	result.springs = slice.clone(record.springs, allocator)
 	if record.home_recorded {
 		result.home = record.home
@@ -443,6 +449,16 @@ recorded_waters_note :: proc(recorded: Planet_Generation_Record, planet: Planet)
 	return ""
 }
 
+// The log line of a world file recorded before the caves (0327) on a
+// planet whose data has them, or "": zero is off, so nothing is remapped
+// and the world keeps the ground it was made with.
+recorded_caves_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
+	if !planet_generation_is_recorded(recorded) || recorded.caves != {} || planet.caves == {} {
+		return ""
+	}
+	return "world: the world file records no caves, it keeps the ground it was made with"
+}
+
 // The log line of a world file without a forest (0310) on a planet whose
 // data has one, or "": trees recorded before the forest (zero is off, so
 // the world keeps the groves of its record), or trees taken from the data
@@ -513,6 +529,9 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 		platform.log_printf("%s", note)
 	}
 	if note := recorded_waters_note(recorded, planet); note != "" {
+		platform.log_printf("%s", note)
+	}
+	if note := recorded_caves_note(recorded, planet); note != "" {
 		platform.log_printf("%s", note)
 	}
 	if note := recorded_forest_note(recorded, planet); note != "" {

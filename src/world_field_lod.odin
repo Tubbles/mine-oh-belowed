@@ -367,11 +367,17 @@ select_field_nodes :: proc(view: Field_View, allocator := context.allocator) -> 
 // spacing from the surface, so with the fine spacing a coarse edge would
 // read the full density at both ends and its crossing would land in the
 // middle, terracing the slopes; in the coarse spacing the densities stay
-// linear across every coarse cell the surface crosses.
+// linear across every coarse cell the surface crosses. A grid coarser
+// than CAVE_GRID_MOST_SPACING_MILLIMETRES has no caves and no notches
+// (0327): a tunnel of a few metres sampled at 4 m or more aliases into
+// dents and holes on the far ground.
 field_grid_generation :: proc(generation: Planet_Generation, step: i32) -> Planet_Generation {
 	coarse := generation
 	coarse.spacing_millimetres = generation.spacing_millimetres * int(step)
 	coarse.spacing = sample_axis_to_position(1, coarse.spacing_millimetres)
+	if coarse.spacing_millimetres > CAVE_GRID_MOST_SPACING_MILLIMETRES {
+		coarse.caves = {}
+	}
 	return coarse
 }
 
@@ -424,17 +430,20 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // coarse_field_water_density, so the sea shows at every level. The light
 // of a loaded sample is its own; a sample not loaded is generated air
 // under the sky or ground, so it has full sky light in air and none in
-// ground (0173) or in carved air under a roof (0324, planet_sample_shaded),
-// so a grotto's mouth reads dark from afar. Safe on any thread.
+// ground (0173) or in carved air under a roof (0324, 0327,
+// planet_sample_shaded), so a grotto's or a cave's mouth reads dark from
+// afar. The samples read the lakes meeting the grid's box widened by the
+// caves' fade, as a chunk's do (cave_lakes_generation). Safe on any
+// thread.
 generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, grid: ^Field_Grid) {
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
-	density_generation := field_grid_generation(generation, grid.step)
+	low := cast([3]i64)sample_to_world_position(grid.origin - grid.step, generation.spacing_millimetres)
+	high := cast([3]i64)sample_to_world_position(grid.origin + (FIELD_GRID_CELLS + 1) * grid.step, generation.spacing_millimetres)
+	density_generation := cave_lakes_generation(field_grid_generation(generation, grid.step), low, high)
 	lakes: []Planet_Lake
 	if len(generation.lakes) > 0 || generation.water_tiles != nil {
-		low := grid.origin - grid.step
-		high := grid.origin + (FIELD_GRID_CELLS + 1) * grid.step
-		lakes = generation_lakes_meeting_box(generation, cast([3]i64)sample_to_world_position(low, generation.spacing_millimetres), cast([3]i64)sample_to_world_position(high, generation.spacing_millimetres))
+		lakes = generation_lakes_meeting_box(generation, low, high)
 	}
 	// The relief's range over boxes of the grid's samples (0314), of the
 	// coarse generation, whose spacing gives the air band and the topsoil.

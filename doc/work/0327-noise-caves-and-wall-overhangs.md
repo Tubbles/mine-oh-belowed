@@ -1,6 +1,6 @@
 # 0327: Noise caves and overhangs along the walls
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-12)
 
 0324 carves its arches, grottos and mushroom rocks as shapes under 0323's sites and left out the rest of its scope: Minecraft's noise caves (cheese, spaghetti, noodle) and overhangs along the gorge walls and the mesas' tier edges. Each needs a three-dimensional noise at every sample of the shell near the surface, on a relief 0306 made three times as costly, and air under ground that the generated light of 0324 shades everywhere instead of in a few chunks. After 0314 (the generation's cost).
 
@@ -214,3 +214,13 @@ The relief map shows no cave. The implementer reports the spring's cave mouth an
 4. A cave under a building is accepted as written.
 5. The goal's "without a slower fill of the view" is read as: the home's view, which the calm circle and the lowlands keep free of caves, costs what 0314 left it, and a view over cave ground pays for its caves. The night's two reports are run before the landing and quoted in the log. If the spring's mesh time rises by more than its crossing cells do, that is a finding for the fix round, not a threshold to tune away.
 6. One more capture: a tunnel that crosses from level 1 into level 2 (160 m out), seen from the camera along it, since level 2 holds no cave and the tunnel's mesh ends at the seam. If the end shows as a hole, the implementer reports it and adds nothing: the answer is an item of its own.
+
+### Deviations (implementation, 2026-11-11)
+
+- `CAVE_SHELL_FADE_METRES` and `CAVE_GRID_MOST_SPACING_MILLIMETRES` live in `data_planet.odin` beside the caves' maxima, with a new `CAVE_LEAST_SIZE_MILLIMETRES` (500, the least tunnel width and notch reach): `caves_problem` reads them, and the content cluster may not reach the world's files. Its bounds print through its own `cave_bounds_problem`, since `landmark_bounds_problem` prefixes `landmarks.`.
+- `undercut_distance` is at least the gap to the notch's box (`abs(up) - half_height`, `abs(offset) - reach`): the ellipse's approximation scales by the shorter semi axis, so under a notch taller than its reach it came within a spacing of samples well under the notch, under the bound's floor.
+- `sample_depth` drops a notch whose reach the lakes' fade leaves under `UNDERCUT_LEAST_REACH_MILLIMETRES`, as `undercut_presence` does, so no sliver of a notch stands at a lake's margin.
+- The lakes' fade is read last (fix round 1): `cave_distance` only where the caves unfaded come within a spacing of the sample, `sample_depth`'s notch only within a spacing of the notch's box at its full reach (`undercut_box_gap`). The fade only raises both distances, so the densities stay the snapshot's.
+- The roof march (`planet_sample_from_column`) reads the column's caves even where the sample's box flags none (fix round 1): its steps leave the box.
+- `undercut_box_bound` takes the relief's range before the landmarks (`uncratered_relief_range` returns it as a fourth value), the notches' centres being placed from it: the gorge's floor is its lowest less half the gorge and the half height, the mesa's its lowest plus half a tier less the half height, each less a spacing.
+- `test_the_walls_overhang` reads the notch at the column `test_nearest_notch` finds (inside the rock within the reach, its relief 1.5 m or more over the notch's top there), not at a quarter of the reach: the walls stand 50 to 60 degrees, so at a quarter of the reach the notch is open to the sky and the overhang stands over its far part. The helper takes a test enum `Notch_Kind` (`Landmark_Kind` has no gorge or mesa), and `test_cave_mouth` returns sample coordinates and a found flag.

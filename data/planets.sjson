@@ -1,11 +1,12 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
 // required but relief_shape (0189), landforms (0306), landmarks (0323),
-// climate (0307), waters (0312) and cover (0311), which are off without
-// them; the trees are doc/content.md, Trees (0197); the terrain field
-// generates a planet from its record, the world seed and the sample
-// spacing (generation_planet.odin). A world records the values it was
-// made with in its world.sjson; once the session generates the field
-// from them (0179), an edit here reshapes new worlds only.
+// climate (0307), waters (0312), cover (0311) and caves (0327), which
+// are off without them; the trees are doc/content.md, Trees (0197);
+// the terrain field generates a planet from its record, the world seed
+// and the sample spacing (generation_planet.odin). A world records the
+// values it was made with in its world.sjson; once the session
+// generates the field from them (0179), an edit here reshapes new
+// worlds only.
 planets = [
 	{
 		id = "home"
@@ -359,6 +360,48 @@ planets = [
 			// this edge as the ground is wanted (0 keeps them round the home
 			// only).
 			tile_metres = 1024
+		}
+		// The caves and the walls' undercuts (work item 0327,
+		// doc/content.md, Planets), optional and needing the landforms,
+		// recorded by a world.
+		caves = {
+			// Their share at the landforms' region knots, times the
+			// wildness, so none lies in the home's calm circle; none in the
+			// three lowest regions, all from the sixth up.
+			region_caves_percent = [0, 0, 0, 30, 70, 100, 100, 100, 100]
+			// Within this many metres under the height map, the tunnels
+			// narrowing and the chambers shrinking over the last 8, and
+			// over the sea level plus dry_metres.
+			shell_metres = 32
+			dry_metres = 2
+			// Where a noise of this wavelength lies above the threshold
+			// (percent of its range), fading in over 6 percent.
+			presence_wavelength_metres = 420
+			presence_threshold_percent = -20
+			// The tunnels lie on levels this far apart at fixed heights,
+			// so the terrain cuts them into mouths, all swung up and down
+			// by a noise of the wavelength by up to the swing.
+			level_metres = 18
+			level_wavelength_metres = 520
+			level_swing_metres = 9
+			// Along the zero lines of a noise of this wavelength, each an
+			// ellipse of the width and the height in half axes (0 width
+			// none).
+			tunnel_wavelength_metres = 96
+			tunnel_width_millimetres = 2400
+			tunnel_height_millimetres = 1600
+			// The chambers, where a noise of this wavelength lies under
+			// minus the threshold (100 none), under roof_metres of rock.
+			chamber_wavelength_metres = 56
+			chamber_threshold_percent = 45
+			roof_metres = 8
+			// The notches at half a gorge wall's or a mesa cliff's height,
+			// the reach into the rock (0 none) and the half height, where a
+			// noise of the wavelength lies above the threshold.
+			undercut_wavelength_metres = 40
+			undercut_threshold_percent = -20
+			undercut_reach_millimetres = 3000
+			undercut_height_millimetres = 2000
 		}
 		// The ground cover (work item 0311, doc/content.md, Planets),
 		// optional and needing the climate: tufts, flowers, ferns and stones

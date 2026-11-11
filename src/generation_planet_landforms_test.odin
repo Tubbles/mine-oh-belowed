@@ -379,10 +379,10 @@ test_landforms_problems :: proc(t: ^testing.T) {
 // Measured, not asserted (0306), so it runs only with the define (log
 // and time are required imports for it): the relief's cost per point and the
 // coarse grids' and the simulated set's samples that need it, before the
-// landforms, with them (0306) and with the landmarks (0323), those the box
-// bound leaves to the column and the generation's wall time with the
-// bound beside the samples read one by one (0314), and the tree tiles'
-// wall time. Run alone with
+// landforms, with them (0306), with the landmarks (0323, 0314) and with
+// the caves (0327, after), those the box bound leaves to the column and
+// the generation's wall time with the bound beside the samples read one
+// by one (0314), and the tree tiles' wall time. Run alone with
 // ./build.sh test quick game.test_report_the_relief_cost -o:speed -define:RELIEF_COST=true
 // or in ./build.sh nightly.
 RELIEF_COST :: #config(RELIEF_COST, false)
@@ -393,8 +393,10 @@ when RELIEF_COST {
 		levels := test_field_game_config().field_view.level_distances_metres
 		without_landmarks := shipped_test_home_at(8000)
 		without_landmarks.landmarks = {}
-		labels := [3]string{"before", "0306", "after"}
-		for planet, planet_index in ([3]Planet{pre_0306_test_home_at(8000), without_landmarks, shipped_test_home_at(8000)}) {
+		without_caves := shipped_test_home_at(8000)
+		without_caves.caves = {}
+		labels := [4]string{"before", "0306", "0314", "after"}
+		for planet, planet_index in ([4]Planet{pre_0306_test_home_at(8000), without_landmarks, without_caves, shipped_test_home_at(8000)}) {
 			label := labels[planet_index]
 			generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
 			report_relief_cost_per_point(generation, label)
@@ -453,12 +455,12 @@ when RELIEF_COST {
 				for y in i32(-1) ..= FIELD_GRID_CELLS {
 					for x in i32(-1) ..= FIELD_GRID_CELLS {
 						position := sample_to_world_position(origin + Sample_Coordinate([3]i32{x, y, z} * step), generation.spacing_millimetres)
-						_, distance, _, needs_relief := planet_sample_shortcut(grid_generation, position)
+						_, distance, on_sphere, needs_relief := planet_sample_shortcut(grid_generation, position)
 						if !needs_relief {
 							continue
 						}
 						samples[node.level] += 1
-						if _, decided := planet_sample_by_boxes(grid_generation, boxes, {x + 1, y + 1, z + 1}, position, distance); !decided {
+						if _, decided, _ := planet_sample_by_boxes(grid_generation, boxes, {x + 1, y + 1, z + 1}, position, distance, on_sphere); !decided {
 							left[node.level] += 1
 						}
 					}

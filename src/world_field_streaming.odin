@@ -286,8 +286,8 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		// moved off the generated surface (field_natural_share). The
 		// finest level places the cover (0311) and measures its cuts with
 		// or without loaded samples, since the generation carves below the
-		// height map (an arch, a grotto): its cover is then the same from
-		// a generated grid as from the loaded chunks.
+		// height map (an arch, a grotto, a cave, a notch): its cover is
+		// then the same from a generated grid as from the loaded chunks.
 		cover: ^Field_Cover_Data = nil
 		if job.node.level == 0 && shared.cover.on {
 			cover = &result.cover

@@ -28,9 +28,10 @@ import "core:slice"
 // The generation gives every air sample full sky light
 // (light_generated_field_chunk): the generated terrain is a height field
 // along the radial, so no generated air lies under ground, but for the
-// carved air under a carving site's roof (0324, column_shades), which
-// generates without sky and is lit by the fill from the chunk's lit air
-// on arrival (seed_field_chunk_shade). Under an edit
+// carved air under a roof, a carving site's (0324, column_shades), a
+// notch's or a cave's (0327, carved_air_roofed), which generates without
+// sky and is lit by the fill from the chunk's lit air on arrival
+// (seed_field_chunk_shade). Under an edit
 // the samples in the edit's shadow march again at the end of the edit
 // drain (update_field_sky_after_edits).
 
@@ -313,7 +314,8 @@ follow_field_terrain_with_light :: proc(world: ^Field_World, chunk: ^Field_Chunk
 
 // The generation's sky: full in every air sample (the generated terrain
 // is a height field along the radial); generate_field_chunk then clears
-// it in the carved air under a roof (0324). Safe on any thread.
+// it in the carved air under a roof, a site's (0324), a notch's or a
+// cave's (0327). Safe on any thread.
 light_generated_field_chunk :: proc(chunk: ^Field_Chunk) {
 	for density, index in chunk.density {
 		chunk.sky_light[index] = density > 0 ? 0 : FIELD_LIGHT_FULL

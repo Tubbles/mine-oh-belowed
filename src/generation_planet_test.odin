@@ -193,9 +193,10 @@ test_strata_follow_the_depth_below_the_local_surface :: proc(t: ^testing.T) {
 }
 
 // The ground corners of a grid's surface cells (the cells whose eight
-// corners are neither all ground nor all air) and how many of them are
-// stone.
-coarse_grid_stone_corners :: proc(grid: ^Field_Grid) -> (ground, stone: int) {
+// corners are neither all ground nor all air) that the relief crosses
+// (a corner at or under it and one over it), and how many of them are
+// stone: a cave's walls (0327) are stone by design and lie under it.
+coarse_grid_stone_corners :: proc(generation: Planet_Generation, grid: ^Field_Grid) -> (ground, stone: int) {
 	for z in i32(0) ..< FIELD_GRID_CELLS {
 		for y in i32(0) ..< FIELD_GRID_CELLS {
 			for x in i32(0) ..< FIELD_GRID_CELLS {
@@ -207,7 +208,7 @@ coarse_grid_stone_corners :: proc(grid: ^Field_Grid) -> (ground, stone: int) {
 						cell_stone += grid.material[index] == .Stone ? 1 : 0
 					}
 				}
-				if cell_ground == 0 || cell_ground == 8 {
+				if cell_ground == 0 || cell_ground == 8 || !coarse_grid_cell_crosses_relief(generation, grid, {x, y, z}) {
 					continue
 				}
 				ground += cell_ground
@@ -216,6 +217,23 @@ coarse_grid_stone_corners :: proc(grid: ^Field_Grid) -> (ground, stone: int) {
 		}
 	}
 	return
+}
+
+// Whether the relief crosses the grid's cell: a corner at or under the
+// surface relief of its point on the sphere and a corner over it.
+coarse_grid_cell_crosses_relief :: proc(generation: Planet_Generation, grid: ^Field_Grid, cell: [3]i32) -> bool {
+	under, over := false, false
+	for corner in i32(0) ..< 8 {
+		local := cell + {corner & 1, (corner >> 1) & 1, corner >> 2}
+		position := sample_to_world_position(grid.origin + Sample_Coordinate(local * grid.step), generation.spacing_millimetres)
+		distance := vector_length(cast([3]i64)position)
+		if distance - generation.radius <= surface_relief(generation, project_onto_sphere(position, distance, generation.radius)) {
+			under = true
+		} else {
+			over = true
+		}
+	}
+	return under && over
 }
 
 // The node of the level holding the position's sample.
@@ -242,7 +260,7 @@ test_the_coarse_levels_read_topsoil_at_the_surface :: proc(t: ^testing.T) {
 			for level in i32(1) ..< FIELD_LEVEL_COUNT {
 				grid := new(Field_Grid, context.temp_allocator)
 				generate_field_grid(generation, test_surface_node(surface, spacing, level), grid)
-				ground, stone := coarse_grid_stone_corners(grid)
+				ground, stone := coarse_grid_stone_corners(generation, grid)
 				testing.expectf(t, ground >= 1000 && stone * 100 <= ground, "%d mm at %v, level %d: %d of %d ground corners are stone", spacing, place, level, stone, ground)
 			}
 		}
@@ -259,7 +277,7 @@ test_the_coarse_levels_read_topsoil_at_the_surface :: proc(t: ^testing.T) {
 			continue
 		}
 		generate_field_grid(generation, node, grid)
-		ground, stone := coarse_grid_stone_corners(grid)
+		ground, stone := coarse_grid_stone_corners(generation, grid)
 		testing.expectf(t, ground >= 1000 && stone * 100 <= ground, "loaded, level %d: %d of %d ground corners are stone", level, stone, ground)
 	}
 }
