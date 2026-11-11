@@ -79,6 +79,13 @@ Render_Facts :: struct {
 	item_atlas_size:        [2]int,
 	ui_atlas_size:          [2]int,
 	underwater:             bool,
+	// A field session (0342): the chunk counts are the field renderer's
+	// nodes, the jobs the field streaming's.
+	field_session:          bool,
+	// The frame profile over its last frames, and its GPU timing's state
+	// (render_frame_profile.odin, 0342).
+	profile:                Profile_Report,
+	profile_gpu:            Frame_Gpu_State,
 }
 
 // What the World page shows besides the F4 overlay's lines, filled by the
@@ -191,13 +198,77 @@ render_page_lines :: proc(facts: Render_Facts) -> []Diagnostics_Line {
 	append_line(&lines, facts.underwater, "fog %.1f to %.1f  under water %s", facts.fog_start, facts.fog_end, yes_no(facts.underwater))
 	append_line(&lines, false, "weather %s %.2f  day %.3f", weather_kind_words[facts.weather.kind], facts.weather.intensity, facts.day_fraction)
 	append_line(&lines, false, "")
-	append_line(&lines, false, "chunks loaded %d  drawn %d  vertices %d", facts.loaded_chunk_count, facts.drawn_chunk_count, facts.vertex_count)
+	if facts.field_session {
+		append_line(&lines, false, "field nodes meshed %d  drawn %d  vertices %d", facts.loaded_chunk_count, facts.drawn_chunk_count, facts.vertex_count)
+	} else {
+		append_line(&lines, false, "chunks loaded %d  drawn %d  vertices %d", facts.loaded_chunk_count, facts.drawn_chunk_count, facts.vertex_count)
+	}
 	append_line(&lines, facts.uploaded_mesh_count > 0, "meshes uploaded %d  pending jobs %d", facts.uploaded_mesh_count, facts.pending_job_count)
-	append_line(&lines, false, "water meshes drawn %d  flames %d", facts.drawn_water_mesh_count, facts.flame_count)
-	append_line(&lines, false, "particles %d  weather particles %d", facts.live_particle_count, facts.weather_particle_count)
+	append_line(&lines, false, "water meshes drawn %d  flames %d  particles %d  weather particles %d", facts.drawn_water_mesh_count, facts.flame_count, facts.live_particle_count, facts.weather_particle_count)
 	append_line(&lines, false, "")
 	append_line(&lines, false, "atlas block %d x %d  item %d x %d  ui %d x %d", facts.block_atlas_size.x, facts.block_atlas_size.y, facts.item_atlas_size.x, facts.item_atlas_size.y, facts.ui_atlas_size.x, facts.ui_atlas_size.y)
+	append_profile_lines(&lines, facts.profile, facts.profile_gpu)
 	return lines[:]
+}
+
+// The frame profile's means over its last frames (0342): the header,
+// the sections four to a row (cpu/gpu for the GPU's sections while GPU
+// frames exist), the tick's field sections and machines per tick, the
+// counters four to a row.
+append_profile_lines :: proc(lines: ^[dynamic]Diagnostics_Line, report: Profile_Report, gpu_state: Frame_Gpu_State) {
+	draws: f32
+	for mean in report.draws_mean {
+		draws += mean
+	}
+	append_line(lines, false, "")
+	append_line(lines, false, "profile %d frames  work %.2f ms  gpu %s  present %.2f ms  draws %d", report.frames, report.work.mean, profile_gpu_text(report, gpu_state), report.cpu[.Present].mean, int(math.round(draws)))
+	row := make([dynamic]string, context.temp_allocator)
+	for section in Frame_Section {
+		gpu_section := report.gpu_frames > 0 && section >= .Prepare && section <= .Composite
+		if gpu_section {
+			append(&row, fmt.tprintf("%s %.2f/%.2f", diagnostics_words(section), report.cpu[section].mean, report.gpu_sections[section].mean))
+		} else {
+			append(&row, fmt.tprintf("%s %.2f", diagnostics_words(section), report.cpu[section].mean))
+		}
+		flush_diagnostics_row(lines, &row)
+	}
+	machines: f32
+	for section in Tick_Section.Belts ..= Tick_Section.Outcrops_And_Crates {
+		machines += report.tick_sections[section]
+	}
+	ticks := report.tick_sections
+	append_line(lines, false, "tick %.2f  players %.2f  edits %.2f  water %.2f  light %.2f  machines %.2f  hash %.2f", report.tick_mean, ticks[.Field_Players], ticks[.Field_Edits], ticks[.Field_Water], ticks[.Field_Light], machines, ticks[.State_Hash])
+	for counter in Frame_Counter {
+		append(&row, fmt.tprintf("%s %d", diagnostics_words(counter), int(math.round(report.counters_mean[counter]))))
+		flush_diagnostics_row(lines, &row)
+	}
+}
+
+// The GPU's frame mean, or why there is none.
+profile_gpu_text :: proc(report: Profile_Report, gpu_state: Frame_Gpu_State) -> string {
+	switch {
+	case report.gpu_frames > 0:
+		return fmt.tprintf("%.2f ms", report.gpu.mean)
+	case gpu_state == .Unavailable:
+		return "unavailable"
+	}
+	return "off"
+}
+
+// Four entries make a line.
+flush_diagnostics_row :: proc(lines: ^[dynamic]Diagnostics_Line, row: ^[dynamic]string) {
+	if len(row) < 4 {
+		return
+	}
+	append_line(lines, false, "%s", strings.join(row[:], "  ", context.temp_allocator))
+	clear(row)
+}
+
+// An enum value's name in lower case words: Shadow_Terrain is "shadow
+// terrain".
+diagnostics_words :: proc(value: any) -> string {
+	words, _ := strings.replace_all(lower_name(value), "_", " ", context.temp_allocator)
+	return words
 }
 
 world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {

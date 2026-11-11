@@ -649,6 +649,13 @@ draw_field_trees :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 	set_tree_float(trees, .Far_Fade_Metres, f32(config.far_fade_metres))
 	draw_near_trees(scene.models, scene.content.field.tree_species, near, brightness_color(sky))
 	draw_far_tree_cards(trees, far, brightness_color(sky), scene.lights.sun_shadow.texture)
+	count_frame(scene.profile, .Near_Trees, len(near))
+	count_frame(scene.profile, .Far_Tiles, len(far))
+	cards := 0
+	for entry in far {
+		cards += entry.tile.count
+	}
+	count_frame(scene.profile, .Far_Cards, cards)
 }
 
 // The near trees instanced through the tree shader's material.
@@ -689,6 +696,7 @@ draw_tree_instances :: proc(models: Model_Renderer, species_list: []Field_Tree_S
 		}
 		if len(matrices) > 0 {
 			rl.DrawMeshInstanced(model.body[.Lit], material, raw_data(matrices), i32(len(matrices)))
+			count_draw_call()
 		}
 	}
 }
@@ -716,6 +724,7 @@ draw_far_tree_cards :: proc(trees: Tree_Draw, far: []Far_Tile, daylight: rl.Colo
 	for entry in far {
 		rlgl.EnableVertexArray(entry.tile.vao)
 		rlgl.DrawVertexArrayInstanced(0, TREE_CARD_VERTEX_COUNT, i32(entry.tile.count))
+		count_draw_call()
 	}
 	rlgl.EnableBackfaceCulling()
 	rlgl.DisableVertexArray()

@@ -315,6 +315,7 @@ draw_field_water :: proc(renderer: ^Field_Renderer, visible: []Field_Node_Render
 	for render in visible {
 		if render.has_water {
 			rl.DrawMesh(render.water, renderer.material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+			count_draw_call()
 		}
 	}
 	rlgl.DrawRenderBatchActive()
@@ -428,12 +429,14 @@ draw_field_globe :: proc(renderer: ^Field_Renderer, models: Model_Renderer, dayl
 	material := model_layer_material(models, .Lit)
 	material.maps[rl.MaterialMapIndex.ALBEDO].color = brightness_color(renderer.globe_color * daylight_tint)
 	rl.DrawMesh(renderer.globe, material, rl.Matrix(1))
+	count_draw_call()
 }
 
 // Must run between BeginMode3D and EndMode3D, after the globe. The
 // selected nodes' terrain, then the cover on the visible ones (0311),
-// then their water, lit by the frame's open sky and torchlight.
-draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights) {
+// then their water, lit by the frame's open sky and torchlight. A frame
+// profile (0342) gets the Cover and Water marks and the counts.
+draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights, profile: ^Frame_Profile = nil) {
 	renderer.drawn_node_count = 0
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
 	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
@@ -442,6 +445,7 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	set_field_frame_lights(renderer, lights)
 	set_field_water_color(renderer, {})
 	visible := make([dynamic]Field_Node_Render, 0, len(selection), context.temp_allocator)
+	triangles, water_nodes := 0, 0
 	for node in selection {
 		render, found := renderer.meshes[node]
 		if !found || !field_node_in_frustum(frustum, render, node, renderer.spacing_millimetres) {
@@ -450,11 +454,33 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 		append(&visible, render)
 		if render.has_mesh {
 			rl.DrawMesh(render.mesh, renderer.material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+			count_draw_call()
+			triangles += int(render.mesh.triangleCount)
 		}
+		water_nodes += render.has_water ? 1 : 0
 		renderer.drawn_node_count += 1
 	}
+	count_frame(profile, .Terrain_Nodes, renderer.drawn_node_count)
+	count_frame(profile, .Terrain_Triangles, triangles)
+	count_frame(profile, .Water_Nodes, water_nodes)
+	profile_mark(profile, .Cover)
 	draw_field_cover(renderer, camera, visible[:], lights.sun_shadow.texture)
+	count_frame(profile, .Cover_Instances, renderer.cover.drawn_count)
+	profile_mark(profile, .Water)
 	draw_field_water(renderer, visible[:])
+}
+
+// The selected nodes not yet drawable (0342, profile settle): a node is
+// meshed once it is in the mesh revisions and either has its meshes up or
+// no job of it is in flight (a node meshed empty has none).
+field_view_unmeshed_nodes :: proc(streaming: ^Field_Streaming, renderer: ^Field_Renderer, selection: []Field_Node) -> int {
+	count := 0
+	for node in selection {
+		_, rendered := renderer.meshes[node]
+		meshed := node in streaming.mesh_revisions && (rendered || node not_in streaming.in_flight)
+		count += meshed ? 0 : 1
+	}
+	return count
 }
 
 // UnloadMaterial also unloads the shader and the ground atlas; the sun's

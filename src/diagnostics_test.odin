@@ -113,13 +113,69 @@ test_render_page_lines_from_facts :: proc(t: ^testing.T) {
 		"weather rain 0.50  day 0.250",
 		"chunks loaded 400  drawn 120  vertices 300000",
 		"meshes uploaded 2  pending jobs 5",
-		"water meshes drawn 7  flames 3",
-		"particles 30  weather particles 900",
+		"water meshes drawn 7  flames 3  particles 30  weather particles 900",
 		"atlas block 256 x 256  item 512 x 256  ui 128 x 128",
 	}
 	for wanted in expected {
 		testing.expectf(t, contains_line(lines, wanted), "missing %q in %v", wanted, line_texts(lines))
 	}
+}
+
+// The profile's lines at their widest (0342): every statistic at 99.99
+// ms, the counters at 9999999, GPU frames. With the header the page fits
+// 28 lines (1280 by 720, the start window, at 20 px) of 94 characters
+// (1280 by 800, the audits' smallest window, at 22 px).
+@(test)
+test_the_render_page_fits_with_the_profile :: proc(t: ^testing.T) {
+	widest := Section_Statistics{99.99, 99.99, 99.99, 99.99}
+	report := Profile_Report{frames = FRAME_PROFILE_RECENT_FRAMES, gpu_frames = FRAME_PROFILE_RECENT_FRAMES, work = widest, wall = widest, gpu = widest, tick_mean = 99.99, tick_worst = 99.99}
+	for section in Frame_Section {
+		report.cpu[section], report.gpu_sections[section] = widest, widest
+		report.draws_mean[section] = 99.9
+	}
+	for &milliseconds in report.tick_sections {
+		milliseconds = 99.99
+	}
+	for &count in report.counters_mean {
+		count = 9999999
+	}
+	facts := Render_Facts {
+		build_stamp = "abc1234+dirty 2026-11-11T03:00Z",
+		window_mode = .Borderless,
+		monitor_size = {3840, 2160},
+		window_size = {3840, 2160},
+		render_size = {3840, 2160},
+		window_scale = {1, 1},
+		platform = .XWayland,
+		frames_per_second = 999,
+		frame_milliseconds = 99.99,
+		tick_count = 9,
+		accumulated_seconds = 0.016,
+		weather = Weather{kind = .Overcast, intensity = 1},
+		field_session = true,
+		loaded_chunk_count = 9999999,
+		drawn_chunk_count = 9999999,
+		vertex_count = 9999999,
+		uploaded_mesh_count = 9999999,
+		pending_job_count = 9999999,
+		drawn_water_mesh_count = 9999999,
+		live_particle_count = 9999999,
+		weather_particle_count = 9999999,
+		flame_count = 9999999,
+		block_atlas_size = {4096, 4096},
+		item_atlas_size = {4096, 4096},
+		ui_atlas_size = {4096, 4096},
+		profile = report,
+		profile_gpu = .Ready,
+	}
+	lines := render_page_lines(facts)
+	testing.expectf(t, len(lines) + 1 <= 28, "%d lines and the header", len(lines))
+	testing.expect(t, contains_line(lines, "field nodes meshed 9999999  drawn 9999999  vertices 9999999"))
+	for line in lines {
+		testing.expectf(t, len(line.text) <= 94, "%d characters: %q", len(line.text), line.text)
+	}
+	testing.expect(t, contains_line(lines, "profile 64 frames  work 99.99 ms  gpu 99.99 ms  present 99.99 ms  draws 2398"))
+	testing.expect(t, contains_line(lines, "requests 99.99  prepare 99.99/99.99  sky 99.99/99.99  shadow terrain 99.99/99.99"))
 }
 
 @(test)

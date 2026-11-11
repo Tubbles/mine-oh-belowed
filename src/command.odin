@@ -62,6 +62,27 @@ Command_Control :: struct {
 	input_waiting:   bool,
 	input_client:    u64,
 	input_answer:    string,
+	// A profile or viewport command (0342, loop_profile.odin) waits until
+	// its frames are settled, sampled or its viewport changed, then
+	// answer_profile_wait answers profile_client; later lines wait behind
+	// it. profile_frames_left counts a settle's frames down to its limit,
+	// profile_frames_waited up, profile_settled_frames the settled ones in
+	// a row; profile_viewport is the added viewport's index.
+	profile_wait:           Profile_Wait,
+	profile_client:         u64,
+	profile_frames_left:    int,
+	profile_frames_waited:  int,
+	profile_settled_frames: int,
+	profile_viewport:       int,
+}
+
+// What a waiting profile or viewport command waits for.
+Profile_Wait :: enum u8 {
+	None,
+	Settle,
+	Sample,
+	Viewport_Added,
+	Viewports_Removed,
 }
 
 // simulation is nil without a world. content has the world's generator
@@ -132,6 +153,10 @@ command_usages := [?]Command_Usage {
 	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
 	{"arrival_camera <x> <y> <z> | arrival_camera off", "during the fall, the camera at the point in cells of the pod's model frame looking at its middle, moved with the pod; off returns to the seat"},
 	{"view_distance <metres>", "how far the field is drawn, 256 to 1024 m, as the View distance setting"},
+	{"profile settle [frames]", "waits until the view is meshed and its trees are up, 30 frames in a row (frames 1 to 36000, default 3600)"},
+	{"profile sample <frames>", "times the next frames (1 to 36000) for query profile"},
+	{"viewport add|remove", "a split screen viewport with a new local player, or every viewport but the first removed"},
+	{"as <player> <command>", "a world changing command for another local player"},
 	{"fly <on|off>", "fly mode, swept against blocks"},
 	{"noclip <on|off>", "flying passes through blocks"},
 	{"cheat_speed <on|off>", "fast movement and hand mining"},
@@ -157,6 +182,7 @@ command_usages := [?]Command_Usage {
 	{POINTER_USAGE, "--input=none: the mouse to the render pixel, a mouse's move"},
 	{TYPE_USAGE, "--input=none: printable ASCII into the open text field, 16 characters a frame"},
 	{"query player|world|quests|contracts", "state as key value lines"},
+	{"query profile", "the last profile sample's statistics (doc/commands.md, Frame profile)"},
 	{"query textures", "each procedural texture's current parameters in data/textures/procedural.sjson's form"},
 	{"query ui", "the first viewport's screens, glyph device, pointer, focus, text field and input backend"},
 	{"query veins [radius] | query entities [kind] [radius] | query frames [radius] | query stats <item>", "state around the player, or of an item"},
@@ -289,7 +315,7 @@ execute_command_line :: proc(command_context: Command_Context, line: string) -> 
 // (the loop's lockstep driver).
 command_writes_simulation :: proc(name: string) -> bool {
 	switch name {
-	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint", "look", "camera", "crouch", "seat":
+	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint", "look", "camera", "crouch", "seat", "as":
 		return true
 	}
 	return false
@@ -325,6 +351,9 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 		return command_ok("%s", name == "pause" ? "paused" : "resumed")
 	case "view_distance":
 		return command_view_distance(command_context, arguments)
+	case "profile", "viewport":
+		// They need the frame (loop_profile.odin, 0342).
+		return command_error("%s runs only in the game", name)
 	case "query":
 		// The textures exist without a world.
 		if len(arguments) > 0 && arguments[0] == "textures" {
@@ -333,11 +362,38 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 		if len(arguments) > 0 && arguments[0] == "ui" {
 			return query_ui(command_context.input, arguments[1:])
 		}
+		if len(arguments) > 0 && arguments[0] == "profile" {
+			return command_error("query profile runs only in the game")
+		}
 	}
 	if command_context.simulation == nil || command_context.player < 0 || command_context.player >= len(command_context.simulation.players) {
 		return command_error("no world is loaded")
 	}
+	if name == "as" {
+		return command_as(command_context, arguments)
+	}
 	return execute_world_command(command_context, name, arguments)
+}
+
+// as <player> <command> [arguments] (0342): the command for another
+// local player, so a split screen viewport's player can be placed. Only a
+// command that changes the world, which runs in the tick like as itself;
+// not as again, and not blueprint, whose file the line does not carry.
+command_as :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	if len(arguments) < 2 {
+		return usage_error("as <player> <command> [arguments]")
+	}
+	player, problem := parse_ranged_word(arguments[0], 0, len(command_context.simulation.players) - 1, "the player")
+	if problem != "" {
+		return command_error("%s", problem)
+	}
+	name := arguments[1]
+	if !command_writes_simulation(name) || name == "as" || name == "blueprint" {
+		return command_error("as takes a command that changes the world, other than as and blueprint")
+	}
+	inner := command_context
+	inner.player = player
+	return execute_world_command(inner, name, arguments[2:])
 }
 
 // On a field world the field forms come first (command_field.odin); the
@@ -1107,7 +1163,7 @@ command_query :: proc(command_context: Command_Context, arguments: []string) -> 
 	case "frames":
 		return command_error(NO_FIELD_WORLD_PROBLEM)
 	}
-	return usage_error("query player|world|veins|entities|frames|quests|contracts|stats|textures|ui")
+	return usage_error("query player|world|veins|entities|frames|quests|contracts|stats|textures|ui|profile")
 }
 
 // One line per procedural texture in the data file's form, the texture

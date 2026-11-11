@@ -518,6 +518,7 @@ draw_field_cover :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, visible
 			}
 			rlgl.EnableVertexArray(draw.vertex_array)
 			rlgl.DrawVertexArrayInstanced(0, kind.vertex_count, count)
+			count_draw_call()
 			cover.drawn_count += int(count)
 		}
 	}

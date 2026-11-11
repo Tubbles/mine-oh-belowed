@@ -69,6 +69,9 @@ Field_Scene :: struct {
 	// (0297, field_frame_lights), filled by the callers for the camera
 	// they draw with.
 	lights:       Field_Frame_Lights,
+	// The frame profile the passes mark and count into (0342); nil in the
+	// planet preview.
+	profile:      ^Frame_Profile,
 }
 
 // What field_frame_lights reads for a field drawn by the renderer: the
@@ -607,21 +610,29 @@ draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_
 // players take the open sky (set_model_open_sky), the ghosts their own
 // colour.
 draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node) {
+	profile_mark(scene.profile, .Lights)
 	scene := scene
 	scene.frame.interiors = gather_interior_lights(&scene.state.world.entities, scene.content.machines)
 	set_field_scene_point_lights(scene, camera)
 	set_model_spot_light(scene.models, scene.lights.spot)
 	daylight_tint := model_frame_daylight_tint(scene.frame)
 	set_model_open_sky(scene.models, scene.lights, daylight_tint, camera.position)
+	profile_mark(scene.profile, .Globe)
 	draw_field_globe(scene.renderer, scene.models, daylight_tint)
-	draw_field(scene.renderer, camera, selection, scene.lights)
+	profile_mark(scene.profile, .Terrain)
+	draw_field(scene.renderer, camera, selection, scene.lights, scene.profile)
 	world := &scene.state.world
+	profile_mark(scene.profile, .Foundations)
 	push_pod_transform(scene.pod_transform)
 	draw_frames(&world.entities, scene.content.machines)
+	profile_mark(scene.profile, .Machines)
 	draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
 	pop_pod_transform(scene.pod_transform)
+	profile_mark(scene.profile, .Trees)
 	draw_field_trees(scene, camera)
+	profile_mark(scene.profile, .Runs)
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate)
+	profile_mark(scene.profile, .Effects)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
 	push_pod_transform(scene.pod_transform)
 	draw_field_players(scene)
@@ -656,14 +667,17 @@ draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selectio
 	if shadows.state != .Ready {
 		return {}
 	}
+	profile_mark(scene.profile, .Shadow_Terrain)
 	cascade := sun_shadow_cascade(camera.position, scene.lights.sun_direction, field_sun_path_world_axis(camera.up), inputs.row)
 	begin_sun_shadow_map(shadows^, cascade)
-	draw_sun_shadow_terrain(scene.renderer, cascade, selection, shadows.material)
+	count_frame(scene.profile, .Shadow_Nodes, draw_sun_shadow_terrain(scene.renderer, cascade, selection, shadows.material))
+	profile_mark(scene.profile, .Shadow_Trees)
 	if inputs.row.tree_limit > 0 && scene.models.trees.ready {
 		trees := select_shadow_trees(&scene.renderer.trees, cascade, camera.position, field_tree_model_extent(scene), scene.state.field.felled_trees, inputs.row.tree_limit)
 		set_sun_shadow_instanced(shadows^, true)
 		draw_tree_instances(scene.models, scene.content.field.tree_species, trees, shadows.material)
 		set_sun_shadow_instanced(shadows^, false)
+		count_frame(scene.profile, .Shadow_Trees, len(trees))
 	}
 	casters := scene
 	casters.models.material = shadows.material
@@ -672,6 +686,7 @@ draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selectio
 	cull := Sun_Shadow_Casters{cascade = cascade, transform = scene.pod_transform.? or_else linalg.MATRIX4F32_IDENTITY}
 	casters.frame.casters = &cull
 	world := &scene.state.world
+	profile_mark(scene.profile, .Shadow_Models)
 	rl.BeginShaderMode(shadows.material.shader)
 	push_pod_transform(scene.pod_transform)
 	draw_frames(&world.entities, scene.content.machines)
@@ -684,7 +699,8 @@ draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selectio
 }
 
 // The selected nodes' terrain whose box casts, with the depth material.
-draw_sun_shadow_terrain :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, selection: []Field_Node, material: rl.Material) {
+// Returns how many it drew.
+draw_sun_shadow_terrain :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, selection: []Field_Node, material: rl.Material) -> (drawn: int) {
 	for node in selection {
 		render, found := renderer.meshes[node]
 		if !found || !render.has_mesh {
@@ -693,8 +709,11 @@ draw_sun_shadow_terrain :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_C
 		minimum, maximum := field_node_box_metres(render, node, renderer.spacing_millimetres)
 		if sun_shadow_box_casts(cascade, minimum, maximum) {
 			rl.DrawMesh(render.mesh, material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+			count_draw_call()
+			drawn += 1
 		}
 	}
+	return drawn
 }
 
 // The split screen viewport's target bound again after the shadow map's
@@ -794,6 +813,8 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	if !state.presentation.field_renderer_ready {
 		return
 	}
+	profile := &state.developer.frame_profile
+	profile_mark(profile, .Sky)
 	alpha := f32(interpolation_alpha(session.accumulator))
 	player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
 	view := arrival_view(session.simulation.field.arrival, session.simulation.tick, alpha, state.config, &state.presentation.arrival.curve)
@@ -844,6 +865,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		window_lights = window_lights[:window_light_count],
 		placement_editor = viewport.interaction.placement_editor,
 		lights       = lights,
+		profile      = profile,
 	}
 	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, frame_field_selection(state), sun_shadow_inputs(state.settings, state.config.sun_shadows, state.data_directory))
 	resume_viewport_target(viewport)
@@ -896,13 +918,17 @@ prepare_field_frame :: proc(state: ^Frame_State) {
 	if !state.presentation.field_renderer_ready {
 		return
 	}
-	frame_field_selection(state)
+	profile := &state.developer.frame_profile
+	count_frame(profile, .Selected_Nodes, len(frame_field_selection(state)))
 	last := state.presentation.field_level_distances[FIELD_COARSEST_LEVEL]
 	receivers := sun_shadow_receivers(&state.presentation.field_renderer, state.presentation.model_renderer)
 	row := sun_shadows_row(state.config.sun_shadows)
 	serve_sun_shadows(&state.presentation.field_renderer.sun_shadows, receivers[:], sun_shadows_enabled(state.settings.sun_shadows, row.on), row.map_texels)
 	state.presentation.field_renderer.last_distance_metres = f32(last)
+	// Every result taken lowers the pending jobs by one.
+	pending_before_upload := session.field_streaming.pending_jobs
 	upload_streamed_field_meshes(&state.presentation.field_renderer, &session.field_streaming)
+	count_frame(profile, .Mesh_Uploads, pending_before_upload - session.field_streaming.pending_jobs)
 	trees := &state.presentation.field_renderer.trees
 	update_field_tree_cache(trees, &session.field_streaming, field_tree_generation(&session.simulation.field), field_viewport_eyes(state), session.simulation.field.felled_trees, field_trees_view_row(field_trees_row(state.config.field_trees), last), session.field_content.foundation_pitch_millimetres)
 	upload_field_tree_tiles(trees)

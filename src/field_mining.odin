@@ -638,13 +638,18 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 // then the light (0173) within its budget. The tick's water events (0294)
 // are dropped first, so the digs, the pours and the pumps' intakes reach
 // the surface waves beside the step's own. Runs after every player queued
-// its edits (simulation_field.odin).
-finish_field_tick :: proc(state: ^Simulation_State, content: Simulation_Content) {
+// its edits (simulation_field.odin). A profile gets the three parts
+// (0342).
+finish_field_tick :: proc(state: ^Simulation_State, content: Simulation_Content, profile: ^Tick_Profile = nil) {
+	clock := profile_now(profile)
 	clear(&state.field.world.water_events)
 	drain_field_edits(state, content)
 	drain_field_placements(state, content)
 	drain_field_water_edits(state, content)
 	tick_water_pumps(state, content)
+	clock = profile_section(profile, .Field_Edits, clock)
 	step_field_water_keeping_events(&state.field.world, content.field.water, state.tick)
+	clock = profile_section(profile, .Field_Water, clock)
 	tick_field_light(&state.field.world, content.field.light)
+	profile_section(profile, .Field_Light, clock)
 }

@@ -278,6 +278,7 @@ draw_sky_dome :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, colors: Sky_
 	rl.UpdateMeshBuffer(renderer.dome, MESH_COLOR_BUFFER_INDEX, raw_data(vertex_colors), SKY_DOME_VERTEX_COUNT * size_of(rl.Color), 0)
 	position := camera.position
 	rl.DrawMesh(renderer.dome, renderer.material, rl.MatrixTranslate(position.x, position.y, position.z))
+	count_draw_call()
 }
 
 // One batch of quads on raylib's white default texture, the stars under

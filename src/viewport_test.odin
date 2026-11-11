@@ -324,6 +324,76 @@ test_a_removed_viewport_leaves_and_its_entry_is_taken_again :: proc(t: ^testing.
 	testing.expect_value(t, len(session.simulation.players), 2)
 }
 
+// The viewport command (0342): add waits for its player's entry, remove
+// asks every guest to leave through Remove_Viewport and waits for the
+// removal after the draw; a fifth viewport is refused.
+@(test) // slow
+test_the_viewport_command_waits_for_its_player_and_removes_after_the_draw :: proc(t: ^testing.T) {
+	state := make_viewport_test_frame()
+	defer destroy_viewport_test_frame(state)
+	control := &state.developer.command_control
+	response := command_viewport(state, 7, {"add"})
+	testing.expect(t, response.ok && response.deferred)
+	testing.expect_value(t, control.profile_wait, Profile_Wait.Viewport_Added)
+	testing.expect_value(t, state.viewport_count, 2)
+	if !testing.expect(t, run_viewport_test_frames_until_ready(state, 1)) {
+		return
+	}
+	answer_profile_wait(state)
+	testing.expect_value(t, control.profile_wait, Profile_Wait.None)
+
+	response = command_viewport(state, 7, {"remove"})
+	testing.expect(t, response.ok && response.deferred)
+	testing.expect(t, .Remove_Viewport in state.viewports[1].requests)
+	testing.expect_value(t, state.viewport_count, 2)
+	answer_profile_wait(state)
+	testing.expect_value(t, control.profile_wait, Profile_Wait.Viewports_Removed)
+	serve_viewport_removals(state)
+	answer_profile_wait(state)
+	testing.expect_value(t, state.viewport_count, 1)
+	testing.expect_value(t, control.profile_wait, Profile_Wait.None)
+
+	response = command_viewport(state, 7, {"remove"})
+	testing.expect(t, response.ok && !response.deferred)
+	testing.expect_value(t, response.text, "viewports 1")
+
+	for gamepad in u32(5) ..= 7 {
+		testing.expect(t, add_viewport(state, gamepad, {}))
+	}
+	response = command_viewport(state, 7, {"add"})
+	testing.expect(t, !response.ok)
+	testing.expect_value(t, response.text, "4 viewports already")
+}
+
+// A viewport add waits for a tick, so under held ticks it is refused at
+// once and the socket serves the next line; a wait in flight when the
+// ticks are held is answered with the same error (0342).
+@(test) // slow
+test_viewport_add_is_refused_while_the_ticks_are_held :: proc(t: ^testing.T) {
+	state := make_viewport_test_frame()
+	defer destroy_viewport_test_frame(state)
+	control := &state.developer.command_control
+	execute_queued_command(state, {client = 7, line = "pause"})
+	testing.expect(t, control.paused)
+	execute_queued_command(state, {client = 7, line = "viewport add"})
+	testing.expect_value(t, control.profile_wait, Profile_Wait.None)
+	testing.expect_value(t, state.viewport_count, 1)
+	response := command_viewport(state, 7, {"add"})
+	testing.expect(t, !response.ok && !response.deferred)
+	testing.expect_value(t, response.text, VIEWPORT_ADD_HELD_PROBLEM)
+	execute_queued_command(state, {client = 7, line = "resume"})
+	testing.expect(t, !control.paused)
+
+	response = command_viewport(state, 7, {"add"})
+	testing.expect(t, response.ok && response.deferred)
+	control.paused = true
+	waiting, answered := profile_wait_response(state)
+	testing.expect(t, answered && !waiting.ok)
+	testing.expect_value(t, waiting.text, VIEWPORT_ADD_HELD_PROBLEM)
+	answer_profile_wait(state)
+	testing.expect_value(t, control.profile_wait, Profile_Wait.None)
+}
+
 // The touch ring's point (0195): a block's centre in the block world; for
 // a pick up on a frame, the mined cell's centre on its frame in metres;
 // for a felling (0197), the aimed point of the trunk.

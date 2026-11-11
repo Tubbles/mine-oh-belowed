@@ -433,6 +433,7 @@ draw_model_layers_colored :: proc(renderer: Model_Renderer, layers: Uploaded_Lay
 			material := model_layer_material(renderer, layer)
 			material.maps[rl.MaterialMapIndex.ALBEDO].color = colors[layer]
 			rl.DrawMesh(mesh, material, cast(rl.Matrix)transform)
+			count_draw_call()
 		}
 	}
 }

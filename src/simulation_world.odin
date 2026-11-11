@@ -165,13 +165,16 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	advance_statistics_clock(&state.records.statistics, state.tick, state.tick_rate)
 	clock = profile_section(profile, .Statistics, clock)
 	update_simulated_chunks(state, content)
+	clock = profile_section(profile, .Chunk_Set, clock)
 	if hook.procedure != nil {
 		hook.procedure(hook.data)
 	}
 	apply_player_commands(state, content)
+	profile_section(profile, .Commands, clock)
 	if state.field.enabled {
-		tick_field_session_players(state, content, inputs)
+		tick_field_session_players(state, content, inputs, profile)
 	}
+	clock = profile_now(profile)
 	for index in 0 ..< len(state.players) {
 		if state.field.enabled {
 			break

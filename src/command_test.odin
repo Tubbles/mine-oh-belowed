@@ -496,6 +496,19 @@ test_blueprint_runs_relative_and_stops_at_the_first_error :: proc(t: ^testing.T)
 	testing.expect(t, !run_blueprint(command_test_context(test), blueprint).ok)
 }
 
+// A blueprint runs on every machine of a session, so it never carries as
+// (0342), which moves another local player.
+@(test)
+test_a_blueprint_refuses_as :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	blueprint := Blueprint{origin_kind = .Cell, cell = {4, 1, 4}, commands = {"as 0 place wooden_chest 0 0 0 0"}}
+	response := run_blueprint(command_test_context(test), blueprint)
+	testing.expect(t, !response.ok)
+	testing.expect_value(t, response.text, "blueprint command 1 (as 0 place wooden_chest 0 0 0 0): a blueprint holds only place, block, remove, insert, recipe and filter")
+	testing.expect_value(t, entity_at(&test.simulation.world.entities, {4, 1, 4}), NO_ENTITY)
+}
+
 // The shipped blueprint places on a flat floor with an iron vein and
 // makes plates.
 @(test)

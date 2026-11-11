@@ -473,8 +473,10 @@ field_refusal_is_news :: proc(refusal, previous: Field_Edit_Refusal, pressed: bo
 // Every field player in player order, then the queues drain, then the
 // refusals the drain left are told (field_refusal_is_news). inputs[index]
 // is players[index]'s; a missing one is no input, and its player is not
-// connected (0358).
-tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Input_Frame) {
+// connected (0358). A profile gets the players' loop, finish_field_tick's
+// sections and the rest (0342).
+tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Input_Frame, profile: ^Tick_Profile = nil) {
+	clock := profile_now(profile)
 	previous := make([]Field_Edit_Refusal, len(state.players), context.temp_allocator)
 	pressed := make([]bool, len(state.players), context.temp_allocator)
 	for index in 0 ..< len(state.players) {
@@ -488,7 +490,9 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 			append(&state.events, Simulation_Event{player = index, kind = kind})
 		}
 	}
-	finish_field_tick(state, content)
+	profile_section(profile, .Field_Players, clock)
+	finish_field_tick(state, content, profile)
+	clock = profile_now(profile)
 	// The pod's doors after every player moved (0222, 0231); never while the
 	// world falls, the landing tick included (the arrival lands below,
 	// after this step, so the fall still counts here).
@@ -511,6 +515,7 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 	if field_arrival_due(state.field.arrival, state.tick) {
 		land_field_arrival(state, content)
 	}
+	profile_section(profile, .Field_Rest, clock)
 }
 
 // The wait (0358).

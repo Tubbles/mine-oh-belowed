@@ -165,6 +165,9 @@ Frame_Presentation :: struct {
 	// viewport's player (0178).
 	audio:              Audio_Mixer,
 	sound_memory:       Sound_Memory,
+	// The render size of the last display line logged
+	// (log_display_when_render_changed, 0342).
+	logged_render_size: [2]int,
 }
 
 // The diagnostics pages, the command socket and the developer screens.
@@ -191,6 +194,10 @@ Frame_Developer_Tools :: struct {
 	// The Data files screen's tree and open file (work item 0129,
 	// ui_data_browser.odin), served by serve_data_browser.
 	data_browser:         Data_Browser,
+	// The frame's CPU and GPU sections, its ticks and counts (0342,
+	// render_frame_profile.odin), always on; the F3 Render page and the
+	// profile commands read it.
+	frame_profile:        Frame_Profile,
 }
 
 // Hot reload's own state (work item 0054, hot_reload.odin). content and
@@ -408,6 +415,7 @@ viewport_world_blocked :: proc(viewport: Viewport) -> bool {
 // previous frame left: a screen opened or closed takes effect on the world
 // one frame later. The ticks run once however many viewports there are.
 update_frame :: proc(state: ^Frame_State) {
+	begin_profiled_frame(&state.developer.frame_profile, frame_gpu_wanted(state))
 	state.frame_seconds = rl.GetFrameTime()
 	state.frame_times = push_frame_time(state.frame_times, state.frame_seconds)
 	update_viewport_pads(state)
@@ -417,6 +425,7 @@ update_frame :: proc(state: ^Frame_State) {
 		viewport.interaction.input = read_input_frame(state, index, state.frame_seconds)
 	}
 	update_frame_world(state)
+	profile_mark(&state.developer.frame_profile, .Requests)
 	for viewport in active_viewports(state) {
 		if .Reload_Data in viewport.interaction.input.just_pressed && developer_mode_on(state) {
 			state.requests += {.Reload_Data}
@@ -642,6 +651,8 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	tick_count: int
 	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), holding || fast)
 	lockstep.clock_ticks = min(lockstep.clock_ticks + tick_count, simulation.tick_rate)
+	profile := &state.developer.frame_profile
+	profile_mark(profile, .Ticks)
 	hold_local_commands(lockstep, simulation)
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
 	if holding {
@@ -654,11 +665,11 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 		}
 		if offline {
 			deliver_records_alone(session)
-			ran += run_ready_ticks(session, content, &state.developer.command_control, &answers)
+			ran += run_ready_ticks(session, content, &state.developer.command_control, &answers, &profile.tick_profile)
 		}
 	}
 	exchange_session_records(session, content)
-	ran += run_ready_ticks(session, content, &state.developer.command_control, &answers)
+	ran += run_ready_ticks(session, content, &state.developer.command_control, &answers, &profile.tick_profile)
 	// A machine that joined during the exchange runs from the join tick
 	// on, so the tick command's ticks without records stop here.
 	if fast && session_alone(session.network) {
@@ -673,10 +684,16 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	session.stalled_frames = stalled_frames_after(session.stalled_frames, ran, session.chunk_stalled)
 	state.frame_tick_count = ran
 	session.ticks_since_save += u64(ran)
-	save_when_due(state)
+	profile_mark(profile, .Save)
+	if save_when_due(state) {
+		note_frame_event(profile, .Save)
+	}
 	show_network_notices(state)
 	own := session_local_player_index(session)
+	profile_mark(profile, .Streaming)
+	revision_before := session.field_streaming.next_revision
 	stream_session_chunks(session, world_to_chunk_coordinate(camera_world_coordinate(lockstep_view_player(lockstep, simulation, own).position)), frame_field_selection(state))
+	count_frame(profile, .Mesh_Jobs, int(session.field_streaming.next_revision - revision_before))
 }
 
 // Alone the local records come straight back; a host relays them, which
@@ -725,7 +742,7 @@ LOADING_NOTICE_FRAMES :: 10
 // the title showing with a toast.
 update_joining :: proc(state: ^Frame_State) {
 	join := &state.joining
-	status, problem := advance_session_join(join, state.config, state.content, state.base_generator, &state.developer.command_control)
+	status, problem := advance_session_join(join, state.config, state.content, state.base_generator, &state.developer.command_control, &state.developer.frame_profile.tick_profile)
 	toast_network_notices(primary_ui(state), join.session != nil ? &join.session.network : &join.network)
 	switch status {
 	case .Waiting:
@@ -749,8 +766,9 @@ Join_Status :: enum u8 {
 // One frame of a join: the network until the snapshot, then the joined
 // world catching up. Ready once joined_session_ready holds; the caller
 // then takes join.session. Failed with the problem ("" for a lost host,
-// whose notice says why); the caller destroys the join.
-advance_session_join :: proc(join: ^Session_Join, config: Game_Config, content: Game_Content, base_generator: Generator, control: ^Command_Control) -> (status: Join_Status, problem: string) {
+// whose notice says why); the caller destroys the join. profile gets the
+// catching up's ticks (the frame profile's, 0342).
+advance_session_join :: proc(join: ^Session_Join, config: Game_Config, content: Game_Content, base_generator: Generator, control: ^Command_Control, profile: ^Tick_Profile = nil) -> (status: Join_Status, problem: string) {
 	if join.session == nil {
 		update_client_network(&join.network, nil, 0, content.simulation_content)
 		switch {
@@ -765,7 +783,7 @@ advance_session_join :: proc(join: ^Session_Join, config: Game_Config, content: 
 		return .Waiting, ""
 	}
 	session := join.session
-	catch_up_joined_session(session, content, control)
+	catch_up_joined_session(session, content, control, profile)
 	switch {
 	case session.network.host_lost:
 		return .Failed, ""
@@ -781,7 +799,7 @@ advance_session_join :: proc(join: ^Session_Join, config: Game_Config, content: 
 // machine follows the relayed records and asks for its player once it
 // caught up (joined_world_caught_up), so the host waits for its records
 // only from then on.
-catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, control: ^Command_Control) {
+catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, control: ^Command_Control, profile: ^Tick_Profile = nil) {
 	content := session_simulation_content(game_content, session.technologies, session.field_content)
 	content.generator = &session.generator
 	for local in 0 ..< len(session.lockstep.locals) {
@@ -790,7 +808,7 @@ catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, c
 	}
 	exchange_session_records(session, content)
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
-	run_ready_ticks(session, content, control, &answers)
+	run_ready_ticks(session, content, control, &answers, profile)
 	if !session.network.own_player_requested && joined_world_caught_up(session) {
 		request_own_player(session)
 	}
@@ -885,19 +903,22 @@ autosave_due :: proc(ticks_since_save: u64, autosave_minutes, tick_rate: int) ->
 }
 
 // The pause menu's Save and the autosave interval, each with a toast.
-save_when_due :: proc(state: ^Frame_State) {
+// saved: a save ran this frame, whether it succeeded or not (the frame
+// profile's Save event, 0342).
+save_when_due :: proc(state: ^Frame_State) -> (saved: bool) {
 	session := state.session
 	requested := session.save_requested
 	session.save_requested = false
 	autosave := session.save.enabled && autosave_due(session.ticks_since_save, state.settings.autosave_minutes, session.simulation.tick_rate)
 	if !requested && !autosave {
-		return
+		return false
 	}
 	if save_session(session, state.content) != "" {
 		ui_toast(primary_ui(state), text("save_failed"))
 	} else {
 		ui_toast(primary_ui(state), text(requested ? "save_done" : "autosave_done"))
 	}
+	return true
 }
 
 // The 2D passes (the underwater overlay, the diagnostics pages, the UI)
@@ -949,20 +970,28 @@ draw_split_viewports :: proc(state: ^Frame_State, content: Simulation_Content, s
 		if index == 0 {
 			counts, cues = viewport_counts, viewport_cues
 		}
+		profile_mark(&state.developer.frame_profile, .Interface)
 		run_viewport_ui(state, index)
 		rl.EndTextureMode()
 	}
 	return counts, cues
 }
 
+// The frame profile's marks (0342) open Prepare here, the field's passes
+// in draw_field_viewport_world, Interface before each viewport's UI and
+// the sounds, Composite before the split screen's window pass; Present
+// and Between are end_profiled_drawing's.
 render_frame :: proc(state: ^Frame_State) {
+	profile := &state.developer.frame_profile
+	profile_mark(profile, .Prepare)
 	// The selection lives in the frame's temp memory.
 	defer state.presentation.field_selection = nil
 	place_viewports(state, render_size())
 	if state.session == nil {
 		rl.BeginDrawing()
-		defer rl.EndDrawing()
+		defer end_profiled_drawing(profile)
 		rl.ClearBackground(DAY_SKY_COLOR)
+		profile_mark(profile, .Interface)
 		begin_render_pixel_drawing()
 		run_ui_frame(state)
 		capture_pending_screenshot(state)
@@ -985,9 +1014,10 @@ render_frame :: proc(state: ^Frame_State) {
 	cues: Frame_Cues
 	if split {
 		counts, cues = draw_split_viewports(state, content, sky, weather)
+		profile_mark(profile, .Composite)
 	}
 	rl.BeginDrawing()
-	defer rl.EndDrawing()
+	defer end_profiled_drawing(profile)
 	if split {
 		rl.ClearBackground(rl.BLACK)
 		begin_render_pixel_drawing()
@@ -1009,6 +1039,7 @@ render_frame :: proc(state: ^Frame_State) {
 		counts, cues = draw_viewport_world(state, &state.viewports[0], content, sky, weather)
 	}
 	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
+	profile_mark(profile, .Interface)
 	// The sounds read the block world; a field session has the arrival's
 	// and the hatches' (0200) until the field's cues come.
 	if viewport_player_ready(session, state.viewports[0]) && !field {
@@ -1133,7 +1164,8 @@ Frame_Render_Counts :: struct {
 }
 
 // The Render page's facts (diagnostics.odin). The fog is the underwater
-// fog while the camera is under water.
+// fog while the camera is under water. A field session counts the field
+// renderer's nodes and the field streaming's jobs (0342).
 render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts: Frame_Render_Counts) -> Render_Facts {
 	session := state.session
 	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, weather_look(weather, weather_motion_enabled(state.settings), sky.blend).fog_scale)
@@ -1141,7 +1173,7 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 		fog := underwater_fog()
 		fog_start, fog_end = fog.start, fog.end
 	}
-	return Render_Facts {
+	facts := Render_Facts {
 		build_stamp = BUILD_STAMP,
 		window_mode = state.presentation.window_settings.window_mode,
 		monitor_size = state.presentation.monitor_size,
@@ -1172,7 +1204,19 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 		item_atlas_size = texture_size(state.presentation.item_atlas.texture),
 		ui_atlas_size = texture_size(state.presentation.ui_icon_atlas.texture),
 		underwater = counts.underwater,
+		profile = recent_frame_profile_report(&state.developer.frame_profile),
+		profile_gpu = state.developer.frame_profile.gpu.state,
 	}
+	if session.simulation.field.enabled {
+		field_renderer := &state.presentation.field_renderer
+		facts.field_session = true
+		facts.loaded_chunk_count = len(field_renderer.meshes)
+		facts.drawn_chunk_count = field_renderer.drawn_node_count
+		facts.vertex_count = field_renderer.vertex_count
+		facts.uploaded_mesh_count = int(state.developer.frame_profile.current.counters[.Mesh_Uploads])
+		facts.pending_job_count = session.field_streaming.pending_jobs
+	}
+	return facts
 }
 
 // What the diagnostics pages and the F4 overlay read (diagnostics.odin).
@@ -1855,6 +1899,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	// large for a stack frame.
 	state := new(Frame_State)
 	defer free(state)
+	// Its GPU queries go before the window's context.
+	defer release_frame_profile(&state.developer.frame_profile)
 	// Field by field: a whole literal would build the large value on the
 	// stack first.
 	state.config, state.content, state.base_generator = config, content, game_data.base_generator
@@ -1883,6 +1929,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		monitor_size    = monitor_size,
 		window_scale    = window_scale(),
 		platform        = window_platform,
+		logged_render_size = render_size(),
 	}
 	state.reload = {
 		content_arena   = game_data.arena,
@@ -1985,6 +2032,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		serve_frame_requests_after_draw(state)
 		// Applied at once, like the font choice.
 		update_display(&state.presentation.window_settings, state.settings, state.presentation.monitor_size, state.presentation.platform)
+		state.presentation.logged_render_size = log_display_when_render_changed(state.presentation.logged_render_size, state.presentation.platform)
 		state.presentation.window_scale = window_scale()
 		if !any_viewport_shows(state, .Settings) {
 			write_changed_settings(state)
@@ -2090,10 +2138,11 @@ update_command_server_open :: proc(state: ^Frame_State) {
 	}
 }
 
-// After the frame's ticks: answers a tick command whose ticks ran and an
-// input command whose change the UI saw, then executes the queued lines
-// in order until one waits (a tick command, a line for the simulation,
-// an input command).
+// After the frame's ticks: answers a tick command whose ticks ran, a
+// profile or viewport command whose wait is over (answer_profile_wait)
+// and an input command whose change the UI saw, then executes the queued
+// lines in order until one waits (a tick command, a line for the
+// simulation, a profile or viewport command, an input command).
 serve_command_socket :: proc(state: ^Frame_State) {
 	update_command_server_open(state)
 	server := &state.developer.command_server
@@ -2102,9 +2151,10 @@ serve_command_socket :: proc(state: ^Frame_State) {
 	}
 	poll_command_server(server)
 	answer_command_ticks(state)
+	answer_profile_wait(state)
 	answer_input_command(state)
 	control := &state.developer.command_control
-	for !control.ticks_waiting && !control.line_waiting && !control.input_waiting {
+	for !control.ticks_waiting && !control.line_waiting && !control.input_waiting && control.profile_wait == .None {
 		queued := take_command_line(server) or_break
 		execute_queued_command(state, queued)
 		delete(queued.line)
@@ -2179,25 +2229,37 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 	return command_context
 }
 
-// save and reload need the session and the game content, the rest runs
-// in command.odin. A tick command answers later (answer_command_ticks),
-// as does an input command (answer_input_command).
+// save, reload and the profile lines (loop_profile.odin) need the
+// session, the game content or the frame, the rest runs in command.odin.
+// A tick command answers later (answer_command_ticks), as do an input
+// command (answer_input_command) and a profile or viewport command
+// (answer_profile_wait).
 execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line) {
 	words, _ := split_command_words(queued.line)
 	response: Command_Response
 	switch {
 	case len(words) == 0 || state.session == nil:
+	case words[0] == "as" && !session_alone(state.session.network):
+		// One machine never moves another's player.
+		send_logged_response(state, queued.client, queued.line, command_error("as runs only without other machines"))
+		return
 	case command_writes_simulation(words[0]):
 		response = queue_socket_line(state, queued, words)
 		if !response.deferred {
 			send_logged_response(state, queued.client, queued.line, response)
 		}
 		return
-	case (words[0] == "tick" || words[0] == "pause" || words[0] == "reload") && !session_alone(state.session.network):
+	case (words[0] == "tick" || words[0] == "pause" || words[0] == "reload" || words[0] == "viewport") && !session_alone(state.session.network):
 		send_logged_response(state, queued.client, queued.line, command_error("%s runs only without other machines", words[0]))
 		return
 	}
-	if len(words) > 0 && words[0] == "save" {
+	if profile_line(words) {
+		response = execute_profile_line(state, queued.client, words)
+		if response.deferred {
+			platform.log_printf("command: %s", queued.line)
+			return
+		}
+	} else if len(words) > 0 && words[0] == "save" {
 		response = command_save(state)
 	} else if len(words) > 0 && words[0] == "reload" {
 		response = command_reload(state)

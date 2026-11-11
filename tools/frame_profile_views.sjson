@@ -1,0 +1,107 @@
+// The frame profile's fixed views (work item 0342), read by
+// tools/frame_profile.py (./build.sh frame-profile, doc/build.md, Frame
+// profile). Each view runs at every distance in metres (the view_distance
+// command) and in every viewport count, at noon in clear weather; frames
+// are sampled per run unless a view sets its own.
+//
+// A view stands at stand = [latitude, longitude] and either looks at
+// target = [latitude, longitude], target_height metres over the surface
+// point the teleport there answers, or looks at look = [yaw, pitch]
+// (bearing from north, degrees). walk = [x, y] holds the left stick while
+// the view is sampled. viewports narrows the counts the view runs in.
+//
+// The shipped 8 km world of the default seed. The lake, the sea and the
+// ridge were found by a probe on its generation (removed once written
+// here), its log lines quoted beside them.
+
+frames = 600
+distances = [512, 1024]
+viewports = [1, 2]
+
+views = [
+	{name = "home", stand = [83.171, 130.477], target = [79, 151], target_height = 1.5}
+	{name = "spring", stand = [79.159, 150.561], target = [79, 151], target_height = 1}
+	{name = "forest", stand = [80.6, 132], look = [0, 0]}
+	// The largest kept lake of the tiles round the home. "lake 0 of 20 at
+	// 80.978 -174.308, 10.2 m over the sea, 6.0 m deep, 15496 m2, 1059 m
+	// from the home"; "lake stand 80.089 -175.687 (bearing 195 from the
+	// centre, shore at 116 m, 12 m past it), relief 0.7 m over the lake's
+	// level": the stand looks across the lake's longest reach, the target
+	// its centre at about its surface.
+	{name = "lake", stand = [80.089, -175.687], target = [80.978, -174.308], target_height = 6}
+	// From the lake's stand across its shore into the water at the walking
+	// pace.
+	{name = "lake_walk", stand = [80.089, -175.687], target = [80.978, -174.308], target_height = 6, walk = [0, 1], frames = 3000, viewports = [1]}
+	// The nearest coast. "nearest sea from the home at bearing 16, 875 m";
+	// "coast at 858 m; sea stand 88.039 -172.163, 2.5 m over the sea, look
+	// bearing 73.3, 150 m out 4.9 m under the sea".
+	{name = "sea", stand = [88.039, -172.163], look = [73.3, -5]}
+	// 0349's crest, the highest relief within 1500 m of the home stand
+	// (the probe: "highest within 1500 m of the home 76.527 133.546, 104.5
+	// m over the radius"), looking along the ridge line: "ridge 115.3 m
+	// over the sea; the ridge line runs at bearing 20, its ground 50 to
+	// 300 m along at 91.9 m over the sea on average".
+	{name = "ridge", stand = [76.552, 133.534], look = [20, -5]}
+]
+
+// The early factory, built last on the pod's frame: a pad of pad[0] by
+// pad[1] foundation cells, its corner corner = [x, y, z] cells from the
+// pod's minimum cell (along the frame's right, up and forward), and the
+// machines one row up at rotation 0, each cell relative to the pad's
+// corner, with the items inserted at that cell. No belts: place refuses
+// runs, and the user's bar is a handful of machines fed by hand.
+//
+// The pod's frame leans 15 degrees from the radial about its forward axis
+// (arrival_rest_tilt_degrees, data/game.sjson), so the pad does too: its
+// plane falls 0.26 m per metre along the frame's right, and a pad at the
+// pod's base row 2 cells past it along right lay 1.68 to 8.48 m under the
+// ground (the probe: "the old pad at [9, 0, -5]: ground 1.68 to 8.48 m
+// over its plane"). place cannot start a level frame, so the pad stays on
+// the pod's frame where its plane follows the ground best, raised clear of
+// it: a foundation needs only free cells (frame_placement_refusal), so the
+// pad may float. The probe on the shipped world's generation, the crater
+// baked in (removed once written here), over every corner in 2 cell steps
+// within 30 cells of the pod: "the best pad at [-39, 0, 31]: ground -1.81
+// to 0.88 m over its plane, row 3, float 3.31 m"; "relative to the pod's
+// minimum corner: corner -34 3 36"; "the ground under the pad and a cell
+// round it varies 1.94 m along the radial"; "0 trees over the pad or
+// within a metre of it". Row 3 puts the foundations' bottom 1.5 m over
+// the plane, 0.62 m over the highest ground under them.
+//
+// The camera flies on the view_from side of the pad (along the frame's
+// right and forward), looks down at pitch_degrees from the level at the
+// centre of the pad's top, and stands at the nearest point back along that
+// look that keeps every corner of the pad and the machines inside the
+// screen above the hotbar, outside the pad's extent and beyond the tool's
+// reach (tools/frame_profile.py, factory_stand). From the forward side the
+// small machines stand in front of the furnaces. Straight from forward
+// ([0, 1] at 30 degrees) the eye fell inside a pine's crown; the probe's
+// sight lines from the eye to every cell corner of the pad's top and 1.5 m
+// over it and to the furnaces' tops, a tree its axis and its crown's
+// radius at its scale: "eye 0 at cells -29.76 17.94 65.15: 12 trees near,
+// 1 hide or hold it, 1268 of 1268 sight lines hidden"; for these values:
+// "eye 2 at cells -40.31 16.45 61.94: 12 trees near, 0 hide or hold it, 0
+// of 1268 sight lines hidden, the nearest crown 4.9 m from the eye". The
+// eye stands 14.5 m from the pad's centre, 7.9 m over it and 6.5 m past
+// its edge; the look meets the leaning pad at 25.4 degrees.
+factory = {
+	pad = [26, 18]
+	corner = [-34, 3, 36]
+	view_from = [-0.5, 1]
+	pitch_degrees = 33
+	machines = [
+		{machine = "stone_furnace", cell = [1, 1, 1], insert = [["coal", 20], ["hematite", 50]]}
+		{machine = "stone_furnace", cell = [14, 1, 1], insert = [["coal", 20], ["hematite", 50]]}
+		{machine = "burner_inserter", cell = [5, 1, 11]}
+		{machine = "burner_inserter", cell = [18, 1, 11]}
+		{machine = "wooden_chest", cell = [5, 1, 12]}
+		{machine = "wooden_chest", cell = [18, 1, 12]}
+		{machine = "assembler_1", cell = [1, 1, 14]}
+		{machine = "lab", cell = [8, 1, 14]}
+		{machine = "boiler", cell = [13, 1, 14], insert = [["coal", 20]]}
+		{machine = "steam_engine", cell = [17, 1, 13]}
+		{machine = "small_pole", cell = [22, 1, 14]}
+		{machine = "small_pole", cell = [24, 1, 4]}
+		{machine = "lamp", cell = [24, 1, 16]}
+	]
+}

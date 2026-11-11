@@ -4,7 +4,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 
 - Source: `command_socket.odin` (paths, queue, command log), `command_socket_posix.odin` (the socket), `command.odin` (protocol and commands), `command_field.odin` (the field world's forms, 0183), `command_input.odin` (the input commands and `query ui`, 0341), `input_injected.odin` (the virtual devices they set), `developer.odin` (the requests the commands serve), `loop.odin` (`save`, `reload`, ticks, screenshots).
 - Linux only, not on Windows ([build.md](build.md), What the Windows build lacks).
-- The simulation never reads the socket. A line that changes the world (`command_writes_simulation`: every command of the table below from `give` to `blueprint`, and `look`, `camera`, `crouch` and `seat`, except `weather` and `arrival_camera`, which only the local session keeps) goes into the local player's next input record and runs at the start of that tick, through the same `serve_developer_request` the Developer screen uses ([developer_tools.md](developer_tools.md)); its answer comes once that tick ran, and later lines wait for it. Other lines (queries, `screenshot`, `save`, `tick`) run on the main thread after the frame's ticks. The input commands (`press` to `type`, 0341) are neither kind: they set the virtual devices the frames read under `--input=none`, and a world action they press reaches the simulation in the local player's input record as a device's does (Input, below).
+- The simulation never reads the socket. A line that changes the world (`command_writes_simulation`: every command of the table below from `give` to `blueprint`, and `look`, `camera`, `crouch`, `seat` and `as`, except `weather` and `arrival_camera`, which only the local session keeps) goes into the local player's next input record and runs at the start of that tick, through the same `serve_developer_request` the Developer screen uses ([developer_tools.md](developer_tools.md)); its answer comes once that tick ran, and later lines wait for it. Other lines (queries, `screenshot`, `save`, `tick`) run on the main thread after the frame's ticks. The input commands (`press` to `type`, 0341) are neither kind: they set the virtual devices the frames read under `--input=none`, and a world action they press reaches the simulation in the local player's input record as a device's does (Input, below).
 
 ## For the assistant
 
@@ -32,6 +32,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 - On the block world coordinates are world block coordinates as the diagnostics show them. On a field world a position is metres in the world's frame (the planet's centre at the origin, +y through latitude 90), up to three decimals; latitude and longitude are degrees as the F3 page shows them (longitude 0 towards +x, 90 towards +z); a height is metres above the sea level; a yaw is the bearing in degrees from north, turning the way the game's yaw turns, and a pitch is degrees up. A frame cell is the frame's id and the cell's three integers ([architecture.md](architecture.md), Frames). Rotations: 0 points to +x, 1 to +z, 2 to -x, 3 to -z (on a frame along its axes). Names are the ids in the data files. Numbers outside a command's bounds are refused.
 - Commands other than `help`, `pause`, `resume`, `view_distance`, `screenshot`, `reload`, `query textures`, `query ui` and the input commands need a loaded world (`error no world is loaded`).
 - Changes land at the start of the next tick. While a pausing screen is open in single player the world changes at once but time does not move.
+- `profile`, `viewport` and `query profile` need the frame, so they run only in the game (elsewhere `error <name> runs only in the game`), and later lines wait for their answer as they wait behind `tick`. A settle or viewport wait answers `error the world was closed` when the world ends; a sample completes regardless.
 
 ## Commands
 
@@ -65,9 +66,13 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | `recipe <recipe> <x> <y> <z>` | The crafting machine's recipe, through the panel's path: its contents go to the inventory, refused with the panel's reasons (a fixed recipe machine, another category, contents that do not fit). |
 | `filter <item> <x> <y> <z>` | The filter of the filter inserter or splitter at the cell, as its panel sets it. A splitter sends the item to its filter side (the left half unless the panel turned it), the rest to the other half. |
 | `blueprint <path>` | Runs a blueprint file (below). |
+| `as <player> <command> [arguments]` | Runs a world changing command (one of `command_writes_simulation`, other than `as` and `blueprint`) for the local player of that index, 0 to the players' count less 1 (0342), so a second viewport's player can be teleported and turned; answers what the command answers. Refused `as takes a command that changes the world, other than as and blueprint`. |
 | `tick <n>` | Runs n ticks (1 to 1000000) with no player input (under `--input=none` with the first viewport's, Input, Timing), up to one second of wall time per frame; a tick whose chunks are not there yet (a loaded field world's set while it generates) waits for a later frame as a lockstep tick does. Then answers `ok ran n ticks, now at tick T`. Later lines wait for it. |
 | `pause`, `resume` | Holds the ticks like a pausing screen, or releases them. `tick` still runs while paused. |
 | `view_distance <metres>` | Sets the View distance setting (0343, [ui.md](ui.md), Display) to 256 to 1024 whole metres as its Settings row does, answering `ok view distance <metres> m`; the next frame draws at it and the farther nodes and tree tiles stream in over the frames after. Presentation only, so a joined machine may use it; the change persists in `config.d/90-settings.sjson` at the end of the frame like any setting. |
+| `profile settle [frames]` | Waits until the view is meshed (every selected node in the mesh revisions, with a render or not in flight) and the trees' tiles are up, 30 frames in a row (`PROFILE_SETTLED_FRAMES`), at most the frames (1 to 36000, default 3600): `ok settled after <n> frames`, or `error not settled after <n> frames: <u> nodes unmeshed, trees <settled\|loading>`. Field world only (0342). |
+| `profile sample <frames>` | Times the frames (1 to 36000) that begin after the line, with the GPU's timestamps, and answers `ok sampled <n> frames` once they and their GPU results are in; `query profile` reads it (Frame profile, below). A new sample replaces the last. |
+| `viewport add`, `viewport remove` | A split screen viewport with a new local player and no pad, answered once its player is in the world: `ok viewport <n> of <count>, player <index>` (`error 4 viewports already`); or every viewport but the first removed after the frame's draw, answered `ok viewports 1` once one is left (0342). The player joins with a tick, so `viewport add` is refused `error viewport add needs the ticks running` while the ticks are held (`pause`, a pausing screen), and a wait in flight gets the same error when they are held before the player is in. The added player stands still under `--input=none` only: under the `raylib` backend every viewport reads the machine's keyboard and mouse, so it moves with the first. |
 | `save` | Saves the world like the pause menu's Save. |
 | `reload` | The content reload of F8 and the Developer screen ([architecture.md](architecture.md), Data driven content). Answers `ok reloaded: ...` with the ids added and removed per table, or `error <file and problem>` with the old data and world kept. |
 | `screenshot [name]` | A PNG of the next frame at `<state>/screenshots/<name>.png`, default name the UTC time (`2026-09-27T12-00-00Z`). A name holds letters, digits, `.`, `-` and `_`, up to 64, not starting with a dot. |
@@ -88,6 +93,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | `query stats <item>` | `produced`, `consumed`, `obtained`, `delivered`, `voided`, `rate_per_minute`, `inventory`. |
 | `query textures` | `textures <n>`, then one line per procedural texture with the texture editor's current parameters (saved or not) in the form of `data/textures/procedural.sjson`. Copy a line into the data file to make it the default. |
 | `query ui` | The first viewport's UI after its last pass, on every backend and without a world (Input, below). |
+| `query profile` | The last complete `profile sample` (Frame profile, below); `error no profile sample: run profile sample <frames> first` without one or while one runs. |
 
 A query radius is 1 to 4096 (`MAXIMUM_QUERY_RADIUS`); on a field world it is metres.
 
@@ -129,6 +135,27 @@ backend none                  (sdl3, raylib or none)
 - `teleport <latitude> <longitude>` reads the generated surface: an edit or a frame there is not seen, and the player drops onto what is there.
 - Framing a screenshot: `pause`, then `tick 800` (the arrival's fall), then the framing lines (`teleport`, `look at`, `camera`, `crouch`), then `screenshot`. With the ticks held the lines run at once and only `tick` advances the world, and under `--input=none` no device of the machine is read at all.
 
+## Frame profile
+
+`query profile` answers the last sample of `profile sample` (0342, [architecture.md](architecture.md), The frame profile). Every number is in milliseconds with three decimals unless its line says otherwise; a statistic is the mean, p50, p99 and worst (nearest rank); the names are the enums' in lower case. `tools/frame_profile.py` reads it ([build.md](build.md), Frame profile).
+
+```
+profile <frames> frames
+frames <n> gpu <n> dropped <n> seconds <s> fps <%.1f>   (the GPU frames read and dropped)
+display render <w> <h> window <w> <h> viewports <n> vsync <yes|no> cap <n>
+frame work <mean> <p50> <p99> <worst>                 (the frame less present)
+frame wall <mean> <p50> <p99> <worst>
+frame gpu <mean> <p50> <p99> <worst>                  (or: frame gpu none)
+ticks <n> mean <ms> worst <ms> hashes <n> saves <n>
+cpu <section> <mean> <p50> <p99> <worst>              (24 lines, input to between)
+gpu <section> <mean> <p50> <p99> <worst>              (17 lines, prepare to composite; or: gpu none)
+tick <section> <mean per tick>                        (28 lines)
+draws <section> <%.1f mean> <worst>                   (24 lines)
+count <counter> <%.1f mean> <worst>                   (12 lines)
+worst frame <frame> work <ms> ticks <n> events <none|state_hash,save>
+worst cpu <section> <ms>                              (24 lines, the worst frame's)
+```
+
 ## Multiplayer
 
 A lockstep session ([architecture.md](architecture.md), Multiplayer) runs every machine from the same input records, so a command must reach every machine to keep them equal.
@@ -138,7 +165,7 @@ A lockstep session ([architecture.md](architecture.md), Multiplayer) runs every 
 - `--join=<address>[:port]` starts the game, joins the server or game at that address instead of showing the title (the port defaults to 47317, the first of the range), and plays the host's world; the phone needs an IP address, since it has no resolver. The title shows a notice while the join runs; a host that does not answer within ten seconds, or refuses another build or other game data, leaves the title with a toast.
 - Ports: a game or server listens on TCP 47317 (`DEFAULT_NETWORK_PORT`), or the next free one up to 47326 when another game on the machine holds it, and logs `network: hosting on port N` (`server: hosting on port N` for `--server`); every host answers the LAN's discovery on UDP 47316 (`DISCOVERY_PORT`). A firewall that blocks incoming connections must pass both; Fedora Workstation's default zone (`FedoraWorkstation`) opens every port above 1024, so nothing is needed there, while a restrictive zone such as `FedoraServer` needs `sudo firewall-cmd --add-port=47316/udp --add-port=47317-47326/tcp` (with `--permanent` and a second run to keep them). A home router's inbound blocking is the internet side and does not apply between machines on one LAN. Without the UDP port the screen lists nothing and joining by address still works; without the TCP range nobody can join.
 - `--server` cannot be combined with `--join`, `--debug-terrain`, `--chapter` or `--give`, `--join` not with the flags that start a world, `--port` only with `--server`.
-- On a joined machine the socket's world changing lines travel in the local player's input record, so every machine runs them at the same tick, for the local player; a blueprint's file is read on the machine that sent the line. The input commands work there too, frame by frame as a device's input does (0341). `tick` and `pause` answer `error` there and on a host another machine joined or is joining (a host alone runs them as single player), since one machine cannot hold the others' ticks, and so does `reload` (every machine must run the same content; F8 and the Developer screen's reload are refused with a toast too).
+- On a joined machine the socket's world changing lines travel in the local player's input record, so every machine runs them at the same tick, for the local player; a blueprint's file is read on the machine that sent the line. The input commands work there too, frame by frame as a device's input does (0341). `tick` and `pause` answer `error` there and on a host another machine joined or is joining (a host alone runs them as single player), since one machine cannot hold the others' ticks, and so does `reload` (every machine must run the same content; F8 and the Developer screen's reload are refused with a toast too). `viewport` and `as` are refused the same way (0342): one machine must not move another's player.
 
 ## Blueprints
 

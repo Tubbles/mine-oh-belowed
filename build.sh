@@ -14,6 +14,11 @@
 #                        optimised and one at a time, 03:00 to 06:00
 #                        Europe/Stockholm under ~/benchmark.lock
 #   ./build.sh bench     the factory benchmark only, the same guard
+#   ./build.sh frame-profile [view ...]
+#                        the release build, then the frame table of
+#                        tools/frame_profile.py under gamescope, the same
+#                        guard (work item 0342, doc/build.md, Frame
+#                        profile)
 #   ./build.sh check-android
 #                        the same check for Android arm64 (work item 0114),
 #                        with tools/android_env.sh sourced
@@ -334,11 +339,19 @@ case "$mode" in
 		guard_benchmark "./build.sh bench" 40
 		run_tests -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark
 		;;
+	frame-profile)
+		# Not exec: the script checks that the lock names this shell, and the
+		# shell's trap releases it.
+		shift
+		guard_benchmark "./build.sh frame-profile" 40
+		build "${release_flags[@]}"
+		python3 tools/frame_profile.py "$@"
+		;;
 	check-android) check_android ;;
 	android) build_android ;;
 	model-check) model_check "${2:-all}" ;;
 	*)
-		echo "usage: $0 [debug|release|check|check-windows|test|nightly|bench|check-android|android|model-check]" >&2
+		echo "usage: $0 [debug|release|check|check-windows|test|nightly|bench|frame-profile|check-android|android|model-check]" >&2
 		exit 2
 		;;
 esac

@@ -1,6 +1,6 @@
 # 0342: The frame profiler and its views
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-11)
 
 0340's research found that nothing has ever timed a frame on the couch's GPU: the F3 frame time includes the wait for the display, and the cost items (0310, 0311, 0328) left estimates. The target (the user, 2026-11-11): 60 frames a second on average at 1080p and 60 Hz on the couch, with the view at 512 m, in split screen too, with an early game factory of a handful of machines; the Steam Deck is a target, the phone secondary.
 
@@ -517,3 +517,5 @@ Count sites
 6. Built on 0343 (`view_distance`) and on 0341 (`--input=none`, landed): the worktree is made from 0343's branch once its review is weighed.
 7. Every build or test run goes inside `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0`.
 8. The ridge view stands at 76.552 N, 133.534 E, the ridge 0349's design counted nodes at, so the two items read one place.
+
+At the landing (main agent, 2026-11-11): the factory view's keys `gap`, `back_metres` and `up_metres` named above became `corner`, `view_from` and `pitch_degrees` after the first check run (the log, 0342).

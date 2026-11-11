@@ -1341,10 +1341,10 @@ send_hash_report :: proc(network: ^Session_Network, tick, hash: u64) {
 }
 
 // The machine's hash of a due tick: the host keeps its own, a client
-// sends its own. Offline nothing is hashed.
-report_state_hash :: proc(network: ^Session_Network, simulation: ^Simulation_State) {
+// sends its own. Offline nothing is hashed. hashed says whether it was.
+report_state_hash :: proc(network: ^Session_Network, simulation: ^Simulation_State) -> (hashed: bool) {
 	if network.role == .Offline || !state_hash_due(simulation.tick) {
-		return
+		return false
 	}
 	hash := lockstep_state_hash(simulation)
 	switch network.role {
@@ -1354,6 +1354,7 @@ report_state_hash :: proc(network: ^Session_Network, simulation: ^Simulation_Sta
 		send_hash_report(network, simulation.tick, hash)
 	case .Offline:
 	}
+	return true
 }
 
 // The joiner's session from the host's snapshot: the world loaded from

@@ -369,6 +369,19 @@ log_display_diagnostics :: proc(window_platform: Window_Platform) {
 	platform.log_printf("%s", display_diagnostics_text(current_monitor_size(), window_size, render_size(), window_scale(), window_platform))
 }
 
+// The display line again once the render size differs from the one last
+// logged (0342), returning the size now logged. raylib changes the render
+// size only when GLFW delivers the window's resize, in a later frame's
+// event poll, so the line update_display logs right after a mode change
+// still shows the size from before it.
+log_display_when_render_changed :: proc(logged: [2]int, platform: Window_Platform) -> [2]int {
+	size := render_size()
+	if size != logged {
+		log_display_diagnostics(platform)
+	}
+	return size
+}
+
 // The GL implementation, logged once per start after the display line
 // (work item 0104): on the phone a translation layer between Wine and the
 // GPU (GL4ES, VirGL) rejected a fragment shader at link time without

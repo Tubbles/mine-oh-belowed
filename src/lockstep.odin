@@ -637,13 +637,20 @@ run_tick_lines_hook :: proc(data: rawptr) {
 // One tick of the driver: the tick, whose hook runs the records' socket
 // lines where the commands apply (after the simulated chunk set is
 // derived, so a teleport moves the set alike on every machine), and the
-// hash when due.
-run_session_tick :: proc(session: ^Session, content: Simulation_Content, control: ^Command_Control, answers: ^[dynamic]Line_Answer) {
+// hash when due. A profile (the game's, 0342) gets the tick's sections,
+// the hash and the whole tick's time.
+run_session_tick :: proc(session: ^Session, content: Simulation_Content, control: ^Command_Control, answers: ^[dynamic]Line_Answer, profile: ^Tick_Profile = nil) {
+	start := profile_now(profile)
 	inputs, lines := begin_lockstep_tick(&session.lockstep, &session.simulation)
 	tick_lines := Tick_Lines{session = session, content = content, control = control, lines = lines, answers = answers}
-	simulation_tick(&session.simulation, content, inputs, hook = Tick_Hook{procedure = run_tick_lines_hook, data = &tick_lines})
+	simulation_tick(&session.simulation, content, inputs, profile, Tick_Hook{procedure = run_tick_lines_hook, data = &tick_lines})
 	finish_lockstep_tick(&session.lockstep, session.simulation.tick)
-	report_state_hash(&session.network, &session.simulation)
+	clock := profile_now(profile)
+	if report_state_hash(&session.network, &session.simulation) && profile != nil {
+		profile_section(profile, .State_Hash, clock)
+		profile.state_hashes += 1
+	}
+	note_longest_tick(profile, start)
 }
 
 // Every tick whose records and chunks are there, within the wall budget.
@@ -653,8 +660,9 @@ run_session_tick :: proc(session: ^Session, content: Simulation_Content, control
 // ran). Alone (offline, or a host nobody joined), a tick waiting
 // for its chunks still takes the ones that arrived, so a new world fills
 // in while it waits; with other machines that would make the order of
-// the insertions differ, and a joiner takes the world as it is.
-run_ready_ticks :: proc(session: ^Session, content: Simulation_Content, control: ^Command_Control, answers: ^[dynamic]Line_Answer) -> int {
+// the insertions differ, and a joiner takes the world as it is. profile
+// goes to every tick (run_session_tick).
+run_ready_ticks :: proc(session: ^Session, content: Simulation_Content, control: ^Command_Control, answers: ^[dynamic]Line_Answer, profile: ^Tick_Profile = nil) -> int {
 	lockstep, simulation := &session.lockstep, &session.simulation
 	start := time.tick_now()
 	count := 0
@@ -674,7 +682,7 @@ run_ready_ticks :: proc(session: ^Session, content: Simulation_Content, control:
 		if unpaced {
 			lockstep.clock_ticks -= 1
 		}
-		run_session_tick(session, content, control, answers)
+		run_session_tick(session, content, control, answers, profile)
 		count += 1
 	}
 	return count
