@@ -1,6 +1,6 @@
 # 0341: Input injected through the command socket
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, c8c1088)
 
 A headless session is framed through the command socket (0183), but a screen the commands do not reach (a menu, a panel, the inventory view) is still driven by `xdotool` sending keys and mouse moves into the virtual display, and the session reads whatever controller is plugged into the machine: on 2026-11-11 a capture came out with the inventory open because the user played another game with the same controller. The user (2026-11-11): headless runs "should not" read any physical controller, "it shouldn't respond to keyboard and mouse either. Only injected commands make sense", and "let's shed the xdotool dependency and have the game have a way to inject instead, like a command socket API".
 
