@@ -2,7 +2,7 @@
 
 Status: designed (2026-11-11)
 
-Part B of 0356's specification (`doc/work/0356-the-pipes-netlist.md`): on the field every pipe is run by hand from port to port as a cable is (the main agent's proposal, the user may overturn it: the alternative is placed pipe pieces on frames, with pole runs that carry fluid and a second model for vessels), a fluid junction, fluid ports in 0361's `ports` key, `machine_port_is_linked` for fluid ports, and the pipe run tool between belt poles removed.
+Part B of 0356's specification (`doc/work/0356-the-pipes-netlist.md`): on the field every pipe is run by hand from port to port as a cable is (the user, 2026-11-11: "by hand yes"), a fluid junction, fluid ports in 0361's `ports` key, `machine_port_is_linked` for fluid ports, and the pipe run tool between belt poles removed.
 
 ## Goal
 
