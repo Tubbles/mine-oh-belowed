@@ -1,6 +1,6 @@
 # 0340: Sixty frames a second on the couch machine: the research
 
-Status: todo (2026-11-11)
+Status: landed (2026-11-11, 30a63ff)
 
 The user (2026-11-11): "Let's target 60 fps at least, on this machine. So we need to work out some LOD, culling, etc. Decrease entity update loop for entities that are not provable to be interacted by anything in the coming short while etc. Do proper research into what can be done". Nothing measures the frame on the couch's own GPU today: the headless captures draw with Mesa's software renderer and the benchmark times the tick without a window.
 
