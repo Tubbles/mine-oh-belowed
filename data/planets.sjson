@@ -331,11 +331,12 @@ planets = [
 		}
 		// The waters (work item 0312, doc/content.md, Planets), optional:
 		// springs at the valley heads of the highlands and lakes in their
-		// basins round the home, found once per session from the seed; a
-		// world records these keys.
+		// basins over the whole planet (0326), found from the seed; a world
+		// records these keys.
 		waters = {
-			// The finder's reach round the home (at most half the radius)
-			// and its grid's cell.
+			// Round the home on its own grid: with tiles the tech demo's
+			// start is ranked there, without them the waters are found only
+			// there (at most half the radius). Then the grid's cell.
 			reach_metres = 2500
 			grid_metres = 16
 			// No spring and no lake within this of the home.
@@ -354,6 +355,10 @@ planets = [
 			lake_maximum_metres = 384
 			// A lake stands this far under its pour point.
 			lake_margin_millimetres = 500
+			// Springs and lakes over the whole planet, found in tiles of
+			// this edge as the ground is wanted (0 keeps them round the home
+			// only).
+			tile_metres = 1024
 		}
 		// The ground cover (work item 0311, doc/content.md, Planets),
 		// optional and needing the climate: tufts, flowers, ferns and stones

@@ -69,7 +69,7 @@ Command_Line :: struct {
 	model_preview:   string `usage:"<machine>[,<machine>]: render each machine's model from five cameras at rest and at three phases into --model-preview-directory, then exit"`,
 	model_preview_directory: string `usage:"<path>: where --model-preview writes <machine>_<camera>_<phase>.png"`,
 	// Work item 0306: the relief map.
-	relief_map:      string `usage:"<latitude>,<longitude>,<size_metres>[,<radius_metres>]: write a shaded relief map of the square round the point on the default planet (seed from --seed) to --relief-map-file, then exit; no window"`,
+	relief_map:      string `usage:"<latitude>,<longitude>,<size_metres>[,<radius_metres>] or planet[,<radius_metres>]: write a shaded relief map of the square round the point, or of the whole planet as a net of six faces, on the default planet (seed from --seed) to --relief-map-file, then exit; no window"`,
 	relief_map_file: string `usage:"<path>: the PNG --relief-map writes"`,
 	// Work item 0177: lockstep multiplayer.
 	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,

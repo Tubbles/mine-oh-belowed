@@ -1,12 +1,18 @@
 package game
 
 import "core:slice"
+@(require) import "core:sync"
 
 // The waters of a planet (work item 0312, doc/architecture.md, World
 // generation): springs at the valley heads of the highlands and lakes in
 // their basins round the home, in integers and fixed point, a pure
 // function of the seed and the recorded planet (the spacing never moves a
 // spring or a lake), found once per session (make_planet_water_features).
+// This finder round the home is an old world's, recorded before the
+// tiles (0326, generation_planet_water_tiles.odin), which find the waters
+// over the whole planet by the local forms of its rules and share the
+// refine, the seal and the readers below; the tech demo's start still
+// ranks its springs on this grid's flood (planet_tile_water_start).
 // The finder reads uncratered_relief only, so the crater never makes a
 // lake. Heights and levels are position units over the radius, as
 // uncratered_relief returns them; sea is generation.sea_radius less
@@ -21,7 +27,6 @@ import "core:slice"
 // the 1 m lattice, so no shore column under the level stands beside a
 // lower one outside the lake's mask.
 
-LAKE_CELL_METRES :: 2
 // The refine passes saddles lower than the coarse level less this.
 WATERS_REFINE_TOLERANCE_METRES :: 2
 // The seal lowers a lake's level at most this many times.
@@ -104,8 +109,19 @@ waters_plane_coordinates :: proc(plane: Waters_Plane, point: [3]i64) -> (east, n
 	return fixed_dot(point, plane.east) * plane.radius / along, fixed_dot(point, plane.north) * plane.radius / along, true
 }
 
+// test_report_the_waters_cost's define (0312, 0326): with it the waters
+// count their relief evaluations.
+WATERS_COST :: #config(WATERS_COST, false)
+
+when WATERS_COST {
+	waters_relief_evaluations: u64
+}
+
 // The relief without the crater under the plane's point.
 waters_plane_height :: proc(generation: Planet_Generation, plane: Waters_Plane, east_cells, north_cells: i64) -> i64 {
+	when WATERS_COST {
+		sync.atomic_add(&waters_relief_evaluations, 1)
+	}
 	return uncratered_relief(generation, fixed_scale(waters_plane_direction(plane, east_cells, north_cells), generation.radius))
 }
 
@@ -701,10 +717,10 @@ planet_water_start :: proc(grid: ^Waters_Grid, record: []Planet_Spring, springs:
 }
 
 // The planet's waters from the seed and the record: nothing when its
-// waters are off; else the grid round the home, its flood, the lakes, the
-// springs and the start, the grid freed.
+// waters are off or found in tiles (0326); else the grid round the home,
+// its flood, the lakes, the springs and the start, the grid freed.
 make_planet_water_features :: proc(seed: u64, planet: Planet, allocator := context.allocator) -> Planet_Water_Features {
-	if planet.waters == {} {
+	if planet.waters == {} || planet.waters.tile_metres > 0 {
 		return {}
 	}
 	generation := make_planet_generation(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
@@ -748,18 +764,87 @@ planet_lakes_meeting_box :: proc(lakes: []Planet_Lake, minimum, maximum: [3]i64)
 	return listed[:]
 }
 
+// The box's centre's unit direction and its half diagonal, at most a
+// coarsest node's (WATER_QUERY_BOX_METRES, 0326).
+water_query_box :: proc(minimum, maximum: [3]i64) -> (direction: [3]i64, half: i64) {
+	direction, _ = normalize_fixed((minimum + maximum) / 2)
+	half = vector_length(maximum - minimum) / 2
+	assert(half <= metres_to_position_units(WATER_QUERY_BOX_METRES) / 2, "a box that asks for lakes is at most a coarsest node's")
+	return
+}
+
+// The lakes whose bound meets the box: the planet's without tiles; with
+// them (0326) the kept lakes of the tiles within a lake's reach and twice
+// the box's half diagonal of its centre, which bounds the box's points
+// projected onto the sphere, in water_lake_before's order.
+generation_lakes_meeting_box :: proc(generation: Planet_Generation, minimum, maximum: [3]i64, allocator := context.temp_allocator) -> []Planet_Lake {
+	if generation.water_tiles == nil {
+		return planet_lakes_meeting_box(generation.lakes, minimum, maximum)
+	}
+	direction, half := water_query_box(minimum, maximum)
+	listed := make([dynamic]Planet_Lake, allocator)
+	for lake in water_tile_lakes_near(generation.water_tiles, direction, generation.water_tiles.lake_reach + 2 * half, allocator) {
+		if planet_lake_meets_box(lake, minimum, maximum) {
+			append(&listed, lake)
+		}
+	}
+	return listed[:]
+}
+
+// The lakes whose mask may hold a point of the sphere of the radius in
+// the box, as a tree's key point lies (planet_trees_in_box): the planet's
+// without tiles; with them (0326) the tiles' kept lakes whose pit lies
+// within a lake's reach of the box. A lake's bound sits at its level, which
+// can stand farther over the sphere than the bound's radius, so the bound
+// is no test here.
+generation_lakes_near_sphere_box :: proc(generation: Planet_Generation, minimum, maximum: [3]i64, allocator := context.temp_allocator) -> []Planet_Lake {
+	if generation.water_tiles == nil {
+		return generation.lakes
+	}
+	direction, half := water_query_box(minimum, maximum)
+	reach := generation.water_tiles.lake_reach
+	listed := make([dynamic]Planet_Lake, allocator)
+	for lake in water_tile_lakes_near(generation.water_tiles, direction, reach + 2 * half, allocator) {
+		pit := fixed_scale(lake.centre, generation.radius)
+		squared: i64 = 0
+		for axis in 0 ..< 3 {
+			gap := max(minimum[axis] - pit[axis], pit[axis] - maximum[axis], 0)
+			squared += gap * gap
+		}
+		if squared <= reach * reach {
+			append(&listed, lake)
+		}
+	}
+	return listed[:]
+}
+
+// The derived springs a chunk may hold: the planet's without tiles; with
+// them (0326) the tiles' within 32 spacings of the chunk's centre, more than
+// planet_spring_may_lie_in_chunk's 29.
+planet_derived_springs_near_chunk :: proc(generation: Planet_Generation, planet: Planet, coordinate: Field_Chunk_Coordinate) -> []Planet_Water_Spring {
+	if generation.water_tiles == nil {
+		return planet.water_features.springs
+	}
+	origin := field_chunk_origin(coordinate)
+	first := cast([3]i64)sample_to_world_position(origin, generation.spacing_millimetres)
+	last := cast([3]i64)sample_to_world_position(origin + FIELD_CHUNK_SIZE - 1, generation.spacing_millimetres)
+	direction, _ := normalize_fixed((first + last) / 2)
+	return water_tile_springs_near(generation.water_tiles, direction, 32 * generation.spacing)
+}
+
 // Every air sample of the chunk with no water (the sea's, a spring's) that
 // a lake's mask holds takes the first such lake's fill under its level,
 // asleep and no one's, as the sea is filled; carved air (column_carves,
-// 0324, the bits from generate_field_chunk) stays dry.
+// 0324, the bits from generate_field_chunk) stays dry. The lakes are the
+// features' or the tiles' (0326, generation_lakes_meeting_box).
 fill_field_chunk_lakes :: proc(generation: Planet_Generation, chunk: ^Field_Chunk, carved: ^Field_Sample_Bits) {
-	if len(generation.lakes) == 0 {
+	if len(generation.lakes) == 0 && generation.water_tiles == nil {
 		return
 	}
 	origin := field_chunk_origin(chunk.coordinate)
 	minimum := cast([3]i64)sample_to_world_position(origin, generation.spacing_millimetres)
 	maximum := cast([3]i64)sample_to_world_position(origin + FIELD_CHUNK_SIZE - 1, generation.spacing_millimetres)
-	listed := planet_lakes_meeting_box(generation.lakes, minimum, maximum)
+	listed := generation_lakes_meeting_box(generation, minimum, maximum)
 	if len(listed) == 0 {
 		return
 	}

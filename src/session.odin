@@ -196,10 +196,17 @@ resolve_session_planet :: proc(plan: Session_Plan, planets: []Planet, session: ^
 		if !plan.loading {
 			session.planet.home = new_world_home(plan.seed, session.planet)
 		}
-		// The waters (0312), found once on this thread: every copy of the
-		// planet (the world's, the workers', the water's generation) borrows
-		// them, destroy_recorded_planet frees them.
-		session.planet.water_features = make_planet_water_features(plan.seed, session.planet)
+		// The waters: with tiles (0326) a cache the threads find them in as
+		// the ground is wanted, none found here; without them (a world
+		// recorded before 0326) 0312's features round the home, found once
+		// on this thread. Every copy of the planet (the world's, the
+		// workers', the water's generation) borrows them,
+		// destroy_recorded_planet frees them.
+		if session.planet.waters.tile_metres > 0 {
+			session.planet.water_tiles = make_water_tile_cache(plan.seed, session.planet)
+		} else {
+			session.planet.water_features = make_planet_water_features(plan.seed, session.planet)
+		}
 		settings.planet_id = session.planet.id
 	}
 	resolved.settings = settings

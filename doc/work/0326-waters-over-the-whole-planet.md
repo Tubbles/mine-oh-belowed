@@ -1,6 +1,6 @@
 # 0326: Waters over the whole planet
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-11)
 
 0312 finds springs and lakes on one grid within 2.5 km of the home (at most half the radius), once per session on the main thread. Past it the ground has no derived springs and no lakes, which a player meets after a few minutes' walk on the 8 km planet.
 
@@ -205,3 +205,12 @@ Changed:
 4. The tech demo ranks its spring start over the home's 3 by 3 tiles only, so its start costs no more than 0312's finder; the tests that read the tech demo's spring follow the new start.
 5. The catchment is counted in cells, as designed: the cube's corners lie far from every shipped home.
 6. The implementation follows 0314 in the same stream, from 0314's snapshot, since both change `generation_planet.odin` and `world_field_lod.odin`; 0334's change to `generation_planet_waters_test.odin` meets it at the rebase.
+7. (2026-11-11) Decision 4's premise did not hold: the home's 3 by 3 finals read 17 to 26 analyses, 2 to 3.4 times 0312's finder in relief reads, once, at the tech demo's start. Accepted for the landing; the night's waters report times the start, and a start that stalls becomes an item of its own.
+
+### Deviations (implementation, 2026-11-11)
+
+- The trees list their lakes through `generation_lakes_near_sphere_box` (the pits within a lake's reach of the cubes' box), not `generation_lakes_meeting_box`: a tree's key point lies on the sphere of the radius, which the bound of a lake standing high over it, centred at its level, can miss.
+- The cache's readers copy key by key (each under the lock while its state is Found, else that key asked again), not all keys at once when every one is still Found, and a publish never evicts its own key: a batch of more keys than the cache keeps (a final reads up to 26 analyses) is never all Found at once, and a state just published while every other is Finding would be evicted before its reader copies it, so either rule as specified can send a reader round forever.
+- No face owns a cell (fix round, `water_cell_owned` removed): a pit's basin can hold a lower cell over the seam, so the owning face refused lakes the other face skipped. Each face finds every pit and head in its tiles' core cells, the final's overlap rule drops the double, and `water_tiles_near` clamps to the tiles' cells.
+- The query reach is at most 21 percent of the radius, not a quarter: the second review's scan found `water_tiles_near`'s corner test skipping tiles from 22 percent.
+- The relief map paints a lake over the projected box of its window, not a rectangle round its centre.

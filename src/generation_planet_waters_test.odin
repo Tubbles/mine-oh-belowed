@@ -5,16 +5,20 @@ import "core:log"
 import "core:math"
 import "core:slice"
 import "core:strings"
+@(require) import "core:sync"
 import "core:testing"
+@(require) import "core:thread"
 @(require) import "core:time"
 
 // Work item 0312: the springs and the lakes round the shipped home.
 
 // The shipped home at a preset with the home a new world of the seed
-// takes.
+// takes, its waters without tiles: 0312's finder, as a world recorded
+// before 0326 runs it.
 waters_test_planet :: proc(radius_metres: int, seed := DEFAULT_WORLD_SEED) -> Planet {
 	planet := shipped_test_home_at(radius_metres)
 	planet.home = new_world_home(seed, planet)
+	planet.waters.tile_metres = 0
 	return planet
 }
 
@@ -432,20 +436,23 @@ test_a_lake_over_its_inner_saddles_settles_as_one_body :: proc(t: ^testing.T) {
 	}
 }
 
+// With the tiles (0326) the start is ranked over the home's 3 by 3
+// tiles' springs and the record's on 0312's grid round the home.
 @(test) // slow
 test_the_tech_demo_start_follows_the_longest_fall :: proc(t: ^testing.T) {
-	small := waters_test_planet(4000)
-	small_features := make_planet_water_features(DEFAULT_WORLD_SEED, small)
-	defer destroy_planet_water_features(&small_features)
-	derived := false
-	for spring in small_features.springs {
-		derived ||= small_features.has_start && spring.direction == small_features.start
-	}
-	testing.expect(t, derived, "at 4 km the start is a derived spring")
-	large := waters_test_planet(16000)
-	large_features := make_planet_water_features(DEFAULT_WORLD_SEED, large)
-	defer destroy_planet_water_features(&large_features)
-	testing.expect(t, large_features.has_start && large_features.start == planet_spring_direction(large.springs[1]), "at 16 km the start is the record's second spring")
+	small := water_tiles_test_planet(4000)
+	small.water_tiles = make_water_tile_cache(DEFAULT_WORLD_SEED, small)
+	defer destroy_water_tile_cache(small.water_tiles)
+	small_start, small_found := planet_spring_start(DEFAULT_WORLD_SEED, small)
+	testing.expect(t, small_found && water_tiles_test_home_spring(small, small_start), "at 4 km the start is a spring of the home's tiles")
+	latitude, longitude := relief_map_degrees(small_start)
+	testing.expectf(t, math.abs(latitude - TECH_DEMO_TEST_START_4000[0]) < 0.05 && math.abs(longitude - TECH_DEMO_TEST_START_4000[1]) < 0.05, "at 4 km the start lies at latitude %.2f, longitude %.2f", latitude, longitude)
+	large := water_tiles_test_planet(16000)
+	large.water_tiles = make_water_tile_cache(DEFAULT_WORLD_SEED, large)
+	defer destroy_water_tile_cache(large.water_tiles)
+	large_start, large_found := planet_spring_start(DEFAULT_WORLD_SEED, large)
+	testing.expect(t, large_found && large_start == planet_spring_direction(large.springs[1]), "at 16 km the start is the record's second spring")
+	water_tiles_test_home_spring(large, large_start)
 
 	config := test_field_game_config()
 	content := make_field_test_game_content()
@@ -456,8 +463,8 @@ test_the_tech_demo_start_follows_the_longest_fall :: proc(t: ^testing.T) {
 		return
 	}
 	defer end_session(session)
-	start := session.planet.water_features.start
-	testing.expect(t, session.planet.water_features.has_start && start == small_features.start, "the session finds the same start")
+	start, found := planet_spring_start(DEFAULT_WORLD_SEED, session.planet)
+	testing.expect(t, session.planet.water_tiles != nil && found && start == small_start, "the session finds the same start")
 	generation := make_planet_generation(DEFAULT_WORLD_SEED, session.planet, session.simulation.field.spacing_millimetres)
 	surface := field_surface_under(generation, World_Position(fixed_scale(start, generation.radius)), 0)
 	feet := session.simulation.players[0].field.position
@@ -583,7 +590,7 @@ test_an_old_world_file_keeps_its_springs_and_has_no_lakes :: proc(t: ^testing.T)
 	features := make_planet_water_features(DEFAULT_WORLD_SEED, recorded)
 	testing.expect(t, features.springs == nil && features.lakes == nil && !features.has_start, "the old world has no waters")
 	testing.expect_value(t, len(recorded.springs), len(planet.springs))
-	direction, found := planet_spring_start(recorded)
+	direction, found := planet_spring_start(DEFAULT_WORLD_SEED, recorded)
 	testing.expect(t, found && direction == planet_spring_direction(planet.springs[0]), "the old world's tech demo starts at its first spring")
 }
 
@@ -607,14 +614,80 @@ test_a_new_world_records_its_waters :: proc(t: ^testing.T) {
 // Measured, not asserted (0312), so it runs only with the define: per
 // preset the finder's wall time and counts, a lake chunk's generation
 // against the home's surface chunk, and a tech demo session at 8 km per
-// water model at the start for 600 ticks. Run alone with
+// water model at the start for 600 ticks; with the tiles (0326) per preset
+// an analysis and a final of the home's tile (best of 5, fresh caches),
+// the home's 3 by 3 finals from a cold cache on one thread and on the
+// workers' count of threads, and the tech demo's spring start, each with
+// its relief evaluations. Run alone with
 // ./build.sh test quick game.test_report_the_waters_cost -o:speed -define:WATERS_COST=true
-// or in ./build.sh nightly.
-WATERS_COST :: #config(WATERS_COST, false)
+// or in ./build.sh nightly. WATERS_COST is declared beside the counter
+// it gates (generation_planet_waters.odin).
 
 when WATERS_COST {
+	// The relief evaluations since the last call.
+	waters_cost_evaluations :: proc() -> u64 {
+		return sync.atomic_exchange(&waters_relief_evaluations, 0)
+	}
+
+	// The home's 3 by 3 finals from a cold cache on the threads, each
+	// asking the keys in its own order; the wall time in milliseconds.
+	waters_cost_threaded_finals :: proc(planet: Planet, threads: int) -> f64 {
+		cache := make_water_tile_cache(DEFAULT_WORLD_SEED, planet)
+		defer destroy_water_tile_cache(cache)
+		keys := water_home_tile_keys(cache)
+		askers := make([]Water_Tiles_Test_Asker, threads, context.temp_allocator)
+		workers := make([]^thread.Thread, threads, context.temp_allocator)
+		begin := time.tick_now()
+		for &asker, index in askers {
+			asker = {cache, keys[:], index}
+			workers[index] = thread.create_and_start_with_poly_data(&asker, water_tiles_test_ask)
+		}
+		for worker in workers {
+			thread.join(worker)
+			thread.destroy(worker)
+		}
+		return time.duration_milliseconds(time.tick_since(begin))
+	}
+
+	// The tiles' cost per preset (0326).
+	waters_cost_tiles :: proc(radius: int) {
+		planet := water_tiles_test_planet(radius)
+		analysis_best, final_best := max(f64), max(f64)
+		analysis_evaluations, final_evaluations: u64
+		for _ in 0 ..< 5 {
+			cache := make_water_tile_cache(DEFAULT_WORLD_SEED, planet)
+			key := []Water_Tile_Key{water_tile_key_of(cache, cache.home)}
+			waters_cost_evaluations()
+			begin := time.tick_now()
+			take_water_tile_analyses(cache, key)
+			analysis_best = min(analysis_best, time.duration_milliseconds(time.tick_since(begin)))
+			analysis_evaluations = waters_cost_evaluations()
+			begin = time.tick_now()
+			take_water_tile_finals(cache, key)
+			final_best = min(final_best, time.duration_milliseconds(time.tick_since(begin)))
+			final_evaluations = waters_cost_evaluations()
+			destroy_water_tile_cache(cache)
+			free_all(context.temp_allocator)
+		}
+		log.infof("waters cost at %d m: the home's tile, an analysis %.0f ms (%d evaluations), its final after it %.0f ms (%d evaluations, best of 5)", radius, analysis_best, analysis_evaluations, final_best, final_evaluations)
+		single := waters_cost_threaded_finals(planet, 1)
+		single_evaluations := waters_cost_evaluations()
+		workers := default_worker_count()
+		parallel := waters_cost_threaded_finals(planet, workers)
+		parallel_evaluations := waters_cost_evaluations()
+		log.infof("waters cost at %d m: the home's 3 by 3 finals cold, one thread %.0f ms (%d evaluations), %d threads %.0f ms (%d evaluations)", radius, single, single_evaluations, workers, parallel, parallel_evaluations)
+		begin := time.tick_now()
+		start, found := planet_spring_start(DEFAULT_WORLD_SEED, planet)
+		elapsed := time.duration_milliseconds(time.tick_since(begin))
+		latitude, longitude := relief_map_degrees(start)
+		log.infof("waters cost at %d m: the tech demo's spring start %.0f ms (%d evaluations), found %v at latitude %.2f, longitude %.2f", radius, elapsed, waters_cost_evaluations(), found, latitude, longitude)
+	}
+
 	@(test)
 	test_report_the_waters_cost :: proc(t: ^testing.T) {
+		for radius in ([3]int{4000, 8000, 16000}) {
+			waters_cost_tiles(radius)
+		}
 		for radius in ([3]int{4000, 8000, 16000}) {
 			planet := waters_test_planet(radius)
 			begin := time.tick_now()

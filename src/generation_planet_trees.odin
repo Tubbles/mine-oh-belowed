@@ -531,6 +531,11 @@ forest_density_at :: proc(generation: Planet_Generation, on_sphere: [3]i64) -> (
 // x outermost, then y, then z; the box is in position units on or near
 // the sphere of the radius (callers project onto it). The forest's trees
 // while it is on (0310), else the groves'. Nothing for the zero term.
+// With the waters' tiles (0326) the cubes read a copy of the generation
+// whose lakes are those that may hold a point of the cubes' box
+// (generation_lakes_near_sphere_box) and whose tiles are nil, so
+// planet_tree_ground reads one short list and the shared generation is
+// never written.
 planet_trees_in_box :: proc(generation: ^Planet_Generation, minimum, maximum: [3]i64, allocator := context.temp_allocator) -> [dynamic]Planet_Tree {
 	trees := make([dynamic]Planet_Tree, allocator)
 	term := generation.trees
@@ -551,10 +556,18 @@ planet_trees_in_box :: proc(generation: ^Planet_Generation, minimum, maximum: [3
 	}
 	size := last - first + 1
 	assert(size.x * size.y * size.z <= PLANET_TREE_BOX_CELL_LIMIT, "planet_trees_in_box: the box holds too many tree cubes")
+	cubes := generation
+	listed: Planet_Generation
+	if generation.water_tiles != nil {
+		listed = generation^
+		listed.lakes = generation_lakes_near_sphere_box(generation^, first * term.spacing, (last + 1) * term.spacing)
+		listed.water_tiles = nil
+		cubes = &listed
+	}
 	for x in first.x ..= last.x {
 		for y in first.y ..= last.y {
 			for z in first.z ..= last.z {
-				append_planet_tree(&trees, generation, groves, {x, y, z})
+				append_planet_tree(&trees, cubes, groves, {x, y, z})
 			}
 		}
 	}

@@ -568,11 +568,17 @@ field_pod_spawn :: proc(entities: ^Entities, machines: Machine_Registry) -> (pla
 }
 
 // The tech demo's spring (0312): the waters' start, the spring whose water
-// falls furthest to the sea, else the record's first; found is false with
-// neither.
-planet_spring_start :: proc(planet: Planet) -> (direction: [3]i64, found: bool) {
+// falls furthest to the sea (with tiles ranked over the home's 3 by 3
+// tiles, 0326, planet_tile_water_start), else the record's first; found is
+// false with neither.
+planet_spring_start :: proc(seed: u64, planet: Planet) -> (direction: [3]i64, found: bool) {
 	if planet.water_features.has_start {
 		return planet.water_features.start, true
+	}
+	if planet.waters.tile_metres > 0 {
+		if start, tile_found := planet_tile_water_start(seed, planet); tile_found {
+			return start, true
+		}
 	}
 	if len(planet.springs) > 0 {
 		return planet_spring_direction(planet.springs[0]), true
@@ -590,7 +596,7 @@ planet_spring_start :: proc(planet: Planet) -> (direction: [3]i64, found: bool) 
 // outside the crater's reach, so the baked overlay does not matter.
 // Facing the home. found is false without springs.
 field_spring_spawn :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> (player: Field_Player, found: bool) {
-	direction, has_spring := planet_spring_start(planet)
+	direction, has_spring := planet_spring_start(seed, planet)
 	if !has_spring {
 		return {}, false
 	}

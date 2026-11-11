@@ -33,7 +33,9 @@ import "platform"
 // without the term (crater_baked false); the hit writes the baked
 // generation into the field (dig_impact_crater).
 // The waters (0312, generation_planet_waters.odin) fill the lakes beside
-// the sea and add the derived springs beside the record's.
+// the sea and add the derived springs beside the record's, read from the
+// tiles over the whole planet (0326, generation_planet_water_tiles.odin)
+// or, without them, from the features round the home.
 // The chunks and the grids read no column for a sample the relief's range
 // over its box of samples decides (0314, generation_planet_bound.odin),
 // which gets the bytes its column would give.
@@ -111,6 +113,9 @@ Planet_Generation :: struct {
 	// The lakes (0312, generation_planet_waters.odin), borrowed from the
 	// planet's water features; none without them.
 	lakes:               []Planet_Lake,
+	// The waters' tiles (0326), borrowed from the planet; nil without
+	// them, whose lakes are the slice above.
+	water_tiles:         ^Water_Tile_Cache,
 }
 
 // The starter veins lie round the planet's home (the pod's, 0179,
@@ -143,6 +148,7 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		climate_seed = seeds[.Planet_Climate],
 		ground_look_seed = seeds[.Planet_Ground_Look],
 		lakes = planet.water_features.lakes,
+		water_tiles = planet.water_tiles,
 	}
 	generation.crater = make_crater_term(generation, planet.crater, planet_home_direction(planet.home))
 	generation.trees = make_planet_tree_term(seed, planet.trees, planet.home, radius)
@@ -659,7 +665,8 @@ planet_spring_sample_at :: proc(generation: Planet_Generation, direction: [3]i64
 
 // The springs whose sample lies in the chunk become full, awake sources:
 // the record's, a spring with no air above its surface skipped with a log
-// line, then the derived ones (0312) whose radial passes near the chunk
+// line, then the derived ones (0312, the tiles' near the chunk with them,
+// 0326) whose radial passes near the chunk
 // (planet_spring_may_lie_in_chunk), one without air skipped quietly.
 mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, chunk: ^Field_Chunk) {
 	for spring in planet.springs {
@@ -670,7 +677,7 @@ mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, 
 		}
 		mark_field_chunk_spring(chunk, sample)
 	}
-	for spring in planet.water_features.springs {
+	for spring in planet_derived_springs_near_chunk(generation, planet, chunk.coordinate) {
 		if !planet_spring_may_lie_in_chunk(generation, spring.direction, chunk.coordinate) {
 			continue
 		}

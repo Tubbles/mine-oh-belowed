@@ -264,3 +264,9 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - The tree tiles' relief reads are the standing trees' own: a base and two slope probes each, the slope's two being 65 percent of a tile's reads (825k of 1.27M at the 8 km home). They fall only if the trees' bytes change: a slope taken from a coarser lattice of reads, recorded with the forest so only new worlds differ, would read about 0.1M instead (the designer's estimate from the tiles' area at an 8 m lattice, not probed), at the price of trees standing or missing where a slope crosses the limit between lattice points. Worth weighing once the night's tree line (0337, 0338) shows what the tiles still cost.
 
+## Suggestions from the waters over the whole planet (0326, 2026-11-11)
+
+- A final finds the analyses it lacks on the thread that asked (up to 26 at a cold start). Claiming them all first and letting idle workers take them would spread the tech demo's start over the workers, at the price of a second kind of job in the generation queue. Worth it only if the night's waters report shows the start stalls.
+- `water_tiles_near` skips a face when a corner of its square lies behind it, which is why the query reach stops at 21 percent of the radius. A skip by the disc's angle from the face's axis would lift the limit. Nothing shipped needs it: the largest reach against the radius is 803 m at 4 km, 20.1 percent, so a preset under 3824 m with the shipped waters is refused at load.
+- 0314's parity tests (bounded against unbounded generation) hold no lake chunk with tiles. The 0327 review compared 27 such chunks by probe and found them equal, so this is cover for later changes, not a known gap.
+- `test_water_tiles_keep_the_waters_across_the_seams` analyses 30 border tiles and is marked slow without a measured time under a quiet machine. If the night shows it over a minute, fewer tiles round two corners keep the same cases.

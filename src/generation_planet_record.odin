@@ -114,9 +114,11 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 		result.climate = with_climate_field(planet.climate, record.climate)
 	}
 	// Set even when zero: the data's waters never reach an old world. The
-	// features are the session's (make_planet_water_features).
+	// features and the tiles are the session's (make_planet_water_features,
+	// make_water_tile_cache).
 	result.waters = record.waters
 	result.water_features = {}
+	result.water_tiles = nil
 	result.springs = slice.clone(record.springs, allocator)
 	if record.home_recorded {
 		result.home = record.home
@@ -212,6 +214,7 @@ clone_tree_species :: proc(source: []Planet_Tree_Species, count: int, allocator 
 }
 
 destroy_recorded_planet :: proc(planet: ^Planet) {
+	destroy_water_tile_cache(planet.water_tiles)
 	destroy_planet_water_features(&planet.water_features)
 	delete(planet.id)
 	delete(planet.springs)
@@ -425,12 +428,19 @@ recorded_climate_note :: proc(recorded: Planet_Generation_Record, planet: Planet
 
 // The log line of a world file recorded before the waters (0312) on a
 // planet whose data has them, or "": zero is off, so the world keeps its
-// springs and has no lakes.
+// springs and has no lakes. One recorded with the waters but before their
+// tiles (0326) on a planet whose data has them reads tile_metres as 0 and
+// keeps 0312's waters round its home, none past them.
 recorded_waters_note :: proc(recorded: Planet_Generation_Record, planet: Planet) -> string {
-	if !planet_generation_is_recorded(recorded) || recorded.waters != {} || planet.waters == {} {
+	switch {
+	case !planet_generation_is_recorded(recorded) || planet.waters == {}:
 		return ""
+	case recorded.waters == {}:
+		return "world: the world file records no waters, it keeps its springs and has no lakes"
+	case recorded.waters.tile_metres == 0 && planet.waters.tile_metres > 0:
+		return "world: the world file records the waters round the home only, it keeps them and has none past them"
 	}
-	return "world: the world file records no waters, it keeps its springs and has no lakes"
+	return ""
 }
 
 // The log line of a world file without a forest (0310) on a planet whose

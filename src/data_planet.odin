@@ -1,9 +1,11 @@
 package game
 
+import "base:runtime"
 import "core:encoding/json"
 import "core:fmt"
 import "core:reflect"
 import "core:slice"
+import "core:sync"
 import "platform"
 
 // The planet records of data/planets.sjson (work item 0168,
@@ -67,6 +69,21 @@ MAXIMUM_WATERS_GRID_HALF_CELLS :: 512
 // The lakes and the derived springs a planet holds at most.
 MAXIMUM_PLANET_LAKES :: 128
 MAXIMUM_DERIVED_SPRINGS :: 128
+// A lake's refine grid's cell (0312, refine_planet_lake).
+LAKE_CELL_METRES :: 2
+// The waters' tiles' edge (0326, Planet_Waters.tile_metres), least and
+// most, with tiles on.
+MINIMUM_WATER_TILE_METRES :: 256
+MAXIMUM_WATER_TILE_METRES :: 4096
+// A spring's catchment with tiles, in grid cells: a tile's margin stays at
+// most 66 cells.
+MAXIMUM_TILE_CATCHMENT_CELLS :: 64
+// The tiles a cache keeps found; the least recently asked past it are
+// freed and found again alike.
+MAXIMUM_WATER_TILES :: 1024
+// Twice the largest half diagonal of a box that asks for lakes: a coarsest
+// node's with its margin at the widest spacing, 472 m.
+WATER_QUERY_BOX_METRES :: 512
 // The space diagonal of the shipped simulated set (a radius of 2 and a
 // margin of 1, 7 chunks of 32 m at 1 m spacing) is 388 m: a player's set
 // holds at most one derived spring. At the data's bounds (a radius of 3
@@ -296,9 +313,11 @@ Planet_Climate :: struct {
 }
 
 // The waters (work item 0312, generation_planet_waters.odin): springs at
-// the valley heads of the highlands and lakes in their basins, found once
-// per session on a grid of grid_metres within reach_metres of the home (at
-// most half the radius), none within clearing_metres of it. A spring heads
+// the valley heads of the highlands and lakes in their basins, found on
+// cells of grid_metres in tiles of tile_metres over the whole planet as
+// the ground is wanted (0326, generation_planet_water_tiles.odin), or
+// without tiles once per session within reach_metres of the home (at most
+// half the radius), none within clearing_metres of it. A spring heads
 // a channel draining spring_catchment_square_metres, stands
 // spring_minimum_metres over the sea at least and spring_spacing_metres
 // from every other; a lake is a basin at least lake_minimum_depth
@@ -315,6 +334,9 @@ Planet_Waters :: struct {
 	lake_minimum_area_square_metres: int,
 	lake_maximum_metres:             int,
 	lake_margin_millimetres:         int,
+	// The tiles' edge on the cube faces' grids (0326); 0 keeps 0312's
+	// finder round the home only, as a world recorded before it does.
+	tile_metres:                     int,
 }
 
 // A derived spring (0312): the unit direction of its grid cell, its
@@ -337,6 +359,62 @@ Planet_Lake :: struct {
 	level, floor, bound_radius, half:          i64,
 	cells:                                     i32,
 	mask:                                      []u64,
+	// Its pit's face, column and row on the cube's grid (0326); zero from
+	// 0312's finder.
+	cell:                                      [3]i32,
+}
+
+// A head of the tiles' drainage (0326): its spring, drop its height over
+// the sea and to_sea false, and its cell (face, column, row).
+Water_Spring_Candidate :: struct {
+	spring: Planet_Water_Spring,
+	cell:   [3]i32,
+}
+
+// A tile of a cube face's grid (0326): cells column * tile_cells to
+// column * tile_cells + tile_cells - 1, rows alike.
+Water_Tile_Key :: struct {
+	face, column, row: i32,
+}
+
+Water_Tile_State :: enum u8 {
+	Absent,
+	Finding,
+	Found,
+}
+
+// A tile's analysis (its lakes and heads) and its final (kept, indices
+// into lakes, and the springs), each with its state, and the clock of
+// its last ask (0326).
+Water_Tile :: struct {
+	analysis, final: Water_Tile_State,
+	lakes:           []Planet_Lake,
+	candidates:      []Water_Spring_Candidate,
+	kept:            []i32,
+	springs:         []Planet_Water_Spring,
+	used:            u64,
+}
+
+// The tiles of one session's planet (0326, make_water_tile_cache), shared
+// by every thread under the mutex: planet the session's, shallow, with
+// water_tiles nil (the analyses' generation); faces[f] the face's centre,
+// east and north; the geometry in position units and cells, set once.
+Water_Tile_Cache :: struct {
+	mutex:                    sync.Mutex,
+	changed:                  sync.Cond,
+	seed:                     u64,
+	planet:                   Planet,
+	radius, step, sea:        i64,
+	face_cells, tile_cells:   i64,
+	margin, escape_reach:     i64,
+	lake_reach:               i64,
+	catchment_cells:          i32,
+	home:                     [3]i64,
+	faces:                    [6][3][3]i64,
+	maximum_tiles:            int,
+	tiles:                    map[Water_Tile_Key]^Water_Tile,
+	clock:                    u64,
+	allocator:                runtime.Allocator,
 }
 
 // What the session finds from the seed and the record
@@ -644,6 +722,9 @@ Planet :: struct {
 	// Set by the session from the seed and the record
 	// (make_planet_water_features), never by the data.
 	water_features:                                 Planet_Water_Features `json:"-"`,
+	// The waters' tiles (0326), set by the session when the record has
+	// tile_metres (make_water_tile_cache), never by the data.
+	water_tiles:                                    ^Water_Tile_Cache `json:"-"`,
 }
 
 Planets_File :: struct {
@@ -1164,6 +1245,45 @@ waters_problem :: proc(waters: Planet_Waters) -> string {
 	if cells := waters.reach_metres / waters.grid_metres; cells > MAXIMUM_WATERS_GRID_HALF_CELLS {
 		return fmt.tprintf("waters.reach_metres %d is %d cells of grid_metres %d, more than %d", waters.reach_metres, cells, waters.grid_metres, MAXIMUM_WATERS_GRID_HALF_CELLS)
 	}
+	if waters.tile_metres == 0 {
+		return ""
+	}
+	if waters.tile_metres < MINIMUM_WATER_TILE_METRES || waters.tile_metres > MAXIMUM_WATER_TILE_METRES {
+		return fmt.tprintf("waters.tile_metres %d is outside %d to %d", waters.tile_metres, MINIMUM_WATER_TILE_METRES, MAXIMUM_WATER_TILE_METRES)
+	}
+	if waters.tile_metres % waters.grid_metres != 0 {
+		return fmt.tprintf("waters.tile_metres %d is not a multiple of grid_metres %d", waters.tile_metres, waters.grid_metres)
+	}
+	if cells := waters.spring_catchment_square_metres / (waters.grid_metres * waters.grid_metres); cells > MAXIMUM_TILE_CATCHMENT_CELLS {
+		return fmt.tprintf("waters.spring_catchment_square_metres %d is %d cells of grid_metres %d, more than %d with tiles", waters.spring_catchment_square_metres, cells, waters.grid_metres, MAXIMUM_TILE_CATCHMENT_CELLS)
+	}
+	return ""
+}
+
+// The farthest a lake's mask holds a point from its pit, in metres: the
+// refine window's half diagonal (3/2 over the square root of 2).
+water_lake_reach_metres :: proc(waters: Planet_Waters) -> int {
+	return (waters.lake_maximum_metres / (2 * LAKE_CELL_METRES) + 1) * LAKE_CELL_METRES * 3 / 2
+}
+
+// The farthest round a point the tiles are asked (0326): a spring's
+// spacing and a lake's reach, two lakes' reach, a lake's reach and a box
+// that asks for lakes.
+water_query_reach_metres :: proc(waters: Planet_Waters) -> int {
+	lake := water_lake_reach_metres(waters)
+	return max(waters.spring_spacing_metres + lake, 2 * lake, lake + WATER_QUERY_BOX_METRES)
+}
+
+// With tiles, the reach round a point at most 21 percent of the radius,
+// which keeps water_tiles_near's test of a face by its corners exact: a
+// scan found tiles skipped from 22 percent (0326's second review).
+waters_planet_problem :: proc(planet: Planet) -> string {
+	if planet.waters.tile_metres == 0 {
+		return ""
+	}
+	if reach := water_query_reach_metres(planet.waters); 100 * reach > 21 * planet.radius_metres {
+		return fmt.tprintf("waters reach %d m round a point, more than 21 percent of the radius %d m", reach, planet.radius_metres)
+	}
 	return ""
 }
 
@@ -1460,6 +1580,9 @@ planet_problem :: proc(planet: Planet) -> string {
 		return problem
 	}
 	if problem := waters_problem(planet.waters); problem != "" {
+		return problem
+	}
+	if problem := waters_planet_problem(planet); problem != "" {
 		return problem
 	}
 	if problem := cover_problem(planet.cover, planet.climate); problem != "" {

@@ -289,8 +289,8 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // grid took from a loaded chunk (loaded set) goes through
 // coarse_field_sample. The water of a sample not loaded is the sea level
 // rule (planet_sea_density) and the lakes' (0312, planet_lake_density,
-// the lakes meeting the grid's box listed once, carved air left dry as the
-// chunks leave it), of a loaded one its owner's plane as the
+// the lakes meeting the grid's box listed once from the features or the
+// tiles, 0326, carved air left dry as the chunks leave it), of a loaded one its owner's plane as the
 // gather wrote it (water_exact, 0294) or its fill through
 // coarse_field_water_density, so the sea shows at every level. The light
 // of a loaded sample is its own; a sample not loaded is generated air
@@ -302,10 +302,10 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 	grid.step = field_node_step(node)
 	density_generation := field_grid_generation(generation, grid.step)
 	lakes: []Planet_Lake
-	if len(generation.lakes) > 0 {
+	if len(generation.lakes) > 0 || generation.water_tiles != nil {
 		low := grid.origin - grid.step
 		high := grid.origin + (FIELD_GRID_CELLS + 1) * grid.step
-		lakes = planet_lakes_meeting_box(generation.lakes, cast([3]i64)sample_to_world_position(low, generation.spacing_millimetres), cast([3]i64)sample_to_world_position(high, generation.spacing_millimetres))
+		lakes = generation_lakes_meeting_box(generation, cast([3]i64)sample_to_world_position(low, generation.spacing_millimetres), cast([3]i64)sample_to_world_position(high, generation.spacing_millimetres))
 	}
 	// The relief's range over boxes of the grid's samples (0314), of the
 	// coarse generation, whose spacing gives the air band and the topsoil.
