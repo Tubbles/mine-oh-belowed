@@ -272,6 +272,17 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 ## What The Last Caretaker's decisions leave open (2026-11-11)
 
+Decided by the user on 2026-11-11 after 0353's proposals, and written into `DESIGN.md`: a crawler; no power rails, so every machine takes its own cable; a cable has a capacity, and power and the pipes are simulated as netlists, the pipes without gravity; a save with power poles loads with the poles deleted; the shared sleep stays as a wait; a charging cradle; the pod's interior stays as built for the moment; retro clean parts; the README's line is "last caretaker meets techtonica in space". The items: 0355 (cables and the power netlist), 0356 (the pipes' netlist), 0357 (the crawler), 0358 (the charge, the cradle and the wait), 0359 (the retro clean parts).
+
+Still open, each with 0353's proposal kept below:
+
+- The machine's needs: 0353 proposed the charge as the one need, condition instead of health, and oxygen and food gone as needs. The user accepted the cradle and the wait and has not yet said whether oxygen and food go.
+- The crawler's details: whether the deck's machines work while it drives, and whether the chassis kind follows the planet.
+- Mission Control's address for the player (a unit number or a name), and whether the system holds an earlier unit's wreck.
+- A booklet round on the stone furnace and the drill in the retro look before any model is touched.
+
+The proposals of 0353 in full, as written before the decisions:
+
 The user decided the four forks: the player becomes a machine and Mission Control stays for now; the pod stays and the vehicle is built from scratch, a new one on every new planet; all power is run by hand; The Last Caretaker's look takes precedence. `DESIGN.md` holds them. What they do to the rest of the design is not decided, and 0353 brings a proposal for each:
 
 - A machine and the survival stats: the suit's oxygen and food, the bed, the sealed rooms, the greenhouse and its farming were written for a human (The player, Building). Which go, which turn into a machine's needs (charge, heat, wear), and what the pod's oxygen generator becomes.
