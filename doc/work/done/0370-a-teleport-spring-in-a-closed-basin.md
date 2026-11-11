@@ -1,6 +1,6 @@
 # 0370: Water leaves at the loaded set's edge
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, bb1ba24)
 
 Found by 0367's design: under the teleport water model sources only add and nothing above the sea takes water away, so a spring in a closed basin grows a pool for ever and its water never reaches a repeating state. 0367's savings do not meet its target there.
 
