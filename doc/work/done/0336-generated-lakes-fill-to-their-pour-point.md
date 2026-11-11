@@ -1,6 +1,6 @@
 # 0336: Generated lakes fill to their pour point
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, 476ffeb)
 
 From 0334's design. Under the bodies model, the 8 km planet's lake 27 (79.46 N, 40.95 E, 3 m deep) is generated 0.69 samples over the pour point the bodies' flood finds for it. It drains about 680k fill over its sill, and every flood splits its layer over the sill to the front, which seeds and merges it again, so it settles only after 979 to 2,622 ticks, depending on the order its chunks arrive (`tmp/0334/sweep_fix_arena.log`). 0312's refine sets the level on its 2 m grid sealed on the 1 m lattice; the flood finds the pour point on the samples.
 
