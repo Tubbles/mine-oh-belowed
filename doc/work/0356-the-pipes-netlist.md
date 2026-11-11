@@ -14,7 +14,7 @@ None.
 
 ## Change
 
-- The pipe network as nodes and the pipes between them with their capacities, in integers and deterministic; what moves a fluid when height no longer does (pumps, pressure from a source, a tank's level), decided in the design against 0355's netlist so the two share what they can.
+- The pipe network as nodes and the pipes between them with their capacities, in integers and deterministic; what moves a fluid when height no longer does (pumps, pressure from a source, a tank's level), decided in the design against 0355's netlist so the two share what they can. It runs at all times over the whole world, as 0355's does.
 - A save's pipe networks load into it, with one log line where a network that ran by gravity no longer flows.
 - The quests and kits that teach water running downhill in a pipe follow.
 - Docs: `doc/fluids.md`, `doc/content.md`.

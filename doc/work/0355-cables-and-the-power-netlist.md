@@ -15,7 +15,7 @@ The main agent writes the control design before the design stage starts: how a c
 ## Change
 
 - The cable as an item with a span, a port on every electric machine, generator and battery, a junction box that joins and branches. No rails: every machine takes its own cable.
-- The power simulation as a netlist: nodes, the cables between them with their capacities, what a cable over its capacity does, in integers and deterministic, with the brownout and the power overview following it.
+- The power simulation as a netlist: nodes, the cables between them with their capacities, what a cable over its capacity does, in integers and deterministic, with the brownout and the power overview following it. It runs at all times over the whole world, also where the terrain and the models are unloaded (user, 2026-11-11), so its state stands apart from the loaded chunks.
 - The small pole, the big pole and the substation leave the content. A save that holds them loads with them deleted and one log line; the quests, kits, technologies, recipes and blueprints that name them follow.
 - The cable drawn between its two ends.
 - Docs: `doc/fluids.md` (Power), `doc/content.md`, `doc/input.md`.
