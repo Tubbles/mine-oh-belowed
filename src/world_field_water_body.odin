@@ -56,6 +56,11 @@ WATER_BODY_WEIGHT_SHIFT :: 8
 // The settling walk of a seed: rounds, and samples a round.
 WATER_BODY_SETTLE_ROUNDS :: 8
 WATER_BODY_SETTLE_VISITS :: 256
+// The samples a flood's join search visits at most before it answers
+// joined (water_sample_joins_body_water, 0334): eight times the largest
+// search over every generated lake, so a tick's work stays bounded where
+// water thinner than a slab spreads wide.
+WATER_JOIN_SEARCH_LIMIT :: 4096
 // The bands a flood spans at most: the rise cap plus a slab below the
 // seed and above the cap (a diagonal cell is under two samples high).
 WATER_BODY_FLOOD_BANDS :: (MAXIMUM_FIELD_WATER_FLOOD_RISE + 4) * FIELD_WATER_FULL / WATER_BODY_BAND
@@ -764,17 +769,30 @@ field_water_is_front :: proc(chunk: ^Field_Chunk, index: int) -> bool {
 	return chunk.water_owner[index] == WATER_OWNER_NONE || (field_sample_bit(&chunk.water_awake, index) && !field_sample_bit(&chunk.water_source, index))
 }
 
+// Another body's sample leaves that body with the water its curve holds
+// in the cell at its level (0334), so that body's level holds: 0 for a
+// dry cell, or a band's rounding.
+take_water_body_cell :: proc(world: ^Field_World, from, to: Water_Body_Id, span: Field_Water_Span) {
+	body := &world.water_bodies[from]
+	held := volume_of_water_body_level(body, body.level)
+	remove_water_body_cell(body, &body.loaded, span)
+	share := held - volume_of_water_body_level(body, body.level)
+	body.volume -= share
+	world.water_bodies[to].volume += share
+}
+
 // The flood claims a sample: the running sill rises to it, the owner and
-// the curve take it. Another body's dry sample leaves that body; front
-// water there stays front (awake), and still water no one owns (old
-// water, a generated lake of 0312) wakes as front.
+// the curve take it. Another body's sample, dry or its fringe (0334),
+// leaves that body (take_water_body_cell); front water there stays front
+// (awake), and still water no one owns (old water, a generated lake of
+// 0312) wakes as front.
 claim_water_flood_sample :: proc(world: ^Field_World, id: Water_Body_Id, chunk: ^Field_Chunk, index: int, span: Field_Water_Span, bottom: i64) {
 	flood := &world.water_flood
 	flood.sill = max(flood.sill, bottom)
 	previous := chunk.water_owner[index]
 	if previous != WATER_OWNER_NONE && previous != WATER_OWNER_RELEASED {
 		if other, ok := water_owner_body(world, previous); ok && other != id && other != WATER_BODY_SEA {
-			remove_water_body_cell(&world.water_bodies[other], &world.water_bodies[other].loaded, span)
+			take_water_body_cell(world, other, id, span)
 			relevel_water_body(world, other)
 			// Its last cell taken: it dies, its volume to the flood's body.
 			free_empty_water_body(world, other, id)
@@ -791,6 +809,57 @@ claim_water_flood_sample :: proc(world: ^Field_World, id: Water_Body_Id, chunk: 
 	insert_sorted_field_chunk(&body.chunks, chunk.coordinate)
 }
 
+// Whether the body's wet sample start joins its water under its level
+// (0334): a breadth first search from it through the body's loaded
+// samples under its level reaches the body's seed or a sample wholly
+// under the level. A flood claims a sample whose slab straddles its sill,
+// so one that crossed its spill saddle on a slope (a diagonal slab is
+// 1.73 samples tall) owns samples beyond it with water in their lower
+// part, joined to its water only over the saddle: that fringe holds
+// neither. After limit samples it answers joined (merge, as before 0334),
+// so a tick's work stays bounded; the search reads saved state only and
+// visits in a fixed order, so peers and a loaded machine decide alike.
+// A search that answers not joined adds the samples it visited to
+// not_joined, and a start found there answers not joined unsearched, so
+// a fringe is searched once while its set is kept.
+water_sample_joins_body_water :: proc(world: ^Field_World, id: Water_Body_Id, start: Sample_Coordinate, limit: int, not_joined: ^map[Sample_Coordinate]struct{}) -> bool {
+	if start in not_joined^ {
+		return false
+	}
+	body := &world.water_bodies[id]
+	owner := water_owner_of(id)
+	visited := make(map[Sample_Coordinate]struct{}, context.temp_allocator)
+	queue := make([dynamic]Sample_Coordinate, context.temp_allocator)
+	append(&queue, start)
+	visited[start] = {}
+	for head := 0; head < len(queue); head += 1 {
+		sample := queue[head]
+		span := field_water_span(sample)
+		if sample == body.seed || field_water_bottom(span) + span.height <= body.level {
+			return true
+		}
+		if head + 1 >= limit {
+			return true
+		}
+		for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
+			next := sample + Sample_Coordinate(offset)
+			if next in visited {
+				continue
+			}
+			chunk, index := field_world_cell(world, next)
+			if chunk == nil || chunk.density[index] > 0 || chunk.water_owner[index] != owner || field_water_bottom(field_water_span(next)) >= body.level {
+				continue
+			}
+			visited[next] = {}
+			append(&queue, next)
+		}
+	}
+	for sample in queue {
+		not_joined^[sample] = {}
+	}
+	return false
+}
+
 // One visit a pop while the heap holds samples and the budget lasts;
 // true when the flood is done (a spill found, the rise cap passed, or the
 // heap empty: sealed). The budget is checked per pop, so a tick never
@@ -799,6 +868,13 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 	flood := &world.water_flood
 	id := flood.body
 	own := water_owner_of(id)
+	// Another body's samples a join search of this call found not joined
+	// (0334). The answer is kept while the call runs: a take leaves that
+	// body's level where it was (take_water_body_cell), except across a
+	// flat stretch of its curve, where a kept answer takes a sample a
+	// fresh search might have merged. A joined answer merges, so it
+	// needs no memo.
+	not_joined := make(map[Sample_Coordinate]struct{}, context.temp_allocator)
 	for len(flood.heap) > 0 {
 		if budget^ <= 0 {
 			return false
@@ -844,7 +920,12 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 				if flood.sill > (flood.seeding ? world.water_bodies[other].level : body.level) {
 					continue
 				}
-				merge_into_water_flood(world, id, other)
+				// And the sample joins the other's water under its level;
+				// else it is the other's fringe beyond its spill saddle
+				// (0334), taken by the claim below as a dry sample is.
+				if water_sample_joins_body_water(world, other, entry.sample, WATER_JOIN_SEARCH_LIMIT, &not_joined) {
+					merge_into_water_flood(world, id, other)
+				}
 			}
 		}
 		claim_water_flood_sample(world, id, chunk, index, span, bottom)

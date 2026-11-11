@@ -1,6 +1,6 @@
 # 0334: Bodies that share a spill saddle settle
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-11)
 
 From 0312's second review. Under the bodies model (the tech demo's), three of the 31 lakes at 8 km never settle when their chunks arrive one by one, as they do while the player walks: lake 0 (65.166, 151.403), 234 samples awake after 2000 ticks; lake 5 (72.018, 143.041), 893; lake 6 (71.694, 136.821), 1,758. All 31 settle when the 27 chunks arrive together. Water is conserved. The fault lies in 0300's merge rules; 0312's generated lakes are what reach it.
 
@@ -88,3 +88,4 @@ Every lake at 4, 8 and 16 km (14, 31 and 15 lakes) streamed in the order above, 
 1. The share moves with every take, dry ones included, as designed.
 2. The join search is capped, so a tick's work stays bounded where water thinner than a slab spreads wide (a flooded flat holds no sample wholly under its level, so the search would run to the seed): `water_sample_joins_body_water` takes `limit: int` and answers true (merge, as before 0334) once it has visited `limit` samples; the flood passes `WATER_JOIN_SEARCH_LIMIT :: 4096`, eight times the largest search of the sweep. The answer stays a function of saved state, so peers still decide alike. Test `test_a_join_search_past_its_limit_merges` (unit): on the ridge chunk's fringe after the first pour, the search with `limit` 1 answers true where the uncapped one answers false.
 3. Lake 27 (a generated lake standing 0.69 samples over the pour point the bodies' flood finds) is item 0336. The sweep's slow settling of it (2,622 ticks) is not this item's to fix.
+4. The not joined answer is remembered: within one call of `run_water_body_flood`, the samples a search that answered not joined visited go into a set on `context.temp_allocator` (`water_sample_joins_body_water` takes it as `not_joined`), and a sample in it answers not joined without a search, so a fringe of n samples costs one search a call instead of about n²/2 visits. A not joined answer stays valid while the flood runs, since taking samples from the other body never joins the rest to its seed or to a sample wholly under its level; a joined answer merges, so it needs no memo. The set lives for one call, whose bounds the budget fixes, so peers still decide alike. Test `test_a_fringe_found_not_joined_is_not_searched_again` (unit).

@@ -240,3 +240,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the snow on the cover (0335, 2026-11-07)
 
 - `test_snow_buries_the_plants`'s density bounds and its "no grass at the cold spot" depend on the shipped data and seed, so a retune of the climate or the relief can fail it with no fault in the code; its `most_buried_snow` check is the one that tests the code itself. Reading the bounds off the kinds and the shares would make it robust to data changes.
+
+## Suggestions from the shared spill saddle (0334, 2026-11-11)
+
+- The join search answers joined once it has visited `WATER_JOIN_SEARCH_LIMIT` (4096) samples. Two basins whose shared saddle has, on both sides, a shelf less than a slab under the saddle and wider than about 64 by 64 samples would merge and release each other in turn as before 0334 (the review forced it with the limit at 1; one side over the limit still settled). No shipped lake comes near: the largest search over every lake at 4, 8 and 16 km is 513 samples. Worth a rule of its own only when a world shows such a shelf.
+- Thin water (no sample wholly under its level) that reaches its seed only through a chunk that is not loaded answers not joined, so a flood takes that lobe sample by sample with its volume instead of merging it. The water is conserved and the lobe is flooded again when the chunk arrives. Read in the code by the review, not reproduced.

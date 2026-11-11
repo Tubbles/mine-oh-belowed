@@ -2077,3 +2077,188 @@ test_an_arriving_lake_chunk_joins_the_lake_beside_it :: proc(t: ^testing.T) {
 	expect_body_owns_the_water(t, &world, id)
 	testing.expect_value(t, conserved_water(&world), total)
 }
+
+// Work item 0334: a ground chunk on the diagonal, where a slab is about
+// 1.73 samples tall, holding two pits across a ridge.
+RIDGE_TEST_CHUNK :: Field_Chunk_Coordinate{58, 58, 58}
+
+// The bottom of the ridge chunk's sample {16, 16, 16}, which the floors
+// and the levels are measured from.
+ridge_test_reference :: proc() -> i64 {
+	return field_water_bottom(field_water_span(field_chunk_origin(RIDGE_TEST_CHUNK) + Sample_Coordinate{16, 16, 16}))
+}
+
+// The pit's poured level, both under the ridge: A 127 fill units under
+// the reference, B 76.
+ridge_test_level :: proc(pit: int) -> i64 {
+	return ridge_test_reference() - (pit == 1 ? 127 : 76)
+}
+
+// The part a local sample lies in, across u along (1, -1, 0) and v along
+// (1, 1, -2): 0 for none, 1 for pit A, 2 for pit B, 3 for the ridge.
+ridge_test_part :: proc(local: [3]i32) -> int {
+	u := local.x - local.y
+	v := local.x + local.y - 2 * local.z
+	if abs(u) > 10 || abs(v) > 14 {
+		return 0
+	}
+	if u < -1 {
+		return 1
+	}
+	if u > 1 {
+		return 2
+	}
+	return 3
+}
+
+// Ground but for the parts, air from each part's floor (pit A 6 samples
+// under the reference, pit B 5, the ridge at it) to 8 samples over the
+// reference.
+make_ridge_test_chunk :: proc() -> ^Field_Chunk {
+	chunk := new(Field_Chunk)
+	chunk.coordinate = RIDGE_TEST_CHUNK
+	reference := ridge_test_reference()
+	floors := [4]i64{0, reference - 6 * FIELD_WATER_FULL, reference - 5 * FIELD_WATER_FULL, reference}
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		local := field_index_to_local(index)
+		part := ridge_test_part(local)
+		bottom := field_water_bottom(field_water_span(field_chunk_origin(RIDGE_TEST_CHUNK) + Sample_Coordinate(local)))
+		if part != 0 && bottom >= floors[part] && bottom <= reference + 8 * FIELD_WATER_FULL {
+			field_chunk_set_sample(chunk, index, FIELD_AIR_SAMPLE)
+		} else {
+			field_chunk_set_sample(chunk, index, {MAXIMUM_DENSITY, .Stone, 0})
+		}
+	}
+	return chunk
+}
+
+// Pours the pit's air samples no one owns to level (a sample another body
+// owns keeps its byte); the fill poured.
+pour_ridge_test_pit :: proc(world: ^Field_World, chunk: ^Field_Chunk, pit: int, level: i64) -> (total: i64) {
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if ridge_test_part(field_index_to_local(index)) != pit || chunk.density[index] > 0 || chunk.water_owner[index] != WATER_OWNER_NONE {
+			continue
+		}
+		sample := field_chunk_sample(chunk, index)
+		fill := field_sea_fill(level, field_water_span(sample))
+		if fill > 0 {
+			set_field_water(world, chunk, index, sample, fill)
+			total += i64(fill)
+		}
+	}
+	return
+}
+
+// The ridge world with the first pit poured and settled into one body.
+ridge_test_world_poured_once :: proc(t: ^testing.T, first_pit: int, tick: ^u64) -> (world: Field_World, chunk: ^Field_Chunk, id: Water_Body_Id, total: i64) {
+	make_bodies_world(&world)
+	chunk = make_ridge_test_chunk()
+	field_world_insert_chunk(&world, chunk)
+	total = pour_ridge_test_pit(&world, chunk, first_pit, ridge_test_level(first_pit))
+	ticks := settle_body_test_water(&world, water_body_test_tuning(), tick, 200)
+	testing.expectf(t, ticks < 200, "pit %d settles (%d ticks)", first_pit, ticks)
+	_, id = only_water_body(t, &world)
+	return
+}
+
+// A sample of the pit the body owns under its level that does not join
+// its water (the uncapped search): its fringe beyond the ridge.
+ridge_test_fringe_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, id: Water_Body_Id, pit: int) -> (sample: Sample_Coordinate, found: bool) {
+	not_joined := make(map[Sample_Coordinate]struct{}, context.temp_allocator)
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		sample = field_chunk_sample(chunk, index)
+		if ridge_test_part(field_index_to_local(index)) == pit && chunk.water_owner[index] == water_owner_of(id) && field_water_bottom(field_water_span(sample)) < world.water_bodies[id].level && !water_sample_joins_body_water(world, id, sample, max(int), &not_joined) {
+			return sample, true
+		}
+	}
+	return {}, false
+}
+
+// The lowest (bottom, then index order) air sample of the pit.
+ridge_test_pit_floor :: proc(chunk: ^Field_Chunk, pit: int) -> Sample_Coordinate {
+	floor: Sample_Coordinate
+	floor_bottom := max(i64)
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if ridge_test_part(field_index_to_local(index)) != pit || chunk.density[index] > 0 {
+			continue
+		}
+		sample := field_chunk_sample(chunk, index)
+		if bottom := field_water_bottom(field_water_span(sample)); bottom < floor_bottom {
+			floor, floor_bottom = sample, bottom
+		}
+	}
+	return floor
+}
+
+// Work item 0334: the first pit's flood crosses the ridge through slabs
+// taller than the step and owns a fringe in the other pit, under its level
+// but joined to its water only over the ridge. The second pit's flood
+// takes the fringe instead of merging the first body, so the two settle
+// apart in either order, with one seed and no merge (before 0334 neither
+// order settled: each body's flood merged the other and released it).
+@(test)
+test_two_pits_sharing_a_ridge_settle_apart :: proc(t: ^testing.T) {
+	tuning := water_body_test_tuning()
+	for first_pit in 1 ..= 2 {
+		second_pit := 3 - first_pit
+		tick: u64 = 0
+		world, chunk, first, total := ridge_test_world_poured_once(t, first_pit, &tick)
+		_, fringe := ridge_test_fringe_sample(&world, chunk, first, second_pit)
+		testing.expectf(t, fringe, "pit %d first: its body owns a fringe in pit %d", first_pit, second_pit)
+		total += pour_ridge_test_pit(&world, chunk, second_pit, ridge_test_level(second_pit))
+		seeds, merges: i64
+		ticks := 0
+		for ticks < 200 && settle_body_test_water(&world, tuning, &tick, 1) == 1 {
+			ticks += 1
+			seeds += world.water_body_counts.seeded
+			merges += world.water_body_counts.merged
+		}
+		testing.expectf(t, ticks < 200, "pit %d first: the two pits settle (%d ticks)", first_pit, ticks)
+		testing.expectf(t, alive_water_body_count(&world) == 2, "pit %d first: %d bodies", first_pit, alive_water_body_count(&world))
+		a, a_found := water_body_at(&world, ridge_test_pit_floor(chunk, 1))
+		b, b_found := water_body_at(&world, ridge_test_pit_floor(chunk, 2))
+		testing.expectf(t, a_found && b_found && a != b, "pit %d first: the pits' floors are two bodies' (%d, %d)", first_pit, a, b)
+		testing.expectf(t, !any_water_awake(&world), "pit %d first: nothing is awake", first_pit)
+		testing.expectf(t, conserved_water(&world) == total, "pit %d first: %d of %d conserved", first_pit, conserved_water(&world), total)
+		testing.expectf(t, seeds == 1 && merges == 0, "pit %d first: %d seeds, %d merges", first_pit, seeds, merges)
+		destroy_field_world(&world)
+	}
+}
+
+// Work item 0334: past its limit the join search answers joined, so a
+// flood merges as before 0334 where it cannot afford to search further.
+@(test)
+test_a_join_search_past_its_limit_merges :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world, chunk, id, _ := ridge_test_world_poured_once(t, 1, &tick)
+	defer destroy_field_world(&world)
+	sample, found := ridge_test_fringe_sample(&world, chunk, id, 2)
+	testing.expect(t, found, "the first body owns a fringe in the other pit")
+	if !found {
+		return
+	}
+	not_joined := make(map[Sample_Coordinate]struct{}, context.temp_allocator)
+	testing.expect(t, water_sample_joins_body_water(&world, id, sample, 1, &not_joined), "the search with limit 1 answers joined")
+}
+
+// Work item 0334: a search that answers not joined remembers the samples
+// it visited, and a remembered sample answers not joined unsearched (with
+// limit 1, which a search would answer joined), so a flood searches a
+// fringe once a call however many of its samples it meets.
+@(test)
+test_a_fringe_found_not_joined_is_not_searched_again :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world, chunk, id, _ := ridge_test_world_poured_once(t, 1, &tick)
+	defer destroy_field_world(&world)
+	sample, found := ridge_test_fringe_sample(&world, chunk, id, 2)
+	testing.expect(t, found, "the first body owns a fringe in the other pit")
+	if !found {
+		return
+	}
+	not_joined := make(map[Sample_Coordinate]struct{}, context.temp_allocator)
+	testing.expect(t, !water_sample_joins_body_water(&world, id, sample, max(int), &not_joined), "the fringe does not join")
+	testing.expect(t, sample in not_joined, "the search remembers its start")
+	for remembered in not_joined {
+		testing.expectf(t, !water_sample_joins_body_water(&world, id, remembered, 1, &not_joined), "the remembered %v answers unsearched", remembered)
+	}
+}

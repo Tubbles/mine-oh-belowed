@@ -236,6 +236,14 @@ waters_test_lake_near :: proc(lakes: []Planet_Lake, latitude, longitude: f64) ->
 	return nearest
 }
 
+// The chunk at 1 m spacing holding the point 1 m over the lake's floor
+// under its origin, the centre of the 27 the lake tests insert.
+shipped_lake_centre_chunk :: proc(generation: Planet_Generation, lake: Planet_Lake) -> Field_Chunk_Coordinate {
+	direction, _ := normalize_fixed(lake.origin)
+	point := World_Position(fixed_scale(direction, generation.radius + lake.floor + metres_to_position_units(1)))
+	return sample_to_field_chunk_coordinate(world_position_to_sample(point, 1000))
+}
+
 // Work item 0312: the 27 chunks round a shipped lake's pit at 8 km and
 // 1 m, under bodies with the shipped tuning, settle with nothing awake and
 // no still water no one owns. The lake at 72.02, 143.04 never settled
@@ -256,10 +264,7 @@ test_shipped_lakes_settle_under_bodies :: proc(t: ^testing.T) {
 		if index < 0 {
 			continue
 		}
-		lake := planet.water_features.lakes[index]
-		direction, _ := normalize_fixed(lake.origin)
-		point := World_Position(fixed_scale(direction, generation.radius + lake.floor + metres_to_position_units(1)))
-		centre := sample_to_field_chunk_coordinate(world_position_to_sample(point, 1000))
+		centre := shipped_lake_centre_chunk(generation, planet.water_features.lakes[index])
 		world: Field_World
 		world.water_model = .Bodies
 		world.water_planet = make_field_water_planet(DEFAULT_WORLD_SEED, planet, 1000)
@@ -278,6 +283,61 @@ test_shipped_lakes_settle_under_bodies :: proc(t: ^testing.T) {
 		testing.expectf(t, ticks < 600, "the lake at %v settles", place)
 		testing.expectf(t, still_unowned_water_samples(&world) == 0, "the lake at %v keeps %d samples of still water no one owns", place, still_unowned_water_samples(&world))
 		log.infof("0312: the lake at %v settled after %d ticks into %d bodies", place, ticks, alive_water_body_count(&world))
+		destroy_field_world(&world)
+	}
+}
+
+// Work item 0334: three shipped lakes at 8 km and 1 m whose chunks arrive
+// one by one, as they do while the player walks: the centre settled, its
+// 26 neighbours 30 ticks apart, then settled with nothing awake and no
+// still water no one owns. Two bodies spilling at one saddle released
+// each other in turn while the chunks streamed in (234, 893 and 1,758
+// samples awake after 2000 ticks before 0334).
+@(test) // slow
+test_shipped_lakes_settle_under_bodies_streamed :: proc(t: ^testing.T) {
+	planet := waters_test_planet(8000)
+	planet.water_features = make_planet_water_features(DEFAULT_WORLD_SEED, planet)
+	defer destroy_planet_water_features(&planet.water_features)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	for place in ([3][2]f64{{65.17, 151.40}, {72.02, 143.04}, {71.69, 136.82}}) {
+		index := waters_test_lake_near(planet.water_features.lakes, place[0], place[1])
+		testing.expectf(t, index >= 0, "a lake lies at %v", place)
+		if index < 0 {
+			continue
+		}
+		centre := shipped_lake_centre_chunk(generation, planet.water_features.lakes[index])
+		world: Field_World
+		world.water_model = .Bodies
+		world.water_planet = make_field_water_planet(DEFAULT_WORLD_SEED, planet, 1000)
+		make_sea_water_body(&world)
+		chunk := new(Field_Chunk)
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, centre, chunk)
+		field_world_insert_chunk(&world, chunk)
+		tick: u64 = 0
+		first := settle_body_test_water(&world, tuning, &tick, 600)
+		testing.expectf(t, first < 600, "the centre of the lake at %v settles", place)
+		for dz in i32(-1) ..= 1 {
+			for dy in i32(-1) ..= 1 {
+				for dx in i32(-1) ..= 1 {
+					if dx == 0 && dy == 0 && dz == 0 {
+						continue
+					}
+					neighbour := new(Field_Chunk)
+					generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, centre + Field_Chunk_Coordinate{dx, dy, dz}, neighbour)
+					field_world_insert_chunk(&world, neighbour)
+					for _ in 0 ..< 30 {
+						tick += 1
+						step_field_water(&world, tuning, tick)
+					}
+				}
+			}
+		}
+		ticks := settle_body_test_water(&world, tuning, &tick, 600)
+		testing.expectf(t, ticks < 600, "the lake at %v settles streamed", place)
+		testing.expectf(t, !any_water_awake(&world), "the lake at %v keeps nothing awake", place)
+		testing.expectf(t, still_unowned_water_samples(&world) == 0, "the lake at %v keeps %d samples of still water no one owns", place, still_unowned_water_samples(&world))
+		log.infof("0334: the lake at %v settled %d ticks after the last arrival into %d bodies", place, ticks, alive_water_body_count(&world))
 		destroy_field_world(&world)
 	}
 }
