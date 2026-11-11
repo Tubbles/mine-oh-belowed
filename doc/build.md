@@ -15,7 +15,7 @@ The couch machine runs Bazzite.
 | Odin dev-2026-11a (nightly 9a69916) | `~/opt/odin-linux-amd64-nightly+2026-11-03`, linked as `~/opt/odin` | The `odin-linux-amd64-dev-2026-11a.tar.gz` release asset. `build.sh` uses `${ODIN:-$HOME/opt/odin/odin}` |
 | clang 23 | Homebrew | Odin drives the linker through it |
 | SDL3 3.4.16 | `/usr/lib64/libSDL3.so.0` (Fedora 44) | `vendor:sdl3` links `system:SDL3` |
-| raylib 6.0 | `shared/raylib/` | Built from source, committed (below). Pinned, the reason beside `raylib_tag` in `tools/build_raylib.sh` |
+| raylib 6.2 | `shared/raylib/` | Built from source, committed (below). Pinned, the reason beside `raylib_tag` in `tools/build_raylib.sh` |
 | Blender 5.2 LTS | Flatpak `org.blender.Blender` with host file access | Only to regenerate models ([Models](#models)) |
 
 ### The shared collection
@@ -28,7 +28,7 @@ The couch machine runs Bazzite.
 ### raylib archive
 
 - `linux/libraylib.a` (about 3.4 MB, committed, so a fresh checkout needs no cmake) has GLFW with both the Wayland and the X11 backend. It links the system `libdl`, `libpthread` and `libX11`; GLFW opens `libwayland-client`, `libwayland-cursor`, `libwayland-egl`, `libxkbcommon` and `libdecor` with dlopen at run time, so `ldd` shows no Wayland library and a machine without them falls back to X11. Windowed decorations on Wayland come through libdecor, and GLFW has fallback decorations without it.
-- `tools/build_raylib.sh` clones raylib tag `6.0` from https://github.com/raysan5/raylib (shallow) into `tmp/raylib-src/`, configures in `tmp/raylib-build/`, builds, copies the archive into `shared/raylib/linux/` and rewrites the README's build record. Flags:
+- `tools/build_raylib.sh` clones raylib tag `6.2` from https://github.com/raysan5/raylib (shallow) into `tmp/raylib-src/`, configures in `tmp/raylib-build/`, builds, copies the archive into `shared/raylib/linux/` and rewrites the README's build record. Flags:
 
 ```
 -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF
@@ -210,6 +210,7 @@ The Deck runs the same play build, installed over SSH from the couch machine (00
 
 - `flake.nix` provides `packages.default` (the game), `devShells.default` (odin, raylib, glfw, sdl3, libX11) and `checks`.
 - The flake patches the binding in `postPatch`: `shared/raylib/raylib.odin` and `rlgl/rlgl.odin` link `system:raylib` instead of the committed archive, and `platform.odin` links `system:glfw`, since nixpkgs raylib is built against an external GLFW with both backends. libX11 stays a build input for the binding's import block. A renamed foreign import line breaks `substituteInPlace` loudly.
+- nixpkgs' raylib (6.2 since 2026-10-15) links against the committed binding, so a newer one there is the signal for the next raylib upgrade.
 - The build runs `odin build` with `-o:speed -vet -strict-style`, then `odin test src -all-packages`, both with `-collection:shared=shared`, and installs the data under `share/mine-oh-belowed/`. It runs no Windows check: the `windows` job builds that target natively on every push.
 - Nix is not installed on the couch machine; CI validates the flake.
 
@@ -227,7 +228,7 @@ The toolchains float, and a pin needs a reason beside it (user, 2026-11-07, 0315
 
 - Odin: the `nix` job takes nixpkgs-unstable's (dev-2026-10 on 2026-11-07), which may lag the latest release, so the code compiles and runs on both. A range over a map's value by its key (`for item in table[key]`) crashes that release when the key is missing (0311's test on CI, dev-2026-11 is fine): look the key up with its `ok` first. The `windows` and `android` jobs take the latest release through `tools/ci_download_odin.sh <platform>`, the `odin-<platform>-` asset checked against the SHA-256 digest GitHub records for it (the releases publish no checksum file). No match or two fail the step and list the assets.
 - SDL3 (`windows`): the highest `release-3.x.y` of libsdl-org/SDL by version that is neither draft nor prerelease, not the newest by date, since SDL 2 releases share the repository and an older 3.x line can publish after a newer one. Its `SDL3-devel-<version>-VC.zip` is checked against GitHub's digest.
-- The pins left, each with its reason where it is set: raylib 6.0 (`tools/build_raylib.sh`), the Android target SDK 34 (`tools/android_env.sh`) and the Android command line tools zip (`tools/android_toolchain.sh`).
+- The pins left, each with its reason where it is set: raylib 6.2 (`tools/build_raylib.sh`), the Android target SDK 34 (`tools/android_env.sh`) and the Android command line tools zip (`tools/android_toolchain.sh`).
 - nixpkgs follows `nixos-unstable` without a lock, and the GitHub actions float within their major tags (`actions/checkout@v7`).
 
 ## Windows (GameNative on Android)

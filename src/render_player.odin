@@ -234,7 +234,7 @@ draw_player_body :: proc(position: [3]f32) {
 	radius := f32(PLAYER_WIDTH / 2)
 	bottom := position + {0, radius, 0}
 	top := position + {0, PLAYER_HEIGHT - radius, 0}
-	rl.DrawCapsule(bottom, top, radius, 12, 6, PLAYER_BODY_COLOR)
+	rl.DrawCapsule(bottom, top, radius, 6, 12, PLAYER_BODY_COLOR)
 }
 
 // What the body and the first person arm are drawn with this frame

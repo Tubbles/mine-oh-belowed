@@ -805,6 +805,9 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 	rlgl.SetClipPlanes(FIELD_NEAR_METRES, f64(planet.radius_metres * FIELD_FAR_RADII))
 	if screenshot_path == "" {
 		rl.DisableCursor()
+		// raylib 6.2's DisableCursor leaves the previous position, so
+		// the poll keeps the centring out of the first frame's mouse delta.
+		rl.PollInputEvents()
 	}
 	level_distances := config.field_view.level_distances_metres
 	renderer, renderer_ok := init_field_renderer(data_directory, tiles, planet, spacing, f32(level_distances[FIELD_COARSEST_LEVEL]))

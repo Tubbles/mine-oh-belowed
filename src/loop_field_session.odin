@@ -284,7 +284,7 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 
 // A light moved by transform, its clip box with it. raylib's DrawMesh
 // sends the model shader the mesh transform times the rlgl matrix stack's
-// (rmodels.c, raylib 6.0), so a model drawn inside the pod's transform
+// (rmodels.c, raylib 6.2), so a model drawn inside the pod's transform
 // lights its fragments in the moved place, where the light must be too.
 moved_point_light :: proc(light: Point_Light, transform: matrix[4, 4]f32) -> Point_Light {
 	moved := light
@@ -412,7 +412,7 @@ field_player_capsule_ends :: proc(feet, up: [3]f32, height: f32) -> (bottom, top
 // scale.
 draw_field_player_capsule :: proc(feet, up: [3]f32, height: f32) {
 	bottom, top := field_player_capsule_ends(feet, up, height)
-	rl.DrawCapsule(bottom, top, 0.3, 8, 4, FIELD_PLAYER_CAPSULE_COLOR)
+	rl.DrawCapsule(bottom, top, 0.3, 4, 8, FIELD_PLAYER_CAPSULE_COLOR)
 }
 
 // The body standing still, or a capsule without the model; both lowered

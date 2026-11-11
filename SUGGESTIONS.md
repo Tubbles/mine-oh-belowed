@@ -245,3 +245,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - The join search answers joined once it has visited `WATER_JOIN_SEARCH_LIMIT` (4096) samples. Two basins whose shared saddle has, on both sides, a shelf less than a slab under the saddle and wider than about 64 by 64 samples would merge and release each other in turn as before 0334 (the review forced it with the limit at 1; one side over the limit still settled). No shipped lake comes near: the largest search over every lake at 4, 8 and 16 km is 513 samples. Worth a rule of its own only when a world shows such a shelf.
 - Thin water (no sample wholly under its level) that reaches its seed only through a chunk that is not loaded answers not joined, so a flood takes that lobe sample by sample with its volume instead of merging it. The water is conserved and the lobe is flooded again when the chunk arrives. Read in the code by the review, not reproduced.
+
+## Suggestions from raylib 6.2 (0319, 2026-11-11)
+
+- The precision patch (0126) may be dead weight: desktop compilers define `GL_FRAGMENT_PRECISION_HIGH` for ES 3.00 although the specification does not list it. If the phone's driver does too (a one line log of a shader compiled with the `#ifdef` would tell), the patch can go and the Android archive is built from unpatched rlgl.
+- The poll after a cursor capture resets the mouse delta on X11 and Windows. The review read that a capture under a native Wayland GLFW would still jump, as it did before this item; the archive is built with X11 only, so today the game never runs there. It matters only if the Linux build gains Wayland.

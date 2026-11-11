@@ -411,7 +411,7 @@ draw_arrival_dust :: proc(site: Arrival_Debris_Site, view: Arrival_View, salt: u
 		azimuth, base, drift, height, size, alpha := arrival_dust_puff(index, view.seconds_since_hit, salt, site.radius_metres)
 		outward := site.east * math.cos(azimuth) + site.north * math.sin(azimuth)
 		centre := arrival_debris_ground(site, azimuth, base) + outward * drift + site.up * height
-		rl.DrawSphereEx(centre, size * 0.5, 6, 8, rl.Fade(color, alpha))
+		rl.DrawSphereEx(centre, size * 0.5, 7, 8, rl.Fade(color, alpha))
 	}
 	rlgl.DrawRenderBatchActive()
 	rlgl.EnableDepthMask()

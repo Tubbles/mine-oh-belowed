@@ -332,7 +332,7 @@ set_sun_shadow_instanced :: proc(shadows: Sun_Shadow_Renderer, instanced: bool) 
 }
 
 // Between frames: the receivers' slot cleared, then the framebuffer
-// (raylib 6.0 deletes its depth texture with it) and the depth material.
+// (raylib 6.2 deletes its depth texture with it) and the depth material.
 // A Failed map freed what it made and only returns to Unloaded.
 release_sun_shadow_map :: proc(shadows: ^Sun_Shadow_Renderer, receivers: []rl.Material) {
 	if shadows.state == .Ready {

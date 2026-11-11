@@ -41,9 +41,9 @@
 
           postPatch = ''
             substituteInPlace shared/raylib/raylib.odin \
-              --replace-fail '"linux/libraylib.so.600" when RAYLIB_SHARED else "linux/libraylib.a",' '"system:raylib",'
+              --replace-fail '"linux/libraylib.so.620" when RAYLIB_SHARED else "linux/libraylib.a",' '"system:raylib",'
             substituteInPlace shared/raylib/rlgl/rlgl.odin \
-              --replace-fail '"../linux/libraylib.so.600" when RAYLIB_SHARED else "../linux/libraylib.a",' '"system:raylib",'
+              --replace-fail '"../linux/libraylib.so.620" when RAYLIB_SHARED else "../linux/libraylib.a",' '"system:raylib",'
             substituteInPlace shared/raylib/platform.odin \
               --replace-fail 'foreign import lib "linux/libraylib.a"' 'foreign import lib "system:glfw"'
           '';

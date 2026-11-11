@@ -4,7 +4,7 @@ package raylib
 // a copy from the Odin toolchain (see README.md). The nix flake rewrites
 // the Linux library path to "system:glfw".
 //
-// glfwGetPlatform: GLFW 3.4 built with both backends picks Wayland when
+// glfwGetPlatform: GLFW 3.5 built with both backends picks Wayland when
 // the session offers it and X11 otherwise; this says which one it took.
 // Call it after InitWindow.
 //

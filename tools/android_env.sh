@@ -19,8 +19,8 @@ ANDROID_BUILD_TOOLS_VERSION="$(ls -1 "$ODIN_ANDROID_SDK/build-tools" 2> /dev/nul
 ANDROID_TARGET_SDK_VERSION=34
 # The minimum level (Android 10): the -minimum-os-version passed to odin
 # and the manifest's minSdkVersion. From Odin dev-2026-11 the runtime uses
-# ELF thread local storage, which Android loads from 29. raylib's archive
-# is built for 28, which links into a higher level.
+# ELF thread local storage, which Android loads from 29.
+# tools/build_raylib.sh builds raylib's archive at this level.
 ANDROID_API_LEVEL=29
 ODIN_ANDROID_NDK="${ODIN_ANDROID_NDK:-$ODIN_ANDROID_SDK/ndk/$ANDROID_NDK_VERSION}"
 PATH="$ODIN_ANDROID_SDK/build-tools/$ANDROID_BUILD_TOOLS_VERSION:$ODIN_ANDROID_SDK/platform-tools:$PATH"

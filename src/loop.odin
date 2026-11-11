@@ -330,10 +330,16 @@ apply_cursor_mode :: proc(state: ^Frame_State) {
 		return
 	}
 	state.interaction.cursor_enabled = wanted
-	if wanted {
-		rl.EnableCursor()
-	} else {
-		rl.DisableCursor()
+	// Android has no cursor. raylib 6.2's two calls only move its mouse
+	// position to the centre there, and only its touch handler sets the
+	// previous position, so the move would stay in the mouse delta until
+	// the next touch.
+	when ODIN_PLATFORM_SUBTARGET != .Android {
+		if wanted {
+			rl.EnableCursor()
+		} else {
+			rl.DisableCursor()
+		}
 	}
 }
 
@@ -847,7 +853,7 @@ save_when_due :: proc(state: ^Frame_State) {
 }
 
 // The 2D passes (the underwater overlay, the diagnostics pages, the UI)
-// draw in render pixels (work item 0085). raylib 6.0 multiplies its DPI
+// draw in render pixels (work item 0085). raylib 6.2 multiplies its DPI
 // scale into the modelview in BeginDrawing and after EndMode3D, which
 // would upscale them a second time under a scaled Wayland desktop; this
 // flushes what is batched under that matrix and resets it. The identity at
@@ -1911,6 +1917,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		request_join(&state.interaction.title, player_configuration.join_address)
 	}
 	apply_cursor_mode(state)
+	// raylib 6.2's DisableCursor centres the cursor without moving the
+	// previous position, and before the first frame's poll that would put
+	// half the window into its mouse delta.
+	when ODIN_PLATFORM_SUBTARGET != .Android {
+		rl.PollInputEvents()
+	}
 	for !rl.WindowShouldClose() && (.Quit not_in state.requests) {
 		update_frame(state)
 		serve_frame_requests_before_draw(state)

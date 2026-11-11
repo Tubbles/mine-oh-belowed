@@ -7,7 +7,8 @@ import "core:strings"
 
 // What the Android build needs from the system and from raylib's Android
 // archive beyond the binding (work item 0114). The struct layouts are the
-// leading fields of the NDK's headers, checked against NDK 27.3.13750724:
+// leading fields of the NDK's headers, checked against NDK 27.3.13750724
+// and 30.0.16248370 (the same fields in both):
 // android_app in sources/android/native_app_glue/android_native_app_glue.h
 // and ANativeActivity in sysroot/usr/include/android/native_activity.h.
 // Only the leading fields are declared, so only pointers to them are used.

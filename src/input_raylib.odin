@@ -40,7 +40,7 @@ read_raylib_gamepad :: proc() -> Raw_Gamepad {
 }
 
 // The position is in render pixels, where the UI lays out (work item
-// 0085). raylib 6.0 scales the cursor by its guess of the DPI scale, and
+// 0085). raylib 6.2 scales the cursor by its guess of the DPI scale, and
 // guesses wrong on Wayland (its window callbacks are compiled without
 // GLFW's Wayland define and set 1 over the scale, although GLFW reports
 // the cursor in logical units there). The scale is reset to 1 so the

@@ -12,7 +12,7 @@ import "platform"
 // right after InitWindow, and the frame loop applies every later change
 // from the settings screen (update_display).
 //
-// raylib 6.0 (platforms/rcore_desktop_glfw.c): borderless is toggled
+// raylib 6.2 (platforms/rcore_desktop_glfw.c): borderless is toggled
 // (ToggleBorderlessWindowed, which saves and restores the windowed size and
 // position), fullscreen is the .FULLSCREEN_MODE window state (which
 // switches to the monitor's current mode, saves and restores likewise).
@@ -350,7 +350,7 @@ pointer_to_render_pixels :: proc(position: [2]f32, window_size, render_size: [2]
 }
 
 // The window's size in the cursor's coordinates, from GLFW. raylib's
-// GetScreenWidth is not that on Wayland in fullscreen, where raylib 6.0
+// GetScreenWidth is not that on Wayland in fullscreen, where raylib 6.2
 // sets it to the framebuffer's size while GLFW keeps the cursor in the
 // window's logical coordinates. On Android the screen's size, which is
 // the render size there.

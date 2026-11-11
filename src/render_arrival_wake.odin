@@ -172,7 +172,7 @@ arrival_wake_opacity_scale :: proc(percent: int) -> f32 {
 
 // The eye, the wake's origin (the base centre) and its axis (the model's
 // +y, unit) in the moved space, from the eye in the frame's unmoved
-// space, the pod's body and the pod's transform. rlgl 6.0 moves each
+// space, the pod's body and the pod's transform. rlgl 6.2 moves each
 // immediate mode vertex by the pushed matrix on the CPU (rlVertex3f,
 // transformRequired), so vertexPosition reaches the shader moved and mvp
 // holds only the camera: the shader's uniforms are therefore in the

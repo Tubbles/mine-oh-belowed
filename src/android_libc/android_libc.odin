@@ -2,7 +2,7 @@
 package android_libc
 
 // C functions Odin's core library links on Linux that Android's libc
-// (bionic, API level 28) does not have (work item 0114). A shared library
+// (bionic, API level 29) does not have (work item 0114). A shared library
 // links with undefined symbols unless -Wl,--no-undefined says otherwise,
 // and Android's loader then refuses the library, so the game would not
 // start. Each is exported under the __wrap_ name and build.sh links with

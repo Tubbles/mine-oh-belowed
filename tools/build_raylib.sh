@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build raylib 6.0 from the upstream tag into the shared collection and
+# Build raylib 6.2 from the upstream tag into the shared collection and
 # rewrite that platform's build record in shared/raylib/README.md.
 # Desktop: both GLFW backends (Wayland and X11, GLFW picks at run time)
 # into shared/raylib/linux/libraylib.a, work item 0085. Android: arm64-v8a
@@ -23,10 +23,11 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Pinned (0315): the committed archives and windows/raylib.lib are 6.0, the
-# Android one with three patches, and the binding is the 6.0 copy, so a new
-# raylib is a rebuild of all three plus a phone test, an item of its own.
-raylib_tag="6.0"
+# Pinned (0315, 0319): the committed archives and windows/raylib.lib are
+# 6.2, the Android one with two patches, and the binding is the 6.2 copy,
+# so a new raylib is a rebuild of all three plus a phone test, an item of
+# its own.
+raylib_tag="6.2"
 raylib_url="https://github.com/raysan5/raylib"
 source_directory="$repository_root/tmp/raylib-src"
 build_directory="$repository_root/tmp/raylib-build"
@@ -48,7 +49,7 @@ fetch_source() {
 }
 
 # GLFW_BUILD_WAYLAND and GLFW_BUILD_X11 are GLFW's own options, raylib's
-# src/external/glfw/CMakeLists.txt reads them. Both on: GLFW 3.4 loads
+# src/external/glfw/CMakeLists.txt reads them. Both on: GLFW 3.5 loads
 # libwayland-client, libwayland-cursor, libwayland-egl, libxkbcommon and
 # libdecor with dlopen, so the link needs nothing new. The generator is
 # named so a CMAKE_GENERATOR from the environment (Ninja, which the
@@ -66,26 +67,39 @@ configure_and_build() {
 	cmake --build "$build_directory" --parallel 2
 }
 
-# rlLoadShaderDefault declares "precision mediump float;" in the OpenGL
-# ES 3 default vertex and fragment shaders (kept for WebGL browsers). On
-# Mali mediump is 16 bit, so world space positions drawn through raylib's
-# batch snap to a coarse grid that shifts as the camera moves (work item
-# 0126). Only the two ES3 lines are rewritten, found by their "OpenGL ES3
-# (WebGL 2)" comment; the ES2 lines are not compiled for ES 3.0. Anything
-# but two rewrites fails, so a raylib upgrade that moves the text is
-# noticed. fetch_source clones afresh on every run, so the file is never
-# already patched.
+# rlLoadShaderDefault in 6.2 declares "precision highp float;" in the
+# OpenGL ES3 default vertex shader, but in the fragment shader only under
+# "#ifdef GL_FRAGMENT_PRECISION_HIGH", with "precision mediump float;"
+# otherwise. GLSL ES 3.00 does not predefine that macro, so a driver may
+# take the mediump branch, and on Mali mediump is 16 bit (work item 0126,
+# where 6.0's mediump shaders made everything drawn through raylib's batch
+# jitter as the camera moved). The conditional block that follows the
+# fragment shader's "#version 300 es" line becomes the single highp line,
+# so the phone keeps the highp both shaders had in 0126's test. The vertex
+# shader's "#version 300 es" line is followed by its highp line and is
+# left, and the ES2 block follows "#version 100" and is not compiled for
+# ES 3.0. Anything but one rewrite fails, so a raylib upgrade that moves
+# the text is noticed. fetch_source clones afresh on every run, so the
+# file is never already patched.
 patch_default_shader_precision() {
 	local header="$source_directory/src/rlgl.h"
 	awk '
-		/precision mediump float;/ && /OpenGL ES3 \(WebGL 2\)/ {
-			sub(/precision mediump float;/, "precision highp float;")
+		/^[ \t]*"#version 300 es[ \t]*\\n"$/ {
+			print
+			if ((getline line) <= 0) { failed = 1; exit }
+			if (line !~ /^[ \t]*"#ifdef GL_FRAGMENT_PRECISION_HIGH[ \t]*\\n"$/) { print line; next }
+			if ((getline highp) <= 0 || highp !~ /^[ \t]*"precision highp float;[ \t]*\\n"$/) { failed = 1; exit }
+			if ((getline other) <= 0 || other !~ /^[ \t]*"#else[ \t]*\\n"$/) { failed = 1; exit }
+			if ((getline mediump) <= 0 || mediump !~ /^[ \t]*"precision mediump float;[ \t]*\\n"$/) { failed = 1; exit }
+			if ((getline closing) <= 0 || closing !~ /^[ \t]*"#endif[ \t]*\\n"$/) { failed = 1; exit }
+			print highp
 			rewrites++
+			next
 		}
 		{ print }
-		END { if (rewrites != 2) exit 1 }
+		END { if (failed || rewrites != 1) exit 1 }
 	' "$header" > "$header.new" || {
-		echo "rlgl.h: expected two OpenGL ES3 default shader precision lines" >&2
+		echo "rlgl.h: expected one OpenGL ES3 default fragment shader precision block" >&2
 		rm -f "$header.new"
 		exit 1
 	}
@@ -123,89 +137,6 @@ patch_android_key_queue_bound() {
 		END { if (rewrites != 1) exit 1 }
 	' "$source_file" > "$source_file.new" || {
 		echo "rcore_android.c: expected one unbounded keyPressedQueue append" >&2
-		rm -f "$source_file.new"
-		exit 1
-	}
-	mv "$source_file.new" "$source_file"
-}
-
-# The gamepad key branch of AndroidInputCallback (rcore_android.c) in 6.0
-# refuses a key event whose source carries the KEYBOARD bit beside the
-# JOYSTICK or GAMEPAD bit, and Android stamps the KEYBOARD bit on every key
-# event of a gamepad (the user's GameSir X2 reports source 0x01000511 on
-# every button), so only the sticks' motion events reached the game (work
-# item 0236). The block is rewritten into the form of upstream PR #5824
-# (raysan5/raylib a005a044d, merged 2026-05-10, after the 6.0 tag): the
-# source bits only select the branch, AndroidTranslateGamepadButton
-# decides, and an unknown keycode (a phone's volume keys arrive with the
-# GAMEPAD bit, the bug the 6.0 guard was added for) falls through to the
-# keyboard handler. The block is matched whole and exactly once, so a
-# raylib that has absorbed the fix fails here and the patch is dropped.
-patch_android_gamepad_source_bits() {
-	local source_file="$source_directory/src/platforms/rcore_android.c"
-	local old_block new_block
-	old_block=$(cat <<'EOF'
-        // Handle gamepad button presses and releases
-        // NOTE: Skip gamepad handling if this is a keyboard event, as some devices
-        // report both AINPUT_SOURCE_KEYBOARD and AINPUT_SOURCE_GAMEPAD flags
-        if ((FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
-             FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD)) &&
-            !FLAG_IS_SET(source, AINPUT_SOURCE_KEYBOARD))
-        {
-            // Assuming a single gamepad, "detected" on its input event
-            CORE.Input.Gamepad.ready[0] = true;
-
-            GamepadButton button = AndroidTranslateGamepadButton(keycode);
-
-            if (button == GAMEPAD_BUTTON_UNKNOWN) return 1;
-
-            if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
-            {
-                CORE.Input.Gamepad.currentButtonState[0][button] = 1;
-            }
-            else CORE.Input.Gamepad.currentButtonState[0][button] = 0;  // Key up
-
-            return 1; // Handled gamepad button
-        }
-EOF
-)
-	new_block=$(cat <<'EOF'
-        // Handle gamepad button presses and releases. AOSP stamps the
-        // KEYBOARD source bit on every key event from a gamepad, so
-        // discriminate on the keycode rather than gating on source bits.
-        if (FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
-            FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD))
-        {
-            GamepadButton button = AndroidTranslateGamepadButton(keycode);
-
-            if (button != GAMEPAD_BUTTON_UNKNOWN)
-            {
-                // Assuming a single gamepad, "detected" on its input event
-                CORE.Input.Gamepad.ready[0] = true;
-
-                if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
-                {
-                    CORE.Input.Gamepad.currentButtonState[0][button] = 1;
-                }
-                else CORE.Input.Gamepad.currentButtonState[0][button] = 0;  // Key up
-
-                return 1; // Handled gamepad button
-            }
-            // Unknown keycode: fall through to the keyboard handler below.
-        }
-EOF
-)
-	OLD_BLOCK="$old_block" NEW_BLOCK="$new_block" awk '
-		BEGIN { RS = "^$"; old = ENVIRON["OLD_BLOCK"]; new = ENVIRON["NEW_BLOCK"] }
-		{
-			start = index($0, old)
-			if (start == 0) exit 1
-			rest = substr($0, start + length(old))
-			if (index(rest, old) != 0) exit 1
-			printf "%s%s%s", substr($0, 1, start - 1), new, rest
-		}
-	' "$source_file" > "$source_file.new" || {
-		echo "rcore_android.c: expected the 6.0 gamepad key block of AndroidInputCallback once" >&2
 		rm -f "$source_file.new"
 		exit 1
 	}
@@ -268,9 +199,8 @@ write_android_build_record() {
 	cat >> "$collection_directory/README.md" <<RECORD
 $android_record_marker
 - android raylib tag: $raylib_tag ($raylib_url), commit $commit
-- android source patch: src/rlgl.h, the two OpenGL ES3 default shader lines "precision mediump float;" become "precision highp float;" (work item 0126)
+- android source patch: src/rlgl.h, the OpenGL ES3 default fragment shader's GL_FRAGMENT_PRECISION_HIGH conditional becomes "precision highp float;" (work items 0126, 0319)
 - android source patch: src/platforms/rcore_android.c, the key branch's keyPressedQueue append is bounded by MAX_KEY_PRESSED_QUEUE as on the desktop (work item 0133)
-- android source patch: src/platforms/rcore_android.c, the gamepad key block of AndroidInputCallback routes by keycode instead of refusing events with the KEYBOARD source bit, as upstream PR #5824 (work item 0236)
 - android cmake flags: -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$ANDROID_API_LEVEL -DPLATFORM=Android -DOPENGL_VERSION="ES 3.0" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF
 - android compiler: NDK $ANDROID_NDK_VERSION, $compiler
 - android built: $(date -u +%Y-%m-%dT%H:%MZ)
@@ -293,7 +223,6 @@ android_build_on_host() {
 	fetch_source
 	patch_default_shader_precision
 	patch_android_key_queue_bound
-	patch_android_gamepad_source_bits
 	android_configure_and_build
 	mkdir -p "$collection_directory/android"
 	# The NDK compiles with -g even in Release; without the debug sections
