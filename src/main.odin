@@ -47,6 +47,8 @@ Command_Line :: struct {
 	load_name:       string `args:"name=load" usage:"load the saved world with this name"`,
 	world_name:      string `args:"name=name" usage:"name of a new world"`,
 	debug_terrain:   bool `usage:"the fixed 8 by 2 by 8 chunk test terrain instead of the generated world"`,
+	// Work item 0379: the New world screen's Water row, for the profile.
+	water_model:     string `args:"name=water-model" usage:"teleport or bodies: the water model of a new world (default teleport)"`,
 	// Developer flags (work item 0043).
 	unlock_all:      bool `usage:"every technology researched and every item discovered"`,
 	developer_mode:  bool `args:"name=dev" usage:"developer mode: a Developer entry in the pause menu"`,
@@ -112,6 +114,17 @@ tech_demo_starts_world :: proc(command_line: Command_Line) -> bool {
 	return command_line.tech_demo != "" && !tech_demo_opens_menu(command_line)
 }
 
+// The water model's word on the command line (--tech-demo, --water-model).
+parse_water_model_word :: proc(word: string) -> (model: Water_Model, ok: bool) {
+	switch word {
+	case "teleport":
+		return .Teleport, true
+	case "bodies":
+		return .Bodies, true
+	}
+	return .Teleport, false
+}
+
 // The words of --tech-demo=<model>,<radius>,<start> over the defaults; an
 // empty word keeps its default. The radius is checked against the
 // planet's presets once the data is loaded (command_line_data_problem).
@@ -122,14 +135,11 @@ parse_tech_demo_setup :: proc(value: string, defaults: Tech_Demo_Setup) -> (setu
 		return setup, fmt.tprintf("invalid --tech-demo=%s (expected <model>,<radius>,<start>)", value)
 	}
 	if len(words) > 0 && words[0] != "" {
-		switch words[0] {
-		case "teleport":
-			setup.water_model = .Teleport
-		case "bodies":
-			setup.water_model = .Bodies
-		case:
+		model, ok := parse_water_model_word(words[0])
+		if !ok {
 			return setup, fmt.tprintf("invalid --tech-demo model %q (expected teleport or bodies)", words[0])
 		}
+		setup.water_model = model
 	}
 	if len(words) > 1 && words[1] != "" {
 		radius, ok := parse_seed(words[1])
@@ -211,10 +221,21 @@ command_line_seed :: proc(command_line: Command_Line) -> (seed: u64, ok: bool) {
 	return parse_seed(command_line.seed)
 }
 
+// --water-model's model, the fallback without the flag.
+command_line_water_model :: proc(command_line: Command_Line, fallback: Water_Model) -> (model: Water_Model, ok: bool) {
+	if command_line.water_model == "" {
+		return fallback, true
+	}
+	return parse_water_model_word(command_line.water_model)
+}
+
 // The values core:flags accepts as plain strings but the game does not.
 command_line_value_problem :: proc(command_line: Command_Line) -> string {
 	if _, ok := command_line_seed(command_line); !ok {
 		return fmt.tprintf("invalid seed %q (expected an unsigned 64 bit integer, for example --seed=12345)", command_line.seed)
+	}
+	if _, ok := command_line_water_model(command_line, .Teleport); !ok {
+		return fmt.tprintf("invalid --water-model=%s (expected teleport or bodies)", command_line.water_model)
 	}
 	if _, ok := parse_input_request(command_line.input); !ok {
 		return fmt.tprintf("unknown input backend %q (supported: --input=sdl3, --input=raylib, --input=none)", command_line.input)
@@ -621,11 +642,11 @@ print_configuration :: proc(assignments: []string) {
 	fmt.print(configuration_dump(loaded, bindings))
 }
 
-// --seed, --name, --load, --debug-terrain, --chapter and --give start a
-// world directly; without them the title shows.
+// --seed, --name, --load, --debug-terrain, --water-model, --chapter and
+// --give start a world directly; without them the title shows.
 command_line_starts_world :: proc(command_line: Command_Line) -> bool {
 	starts := command_line.seed != "" || command_line.world_name != "" || command_line.load_name != "" || command_line.debug_terrain
-	return starts || command_line.chapter > 0 || len(command_line.give_arguments) > 0
+	return starts || command_line.water_model != "" || command_line.chapter > 0 || len(command_line.give_arguments) > 0
 }
 
 // Runs before the window opens, so the spawn search and load problems show
@@ -703,7 +724,8 @@ command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves
 	}
 	display_name := command_line.world_name != "" ? command_line.world_name : DEFAULT_WORLD_NAME
 	settings := default_world_file_settings(config)
-	// Validated before any data loads.
+	// Both validated before any data loads.
+	settings.water_model, _ = command_line_water_model(command_line, settings.water_model)
 	seed, _ := command_line_seed(command_line)
 	return new_world_plan(display_name, seed, settings, saves_directory, saves_found, command_line.debug_terrain), ""
 }
@@ -736,6 +758,8 @@ command_line_conflict :: proc(command_line: Command_Line) -> string {
 		return "--load and --debug-terrain cannot be combined"
 	case command_line.chapter > 0:
 		return "--load and --chapter cannot be combined (--chapter starts a new world)"
+	case command_line.water_model != "":
+		return "--load and --water-model cannot be combined (a saved world keeps its water model)"
 	}
 	return ""
 }
@@ -820,6 +844,8 @@ relief_map_conflict :: proc(command_line: Command_Line) -> string {
 		other = "--name"
 	case command_line.debug_terrain:
 		other = "--debug-terrain"
+	case command_line.water_model != "":
+		other = "--water-model"
 	case command_line.chapter > 0:
 		other = "--chapter"
 	case len(command_line.give_arguments) > 0:
@@ -846,6 +872,8 @@ tech_demo_conflict :: proc(command_line: Command_Line) -> string {
 		other = "--name"
 	case command_line.debug_terrain:
 		other = "--debug-terrain"
+	case command_line.water_model != "":
+		other = "--water-model"
 	case command_line.chapter > 0:
 		other = "--chapter"
 	case len(command_line.give_arguments) > 0:
@@ -887,6 +915,8 @@ benchmark_conflict :: proc(command_line: Command_Line) -> string {
 		return "--benchmark and --chapter cannot be combined"
 	case command_line.debug_terrain:
 		return "--benchmark and --debug-terrain cannot be combined"
+	case command_line.water_model != "":
+		return "--benchmark and --water-model cannot be combined (the benchmark builds its own world)"
 	}
 	return ""
 }

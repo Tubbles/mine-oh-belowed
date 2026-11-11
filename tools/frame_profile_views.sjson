@@ -8,7 +8,10 @@
 // target = [latitude, longitude], target_height metres over the surface
 // point the teleport there answers, or looks at look = [yaw, pitch]
 // (bearing from north, degrees). walk = [x, y] holds the left stick while
-// the view is sampled. viewports narrows the counts the view runs in.
+// the view is sampled. viewports narrows the counts the view runs in. A
+// view's water_model = "bodies" (or "teleport") runs it after the other
+// runs, in a game started with --water-model=<it> (0379). Without it the
+// view runs under the new world's default, teleport.
 //
 // The shipped 8 km world of the default seed. The lake, the sea and the
 // ridge were found by a probe on its generation (removed once written
@@ -21,6 +24,8 @@ viewports = [1, 2]
 views = [
 	{name = "home", stand = [83.171, 130.477], target = [79, 151], target_height = 1.5}
 	{name = "spring", stand = [79.159, 150.561], target = [79, 151], target_height = 1}
+	// The spring under the bodies model (0367, 0379).
+	{name = "spring_bodies", stand = [79.159, 150.561], target = [79, 151], target_height = 1, water_model = "bodies"}
 	{name = "forest", stand = [80.6, 132], look = [0, 0]}
 	// The largest kept lake of the tiles round the home. "lake 0 of 20 at
 	// 80.978 -174.308, 10.2 m over the sea, 6.0 m deep, 15496 m2, 1059 m

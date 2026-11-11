@@ -11,6 +11,7 @@ non_default_world_setup :: proc() -> World_Setup {
 	step_world_setup_radius(&setup, planets)
 	step_world_setup_spacing(&setup)
 	step_world_setup_mode(&setup)
+	step_world_setup_water(&setup)
 	setup.veins_infinite = true
 	setup.vein_richness_choice = 3
 	setup.research_cost_choice = 0
@@ -31,6 +32,7 @@ test_world_setup_defaults_follow_the_config :: proc(t: ^testing.T) {
 	testing.expect_value(t, settings.sample_spacing_millimetres, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
 	testing.expect_value(t, settings.mode, World_Mode.Peaceful)
 	testing.expect(t, settings.keep_inventory)
+	testing.expect_value(t, settings.water_model, Water_Model.Teleport)
 	testing.expect_value(t, kilometres_number_text(16000), "16")
 	testing.expect_value(t, kilometres_number_text(4500), "4.5")
 	testing.expect_value(t, metres_number_text(333), "0.33")
@@ -52,8 +54,6 @@ test_world_setup_defaults_follow_the_config :: proc(t: ^testing.T) {
 test_world_settings_round_trip_through_world_file :: proc(t: ^testing.T) {
 	setup := non_default_world_setup()
 	settings := world_file_settings_from_setup(setup, shipped_test_planets())
-	// The water model has no row (0291); it travels with the settings.
-	settings.water_model = .Bodies
 	testing.expect_value(t, settings.vein_richness_percent, 400)
 	// The planet rows (0179): home's next preset after 8 km, the spacing
 	// after 1 m wraps to a third of a metre, survival after peaceful.
@@ -81,6 +81,90 @@ test_world_settings_round_trip_through_world_file :: proc(t: ^testing.T) {
 	// The pad travels with the file (0049).
 	testing.expect(t, parsed.landing_pad_present)
 	testing.expect_value(t, parsed.landing_pad, cast([3]i32)SAVE_TEST_LANDING_PAD.centre)
+}
+
+// The Water row (0379) steps teleport, bodies and back, Create carries the
+// model, and each value has a name and a description of its own.
+@(test)
+test_the_water_row_steps_both_models_with_their_texts :: proc(t: ^testing.T) {
+	planets := shipped_test_planets()
+	setup := make_world_setup(default_world_file_settings(test_game_config()), planets, "Water", 1)
+	testing.expect_value(t, setup.water_model, Water_Model.Teleport)
+	step_world_setup_water(&setup)
+	testing.expect_value(t, setup.water_model, Water_Model.Bodies)
+	testing.expect_value(t, world_file_settings_from_setup(setup, planets).water_model, Water_Model.Bodies)
+	step_world_setup_water(&setup)
+	testing.expect_value(t, setup.water_model, Water_Model.Teleport)
+	for model in Water_Model {
+		testing.expectf(t, world_water_text(model) != "", "%v has no value text", model)
+		testing.expectf(t, world_water_description_text(model) != "", "%v has no description", model)
+	}
+	testing.expect(t, world_water_text(.Teleport) != world_water_text(.Bodies), "the two values read alike")
+	testing.expect(t, world_water_description_text(.Teleport) != world_water_description_text(.Bodies), "the two descriptions read alike")
+}
+
+// Confirm on the focused Water row steps the model (0379).
+@(test)
+test_the_water_row_steps_on_confirm :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Title)
+	push_screen(&state.screens, .New_World)
+	screen_test_frame(audit, &state, {})
+	row := ui_hash(ui_hash(0, "new_world", -1), text("new_world_water"), -1)
+	state.requested_focus = row
+	screen_test_frame(audit, &state, {device = .Gamepad, device_seen = true})
+	testing.expect_value(t, state.focus, row)
+	testing.expect_value(t, audit.title.setup.water_model, Water_Model.Teleport)
+	screen_test_frame(audit, &state, {confirm = true, confirm_down = true, device = .Gamepad, device_seen = true})
+	testing.expect_value(t, audit.title.setup.water_model, Water_Model.Bodies)
+}
+
+// A world made on the New world screen (the Create path, nothing written)
+// simulates under the model its Water row chose, and a save round trip
+// (the joiner's path from the bytes) keeps the model and the hash (0379).
+@(test) // slow
+test_a_new_world_runs_saves_and_loads_its_water_model :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	for model in Water_Model {
+		setup := make_world_setup(default_world_file_settings(config), content.planets, "Water", DEFAULT_WORLD_SEED)
+		for setup.water_model != model {
+			step_world_setup_water(&setup)
+		}
+		plan := new_world_plan("Water", DEFAULT_WORLD_SEED, world_file_settings_from_setup(setup, content.planets), "", false, false)
+		session, problem := start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+		testing.expect_value(t, problem, "")
+		if session == nil {
+			continue
+		}
+		simulation := &session.simulation
+		testing.expect_value(t, simulation.world.settings.water_model, model)
+		testing.expect_value(t, simulation.field.world.water_model, model)
+		bodies := simulation.field.world.water_bodies
+		if model == .Bodies {
+			sea := len(bodies) > 0 && bodies[WATER_BODY_SEA].alive && bodies[WATER_BODY_SEA].sea
+			testing.expect(t, sea, "the bodies model has no sea body")
+		} else {
+			testing.expect_value(t, len(bodies), 0)
+		}
+		simulation_content := field_test_content(session, content)
+		for _ in 0 ..< 2 {
+			tick_field_test_simulation(simulation, simulation_content, {})
+		}
+		hash := simulation_state_hash(simulation)
+		loaded, file := reload_field_test_session(t, session, config, content, simulation_content)
+		testing.expect_value(t, file.settings.water_model, model)
+		if loaded == nil {
+			continue
+		}
+		testing.expect_value(t, loaded.simulation.world.settings.water_model, model)
+		testing.expect_value(t, loaded.simulation.field.world.water_model, model)
+		testing.expect_value(t, simulation_state_hash(&loaded.simulation), hash)
+		end_session(loaded)
+	}
 }
 
 // A loaded world starts on the pad its file names, without a spawn search;

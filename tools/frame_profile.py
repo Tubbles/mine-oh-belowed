@@ -207,12 +207,14 @@ def selected_views(views_file, names):
     return views, not names or "factory" in names, ""
 
 
-def new_run(name, viewports, distance, frames):
+def new_run(name, viewports, distance, frames, water_model=None):
     return {
         "view": name,
         "viewports": viewports,
         "distance": distance,
         "frames": frames,
+        # The view's water_model, None for the new world's default.
+        "water_model": water_model,
         "failure": "",
         "unsettled": False,
         # Why an unsettled run has no sample (its settle never answered).
@@ -229,19 +231,25 @@ def run_name(run):
 def planned_runs(views_file, views, factory, distances, arguments):
     """The runs in the order they are taken, so one extra player is ever
     added: the views in one viewport, then in two, then the factory in two
-    and in one."""
-    plan = {"views_one": [], "views_two": [], "factory_two": [], "factory_one": []}
+    and in one, then the models phase: the views that name a water_model,
+    each model's together in a fresh game started under it (0379), one
+    viewport then two, in the views file's order."""
+    plan = {"views_one": [], "views_two": [], "factory_two": [], "factory_one": [], "models": []}
     for viewports, phase in ((1, "views_one"), (2, "views_two")):
         for view in views:
             if viewports in view_viewports(view, views_file):
                 frames = view_frames(view, views_file, arguments)
-                plan[phase] += [new_run(view["name"], viewports, distance, frames) for distance in distances]
+                model = view.get("water_model")
+                runs = [new_run(view["name"], viewports, distance, frames, model) for distance in distances]
+                plan[phase if model is None else "models"] += runs
     if factory:
         factory_view = {"name": "factory"}
         frames = view_frames(factory_view, views_file, arguments)
         for viewports, phase in ((2, "factory_two"), (1, "factory_one")):
             if viewports in views_file["viewports"]:
                 plan[phase] = [new_run("factory", viewports, distance, frames) for distance in distances]
+    # A stable sort: the views file's order within a model and a count.
+    plan["models"].sort(key=lambda run: (run["water_model"], run["viewports"]))
     return plan
 
 
@@ -259,10 +267,12 @@ def run_directories(output, runtime_root, pid):
     }
 
 
-def game_command(binary, directories, check):
+def game_command(binary, directories, check, water_model):
     """The game inside gamescope: X11 through gamescope's Xwayland (never
-    the parent compositor), every XDG directory the run's own."""
+    the parent compositor), every XDG directory the run's own; a new world
+    under the water model, or the default for None."""
     cap = CHECK_FRAME_RATE_CAP if check else 0
+    model_flags = [] if water_model is None else [f"--water-model={water_model}"]
     return [
         "env",
         "-u", "WAYLAND_DISPLAY",
@@ -275,6 +285,7 @@ def game_command(binary, directories, check):
         f"XDG_DATA_HOME={directories['data']}",
         str(binary),
         *GAME_FLAGS,
+        *model_flags,
         f"--set=settings.frame_rate_cap={cap}",
     ]
 
@@ -478,7 +489,7 @@ def start_game(game, arguments, directories, output, root):
     process and the connection go into the game as they come, so
     stop_game cleans up a start that fails half way."""
     directories["runtime"].mkdir(mode=0o700)
-    command = gamescope_command(game_command(arguments.binary.resolve(), directories, arguments.check))
+    command = gamescope_command(game_command(arguments.binary.resolve(), directories, arguments.check, game["water_model"]))
     game["process"] = start_gamescope(command, gamescope_environment(directories), output / "gamescope.log", root)
     wait_for_socket(socket_path(directories), game["process"])
     game["connection"] = Game_Connection(socket_path(directories))
@@ -985,11 +996,13 @@ def sample_run(connection, run, walk, device, output):
         run["failure"] = f"render {render[0]} {render[1]}, not {DISPLAY_SIZE[0]} {DISPLAY_SIZE[1]}"
 
 
-def new_game():
+def new_game(water_model=None):
     """A game's process, connection and what the runs set up in it: the
     second viewport's player, the factory's framing, and a viewport add or
-    factory build that failed, remembered for the game's later runs."""
+    factory build that failed, remembered for the game's later runs. The
+    water model it is started under, None for the default."""
     return {
+        "water_model": water_model,
         "process": None,
         "connection": None,
         "second": None,
@@ -1036,17 +1049,26 @@ def run_framing(game, run, by_name):
     return (lambda: view_framing(game["connection"], view)), players, view.get("walk")
 
 
+def run_needs_start(game, run, lost):
+    """Whether the run needs a fresh game (the last one lost, or a run of
+    another water model) and whether that start counts as a restart (a
+    lost game only)."""
+    return lost or run["water_model"] != game["water_model"], lost
+
+
 def profile_views(session, restart, views_file, views, runs, device, output):
     """The runs in order, each result in its entry. The game is brought to
     what each run needs (viewports, the factory) first. After a run that
-    left the game in an unknown state, restart() stops it and starts a
-    fresh one for the runs after it, so one slow view never costs the
-    others."""
+    left the game in an unknown state, or before a run of another water
+    model, restart(water_model, counted) stops it and starts a fresh one
+    under the run's model for the runs after it, so one slow view never
+    costs the others."""
     by_name = {view["name"]: view for view in views}
     needs_restart = False
     for run in runs:
-        if needs_restart:
-            restart()
+        start, counted = run_needs_start(session["game"], run, needs_restart)
+        if start:
+            restart(run["water_model"], counted)
         game = session["game"]
         try:
             failure = ready_for_run(game, run, views_file)
@@ -1266,22 +1288,27 @@ def main(arguments):
         return 2
     distances = [JUDGED_DISTANCE] if arguments.check else views_file["distances"]
     plan = planned_runs(views_file, views, factory, distances, arguments)
-    runs = plan["views_one"] + plan["views_two"] + plan["factory_two"] + plan["factory_one"]
+    runs = plan["views_one"] + plan["views_two"] + plan["factory_two"] + plan["factory_one"] + plan["models"]
     output = arguments.output.resolve()
     version = game_version(arguments.binary)
     directories = run_directories(output, runtime_root, os.getpid())
     for name in ("config", "config_dirs", "state", "data"):
         directories[name].mkdir(parents=True, exist_ok=True)
-    session = {"game": new_game(), "restarts": 0}
+    # Under the first run's model, so a run of only one model starts once.
+    session = {"game": new_game(runs[0]["water_model"] if runs else None), "restarts": 0}
 
-    def restart():
-        """This game stopped and cleaned up, a fresh one started and
-        prepared."""
+    def restart(water_model, counted):
+        """This game stopped and cleaned up, a fresh one started under the
+        water model and prepared; counted in the head's restarts when the
+        last game was lost."""
         if not stop_game(session["game"], directories):
             raise Run_Stopped("a process outlived its SIGKILL, so the game was not restarted")
-        session["game"] = new_game()
-        session["restarts"] += 1
-        print("frame profile: restarting the game", flush=True)
+        session["game"] = new_game(water_model)
+        if counted:
+            session["restarts"] += 1
+            print("frame profile: restarting the game", flush=True)
+        else:
+            print(f"frame profile: starting the game under the {water_model} water model", flush=True)
         refusal = start_game(session["game"], arguments, directories, output, root)
         if refusal:
             raise Run_Stopped(f"the restarted game was refused: {refusal}")

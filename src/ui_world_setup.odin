@@ -33,6 +33,8 @@ World_Setup :: struct {
 	sample_spacing_millimetres: int,
 	mode:                 World_Mode,
 	keep_inventory:       bool,
+	// The Water row (0379).
+	water_model:          Water_Model,
 }
 
 // The settings of a world made without the New world screen (--seed), and
@@ -48,6 +50,8 @@ default_world_file_settings :: proc(config: Game_Config) -> World_File_Settings 
 		planet_id = DEFAULT_PLANET_ID,
 		mode = .Peaceful,
 		keep_inventory = true,
+		// Teleport for now (user, 2026-11-11, 0379).
+		water_model = .Teleport,
 	}
 }
 
@@ -109,6 +113,7 @@ make_world_setup :: proc(defaults: World_File_Settings, planets: []Planet, name:
 		sample_spacing_millimetres = defaults.sample_spacing_millimetres,
 		mode = defaults.mode,
 		keep_inventory = defaults.keep_inventory,
+		water_model = defaults.water_model,
 	}
 }
 
@@ -152,6 +157,10 @@ step_world_setup_mode :: proc(setup: ^World_Setup) {
 	setup.mode = World_Mode(next_choice(int(setup.mode), len(World_Mode)))
 }
 
+step_world_setup_water :: proc(setup: ^World_Setup) {
+	setup.water_model = Water_Model(next_choice(int(setup.water_model), len(Water_Model)))
+}
+
 // The seed field holds digits only; empty or past the u64 range is invalid.
 world_setup_seed :: proc(setup: ^World_Setup) -> (seed: u64, ok: bool) {
 	return parse_seed(text_field_text(&setup.seed))
@@ -177,6 +186,7 @@ world_file_settings_from_setup :: proc(setup: World_Setup, planets: []Planet) ->
 		planet_radius_metres = setup.planet_radius_metres,
 		mode = setup.mode,
 		keep_inventory = setup.keep_inventory,
+		water_model = setup.water_model,
 	}
 }
 

@@ -129,7 +129,7 @@ test_command_line_usage_lists_every_flag :: proc(t: ^testing.T) {
 	write_command_line_usage(strings.to_writer(&builder))
 	usage := strings.to_string(builder)
 	testing.expect(t, strings.contains(usage, PROGRAM_NAME))
-	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all", "--benchmark", "--model-check", "--model-preview", "--model-preview-directory", "--tech-demo"}) {
+	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all", "--benchmark", "--model-check", "--model-preview", "--model-preview-directory", "--tech-demo", "--water-model"}) {
 		testing.expectf(t, strings.contains(usage, flag), "usage lacks %s:\n%s", flag, usage)
 	}
 }
@@ -186,6 +186,55 @@ test_command_line_tech_demo :: proc(t: ^testing.T) {
 	}
 	_, data_problem = command_line_data_problem(full, items, kits, nil)
 	testing.expect(t, strings.contains(data_problem, "no planet"), data_problem)
+}
+
+// --water-model (0379): the new world's model, starting it as --seed does,
+// checked by its word and refused where no new world of the command line
+// is made.
+@(test)
+test_command_line_water_model :: proc(t: ^testing.T) {
+	empty, _ := parse_command_line({})
+	model, ok := command_line_water_model(empty, .Teleport)
+	testing.expect(t, ok)
+	testing.expect_value(t, model, Water_Model.Teleport)
+	testing.expect(t, !command_line_starts_world(empty))
+	plan, problem := command_line_plan(empty, test_game_config(), "", false)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, plan.settings.water_model, Water_Model.Teleport)
+
+	bodies, error := parse_command_line({"--water-model=bodies"})
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, command_line_value_problem(bodies), "")
+	testing.expect_value(t, command_line_conflict(bodies), "")
+	testing.expect(t, command_line_starts_world(bodies))
+	plan, problem = command_line_plan(bodies, test_game_config(), "", false)
+	testing.expect_value(t, problem, "")
+	testing.expect(t, !plan.loading)
+	testing.expect_value(t, plan.settings.water_model, Water_Model.Bodies)
+
+	lakes, _ := parse_command_line({"--water-model=lakes"})
+	testing.expect(t, strings.has_prefix(command_line_value_problem(lakes), "invalid --water-model"), command_line_value_problem(lakes))
+
+	Refusal :: struct {
+		other, prefix: string,
+	}
+	refusals := [?]Refusal {
+		{"--load=a", "--load and --water-model"},
+		{"--tech-demo=bodies", "--tech-demo and --water-model"},
+		{"--benchmark=1", "--benchmark and --water-model"},
+		{"--model-check=all", "--model-check runs no world"},
+	}
+	for refusal in refusals {
+		combined, _ := parse_command_line({"--water-model=bodies", refusal.other})
+		conflict := command_line_conflict(combined)
+		testing.expectf(t, strings.has_prefix(conflict, refusal.prefix), "with %s: %q", refusal.other, conflict)
+	}
+	relief, _ := parse_command_line({"--water-model=bodies", "--relief-map=planet", "--relief-map-file=x.png"})
+	testing.expect(t, strings.contains(command_line_conflict(relief), "--water-model"), command_line_conflict(relief))
+	joining, _ := parse_command_line({"--water-model=bodies", "--join=a"})
+	testing.expect(t, command_line_conflict(joining) != "", "--join with --water-model accepted")
+	server, _ := parse_command_line({"--water-model=bodies", "--server"})
+	testing.expect_value(t, command_line_conflict(server), "")
 }
 
 @(test)

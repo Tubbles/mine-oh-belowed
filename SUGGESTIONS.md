@@ -332,3 +332,7 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 
 - `count_dropped_field_children` (`world_field_lod_test.odin`) looks at the first children of a split node only. The review's probe checked every generation and found none dropped; the test could do the same.
 - The balance pass's cost at 1000 mm, where it runs, is not in the frame table yet: read `select` in the night's table before deciding whether the selection needs caching between frames while the eye stands still.
+
+## Suggestions from the water model's row (0379, 2026-11-11)
+
+- A bodies world can be hosted since 0379 and no test joins one. The join snapshot goes through the save's bytes, which 0293 tests, so a failure would be in what a joiner does after the load. A join test under bodies would settle it before the model is offered for real.

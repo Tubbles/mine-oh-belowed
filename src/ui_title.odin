@@ -13,8 +13,8 @@ import "platform"
 TITLE_PANEL_WIDTH :: 560
 TITLE_NAME_TEXT_SIZE :: 72
 NEW_WORLD_PANEL_WIDTH :: 960
-// Heading, name, seed, eleven settings and the button row.
-NEW_WORLD_ROW_COUNT :: 15
+// Heading, name, seed, twelve settings, the water's description and the button row.
+NEW_WORLD_ROW_COUNT :: 17
 LOAD_PANEL_WIDTH :: 1400
 // Rows of the save list below its column headings.
 LOAD_LIST_ROWS :: 8
@@ -167,8 +167,32 @@ world_mode_text :: proc(mode: World_Mode) -> string {
 	return ""
 }
 
+world_water_text :: proc(model: Water_Model) -> string {
+	switch model {
+	case .Teleport:
+		return text("new_world_water_teleport")
+	case .Bodies:
+		return text("new_world_water_bodies")
+	}
+	return ""
+}
+
+// The one line under the Water row that says what its value does.
+world_water_description_text :: proc(model: Water_Model) -> string {
+	switch model {
+	case .Teleport:
+		return text("new_world_water_teleport_description")
+	case .Bodies:
+		return text("new_world_water_bodies_description")
+	}
+	return ""
+}
+
 // The planet rows of the world settings (0179): the planet, its radius
-// preset, the terrain's sample spacing, the mode and keep inventory.
+// preset, the terrain's sample spacing, the water model (0379) with its
+// value's description dim under it, the mode and keep inventory. The
+// description is not fitted, so the UI audit's Text_Too_Wide proves the
+// line whole at every size and text scale.
 world_planet_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setup: ^World_Setup, planets: []Planet) {
 	planet, _ := world_setup_planet(setup^, planets)
 	if ui_choice(state, cut_row(content), text("new_world_planet"), planet_name_text(planet.id), text("new_world_planet_tooltip")) {
@@ -182,6 +206,12 @@ world_planet_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setup: ^Worl
 	if ui_choice(state, cut_row(content), text("new_world_spacing"), spacing, text("new_world_spacing_tooltip")) {
 		step_world_setup_spacing(setup)
 	}
+	if ui_choice(state, cut_row(content), text("new_world_water"), world_water_text(setup.water_model), text("new_world_water_tooltip")) {
+		step_world_setup_water(setup)
+	}
+	description := cut_row(content)
+	cut_left(&description, UI_PADDING)
+	ui_label(state, description, world_water_description_text(setup.water_model), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if ui_choice(state, cut_row(content), text("new_world_mode"), world_mode_text(setup.mode), text("new_world_mode_tooltip")) {
 		step_world_setup_mode(setup)
 	}

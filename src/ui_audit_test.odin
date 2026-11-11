@@ -1019,10 +1019,21 @@ audit_crafting_waits_on_a_full_inventory :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "hud crafting waits on a full inventory", hud = true})
 }
 
+// The New world screen with Bodies' description under the Water row
+// (0379); the "new world" case draws Teleport's.
+audit_new_world_bodies_water :: proc(audit: ^Ui_Audit) {
+	water_model := &audit.title.setup.water_model
+	saved := water_model^
+	defer water_model^ = saved
+	water_model^ = .Bodies
+	audit_case(audit, {name = "new world, bodies water", screens = {.Title, .New_World}})
+}
+
 audit_every_case :: proc(audit: ^Ui_Audit) {
 	toasts := UI_AUDIT_TOASTS
 	audit_case(audit, {name = "title", screens = {.Title}, walk_focus = true})
 	audit_case(audit, {name = "new world", screens = {.Title, .New_World}, walk_focus = true})
+	audit_new_world_bodies_water(audit)
 	audit_case(audit, {name = "on-screen keyboard", screens = {.Title, .New_World}, keyboard = true, walk_focus = true})
 	audit_case(audit, {name = "system keyboard", screens = {.Title, .New_World}, keyboard = true, system_keyboard = true})
 	audit_case(audit, {name = "tech demos", screens = {.Title, .Tech_Demos}, walk_focus = true})
