@@ -382,7 +382,8 @@ test_landforms_problems :: proc(t: ^testing.T) {
 // landforms, with them (0306), with the landmarks (0323, 0314) and with
 // the caves (0327, after), those the box bound leaves to the column and
 // the generation's wall time with the bound beside the samples read one
-// by one (0314), and the tree tiles' wall time. Run alone with
+// by one (0314), and the tree tiles' wall time, also at the 16 km home
+// (0337). Run alone with
 // ./build.sh test quick game.test_report_the_relief_cost -o:speed -define:RELIEF_COST=true
 // or in ./build.sh nightly.
 RELIEF_COST :: #config(RELIEF_COST, false)
@@ -411,6 +412,12 @@ when RELIEF_COST {
 				report_tree_tile_cost(generation, camera, place)
 			}
 		}
+		// The tree tiles at the 16 km home, whose tiles hold the most sea
+		// (0337).
+		large := waters_test_planet(16000)
+		large_generation := make_planet_generation(DEFAULT_WORLD_SEED, large, 1000)
+		large_camera := World_Position(fixed_scale(planet_home_direction(large.home), large_generation.radius + large_generation.crater.floor_height + metres_to_position_units(2)))
+		report_tree_tile_cost(large_generation, large_camera, "after at the 16 km home")
 	}
 
 	fmt_place :: proc(label: string, camera_index: int) -> string {

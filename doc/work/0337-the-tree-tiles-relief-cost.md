@@ -1,6 +1,6 @@
 # 0337: The tree tiles' relief cost
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-12)
 
 From 0314's design. 0310's tree tiles read the relief once per candidate tree: 1.27 million reads for the home's 1,024 m view at 8 km, about a third of that view's generation cost once 0314 has bounded the chunks and grids. They came after the pre-0306 baseline 0314 measures against, so 0314 left them out.
 
@@ -131,3 +131,8 @@ Both land before this item, so the implementation starts from their tree.
 1. The noise cell cache (the design's part B) is 0338, an item and a stream of its own from `main`: it changes every noise's hot path, so it is reviewed and measured alone, and its landing waits for the night's figures. This item keeps the three steps in the trees' file. With them alone the reads stay within 1 to 9 percent of today, since the reads are the standing trees' own; the item's goal is met only as far as the cube tests (72.1M to 1.40M at the home) and 0338 carry it, and the log says so.
 2. No item for a slope from a coarser lattice: it changes new worlds' trees on an estimate nobody probed. It is in `SUGGESTIONS.md`, to weigh once the night's tree line shows what the tiles still cost.
 3. The implementation follows 0327 in the stream 0326, 0327, 0337, from 0327's snapshot, as the design says.
+
+### Deviations (implementation, 2026-11-11)
+
+- `tree_test_coast` takes the first point more than 2 m under the sea floor, and the coast's tiles must mark a box `Sea` at all three radii: at 4 km the first point under it (bearing 17, 992 m) lies on a shore whose 116 boxes read all reach over it; 2 m deeper the coasts mark 79, 65 and 174 boxes at 4, 8 and 16 km and hold 3.4k, 3.1k and 1.0k trees.
+- `tree_test_watered_planet` takes a seed, so the case at `DEFAULT_WORLD_SEED + 1` is that world's home and waters.

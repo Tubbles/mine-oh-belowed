@@ -20,12 +20,15 @@ import "generation_seed"
 // drawn by the weights moved by each species' stand noise, its scale
 // triangular in the species' range. Either way none within the clearing
 // round the home, below the sea or a lake (0312) (with a margin), on a
-// carving site (0324) or on ground steeper than the planet's slope. Keys
-// sit on the sphere of the radius, not on the relief, so a relief term
-// never moves a key; each tree has its own yaw, scale and shade from its
-// hash. A standing tree is a pure function of the seed, the recorded
-// planet and the key; the field spacing never moves a tree. Integers
-// only.
+// carving site (0324) or on ground steeper than the planet's slope.
+// planet_trees_in_box tests only the cubes its column windows can make
+// straddle the sphere, a draw over the density skips the cover, and a
+// tile's sea boxes refuse candidates under the sea before it (0337); the
+// trees are the same either way. Keys sit on the sphere of the radius,
+// not on the relief, so a relief term never moves a key; each tree has
+// its own yaw, scale and shade from its hash. A standing tree is a pure
+// function of the seed, the recorded planet and the key; the field
+// spacing never moves a tree. Integers only.
 
 PLANET_TREE_SEA_MARGIN_METRES :: 1
 PLANET_TREE_SLOPE_PROBE_METRES :: 1
@@ -45,6 +48,24 @@ PLANET_TREE_MAXIMUM_SHADE_PERCENT :: 108
 PLANET_TREE_JITTER_BITS :: 21
 // A box of more tree cubes is a programming error.
 PLANET_TREE_BOX_CELL_LIMIT :: 1 << 20
+// A tile's sea boxes are this many tree cubes an edge (16 m at the
+// shipped spacing; at 8 km the probe's boxes of 8 refused 13.4k
+// candidates where 16 refused 0.5k).
+PLANET_TREE_SEA_BOX_CUBES :: 8
+
+// A box query's sea boxes (0337): first the key of the box holding the
+// query's first cube, count the boxes per axis, boxes x fastest.
+Tree_Sea_Box :: enum u8 {
+	Unread,
+	Sea,
+	Open,
+}
+
+Tree_Sea_Boxes :: struct {
+	first: [3]i64,
+	count: [3]i64,
+	boxes: []Tree_Sea_Box,
+}
 
 // The tree lattice's cube; unique per tree on the planet.
 Tree_Key :: [3]i32
@@ -195,6 +216,42 @@ cube_straddles_sphere :: proc(minimum, maximum: [3]i64, radius: i64) -> bool {
 	return nearest <= radius * radius && farthest >= radius * radius
 }
 
+// The z windows (first, last) of the column (x, y) of tree cubes from
+// first_z to last_z that can hold a cube straddling the sphere, ascending
+// (0337). A cube straddles when its nearest point lies within the radius
+// and its farthest beyond, so its z span must reach least and its nearest
+// z offset stay within most; each end is widened by a cube, so the
+// windows hold every straddling cube and cube_straddles_sphere decides.
+tree_cube_z_windows :: proc(x, y, first_z, last_z, spacing, radius: i64) -> (windows: [2][2]i64, count: int) {
+	near_squared, far_squared: i64
+	for value in ([2]i64{x, y}) {
+		near := clamp(0, value * spacing, value * spacing + spacing)
+		far := max(abs(value * spacing), abs(value * spacing + spacing))
+		near_squared += near * near
+		far_squared += far * far
+	}
+	if near_squared > radius * radius {
+		return
+	}
+	most := i64(integer_square_root(u64(radius * radius - near_squared)))
+	least := i64(integer_square_root(u64(max(radius * radius - far_squared, 0))))
+	below := [2]i64{floor_divide_i64(-most - spacing, spacing) - 1, min(floor_divide_i64(-least, spacing) + 1, -1)}
+	above := [2]i64{max(floor_divide_i64(least - spacing, spacing) - 1, 0), floor_divide_i64(most, spacing) + 1}
+	for window in ([2][2]i64{below, above}) {
+		clipped := [2]i64{max(window[0], first_z), min(window[1], last_z)}
+		if clipped[0] > clipped[1] {
+			continue
+		}
+		if count > 0 && clipped[0] <= windows[count - 1][1] + 1 {
+			windows[count - 1][1] = max(windows[count - 1][1], clipped[1])
+			continue
+		}
+		windows[count] = clipped
+		count += 1
+	}
+	return
+}
+
 // The grove centres (on the sphere) of the grove cubes overlapping the box
 // widened by the grove's reach.
 planet_groves_near :: proc(term: Planet_Tree_Term, radius: i64, minimum, maximum: [3]i64, allocator := context.temp_allocator) -> [][3]i64 {
@@ -258,23 +315,67 @@ tree_hash_percent :: proc(hash: u64, minimum, maximum: i64) -> u8 {
 // or a notch (0327) leaves air PLANET_TREE_CAVE_PROBE_MILLIMETRES under
 // the relief. The caves are read without the lakes, so the rule may
 // refuse a tree by a lake whose fade took the cave away, never keep one
-// over a cave.
+// over a cave. The relief is returned also when not ok, for the sea boxes
+// (0337).
 planet_tree_ground :: proc(generation: Planet_Generation, on_sphere: [3]i64) -> (relief: i64, ok: bool) {
 	column := surface_column(generation, on_sphere)
 	if column.carve.site.kind in CARVING_KINDS {
-		return 0, false
+		return column.relief, false
+	}
+	if column.relief < planet_tree_sea_floor(generation) {
+		return column.relief, false
 	}
 	margin := metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES)
-	if column.relief < generation.sea_radius - generation.radius + margin {
-		return 0, false
-	}
 	if level, found := planet_lake_level_at(generation.lakes, on_sphere, generation.radius); found && column.relief < level + margin {
-		return 0, false
+		return column.relief, false
 	}
 	if (column.cave_share > 0 || column.undercut.reach > 0) && !planet_tree_cave_probe_ground(generation, column, on_sphere) {
-		return 0, false
+		return column.relief, false
 	}
 	return column.relief, true
+}
+
+// The least relief a tree stands on: the sea's level and the margin.
+planet_tree_sea_floor :: proc(generation: Planet_Generation) -> i64 {
+	return generation.sea_radius - generation.radius + metres_to_position_units(PLANET_TREE_SEA_MARGIN_METRES)
+}
+
+// The box of PLANET_TREE_SEA_BOX_CUBES tree cubes an edge holding the
+// cube.
+tree_sea_box_key :: proc(cell: [3]i64) -> [3]i64 {
+	return {floor_divide_i64(cell.x, PLANET_TREE_SEA_BOX_CUBES), floor_divide_i64(cell.y, PLANET_TREE_SEA_BOX_CUBES), floor_divide_i64(cell.z, PLANET_TREE_SEA_BOX_CUBES)}
+}
+
+// The box query's sea boxes from minimum to maximum (position units), all
+// unread; generate_field_tree_tile's for its tile.
+make_tree_sea_boxes :: proc(term: Planet_Tree_Term, minimum, maximum: [3]i64, allocator := context.temp_allocator) -> Tree_Sea_Boxes {
+	first, last: [3]i64
+	for axis in 0 ..< 3 {
+		first[axis] = floor_divide_i64(minimum[axis], term.spacing)
+		last[axis] = floor_divide_i64(maximum[axis], term.spacing)
+	}
+	sea := Tree_Sea_Boxes {
+		first = tree_sea_box_key(first),
+		count = tree_sea_box_key(last) - tree_sea_box_key(first) + 1,
+	}
+	sea.boxes = make([]Tree_Sea_Box, sea.count.x * sea.count.y * sea.count.z, allocator)
+	return sea
+}
+
+// The sea box holding the cube, which lies in the query's box.
+tree_sea_box_of :: proc(sea: ^Tree_Sea_Boxes, cell: [3]i64) -> ^Tree_Sea_Box {
+	offset := tree_sea_box_key(cell) - sea.first
+	return &sea.boxes[offset.x + sea.count.x * (offset.y + sea.count.y * offset.z)]
+}
+
+// Whether every relief of the box of the key lies under the sea floor: a
+// candidate's point lies in its cube, which the box holds, so the box's
+// relief range (relief_box_bound, 0314) holds its relief. A box the
+// crater may reach decides nothing.
+tree_sea_box_under_sea :: proc(generation: Planet_Generation, key: [3]i64) -> bool {
+	edge := PLANET_TREE_SEA_BOX_CUBES * generation.trees.spacing
+	bound := relief_box_bound(generation, World_Position(key * edge), World_Position((key + 1) * edge - 1))
+	return !bound.crater && bound.relief.highest < planet_tree_sea_floor(generation)
 }
 
 // Whether the sample PLANET_TREE_CAVE_PROBE_MILLIMETRES under the column's
@@ -492,16 +593,26 @@ forest_slope_share :: proc(term: Planet_Tree_Term, slope_percent: i64) -> i64 {
 }
 
 // The forest's tree of a candidate, the cheapest rules first, against one
-// draw of the hash: the clearing, the cover with the meadow (or the
+// draw of the hash: the clearing, the density (0337), a sea box under the
+// sea (0337, sea nil for none), the cover with the meadow (or the
 // scatter) times the density, the gap, the ground, the species' climate
 // weights, the slope; then the species by the weights moved by the stands
-// and the scale.
-forest_tree_from_candidate :: proc(generation: Planet_Generation, cell, on_sphere: [3]i64, hash: u64) -> (tree: Planet_Tree, ok: bool) {
+// and the scale. The ground's refusal under the sea reads the cube's sea
+// box once, so the box's later candidates skip the cover.
+forest_tree_from_candidate :: proc(generation: Planet_Generation, cell, on_sphere: [3]i64, hash: u64, sea: ^Tree_Sea_Boxes = nil) -> (tree: Planet_Tree, ok: bool) {
 	term := generation.trees
 	if planet_tree_in_clearing(term, on_sphere) {
 		return {}, false
 	}
 	draw := i64(generation_seed.hash_combine(hash, 1) % NOISE_ONE)
+	// upper below never exceeds the density: max(cover, scatter) is at
+	// most NOISE_ONE.
+	if draw >= term.forest_density {
+		return {}, false
+	}
+	if sea != nil && tree_sea_box_of(sea, cell)^ == .Sea {
+		return {}, false
+	}
 	moisture := planet_moisture(generation, on_sphere)
 	cover := forest_cover(term, on_sphere, moisture) * forest_meadow_share(term, on_sphere) / NOISE_ONE
 	upper := max(cover, term.scatter) * term.forest_density / NOISE_ONE
@@ -511,7 +622,16 @@ forest_tree_from_candidate :: proc(generation: Planet_Generation, cell, on_spher
 	if !forest_gap_keeps(term, generation.radius, cell, on_sphere, hash) {
 		return {}, false
 	}
-	relief := planet_tree_ground(generation, on_sphere) or_return
+	relief, ground := planet_tree_ground(generation, on_sphere)
+	if !ground {
+		if sea != nil && relief < planet_tree_sea_floor(generation) {
+			box := tree_sea_box_of(sea, cell)
+			if box^ == .Unread {
+				box^ = tree_sea_box_under_sea(generation, tree_sea_box_key(cell)) ? .Sea : .Open
+			}
+		}
+		return {}, false
+	}
 	height := relief - (generation.sea_radius - generation.radius)
 	weights, total := species_climate_weights(term, planet_temperature(generation, on_sphere, height), moisture, height, cover)
 	exact := upper * min(total / 100, NOISE_ONE) / NOISE_ONE
@@ -558,8 +678,12 @@ forest_density_at :: proc(generation: Planet_Generation, on_sphere: [3]i64) -> (
 // whose lakes are those that may hold a point of the cubes' box
 // (generation_lakes_near_sphere_box) and whose tiles are nil, so
 // planet_tree_ground reads one short list and the shared generation is
-// never written.
-planet_trees_in_box :: proc(generation: ^Planet_Generation, minimum, maximum: [3]i64, allocator := context.temp_allocator) -> [dynamic]Planet_Tree {
+// never written. Of each (x, y) column only the z windows that can hold
+// a cube straddling the sphere are tested (tree_cube_z_windows, 0337),
+// ascending. The sea boxes (0337), which the caller builds for a tile
+// (make_tree_sea_boxes), refuse the forest's candidates of a box under
+// the sea before the cover; nil for none.
+planet_trees_in_box :: proc(generation: ^Planet_Generation, minimum, maximum: [3]i64, allocator := context.temp_allocator, sea: ^Tree_Sea_Boxes = nil) -> [dynamic]Planet_Tree {
 	trees := make([dynamic]Planet_Tree, allocator)
 	term := generation.trees
 	if term.spacing == 0 {
@@ -589,16 +713,20 @@ planet_trees_in_box :: proc(generation: ^Planet_Generation, minimum, maximum: [3
 	}
 	for x in first.x ..= last.x {
 		for y in first.y ..= last.y {
-			for z in first.z ..= last.z {
-				append_planet_tree(&trees, cubes, groves, {x, y, z})
+			windows, count := tree_cube_z_windows(x, y, first.z, last.z, term.spacing, generation.radius)
+			for window in windows[:count] {
+				for z in window[0] ..= window[1] {
+					append_planet_tree(&trees, cubes, groves, {x, y, z}, sea)
+				}
 			}
 		}
 	}
 	return trees
 }
 
-// The cube's tree, when it has one: the forest's (0310) or the groves'.
-append_planet_tree :: proc(trees: ^[dynamic]Planet_Tree, generation: ^Planet_Generation, groves: [][3]i64, cell: [3]i64) {
+// The cube's tree, when it has one: the forest's (0310), which reads the
+// sea boxes, or the groves'.
+append_planet_tree :: proc(trees: ^[dynamic]Planet_Tree, generation: ^Planet_Generation, groves: [][3]i64, cell: [3]i64, sea: ^Tree_Sea_Boxes) {
 	term := generation.trees
 	if !cube_straddles_sphere(cell * term.spacing, cell * term.spacing + term.spacing, generation.radius) {
 		return
@@ -608,7 +736,7 @@ append_planet_tree :: proc(trees: ^[dynamic]Planet_Tree, generation: ^Planet_Gen
 		return
 	}
 	if term.forest_on {
-		if tree, kept := forest_tree_from_candidate(generation^, cell, on_sphere, hash); kept {
+		if tree, kept := forest_tree_from_candidate(generation^, cell, on_sphere, hash, sea); kept {
 			append(trees, tree)
 		}
 		return

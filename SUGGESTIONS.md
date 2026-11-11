@@ -261,7 +261,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 ## Suggestions from the tree tiles' relief cost (0337, 2026-11-11)
 
-- The tree tiles' relief reads are the standing trees' own: a base and two slope probes each, the slope's two being 65 percent of a tile's reads (825k of 1.27M at the 8 km home). They fall only if the trees' bytes change: a slope taken from a coarser lattice of reads, recorded with the forest so only new worlds differ, would read about 0.1M instead (the designer's estimate from the tiles' area at an 8 m lattice, not probed), at the price of trees standing or missing where a slope crosses the limit between lattice points. Worth weighing once the night's tree line (0337, 0338) shows what the tiles still cost.
+- The tree tiles' relief reads are the standing trees' own: a base and two slope probes each, the slope's two being 65 percent of a tile's reads (825k of 1.27M at the 8 km home). They fall only if the trees' bytes change: a slope taken from a coarser lattice of reads, recorded with the forest so only new worlds differ, would read about 0.1M instead (the designer's estimate from the tiles' area at an 8 m lattice, not probed), at the price of trees standing or missing where a slope crosses the limit between lattice points. The night of 2026-11-12 timed what the tiles still cost: 3.0 s for the home's tiles to 1024 m after 0337, beside 5.3 s for the same view's grids and chunks.
+- `test_the_tile_trees_match_every_cube` still passes with the sea boxes' bound 1 m too high and fails only at 4 m (a probe of 0337's review): a coast whose ground lies within a metre of the trees' sea floor would pin the bound.
 
 ## Suggestions from the waters over the whole planet (0326, 2026-11-11)
 

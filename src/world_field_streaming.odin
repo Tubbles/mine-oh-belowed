@@ -250,11 +250,12 @@ free_field_job_frames :: proc(job: Field_Job) {
 	delete(job.cover_frames)
 }
 
-// The tile's trees (planet_trees_in_box), their keys and instances in the
-// allocator.
+// The tile's trees (planet_trees_in_box, with the tile's sea boxes, 0337),
+// their keys and instances in the allocator.
 generate_field_tree_tile :: proc(generation: ^Planet_Generation, tile: Field_Tree_Tile, cells: i64, pitch_millimetres: int, allocator := context.allocator) -> (keys: []Tree_Key, instances: []matrix[4, 4]f32) {
 	minimum, maximum := field_tree_tile_box(tile, cells * generation.trees.spacing)
-	trees := planet_trees_in_box(generation, minimum, maximum)
+	sea := make_tree_sea_boxes(generation.trees, minimum, maximum)
+	trees := planet_trees_in_box(generation, minimum, maximum, sea = &sea)
 	keys = make([]Tree_Key, len(trees), allocator)
 	instances = make([]matrix[4, 4]f32, len(trees), allocator)
 	for tree, index in trees {

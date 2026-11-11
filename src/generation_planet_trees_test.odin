@@ -688,3 +688,239 @@ test_a_world_without_a_forest_keeps_its_groves :: proc(t: ^testing.T) {
 	testing.expect(t, trees_equal(kept[:], planet_trees_in_box(&grove_generation, minimum, maximum)[:]), "the recorded world's trees are the groves'")
 	testing.expect(t, !trees_equal(kept[:], planet_trees_in_box(&forest_generation, minimum, maximum)[:]), "the data's forest does not reach it")
 }
+
+// Work item 0337: the cube windows and the tile's sea boxes keep every
+// tree of 0310's loop over every cube.
+
+// The shipped home at a preset with the home and the waters a new world
+// of the seed takes (waters_test_planet and its features); the caller
+// frees the features (destroy_planet_water_features).
+tree_test_watered_planet :: proc(radius_metres: int, seed := DEFAULT_WORLD_SEED) -> Planet {
+	planet := waters_test_planet(radius_metres, seed)
+	planet.water_features = make_planet_water_features(seed, planet)
+	return planet
+}
+
+// From the home on 32 bearings in steps of 16 m to 1024 m, bearing by
+// bearing, the first point on the sphere whose relief lies more than 2 m
+// under the trees' sea floor: at 4 km the first point under it lies on a
+// shore whose tiles' boxes all reach over it.
+tree_test_coast :: proc(generation: Planet_Generation, planet: Planet) -> (point: [3]i64, found: bool) {
+	for bearing in 0 ..< 32 {
+		for distance: i64 = 16; distance <= 1024; distance += 16 {
+			point = tree_test_point_from_home(generation, planet, i32(bearing * ANGLE_UNITS_PER_TURN / 32), distance)
+			if surface_relief(generation, point) < planet_tree_sea_floor(generation) - metres_to_position_units(2) {
+				return point, true
+			}
+		}
+	}
+	return {}, false
+}
+
+// 0310's forest_tree_from_candidate as it stood before 0337, with 0327's
+// ground: the oracle the new rules are held to.
+forest_tree_reference :: proc(generation: Planet_Generation, cell, on_sphere: [3]i64, hash: u64) -> (tree: Planet_Tree, ok: bool) {
+	term := generation.trees
+	if planet_tree_in_clearing(term, on_sphere) {
+		return {}, false
+	}
+	draw := i64(generation_seed.hash_combine(hash, 1) % NOISE_ONE)
+	moisture := planet_moisture(generation, on_sphere)
+	cover := forest_cover(term, on_sphere, moisture) * forest_meadow_share(term, on_sphere) / NOISE_ONE
+	upper := max(cover, term.scatter) * term.forest_density / NOISE_ONE
+	if draw >= upper {
+		return {}, false
+	}
+	if !forest_gap_keeps(term, generation.radius, cell, on_sphere, hash) {
+		return {}, false
+	}
+	relief := planet_tree_ground(generation, on_sphere) or_return
+	height := relief - (generation.sea_radius - generation.radius)
+	weights, total := species_climate_weights(term, planet_temperature(generation, on_sphere, height), moisture, height, cover)
+	exact := upper * min(total / 100, NOISE_ONE) / NOISE_ONE
+	if draw >= exact {
+		return {}, false
+	}
+	up, _ := normalize_fixed(on_sphere)
+	if draw >= exact * forest_slope_share(term, forest_slope_percent(generation, on_sphere, up, relief)) / NOISE_ONE {
+		return {}, false
+	}
+	stand_total := forest_stand_weights(term, on_sphere, &weights)
+	species := forest_species_pick(weights, i64(generation_seed.hash_combine(hash, 4) % u64(max(stand_total, 1))))
+	scale := term.species[species].scale_percent
+	return planet_tree_at(cell, on_sphere, up, relief, hash, forest_scale_percent(generation_seed.hash_combine(hash, 3), scale[0], scale[1]), species), true
+}
+
+// planet_trees_in_box as it stood before 0337 (with 0326's lake list):
+// every cube x, then y, then z, the forest's oracle or the groves' rule.
+trees_by_every_cube :: proc(generation: ^Planet_Generation, minimum, maximum: [3]i64) -> [dynamic]Planet_Tree {
+	trees := make([dynamic]Planet_Tree, context.temp_allocator)
+	term := generation.trees
+	groves: [][3]i64
+	if !term.forest_on {
+		groves = planet_groves_near(term, generation.radius, minimum, maximum)
+	}
+	first, last: [3]i64
+	for axis in 0 ..< 3 {
+		first[axis] = floor_divide_i64(minimum[axis], term.spacing)
+		last[axis] = floor_divide_i64(maximum[axis], term.spacing)
+	}
+	cubes := generation^
+	if generation.water_tiles != nil {
+		cubes.lakes = generation_lakes_near_sphere_box(generation^, first * term.spacing, (last + 1) * term.spacing)
+		cubes.water_tiles = nil
+	}
+	for x in first.x ..= last.x {
+		for y in first.y ..= last.y {
+			for z in first.z ..= last.z {
+				cell := [3]i64{x, y, z}
+				if !cube_straddles_sphere(cell * term.spacing, cell * term.spacing + term.spacing, cubes.radius) {
+					continue
+				}
+				on_sphere, hash, ok := lattice_candidate(term.tree_seed, cell, term.spacing, cubes.radius)
+				if !ok {
+					continue
+				}
+				tree: Planet_Tree
+				kept := false
+				if term.forest_on {
+					tree, kept = forest_tree_reference(cubes, cell, on_sphere, hash)
+				} else if strength := grove_strength(groves, term.grove_radius, on_sphere); strength > 0 {
+					tree, kept = planet_tree_from_candidate(cubes, cell, on_sphere, hash, strength)
+				}
+				if kept {
+					append(&trees, tree)
+				}
+			}
+		}
+	}
+	return trees
+}
+
+// The 26 directions of a cube's faces, edges and corners and 8 hashed
+// ones.
+tree_test_window_directions :: proc() -> [34][3]i64 {
+	directions: [34][3]i64
+	count := 0
+	for x in i64(-1) ..= 1 {
+		for y in i64(-1) ..= 1 {
+			for z in i64(-1) ..= 1 {
+				if x != 0 || y != 0 || z != 0 {
+					directions[count] = {x, y, z}
+					count += 1
+				}
+			}
+		}
+	}
+	for index in 0 ..< 8 {
+		hash := generation_seed.hash_combine(0x0337, u64(index))
+		directions[count] = {i64(hash & 0xFFFF) - 0x8000, i64(hash >> 16 & 0xFFFF) - 0x8000, i64(hash >> 32 & 0xFFFF) - 0x8000}
+		count += 1
+	}
+	return directions
+}
+
+// What one column of a tile breaks of the windows' rules: a straddling
+// cube outside them, windows out of order, overlapping or out of the
+// tile, or longer than the straddling cubes and 8.
+tree_test_column_faults :: proc(x, y, first_z, last_z, spacing, radius: i64) -> int {
+	windows, count := tree_cube_z_windows(x, y, first_z, last_z, spacing, radius)
+	faults, length := 0, i64(0)
+	for window, index in windows[:count] {
+		if window[0] > window[1] || window[0] < first_z || window[1] > last_z || (index > 0 && window[0] <= windows[index - 1][1]) {
+			faults += 1
+		}
+		length += window[1] - window[0] + 1
+	}
+	straddling: i64 = 0
+	for z in first_z ..= last_z {
+		cell := [3]i64{x, y, z}
+		if !cube_straddles_sphere(cell * spacing, cell * spacing + spacing, radius) {
+			continue
+		}
+		straddling += 1
+		inside := false
+		for window in windows[:count] {
+			inside ||= window[0] <= z && z <= window[1]
+		}
+		faults += inside ? 0 : 1
+	}
+	return faults + (length > straddling + 8 ? 1 : 0)
+}
+
+@(test) // slow
+test_the_cube_windows_hold_every_straddling_cube :: proc(t: ^testing.T) {
+	for radius_metres in ([4]i64{1000, 4000, 8000, 16000}) {
+		radius := metres_to_position_units(radius_metres)
+		for spacing_metres in ([2]i64{2, 4}) {
+			spacing := metres_to_position_units(spacing_metres)
+			cells := field_tree_tile_cells(spacing)
+			for direction in tree_test_window_directions() {
+				unit, _ := normalize_fixed(direction)
+				point := fixed_scale(unit, radius)
+				first: [3]i64
+				for axis in 0 ..< 3 {
+					first[axis] = floor_divide_i64(point[axis], cells * spacing) * cells
+				}
+				faults := 0
+				for x in first.x ..< first.x + cells {
+					for y in first.y ..< first.y + cells {
+						faults += tree_test_column_faults(x, y, first.z, first.z + cells - 1, spacing, radius)
+					}
+				}
+				testing.expectf(t, faults == 0, "radius %d m, spacing %d m, direction %v: %d faults", radius_metres, spacing_metres, direction, faults)
+			}
+		}
+	}
+}
+
+// The tiles within 64 m of the point: per tile planet_trees_in_box with
+// the tile's sea boxes, without them and trees_by_every_cube agree.
+// Returns the trees and whether a sea box was marked under the sea.
+tree_test_match_tiles :: proc(t: ^testing.T, generation: ^Planet_Generation, point: [3]i64, place: string) -> (trees: int, sea_marked: bool) {
+	cells := field_tree_tile_cells(generation.trees.spacing)
+	tiles := field_tree_tiles_around(generation, []World_Position{World_Position(point)}, 64)
+	testing.expectf(t, len(tiles) > 0, "%s: tiles within 64 m", place)
+	for tile in tiles {
+		minimum, maximum := field_tree_tile_box(tile, cells * generation.trees.spacing)
+		sea := make_tree_sea_boxes(generation.trees, minimum, maximum)
+		windowed := planet_trees_in_box(generation, minimum, maximum, sea = &sea)
+		plain := planet_trees_in_box(generation, minimum, maximum)
+		every := trees_by_every_cube(generation, minimum, maximum)
+		testing.expectf(t, trees_equal(windowed[:], every[:]), "%s, tile %v: %d trees with the sea boxes, %d by every cube", place, tile, len(windowed), len(every))
+		testing.expectf(t, trees_equal(plain[:], every[:]), "%s, tile %v: %d trees without the sea boxes, %d by every cube", place, tile, len(plain), len(every))
+		trees += len(every)
+		for box in sea.boxes {
+			sea_marked ||= box == .Sea
+		}
+	}
+	return
+}
+
+@(test) // slow
+test_the_tile_trees_match_every_cube :: proc(t: ^testing.T) {
+	for radius in ([3]int{4000, 8000, 16000}) {
+		planet := tree_test_watered_planet(radius)
+		defer destroy_planet_water_features(&planet.water_features)
+		generation := tree_test_generation(planet)
+		home := fixed_scale(planet_home_direction(planet.home), generation.radius)
+		trees, _ := tree_test_match_tiles(t, &generation, home, fmt.tprintf("%d m home", radius))
+		testing.expectf(t, trees > 0, "%d m home: trees in its tiles", radius)
+		coast, found := tree_test_coast(generation, planet)
+		testing.expectf(t, found, "%d m: a coast within 1024 m of the home", radius)
+		if !found {
+			continue
+		}
+		coast_trees, sea_marked := tree_test_match_tiles(t, &generation, coast, fmt.tprintf("%d m coast", radius))
+		testing.expectf(t, coast_trees > 0 && sea_marked, "%d m coast: %d trees and a sea box under the sea (%v)", radius, coast_trees, sea_marked)
+	}
+	other := tree_test_watered_planet(8000, DEFAULT_WORLD_SEED + 1)
+	defer destroy_planet_water_features(&other.water_features)
+	other_generation := tree_test_generation(other, DEFAULT_WORLD_SEED + 1)
+	other_trees, _ := tree_test_match_tiles(t, &other_generation, fixed_scale(planet_home_direction(other.home), other_generation.radius), "8000 m home of the next seed")
+	testing.expect(t, other_trees > 0, "the next seed's home tiles hold trees")
+	groves := grove_test_planet()
+	grove_generation := tree_test_generation(groves)
+	grove_trees, _ := tree_test_match_tiles(t, &grove_generation, fixed_scale(planet_home_direction(groves.home), grove_generation.radius), "groves' home")
+	testing.expect(t, grove_trees > 0, "the groves' home tiles hold trees")
+}
