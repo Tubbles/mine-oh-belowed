@@ -1,6 +1,6 @@
 # 0355: Cables and the power netlist
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, 737df95)
 
 The user (2026-11-11), after The Last Caretaker: "Power: everything is hand run", then "No power rails", "Cable has capacity (we need to have a netlist based simulation, same for the fluids as well, no gravity)" and "saves with power poles just delete the poles". Today power poles join machines into pooled networks. 0353's study describes the reference's cables (`doc/inspiration.md`, The Last Caretaker) and its proposal is in `SUGGESTIONS.md`.
 

@@ -2,7 +2,7 @@
 
 Status: designed (2026-11-11)
 
-Part B of 0355's specification (`doc/work/0355-cables-and-the-power-netlist.md`), split off at its approval: the cable table and the ports, the run under the lockstep, the junction box (4 ports) and the cabinet (8), the poles deleted from the content and from old saves, the draw, and the quests, kits, technologies, recipes, blueprints, strings and models that follow.
+Part B of 0355's specification (`doc/work/done/0355-cables-and-the-power-netlist.md`), split off at its approval: the cable table and the ports, the run under the lockstep, the junction box (4 ports) and the cabinet (8), the poles deleted from the content and from old saves, the draw, and the quests, kits, technologies, recipes, blueprints, strings and models that follow.
 
 ## Goal
 

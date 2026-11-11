@@ -2,7 +2,7 @@
 
 Status: designed (2026-11-11)
 
-Part C of 0355's specification (`doc/work/0355-cables-and-the-power-netlist.md`): a cable's load against its capacity and the bottleneck, on the junction box's panel and the power overview.
+Part C of 0355's specification (`doc/work/done/0355-cables-and-the-power-netlist.md`): a cable's load against its capacity and the bottleneck, on the junction box's panel and the power overview.
 
 ## Goal
 
