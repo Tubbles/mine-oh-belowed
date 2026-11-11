@@ -264,6 +264,181 @@ test_interact_on_the_chair_seats_and_unseats :: proc(t: ^testing.T) {
 	testing.expect_value(t, state.players[0].field.seat, Field_Seat.Standing)
 }
 
+// Work item 0358, arrival_ticks 0: aimed from the spawn at the mattress
+// (cell (8, 4, 8) of the model) the target is the cradle and not the
+// chair; Interact cradles the body, the eye on the cradle's, since that
+// tick; the walk and Jump leave it where it lies; Interact stands it at
+// the cabin's spawn. Its frames are not connected, so no wait runs.
+@(test) // slow
+test_interact_on_the_cradle_waits_and_stops_waiting :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	config.arrival_ticks = 0
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tuning := simulation_content.field.tuning
+	pod, pod_frame, found := find_pod(&state.world.entities, simulation_content.machines)
+	testing.expect(t, found)
+	machine := simulation_content.machines.machines[pod.machine]
+	mattress := model_point_in_frame(pod_frame, pod.origin, pod.size, pod.rotation, collision_point_units({2.41, 4.14, 2.41}))
+	testing.expect(t, look_field_player_at(&state.players[0].field, tuning, mattress))
+	tick_field_test_simulation(state, simulation_content, {})
+	target := state.players[0].field.frame_target
+	testing.expect(t, field_aimed_cradle(&state.world.entities, simulation_content.machines, target), "the mattress is the cradle")
+	testing.expect(t, !field_aimed_chair(&state.world.entities, simulation_content.machines, target), "the mattress is no chair")
+	tick_field_test_simulation(state, simulation_content, ARRIVAL_TEST_INTERACT)
+	testing.expect_value(t, state.players[0].field.seat, Field_Seat.Cradled)
+	testing.expect_value(t, field_player_eye(state.players[0].field, tuning), pod_cradle_eye(pod_frame, pod, machine))
+	testing.expect_value(t, state.players[0].field.cradled_tick, state.tick)
+	cradled := state.players[0].field.position
+	for _ in 0 ..< 30 {
+		tick_field_test_simulation(state, simulation_content, Input_Frame{move = {0, 1}, pressed = {.Move, .Jump}, just_pressed = {.Jump}})
+	}
+	testing.expect_value(t, state.players[0].field.position, cradled)
+	testing.expect_value(t, state.players[0].field.seat, Field_Seat.Cradled)
+	tick_field_test_simulation(state, simulation_content, ARRIVAL_TEST_INTERACT)
+	testing.expect_value(t, state.players[0].field.seat, Field_Seat.Standing)
+	spawn, _ := field_pod_spawn(&state.world.entities, simulation_content.machines)
+	testing.expect(t, vector_length(cast([3]i64)(state.players[0].field.position - spawn.position)) < millimetres_to_position_units(100), "stood at the cabin's spawn")
+}
+
+// The wait's ticks: every player's frame connected and empty, as many
+// frames as players.
+tick_wait_test_session :: proc(session: ^Session, content: Simulation_Content, connected: int) {
+	inputs := make([]Input_Frame, len(session.simulation.players), context.temp_allocator)
+	for index in 0 ..< min(connected, len(inputs)) {
+		inputs[index].connected = true
+	}
+	tick_arrival_test_session(session, content, inputs)
+}
+
+// Work item 0358: with two connected players and a third entry standing
+// and not connected, player 0 cradled alone moves nothing for the settle
+// and past it; once player 1 is cradled too, nothing a tick before the
+// settle, and at it the day's offset moves eight hours, both stand at the
+// cabin's spawn and each is told Wait_Finished once.
+@(test) // slow
+test_every_unit_waiting_moves_the_day :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	config.arrival_ticks = 0
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tuning := simulation_content.field.tuning
+	machines := simulation_content.machines
+	queue_player_command(&state.player_commands, 1, Add_Player_Command{})
+	queue_player_command(&state.player_commands, 2, Add_Player_Command{})
+	tick_wait_test_session(session, simulation_content, 2)
+	testing.expect_value(t, len(state.players), 3)
+	if len(state.players) != 3 {
+		return
+	}
+	testing.expect(t, state.day_length_ticks > 0, "the test's day has a length")
+	settle := u64(WAIT_SETTLE_SECONDS * state.tick_rate)
+	offset := state.day_offset_ticks
+	first_cradled := state.tick
+	testing.expect(t, cradle_field_player(&state.world.entities, machines, tuning, &state.players[0].field, first_cradled))
+	for state.tick < first_cradled + settle + 10 {
+		tick_wait_test_session(session, simulation_content, 2)
+	}
+	testing.expect_value(t, state.day_offset_ticks, offset)
+	testing.expect_value(t, state.players[0].field.seat, Field_Seat.Cradled)
+	second_cradled := state.tick
+	testing.expect(t, cradle_field_player(&state.world.entities, machines, tuning, &state.players[1].field, second_cradled))
+	for state.tick < second_cradled + settle - 1 {
+		tick_wait_test_session(session, simulation_content, 2)
+	}
+	testing.expect_value(t, state.day_offset_ticks, offset)
+	testing.expect_value(t, state.players[0].field.seat, Field_Seat.Cradled)
+	testing.expect_value(t, state.players[1].field.seat, Field_Seat.Cradled)
+	clear(&state.events)
+	tick_wait_test_session(session, simulation_content, 2)
+	testing.expect_value(t, state.tick, second_cradled + settle)
+	testing.expect_value(t, state.day_offset_ticks, offset + state.day_length_ticks * 8 / 24)
+	spawn, _ := field_pod_spawn(&state.world.entities, machines)
+	finished: [3]int
+	for event in state.events {
+		if event.kind == .Wait_Finished {
+			finished[event.player] += 1
+		}
+	}
+	testing.expect_value(t, finished, [3]int{1, 1, 0})
+	for index in 0 ..< 2 {
+		body := state.players[index].field
+		testing.expectf(t, body.seat == .Standing, "player %d: %v", index, body.seat)
+		testing.expectf(t, vector_length(cast([3]i64)(body.position - spawn.position)) < millimetres_to_position_units(100), "player %d stood off the cabin's spawn", index)
+	}
+	testing.expect_value(t, state.players[2].field.seat, Field_Seat.Standing)
+}
+
+// Work item 0358: player 0 cradled past the settle with its frames not
+// connected (so no wait ran) and the day's offset three days and some
+// ticks on. A join snapshot keeps it cradled since the same tick and hashes
+// as the host; the world saved to disk and loaded stands it at the cabin's
+// spawn with no event and the offset whole, and its first ticks with the
+// frame connected run no wait.
+@(test) // slow
+test_a_load_from_disk_stands_a_cradled_unit_and_a_join_keeps_it :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	config.arrival_ticks = 0
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	cradled := state.tick
+	testing.expect(t, cradle_field_player(&state.world.entities, simulation_content.machines, simulation_content.field.tuning, &state.players[0].field, cradled))
+	for state.tick < cradled + u64(WAIT_SETTLE_SECONDS * state.tick_rate) + 10 {
+		tick_wait_test_session(session, simulation_content, 0)
+	}
+	testing.expect_value(t, state.players[0].field.seat, Field_Seat.Cradled)
+	state.day_offset_ticks = 3 * state.day_length_ticks + 5
+
+	files := encode_save_files(state, simulation_content, "waiting", 0)
+	joined := load_test_field_save(config, content, &files)
+	defer end_session(joined)
+	stage_cached_field_set(&joined.simulation)
+	testing.expect(t, restore_arrived_field_set(&joined.simulation.field), "the staged set restores")
+	testing.expect_value(t, joined.simulation.players[0].field.seat, Field_Seat.Cradled)
+	testing.expect_value(t, joined.simulation.players[0].field.cradled_tick, cradled)
+	testing.expect_value(t, joined.simulation.day_offset_ticks, state.day_offset_ticks)
+	testing.expect_value(t, simulation_state_hash(&joined.simulation), simulation_state_hash(state))
+
+	directory := make_save_test_directory()
+	defer remove_save_test_directory(directory)
+	location := save_test_location(directory)
+	testing.expect_value(t, save_world(state, simulation_content, location, 0), "")
+	plan, problem := saved_world_plan(directory, location.directory_name)
+	testing.expect_value(t, problem, "")
+	loaded: ^Session
+	loaded, problem = start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	testing.expect_value(t, problem, "")
+	if loaded == nil {
+		return
+	}
+	defer end_session(loaded)
+	loaded_content := field_test_content(loaded, content)
+	restored := &loaded.simulation
+	spawn, _ := field_pod_spawn(&restored.world.entities, loaded_content.machines)
+	testing.expect_value(t, restored.players[0].field.seat, Field_Seat.Standing)
+	testing.expect_value(t, restored.players[0].field.position, spawn.position)
+	testing.expect_value(t, len(restored.events), 0)
+	testing.expect_value(t, restored.day_offset_ticks, state.day_offset_ticks)
+	stage_cached_field_set(restored)
+	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
+	for _ in 0 ..< 3 {
+		tick_wait_test_session(loaded, loaded_content, 1)
+	}
+	testing.expect_value(t, restored.day_offset_ticks, state.day_offset_ticks)
+	for event in restored.events {
+		testing.expect(t, event.kind != .Wait_Finished, "no wait on the first ticks")
+	}
+}
+
 // arrival_ticks 0: no fall, the walk moves the player on the first tick,
 // the hatches stay closed (0198).
 @(test) // slow

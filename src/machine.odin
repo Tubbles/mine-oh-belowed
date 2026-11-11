@@ -136,9 +136,10 @@ Machine_Kind :: enum u8 {
 	// The pod's crafting station with the hand maker (work item 0198),
 	// placed by the world: the foundations' pool.
 	Crafting_Bench,
-	// Supplies the sealed room it touches with oxygen (work item 0198,
-	// entity_pod.odin), placed by the world: the foundations' pool.
-	Oxygen_Generator,
+	// Feeds the pod's charging cradle (work item 0358, the oxygen
+	// generator of 0198 renamed), placed by the world: the foundations'
+	// pool. The charge itself is the survival milestone's.
+	Charge_Controller,
 }
 
 @(rodata)
@@ -177,7 +178,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Hatch         = "hatch",
 	.Locker        = "locker",
 	.Crafting_Bench = "crafting_bench",
-	.Oxygen_Generator = "oxygen_generator",
+	.Charge_Controller = "charge_controller",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -279,7 +280,8 @@ Machine_Flame :: struct {
 
 // A pod's chair as written in the file (work item 0223): its cells of the
 // unrotated footprint, the seated eye in cells of the model's frame and
-// the facing word ("+x", "-x", "+z" or "-z") of the look at yaw 0.
+// the facing word ("+x", "-x", "+z" or "-z") of the look at yaw 0. The
+// charging cradle is written the same way (0358).
 Pod_Seat_Definition :: struct {
 	cells:  Machine_Cell_Box_Definition,
 	eye:    [3]f64,
@@ -307,10 +309,10 @@ Pod_Heat_Shield_Definition :: struct {
 	radius, rim_height: f32,
 }
 
-// A resolved chair (work item 0223): the cells of the unrotated
-// footprint, the seated eye in 1/COLLISION_UNITS_PER_CELL cell of the
-// model's frame and the facing, a model axis times UNIT_VECTOR_ONE.
-// present is false for a machine without a seat.
+// A resolved chair (work item 0223) or charging cradle (0358): the cells
+// of the unrotated footprint, the eye in 1/COLLISION_UNITS_PER_CELL cell
+// of the model's frame and the facing, a model axis times
+// UNIT_VECTOR_ONE. present is false for a machine without one.
 Pod_Seat :: struct {
 	present: bool,
 	cells:   Cell_Box,
@@ -373,6 +375,7 @@ Machine_Definition :: struct {
 	flames:                       []Machine_Flame_Definition,
 	interior_light_share:         Maybe(f32),
 	seat:                         Maybe(Pod_Seat_Definition),
+	cradle:                       Maybe(Pod_Seat_Definition),
 	windows:                      []Pod_Window_Definition,
 	heat_shield:                  Maybe(Pod_Heat_Shield_Definition),
 	stands_on_ground:             bool,
@@ -509,10 +512,12 @@ Machine :: struct {
 	// every other machine. A hand built Machine{} holds 0.
 	interior_light_share:        f32,
 	// A pod's chair, where a new world's players sit strapped in through
-	// the fall and any player may sit later (work item 0223), and its
-	// portholes' glass, where the entry's plasma streams and its soot
-	// stays (0273, presentation only).
+	// the fall and any player may sit later (work item 0223), its charging
+	// cradle, where a unit waits (0358), and its portholes' glass, where
+	// the entry's plasma streams and its soot stays (0273, presentation
+	// only).
 	seat:                        Pod_Seat,
+	cradle:                      Pod_Seat,
 	windows:                     [MAXIMUM_POD_WINDOWS]Pod_Window,
 	window_count:                int,
 	// The heat shield's rim in cells of the model's frame, where the
@@ -650,12 +655,12 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		}
 	case .Crafting_Bench:
 		return validate_crafting_bench_definition(definition)
-	case .Oxygen_Generator:
+	case .Charge_Controller:
 		if definition.item != "" {
-			return fmt.tprintf("oxygen generator %q cannot be placed by an item", definition.id)
+			return fmt.tprintf("charge controller %q cannot be placed by an item", definition.id)
 		}
 		if definition_lists_slots_power_or_ports(definition) {
-			return fmt.tprintf("oxygen generator %q may not list slots, power or fluid ports", definition.id)
+			return fmt.tprintf("charge controller %q may not list slots, power or fluid ports", definition.id)
 		}
 	}
 	return ""
@@ -859,6 +864,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_pod_seat(definitions, index); problem != "" {
 		return problem
 	}
+	if problem := validate_pod_cradle(definitions, index); problem != "" {
+		return problem
+	}
 	if problem := validate_pod_windows(definition, kind); problem != "" {
 		return problem
 	}
@@ -909,7 +917,7 @@ validate_machine_models :: proc(registry: Machine_Registry, data_directory: stri
 // The capsule, schematic crates, the pod, the trees and the pod's
 // hatches and fixtures have no item.
 machine_kind_is_placed_by_world :: proc(kind_name: string) -> bool {
-	world_kinds := [?]Machine_Kind{.Capsule, .Schematic_Crate, .Pod, .Tree, .Hatch, .Locker, .Crafting_Bench, .Oxygen_Generator}
+	world_kinds := [?]Machine_Kind{.Capsule, .Schematic_Crate, .Pod, .Tree, .Hatch, .Locker, .Crafting_Bench, .Charge_Controller}
 	for kind in world_kinds {
 		if kind_name == machine_kind_names[kind] {
 			return true
@@ -1207,7 +1215,7 @@ pod_fixture_box :: proc(cell: Machine_Cell_Definition, rotation: int, footprint:
 
 // The kinds a pod's fixtures may be.
 pod_fixture_kind_name_ok :: proc(kind_name: string) -> bool {
-	kinds := [?]Machine_Kind{.Hatch, .Locker, .Crafting_Bench, .Oxygen_Generator}
+	kinds := [?]Machine_Kind{.Hatch, .Locker, .Crafting_Bench, .Charge_Controller}
 	for kind in kinds {
 		if kind_name == machine_kind_names[kind] {
 			return true
@@ -1272,7 +1280,7 @@ validate_pod_fixtures :: proc(definitions: []Machine_Definition, index: int) -> 
 		}
 		fixture_definition := definitions[machine_index]
 		if !pod_fixture_kind_name_ok(fixture_definition.kind) {
-			return fmt.tprintf("pod %q fixture %d is a %q, not a hatch, locker, crafting_bench or oxygen_generator", definition.id, fixture_index, fixture_definition.kind)
+			return fmt.tprintf("pod %q fixture %d is a %q, not a hatch, locker, crafting_bench or charge_controller", definition.id, fixture_index, fixture_definition.kind)
 		}
 		if fixture.rotation < 0 || fixture.rotation > 3 {
 			return fmt.tprintf("pod %q fixture %d has rotation %d outside 0 to 3", definition.id, fixture_index, fixture.rotation)
@@ -1343,25 +1351,18 @@ pod_seat_eye_inside_cells :: proc(eye: [3]f64, cells: Cell_Box, footprint: Machi
 	return true
 }
 
-// A pod's seat (work item 0223): only a pod has one, its cells a box
-// inside the footprint overlapping no open_cells box and no fixture, the
-// eye inside the cells, the facing one of the four words and across the
-// door (+z or -z: the door is the model's +x, and the pod rests turned
-// about the door's axis towards the facing, 0270, so the door stays
-// level). Runs after
-// validate_open_cells and validate_pod_fixtures, so the boxes it reads
-// are sound.
-validate_pod_seat :: proc(definitions: []Machine_Definition, index: int) -> string {
+// A place of a pod a body is put in (the chair, 0223, the charging
+// cradle, 0358), word naming it in the messages: only a pod has one, its
+// cells a box inside the footprint overlapping no open_cells box and no
+// fixture, the eye inside the cells, the facing one of the four words.
+// cells is the resolved box for the caller's further checks.
+validate_pod_place :: proc(definitions: []Machine_Definition, index: int, place: Pod_Seat_Definition, word: string) -> (cells: Cell_Box, problem: string) {
 	definition := definitions[index]
-	seat, present := definition.seat.?
-	if !present {
-		return ""
-	}
 	if definition.kind != machine_kind_names[.Pod] {
-		return fmt.tprintf("machine %q has a seat, which only a pod may", definition.id)
+		return {}, fmt.tprintf("machine %q has a %s, which only a pod may", definition.id, word)
 	}
-	from_cell, has_from := seat.cells.from.?
-	to_cell, has_to := seat.cells.to.?
+	from_cell, has_from := place.cells.from.?
+	to_cell, has_to := place.cells.to.?
 	// Checked as ints before the cast, as validate_open_cells does, so an
 	// oversized value cannot wrap into the footprint.
 	from := [3]int{from_cell.x, from_cell.y, from_cell.z}
@@ -1372,29 +1373,65 @@ validate_pod_seat :: proc(definitions: []Machine_Definition, index: int) -> stri
 		inside = inside && from[axis] >= 0 && from[axis] <= to[axis] && to[axis] < size[axis]
 	}
 	if !inside {
-		return fmt.tprintf("pod %q seat cells are not a box inside the footprint", definition.id)
+		return {}, fmt.tprintf("pod %q %s cells are not a box inside the footprint", definition.id, word)
 	}
-	cells := Cell_Box{from = {i32(from.x), i32(from.y), i32(from.z)}, to = {i32(to.x), i32(to.y), i32(to.z)}}
+	cells = Cell_Box{from = {i32(from.x), i32(from.y), i32(from.z)}, to = {i32(to.x), i32(to.y), i32(to.z)}}
 	open_cells := resolve_open_cells(definition.open_cells)
 	for open_box, open_index in open_cells[:len(definition.open_cells)] {
 		if cell_boxes_overlap(cells, open_box) {
-			return fmt.tprintf("pod %q seat cells overlap open_cells box %d", definition.id, open_index)
+			return cells, fmt.tprintf("pod %q %s cells overlap open_cells box %d", definition.id, word, open_index)
 		}
 	}
 	for fixture, fixture_index in definition.fixtures {
 		machine_index := find_definition_index(definitions, fixture.machine)
 		if cell_boxes_overlap(cells, pod_fixture_box(fixture.cell, fixture.rotation, definitions[machine_index].footprint)) {
-			return fmt.tprintf("pod %q seat cells overlap fixture %d", definition.id, fixture_index)
+			return cells, fmt.tprintf("pod %q %s cells overlap fixture %d", definition.id, word, fixture_index)
 		}
 	}
-	if !pod_seat_eye_inside_cells(seat.eye, cells, definition.footprint) {
-		return fmt.tprintf("pod %q seat eye is not inside its cells", definition.id)
+	if !pod_seat_eye_inside_cells(place.eye, cells, definition.footprint) {
+		return cells, fmt.tprintf("pod %q %s eye is not inside its cells", definition.id, word)
 	}
-	if _, found := pod_seat_facing_axis(seat.facing); !found {
-		return fmt.tprintf("pod %q seat facing %q is not +x, -x, +z or -z", definition.id, seat.facing)
+	if _, found := pod_seat_facing_axis(place.facing); !found {
+		return cells, fmt.tprintf("pod %q %s facing %q is not +x, -x, +z or -z", definition.id, word, place.facing)
+	}
+	return cells, ""
+}
+
+// A pod's seat (work item 0223): validate_pod_place, and the facing
+// across the door (+z or -z: the door is the model's +x, and the pod
+// rests turned about the door's axis towards the facing, 0270, so the
+// door stays level). Runs after validate_open_cells and
+// validate_pod_fixtures, so the boxes it reads are sound.
+validate_pod_seat :: proc(definitions: []Machine_Definition, index: int) -> string {
+	seat, present := definitions[index].seat.?
+	if !present {
+		return ""
+	}
+	if _, problem := validate_pod_place(definitions, index, seat, "seat"); problem != "" {
+		return problem
 	}
 	if seat.facing != "+z" && seat.facing != "-z" {
-		return fmt.tprintf("pod %q seat facing %q is not across its door (+z or -z), so its rest would tip the door", definition.id, seat.facing)
+		return fmt.tprintf("pod %q seat facing %q is not across its door (+z or -z), so its rest would tip the door", definitions[index].id, seat.facing)
+	}
+	return ""
+}
+
+// A pod's charging cradle (work item 0358): validate_pod_place, and its
+// cells clear of the seat's, so Interact on a cell has one meaning. Any
+// facing word: the pod's rest follows the seat alone. Runs after
+// validate_pod_seat.
+validate_pod_cradle :: proc(definitions: []Machine_Definition, index: int) -> string {
+	definition := definitions[index]
+	cradle, present := definition.cradle.?
+	if !present {
+		return ""
+	}
+	cells, problem := validate_pod_place(definitions, index, cradle, "cradle")
+	if problem != "" {
+		return problem
+	}
+	if seat, has_seat := definition.seat.?; has_seat && cell_boxes_overlap(cells, resolve_pod_place(seat).cells) {
+		return fmt.tprintf("pod %q cradle cells overlap the seat", definition.id)
 	}
 	return ""
 }
@@ -1429,18 +1466,19 @@ validate_pod_windows :: proc(definition: Machine_Definition, kind: Machine_Kind)
 	return ""
 }
 
-// Validated before (validate_pod_seat): the eye in collision units.
-resolve_pod_seat :: proc(definition: Machine_Definition) -> Pod_Seat {
-	seat, present := definition.seat.?
+// Validated before (validate_pod_seat, validate_pod_cradle): the eye in
+// collision units; nil resolves to a place not present.
+resolve_pod_place :: proc(place: Maybe(Pod_Seat_Definition)) -> Pod_Seat {
+	written, present := place.?
 	if !present {
 		return {}
 	}
-	from, to := seat.cells.from.? or_else {}, seat.cells.to.? or_else {}
-	facing, _ := pod_seat_facing_axis(seat.facing)
+	from, to := written.cells.from.? or_else {}, written.cells.to.? or_else {}
+	facing, _ := pod_seat_facing_axis(written.facing)
 	return Pod_Seat {
 		present = true,
 		cells = {from = {i32(from.x), i32(from.y), i32(from.z)}, to = {i32(to.x), i32(to.y), i32(to.z)}},
-		eye = collision_point_units(seat.eye),
+		eye = collision_point_units(written.eye),
 		facing = facing,
 	}
 }
@@ -1490,7 +1528,8 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 		if problem == "" {
 			machine = resolve_machine(definition, item)
 			machine.fixtures, machine.fixture_boxes, machine.fixture_count = resolve_pod_fixtures(file.machines, definition)
-			machine.seat = resolve_pod_seat(definition)
+			machine.seat = resolve_pod_place(definition.seat)
+			machine.cradle = resolve_pod_place(definition.cradle)
 			machine.windows, machine.window_count = resolve_pod_windows(definition.windows)
 			problem = resolve_fluid_ports(&machine, definition, fluids)
 		}

@@ -2237,3 +2237,55 @@ test_a_new_field_session_player_starts_with_a_full_jet_budget :: proc(t: ^testin
 	defer destroy_player(joiner)
 	testing.expect_value(t, joiner.field.jet_budget_ticks, tuning.jet_budget_ticks)
 }
+
+// Work item 0358: the wait counts the connected players and those of
+// them in the cradle, and is due when every connected one has lain there
+// for the settle; an entry not connected neither blocks it nor counts.
+@(test)
+test_the_wait_counts_connected_units :: proc(t: ^testing.T) {
+	waiting, units := field_wait_counts(nil)
+	testing.expect_value(t, [2]int{waiting, units}, [2]int{0, 0})
+	testing.expect(t, !field_wait_due(nil, 1000, 180), "no unit, no wait")
+	cradled := Player{connected = true, field = Field_Player{seat = .Cradled, cradled_tick = 100}}
+	alone := [1]Player{cradled}
+	waiting, units = field_wait_counts(alone[:])
+	testing.expect_value(t, [2]int{waiting, units}, [2]int{1, 1})
+	testing.expect(t, field_wait_due(alone[:], 280, 180), "due at the settle")
+	testing.expect(t, !field_wait_due(alone[:], 279, 180), "not before it")
+	standing := [2]Player{cradled, Player{connected = true}}
+	waiting, units = field_wait_counts(standing[:])
+	testing.expect_value(t, [2]int{waiting, units}, [2]int{1, 2})
+	testing.expect(t, !field_wait_due(standing[:], 1000, 180), "a connected standing unit blocks it")
+	away := [2]Player{cradled, Player{}}
+	waiting, units = field_wait_counts(away[:])
+	testing.expect_value(t, [2]int{waiting, units}, [2]int{1, 1})
+	testing.expect(t, field_wait_due(away[:], 280, 180), "a standing entry not connected does not block it")
+	asleep := [2]Player{cradled, Player{field = Field_Player{seat = .Cradled, cradled_tick = 500}}}
+	waiting, units = field_wait_counts(asleep[:])
+	testing.expect_value(t, [2]int{waiting, units}, [2]int{1, 1})
+	testing.expect(t, field_wait_due(asleep[:], 280, 180), "a cradled entry not connected is not counted")
+}
+
+// Work item 0358: the wait moves the day's offset eight of its 24 hours,
+// whole across the day's end, and nothing without a day.
+@(test)
+test_the_waited_day_offset_moves_eight_hours :: proc(t: ^testing.T) {
+	testing.expect_value(t, waited_day_offset(0, 72000), 24000)
+	testing.expect_value(t, waited_day_offset(60000, 72000), 84000)
+	testing.expect_value(t, waited_day_offset(5, 0), 5)
+}
+
+// Work item 0358: a wait from the day's 20th hour leaves the weather's hour
+// 8 ahead and the day (the moon's phase) one on, never 16 hours back, and
+// the time of day at the 4th hour.
+@(test)
+test_a_wait_across_midnight_moves_the_weather_on :: proc(t: ^testing.T) {
+	day_length := u64(72000)
+	hour_length := weather_hour_length(day_length)
+	tick := 20 * hour_length
+	waited := tick + waited_day_offset(0, day_length)
+	testing.expect_value(t, waited / hour_length, tick / hour_length + 8)
+	testing.expect_value(t, weather_at(42, waited, day_length), weather_at(42, 28 * hour_length, day_length))
+	testing.expect_value(t, day_sky(waited, day_length).day_number, day_sky(tick, day_length).day_number + 1)
+	testing.expect_value(t, waited % day_length, 4 * hour_length)
+}

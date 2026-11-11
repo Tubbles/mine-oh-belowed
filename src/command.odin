@@ -127,7 +127,7 @@ command_usages := [?]Command_Usage {
 	{"look <yaw> <pitch> | look at <x> <y> <z>", "the field player's look: bearing from north and pitch in degrees, or towards a point"},
 	{"camera <first|third>", "first or third person camera"},
 	{"crouch <on|off>", "hold the field player's crouch"},
-	{"seat <stand|sit>", "stand up from the pod's chair or sit in it"},
+	{"seat <stand|sit|wait>", "stand up from the pod's chair or cradle, sit in the chair or wait in the cradle"},
 	{"time <dawn|noon|dusk|midnight>", "set the time of day"},
 	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
 	{"arrival_camera <x> <y> <z> | arrival_camera off", "during the fall, the camera at the point in cells of the pod's model frame looking at its middle, moved with the pod; off returns to the seat"},

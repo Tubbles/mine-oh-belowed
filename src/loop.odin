@@ -1215,7 +1215,7 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 	biome := sample_column(&session.generator, cell.x, cell.z).biome
 	biome_name := biome < len(session.generator.biomes) ? text(session.generator.biomes[biome].definition.name_key) : "?"
 	field_session := session.simulation.field.enabled
-	room, inside := sealed_room_at_feet(&world.entities, session_local_player(session).field.position)
+	_, inside := sealed_room_at_feet(&world.entities, session_local_player(session).field.position)
 	field_world := &session.simulation.field.world
 	bodies := field_session && session.simulation.world.settings.water_model == .Bodies
 	return World_Facts {
@@ -1226,7 +1226,6 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 		water_to_sea = bodies ? field_world.water_to_sea : 0,
 		field_session = field_session,
 		sealed_room_inside = field_session && inside,
-		sealed_room_oxygen = room.oxygen,
 		water_awake_chunk_count = field_session ? len(field_world.water_awake_chunks) : 0,
 		water_teleports = field_session ? field_world.water_pressure.teleports : 0,
 		water_visits = field_session ? field_world.water_pressure.visits : 0,
@@ -1452,6 +1451,7 @@ make_hud_context :: proc(state: ^Frame_State, index: int) -> Hud_Context {
 		torchlight         = viewport.presentation.torchlight,
 		field_spacing_millimetres = session.simulation.field.spacing_millimetres,
 	}
+	hud.wait_waiting, hud.wait_units = field_wait_counts(session.simulation.players[:])
 	view_player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
 	hud.field_view = view_player.field
 	hud.bare_ground = bare_ground_line(&session.simulation, frame_simulation_content(state), hud.field_view)
@@ -1620,6 +1620,9 @@ show_simulation_events :: proc(state: ^Ui_State, events: []Simulation_Event, loc
 		case .Touchdown_Confirmed:
 			// A Mission Control line, outside the journal (0223).
 			ui_mission_control_line(state, text("mc_touchdown_confirmed"))
+		case .Wait_Finished:
+			// As the touchdown's (0358).
+			ui_mission_control_line(state, text("mc_wait_finished"))
 		}
 	}
 }

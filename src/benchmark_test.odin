@@ -120,7 +120,7 @@ test_factory_benchmark :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(report.idle), 0)
 	testing.expect_value(t, report.profile.ticks, report.measured_ticks)
 	// The benchmark's pad and the pod with its two hatches, its bench and
-	// its oxygen generator (0198), which ride in the foundations' pool;
+	// its charge controller (0198, 0358), which ride in the foundations' pool;
 	// the player starts in the pod.
 	pad := (2 * BENCHMARK_PAD_HALF_WIDTH + 1) * (2 * BENCHMARK_PAD_HALF_WIDTH + 1)
 	testing.expect_value(t, report.entity_counts[.Foundation], pad + 5)

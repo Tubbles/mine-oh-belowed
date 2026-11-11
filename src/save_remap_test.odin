@@ -408,6 +408,40 @@ test_an_old_foundation_loads_as_the_stone_brick_foundation :: proc(t: ^testing.T
 	testing.expect_value(t, renamed_content_line(same), "")
 }
 
+// Work item 0358: a world saved by the build whose charge controller was
+// the oxygen generator loads its placed one as charge_controller, and the
+// load names the rename in one line.
+@(test)
+test_an_oxygen_generator_loads_as_the_charge_controller :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	old := content
+	old.machines.machines = slice.clone(content.machines.machines, context.temp_allocator)
+	machine := &old.machines.machines[test_machine(content.machines, "charge_controller")]
+	machine.id, machine.former_ids = "oxygen_generator", nil
+	directory := make_save_test_directory()
+	defer remove_save_test_directory(directory)
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	original := make_save_test_simulation(&generator, old)
+	defer destroy_simulation(&original)
+	load_save_test_chunks(&original.world, &original.records, &generator)
+	frame_origin, axes := free_frame_at(SAVE_TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame := add_frame(&original.world.entities.frames, frame_origin, axes, 500)
+	add_entity(&original.world.entities, old.machines, test_machine(old.machines, "oxygen_generator"), {0, 0, 0}, 0, frame)
+	testing.expect_value(t, save_world(&original, old, save_test_location(directory), 1_700_000_000), "")
+
+	loaded := load_save_test_simulation(t, save_test_location(directory), content)
+	defer destroy_simulation(&loaded)
+	placed := 0
+	for foundation in loaded.world.entities.foundations.entries {
+		if foundation.alive && content.machines.machines[foundation.machine].id == "charge_controller" {
+			placed += 1
+		}
+	}
+	testing.expect_value(t, placed, 1)
+	remap := make_content_remap(content_tables(old), content_tables(content), content_former_ids(content))
+	testing.expect_value(t, renamed_content_line(remap), "save: loaded under renamed ids: machines oxygen_generator as charge_controller")
+}
+
 // A former id that is also a current id, or one listed twice in a table,
 // would make a saved id ambiguous; the shipped content has neither.
 @(test)

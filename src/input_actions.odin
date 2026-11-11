@@ -252,6 +252,11 @@ Input_Frame :: struct {
 	// takes instead of the look direction while aim_overrides is set.
 	aim_direction: [3]f32,
 	aim_overrides: bool,
+	// A record carried the player's input this tick (work item 0358): set
+	// only by input_frame_of, so the player is connected; false in the
+	// UI's frames, the socket's tick and the planet preview. Not part of
+	// the record: its presence is the fact.
+	connected:     bool,
 }
 
 STICK_DEADZONE :: 0.15

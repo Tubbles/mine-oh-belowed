@@ -228,7 +228,9 @@ destroy_lockstep :: proc(lockstep: ^Lockstep) {
 
 // Input_Frame is Record_Input plus the raw device state: a field added to
 // the frame and not to the record fails here instead of leaving the
-// record silently.
+// record silently. connected (0358) is the frame's alone by design
+// (input_frame_of sets it from the record's presence) and sits in the
+// frame's tail padding.
 #assert(size_of(Input_Frame) == size_of(Record_Input) + size_of(Raw_Input))
 
 record_input_of :: proc(frame: Input_Frame) -> Record_Input {
@@ -260,6 +262,8 @@ input_frame_of :: proc(input: Record_Input) -> Input_Frame {
 		world_blocked = input.world_blocked,
 		aim_direction = input.aim_direction,
 		aim_overrides = input.aim_overrides,
+		// A record carried it, so the player is connected (0358, the wait).
+		connected = true,
 	}
 }
 
@@ -475,8 +479,9 @@ predict_local_player :: proc(simulation: ^Simulation_State, content: Simulation_
 predict_field_player_motion :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Input_Frame) {
 	frames := &simulation.world.entities.frames
 	// Without interact_on_field: the switch it would turn and the panel it
-	// would open are the tick's. Without the chair's Interact too
-	// (interact_on_field_chair): the stand lands a window late, a snap.
+	// would open are the tick's. Without the chair's and the cradle's
+	// Interact too (interact_on_field_pod_seat): the stand lands a window
+	// late, a snap.
 	frame := frame
 	if player.field.seat != .Standing {
 		frame = seated_field_frame(frame, player.field.seat)
@@ -544,8 +549,9 @@ latency_window_ticks :: proc(round_trip_seconds: f64, tick_rate: int) -> int {
 // left out: the loaded blocks are hashed and replace it when the chunk
 // unloads, and only a machine that loaded the world from a save holds
 // such entries.
-// day_offset_ticks stays out: no tick reads it, only the sky, the weather
-// and the save do.
+// day_offset_ticks stays out: the wait writes it from the players' seats
+// (finish_field_wait, 0358), which the hash covers, and no tick reads it
+// otherwise; the sky, the weather and the save do.
 lockstep_state_hash :: proc(simulation: ^Simulation_State) -> u64 {
 	refresh_loaded_surfaces(&simulation.world, &simulation.records.explored)
 	result := fingerprint_u64(simulation_state_hash(simulation), simulation.cheat_speed ? 1 : 0)

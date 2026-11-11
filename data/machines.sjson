@@ -54,7 +54,7 @@
 // combustion_generator, hydro_turbine, water_pump, pole, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
 // launch_pad, foundation, belt_pole, pod, crafting_station, tree, hatch,
-// locker, crafting_bench or oxygen_generator.
+// locker, crafting_bench or charge_controller.
 // tree (work item 0197, doc/content.md, Trees) is a tree's model:
 // placed by the planet's generation, never by an item, never an entity;
 // only footprint and model are read.
@@ -67,7 +67,7 @@
 // cannot be picked up, and has no panel and no slots; its footprint is in
 // cells of the foundation pitch. fixtures (pods only, at most 8) lists
 // {machine, cell = {x, y, z}, rotation}: a machine of kind hatch, locker,
-// crafting_bench or oxygen_generator placed by the world with its minimum
+// crafting_bench or charge_controller placed by the world with its minimum
 // corner at cell of the pod's unrotated footprint and turned by rotation
 // quarter turns against the pod. Its box (the rotated footprint from
 // cell) lies inside the pod's footprint, overlaps no other fixture's box
@@ -79,9 +79,9 @@
 // none is, and every row but the top is an open cell. Lockers (kind
 // locker): a chest placed by the world, slots 8 to 48. Crafting benches
 // (kind crafting_bench): recipe_maker hand, no slots, power, speed or
-// ports; the panel is the crafting station's. Oxygen generators (kind
-// oxygen_generator): no slots, power or ports; a sealed room one touches
-// has an unlimited supply.
+// ports; the panel is the crafting station's. Charge controllers (kind
+// charge_controller, 0358): no slots, power or ports; the panel says the
+// cradle's supply is unlimited.
 // open_cells (optional, work item 0186, at most 4) lists boxes of
 // footprint cells the player walks through: {from = {x, y, z}, to = {x,
 // y, z}}, both inclusive, in cells of the unrotated footprint (x along the
@@ -125,6 +125,11 @@
 // inside the cells' span with 0.02 cells of slack; facing is "+x", "-x",
 // "+z" or "-z", the seated look at yaw 0. A new world's players sit
 // strapped in it through the fall.
+// cradle (optional, pods only, work item 0358) is the charging cradle,
+// written as seat is: its cells overlap no open_cells box, no fixture
+// and not the seat's cells, the eye lies inside them with the same
+// slack, and facing is any of the four words. Interact on it waits; when
+// every connected unit waits in it, the day moves on eight hours.
 // windows (optional, pods only, work item 0223, at most 8) lists {centre
 // = [x, y, z], normal = [x, y, z], radius}: a porthole's outer pane in
 // cells of the model's frame, where the soot lies (0288), the centre
@@ -1192,6 +1197,12 @@ machines = [
 		// The chair (0223): its cells, the seated eye 1.35 m over the floor
 		// before the headrest, facing the model's -z.
 		seat = {cells = {from = {x = 3, y = 0, z = 6}, to = {x = 4, y = 3, z = 7}}, eye = [-2.0, 2.7, 1.0], facing = "-z"}
+		// The charging cradle (0358): the bed of pod.py, strapped on the lean
+		// wall over the airlock's housing; rows 3 to 5, so the drum's top
+		// and the cabinets under the bed (row 2) are not the cradle. The eye
+		// lies 0.4 m off the pillow, facing across the cabin to the charge
+		// controller.
+		cradle = {cells = {from = {x = 7, y = 3, z = 7}, to = {x = 9, y = 5, z = 9}}, eye = [1.5, 5.1, 1.5], facing = "-z"}
 		// The portholes (0223, 0288): the centre on the outer pane, 0.38
 		// out along the normal from the lining (pod.py's wall() origin),
 		// inside the outer rim's hexagonal bore, the radius just over the
@@ -1209,14 +1220,14 @@ machines = [
 		heat_shield = {radius = 5.45, rim_height = 0.2}
 		// The outer hatch at the drum's outer end, the inner hatch at its
 		// cabin end, then the locker facing the lane, the bench facing
-		// the floor before the chair and the oxygen generator facing it
+		// the floor before the chair and the charge controller facing it
 		// from the other side, each in its pocket of the wall.
 		fixtures = [
 			{machine = "pod_hatch", cell = {x = 10, y = 0, z = 5}, rotation = 0}
 			{machine = "pod_hatch", cell = {x = 7, y = 0, z = 5}, rotation = 0}
 			{machine = "pod_locker", cell = {x = 5, y = 0, z = 8}, rotation = 3}
 			{machine = "crafting_bench", cell = {x = 2, y = 0, z = 4}, rotation = 0}
-			{machine = "oxygen_generator", cell = {x = 6, y = 0, z = 3}, rotation = 1}
+			{machine = "charge_controller", cell = {x = 6, y = 0, z = 3}, rotation = 1}
 		]
 		// The cabin and the hull at a quarter of the light round them (0225).
 		interior_light_share = 0.25
@@ -1272,11 +1283,13 @@ machines = [
 		recipe_maker = "hand"
 	}
 	{
-		id = "oxygen_generator"
-		name_key = "machine_oxygen_generator"
-		description_key = "describe_machine_oxygen_generator"
+		id = "charge_controller"
+		name_key = "machine_charge_controller"
+		description_key = "describe_machine_charge_controller"
+		former_ids = ["oxygen_generator"]
+		// The oxygen generator's model until a sealed lab remakes it (0358).
 		model = "oxygen_generator"
-		kind = "oxygen_generator"
+		kind = "charge_controller"
 		stands_on_ground = true
 		footprint = {width = 1, depth = 2, height = 3}
 	}

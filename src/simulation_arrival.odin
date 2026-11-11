@@ -217,7 +217,8 @@ rest_field_pod :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	cosine, sine := pod_rest_turn(tilt)
 	for &player in state.players {
 		body := &player.field
-		if body.seat == .Standing {
+		// The chair's bodies only: a cradled one stays where it lies (0358).
+		if !field_seat_in_chair(body.seat) {
 			continue
 		}
 		look := field_look_direction(body.forward, body.up, body.yaw, body.pitch)

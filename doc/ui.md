@@ -227,7 +227,7 @@ The browser's shape: a sorted list with the letter wheel and a "Hide researched"
 ### Other screens
 
 - **Machine panel**: the machine's description dim under its name, wrapped, which makes the machine side scroll sooner.
-- **Oxygen generator** (0198): the pod's generator's panel is the machine panel with one fitted row under the description, "Oxygen: unlimited" (`oxygen_generator_panel_region`). The pod's locker is a chest's panel with Take all and Store all.
+- **Charge controller** (0198, the oxygen generator until 0358): the pod's controller's panel is the machine panel with one fitted row under the description, "Cradle supply: unlimited" (`charge_controller_panel_region`). The pod's locker is a chest's panel with Take all and Store all.
 - **Statistics** (0028): Production (a 1, 10 or 60 minute window, items by produced per minute with consumed beside, a detail row with the machines making and using the item and the voided total), Power (the power overview, generators and consumers grouped by machine type), Shipments (launches newest first with cargo).
 - **Bottleneck overlay**: a marker over every machine, green working, yellow output full, red starved of input, fuel or power, grey idle (colour blind: blue, orange, white, black), near constant screen size beyond 15 blocks (`marker_size`).
 - **Map** (0038, View or M): the explored area as one 256 by 256 image at 1 to 16 blocks per pixel, the surface block tinted half way to its biome's `map_color` (0058), with the player, machines and the prospecting layers (vein footprints, magnetometer readings, core samples, seismic circles). The legend lists the palette's marker colours, then the image's biomes, the player's in the accent marked "you are here", in a second column when short of height.

@@ -103,7 +103,7 @@ class ModelLabTest(unittest.TestCase):
         self.assertEqual(len(pod.open_cells), 4)
         self.assertEqual(len(pod.fixtures), 5)
         self.assertEqual(pod.fixtures[2].size, (2, 4, 1))
-        for identifier in ("pod_locker", "crafting_bench", "oxygen_generator"):
+        for identifier in ("pod_locker", "crafting_bench", "charge_controller"):
             self.assertIn(identifier, machines)
         self.assertNotIn("lights = ", text)
 

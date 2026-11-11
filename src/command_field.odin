@@ -284,14 +284,17 @@ command_crouch :: proc(command_context: Command_Context, arguments: []string) ->
 	return command_ok("crouch %s", arguments[0])
 }
 
-// What query player and the seat command say of the chair (0223).
+// What query player and the seat command say of the chair (0223) and the
+// cradle (0358).
 field_seat_words := [Field_Seat]string {
 	.Standing = "standing",
 	.Strapped = "strapped",
 	.Seated   = "seated",
+	.Cradled  = "cradled",
 }
 
-// seat <stand|sit>: out of the pod's chair or into it (0223).
+// seat <stand|sit|wait>: out of the pod's chair or the cradle, into the
+// chair (0223) or waiting in the cradle (0358).
 command_seat :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
 	seat: Field_Seat
 	switch len(arguments) == 1 ? arguments[0] : "" {
@@ -299,8 +302,10 @@ command_seat :: proc(command_context: Command_Context, arguments: []string) -> C
 		seat = .Standing
 	case "sit":
 		seat = .Seated
+	case "wait":
+		seat = .Cradled
 	case:
-		return usage_error("seat <stand|sit>")
+		return usage_error("seat <stand|sit|wait>")
 	}
 	if problem := serve_command_request(command_context, Developer_Request{action = .Set_Field_Seat, seat = seat}); problem != "" {
 		return command_error("%s", problem)

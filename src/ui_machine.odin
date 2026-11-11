@@ -134,8 +134,8 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 		return core_sample_area_size().x
 	case .Launch_Pad:
 		return launch_pad_area_width()
-	case .Oxygen_Generator:
-		return oxygen_generator_area_size().x
+	case .Charge_Controller:
+		return charge_controller_area_size().x
 	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench, .Water_Pump:
 	}
 	return 0
@@ -166,8 +166,8 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 		return core_sample_area_size().y
 	case .Launch_Pad:
 		return launch_pad_area_height(machine, width)
-	case .Oxygen_Generator:
-		return oxygen_generator_area_size().y
+	case .Charge_Controller:
+		return charge_controller_area_size().y
 	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench, .Water_Pump:
 	}
 	return 0
@@ -444,8 +444,8 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	case .Launch_Pad:
 		return {grid = launch_pad_slot_region(state, content, pool_get(&screen_context.world.entities.launch_pads, handle), screen_context)}
 	case .Foundation:
-		if screen_context.machines.machines[common.machine].kind == .Oxygen_Generator {
-			oxygen_generator_panel_region(state, content)
+		if screen_context.machines.machines[common.machine].kind == .Charge_Controller {
+			charge_controller_panel_region(state, content)
 		}
 		return {grid = {activated = -1, focused = -1}}
 	}
@@ -459,15 +459,15 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	return result
 }
 
-// The pod's oxygen generator's panel (work item 0198): one row under the
-// name and the description, the supply.
-oxygen_generator_area_size :: proc() -> [2]f32 {
+// The pod's charge controller's panel (work items 0198, 0358): one row
+// under the name and the description, the cradle's supply.
+charge_controller_area_size :: proc() -> [2]f32 {
 	return {slot_grid_width(MACHINE_CHEST_COLUMNS), UI_ROW_HEIGHT}
 }
 
-oxygen_generator_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle) {
+charge_controller_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle) {
 	content := area
-	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("oxygen_generator_supply_unlimited"), UI_BODY_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("charge_controller_supply_unlimited"), UI_BODY_TEXT_SIZE, .Left)
 }
 
 machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {

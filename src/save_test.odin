@@ -740,6 +740,29 @@ test_newer_and_older_formats_are_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, header_problem(expected, expected, "entities.bin"), "")
 }
 
+// Work item 0358: world.sjson keeps the day clock whole, so an offset of
+// days the wait moved round trips; a file written before it holds the
+// clock within the day and loads the offset the older build loaded, past
+// the first day and in it.
+@(test)
+test_the_day_offset_round_trips_whole_through_world_sjson :: proc(t: ^testing.T) {
+	simulation, _ := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	day_length := simulation.day_length_ticks
+	testing.expect(t, day_length > 0, "the test's day has a length")
+	simulation.tick = 100_000
+	simulation.day_offset_ticks = 2 * day_length + day_length / 3
+	file := make_world_file(&simulation, "waited", 0)
+	parsed, problem := parse_world_file(encode_world_file(file, context.temp_allocator), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, saved_day_offset(parsed, day_length), simulation.day_offset_ticks)
+	older := World_File{tick = 5 * day_length + 7, day_time_ticks = day_length / 2}
+	testing.expect_value(t, saved_day_offset(older, day_length), day_offset_for(older.tick, older.day_time_ticks, day_length))
+	testing.expect_value(t, (older.tick + saved_day_offset(older, day_length)) % day_length, day_length / 2)
+	first_day := World_File{tick = 7, day_time_ticks = day_length / 2}
+	testing.expect_value(t, saved_day_offset(first_day, day_length), day_offset_for(first_day.tick, first_day.day_time_ticks, day_length))
+}
+
 // 0057: world.sjson carries the generator version; a file written before
 // it existed reads as version 1, and the load list marks a save of an
 // older generator but still loads it.

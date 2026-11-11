@@ -94,6 +94,19 @@ run_lockstep_test_ticks :: proc(machine: ^Lockstep_Test_Machine, content: Simula
 	}
 }
 
+// Work item 0358: a frame made from a record is connected, the record's
+// fields carried over; a frame of the UI or a socket tick is not, and the
+// record leaves connected out.
+@(test)
+test_input_frame_of_marks_the_player_connected :: proc(t: ^testing.T) {
+	record := Record_Input{move = {0, 1}, pressed = {.Interact}, just_pressed = {.Interact}, developer = true}
+	frame := input_frame_of(record)
+	testing.expect(t, frame.connected, "a record's frame is connected")
+	testing.expect_value(t, record_input_of(frame), record)
+	without_record: Input_Frame
+	testing.expect(t, !without_record.connected, "a frame without a record is not")
+}
+
 // Each player its own input, and now and then a command.
 lockstep_test_input :: proc(machine: ^Lockstep_Test_Machine, frame: int) -> Input_Frame {
 	player := lockstep_local_player(machine.lockstep)

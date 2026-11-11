@@ -17,8 +17,10 @@ Floor plan, the chair facing +Y with the airlock on its right:
   exit x 5..6, all y -1..1, z 0..2; the shutters slide up into slots
   above each door (x 1.26..1.49 and 4.26..4.49, z 2..3.92);
 - pockets: locker x -1..1, y -3..-2, z 0..4; bench x -4..-3, y 0..2,
-  z 0..2; oxygen generator x 0..2, y 2..3, z 0..3;
-- the bed on the lean wall at 330 degrees, over the airlock housing.
+  z 0..2; charge controller (the oxygen generator until 0358) x 0..2,
+  y 2..3, z 0..3;
+- the bed on the lean wall at 315 degrees, over the airlock housing,
+  the charging cradle since 0358.
 """
 
 import math

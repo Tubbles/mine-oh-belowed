@@ -298,3 +298,26 @@ test_a_seated_player_is_drawn_seated_and_hidden_from_its_own_eye :: proc(t: ^tes
 	testing.expect_value(t, field_player_body_pose(scene, 1), Field_Body_Pose.Seated)
 	testing.expect_value(t, field_player_body_pose(scene, 2), Field_Body_Pose.Hidden)
 }
+
+// Work item 0358: waiting in the cradle the camera is first person
+// whatever the stored mode; a cradled body is Hidden, as the viewer's or
+// another's, and the chair shows the lowest index in the chair, skipping
+// a cradled player before it.
+@(test)
+test_a_cradled_player_is_hidden_and_sees_in_first_person :: proc(t: ^testing.T) {
+	body := Field_Player{camera_mode = .Third_Person, seat = .Cradled}
+	testing.expect_value(t, field_view_camera_mode(body), Camera_Mode.First_Person)
+	state: Simulation_State
+	defer delete(state.players)
+	append(&state.players, Player{}, Player{}, Player{})
+	state.players[0].field.seat = .Cradled
+	state.players[1].field.seat = .Cradled
+	state.players[2].field.seat = .Seated
+	scene := Field_Scene{state = &state, viewer = 0, viewer_body_shown = true}
+	testing.expect_value(t, field_player_body_pose(scene, 0), Field_Body_Pose.Hidden)
+	testing.expect_value(t, field_player_body_pose(scene, 1), Field_Body_Pose.Hidden)
+	testing.expect_value(t, first_seated_player(scene), 2)
+	testing.expect_value(t, field_player_body_pose(scene, 2), Field_Body_Pose.Seated)
+	state.players[2].field.seat = .Standing
+	testing.expect_value(t, first_seated_player(scene), -1)
+}

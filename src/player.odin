@@ -101,6 +101,10 @@ Player :: struct {
 	field_refusal:          Field_Edit_Refusal,
 	field_refused_material: Field_Material,
 	field_run_refusal:      Belt_Run_Refusal,
+	// Input_Frame.connected of the player's last field tick (0358): a
+	// record carried its input, so the wait counts it. The same on every
+	// machine, since it comes from the records; never saved or hashed.
+	connected:              bool `save:"-"`,
 }
 
 // What a player tick reports to the UI, which turns it into toasts.
@@ -123,6 +127,9 @@ Player_Event :: enum u8 {
 	// The fall landed with the player strapped into the pod's chair
 	// (0223): Mission Control confirms touchdown.
 	Touchdown_Confirmed,
+	// Every connected unit waited in the cradle and the day moved on
+	// (0358, finish_field_wait): Mission Control says so.
+	Wait_Finished,
 }
 
 Player_Events :: bit_set[Player_Event]
@@ -506,28 +513,29 @@ aims_at_panel :: proc(entities: ^Entities, machines: Machine_Registry, block_tar
 	return entity_has_panel(entities, machines, aimed_entity(block_target, field_target))
 }
 
-// The pod's chair takes Interact like a switch (0223): never while the
-// world falls; always for a strapped or seated body (the chair is under
-// it); for a standing one when it aims at the chair.
-field_chair_takes_interact :: proc(entities: ^Entities, machines: Machine_Registry, body: Field_Player, falling: bool) -> bool {
+// The pod's chair and its cradle (0358) take Interact like a switch
+// (0223): never while the world falls; always for a strapped, seated or
+// cradled body (the chair or the cradle is under it); for a standing one
+// when it aims at the chair or the cradle.
+field_pod_seat_takes_interact :: proc(entities: ^Entities, machines: Machine_Registry, body: Field_Player, falling: bool) -> bool {
 	if falling {
 		return false
 	}
 	if body.seat != .Standing {
 		return true
 	}
-	return field_aimed_chair(entities, machines, body.frame_target)
+	return field_aimed_chair(entities, machines, body.frame_target) || field_aimed_cradle(entities, machines, body.frame_target)
 }
 
 // What the aimed thing calls for, read as the HUD shows the target
-// (aimed_entity): Interact (entity_takes_interact, or the pod's chair,
-// field_chair_takes_interact) and a panel the inventory binding opens
+// (aimed_entity): Interact (entity_takes_interact, or the pod's chair or
+// cradle, field_pod_seat_takes_interact) and a panel the inventory binding opens
 // (aims_at_panel, 0194). body is the field player as the HUD shows it
 // (its frame_target, its seat). The frame's routing of the inventory
 // binding (route_open_inventory_press) and the touch tap (tap_control)
 // read it.
 aimed_target_calls_for :: proc(entities: ^Entities, machines: Machine_Registry, block_target: Entity_Handle, body: Field_Player, falling: bool) -> (takes_interact, has_panel: bool) {
-	takes_interact = entity_takes_interact(entities, machines, aimed_entity(block_target, body.frame_target)) || field_chair_takes_interact(entities, machines, body, falling)
+	takes_interact = entity_takes_interact(entities, machines, aimed_entity(block_target, body.frame_target)) || field_pod_seat_takes_interact(entities, machines, body, falling)
 	return takes_interact, aims_at_panel(entities, machines, block_target, body.frame_target)
 }
 

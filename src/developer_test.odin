@@ -309,7 +309,7 @@ test_time_of_day_sets_the_day_cycle :: proc(t: ^testing.T) {
 	// world.sjson keeps the day time, and loading turns it back into the
 	// offset.
 	file := make_world_file(&simulation, "test", 0)
-	testing.expect_value(t, day_offset_for(file.tick, file.day_time_ticks, simulation.day_length_ticks), simulation.day_offset_ticks)
+	testing.expect_value(t, saved_day_offset(file, simulation.day_length_ticks), simulation.day_offset_ticks)
 	testing.expect_value(t, day_offset_for(file.tick, file.tick % day_length, day_length), 0)
 }
 

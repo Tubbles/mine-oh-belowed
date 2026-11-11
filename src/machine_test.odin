@@ -429,7 +429,7 @@ test_the_interior_light_share_is_a_pods_and_bounded :: proc(t: ^testing.T) {
 	niche := Machine_Definition {
 		id = "niche",
 		name_key = "machine_pod",
-		kind = "oxygen_generator",
+		kind = "charge_controller",
 		footprint = {width = 1, depth = 2, height = 3},
 	}
 	testing.expect_value(t, resolved_share(t, niche), 1)
@@ -642,6 +642,76 @@ test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
 	testing.expect(t, abs(length - 1) < 1e-5, "the normals are normalised")
 }
 
+// Work item 0358: the shipped pod resolves its charging cradle; each
+// broken copy is refused by its message, and any of the four facing
+// words passes, not only the ones across the door.
+@(test)
+test_the_pod_cradle_is_validated :: proc(t: ^testing.T) {
+	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
+	testing.expect(t, error == nil)
+	pod_index := find_definition_index(file.machines, "pod")
+	locker_index := find_definition_index(file.machines, "pod_locker")
+	testing.expect(t, pod_index >= 0 && locker_index >= 0)
+	shipped := file.machines[pod_index]
+	cradle, present := shipped.cradle.?
+	testing.expect(t, present, "the shipped pod has a cradle")
+	broken :: proc(definitions: []Machine_Definition, index: int, changed: Machine_Definition) -> string {
+		changed_definitions := make([]Machine_Definition, len(definitions), context.temp_allocator)
+		copy(changed_definitions, definitions)
+		changed_definitions[index] = changed
+		return validate_machine_definition(changed_definitions, index)
+	}
+	with_cradle :: proc(pod: Machine_Definition, cradle: Pod_Seat_Definition) -> Machine_Definition {
+		changed := pod
+		changed.cradle = cradle
+		return changed
+	}
+	locker := file.machines[locker_index]
+	locker.cradle = cradle
+	testing.expect(t, strings.contains(broken(file.machines, locker_index, locker), "has a cradle, which only a pod may"))
+	past := cradle
+	past.cells.to = Machine_Cell_Definition{12, 5, 9}
+	open_box := cradle
+	open_box.cells = {from = Machine_Cell_Definition{3, 0, 4}, to = Machine_Cell_Definition{4, 1, 5}}
+	open_box.eye = {-2.0, 1.0, -1.0}
+	on_hatch := cradle
+	on_hatch.cells = {from = Machine_Cell_Definition{10, 0, 5}, to = Machine_Cell_Definition{10, 0, 5}}
+	on_hatch.eye = {4.5, 0.5, -0.5}
+	seat := shipped.seat.? or_else {}
+	on_seat := cradle
+	on_seat.cells = seat.cells
+	on_seat.eye = seat.eye
+	outside_eye := cradle
+	outside_eye.eye.y = 2
+	upward := cradle
+	upward.facing = "up"
+	refusals := []struct {
+		cradle: Pod_Seat_Definition,
+		words:  string,
+	} {
+		{past, "cradle cells are not a box inside the footprint"},
+		{open_box, "cradle cells overlap open_cells box 0"},
+		{on_hatch, "cradle cells overlap fixture 0"},
+		{on_seat, "cradle cells overlap the seat"},
+		{outside_eye, "cradle eye is not inside its cells"},
+		{upward, `cradle facing "up" is not +x, -x, +z or -z`},
+	}
+	for refusal in refusals {
+		problem := broken(file.machines, pod_index, with_cradle(shipped, refusal.cradle))
+		testing.expectf(t, strings.contains(problem, refusal.words), "%q lacks %q", problem, refusal.words)
+	}
+	along_door := cradle
+	along_door.facing = "+x"
+	testing.expect_value(t, broken(file.machines, pod_index, with_cradle(shipped, along_door)), "")
+
+	machines := make_test_machines()
+	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
+	testing.expect(t, pod.cradle.present)
+	testing.expect_value(t, pod.cradle.cells, Cell_Box{from = {7, 3, 7}, to = {9, 5, 9}})
+	testing.expect_value(t, pod.cradle.eye, collision_point_units({1.5, 5.1, 1.5}))
+	testing.expect_value(t, pod.cradle.facing, [3]i64{0, 0, -UNIT_VECTOR_ONE})
+}
+
 // Work item 0290: heat_shield is a pod's only, its radius above 0 to
 // half the footprint, its rim_height 0 to the height. The shipped pod's
 // is pod.py's rim.
@@ -760,24 +830,24 @@ test_the_world_placed_fixture_kinds_are_validated :: proc(t: ^testing.T) {
 	slotted_bench.slots = 2
 	carried_bench := bench
 	carried_bench.item = "wooden_chest"
-	generator := Machine_Definition {
-		id = "generator",
-		name_key = "machine_oxygen_generator",
-		kind = "oxygen_generator",
+	controller := Machine_Definition {
+		id = "controller",
+		name_key = "machine_charge_controller",
+		kind = "charge_controller",
 		footprint = {width = 1, depth = 2, height = 3},
 	}
-	testing.expect_value(t, validate_machine_definition({generator}, 0), "")
-	slotted_generator := generator
-	slotted_generator.slots = 1
-	carried_generator := generator
-	carried_generator.item = "wooden_chest"
-	append(&refused, sliding_chest, empty_locker, small_locker, big_locker, carried_locker, assembling_bench, slotted_bench, carried_bench, slotted_generator, carried_generator)
+	testing.expect_value(t, validate_machine_definition({controller}, 0), "")
+	slotted_controller := controller
+	slotted_controller.slots = 1
+	carried_controller := controller
+	carried_controller.item = "wooden_chest"
+	append(&refused, sliding_chest, empty_locker, small_locker, big_locker, carried_locker, assembling_bench, slotted_bench, carried_bench, slotted_controller, carried_controller)
 	for definition in refused {
 		testing.expectf(t, validate_machine_definition({definition}, 0) != "", "%s %v passes", definition.id, definition)
 	}
 
 	machines := make_test_machines()
-	for id in ([4]string{"pod_hatch", "pod_locker", "crafting_bench", "oxygen_generator"}) {
+	for id in ([4]string{"pod_hatch", "pod_locker", "crafting_bench", "charge_controller"}) {
 		machine := machines.machines[test_machine(machines, id)]
 		testing.expect(t, machine_kind_is_placed_by_world(machine_kind_names[machine.kind]), id)
 		testing.expect_value(t, machine.item, NO_ITEM)

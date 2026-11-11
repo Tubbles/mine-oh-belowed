@@ -329,7 +329,7 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		{"pod_hatch", true},
 		{"pod_locker", false},
 		{"crafting_bench", false},
-		{"oxygen_generator", true},
+		{"charge_controller", true},
 	}
 	machines := shipped_machines()
 	defer delete(machines)
@@ -372,7 +372,9 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 			_, electric := emissive_colour_centroid(emissive, {80, 220, 240, 255})
 			testing.expect(t, signal > 0 && electric > 0, "the console's lights glow")
 		}
-		library, error := os.read_entire_file(platform.join_path(test_data_directory(), model_obj.MODELS_DIRECTORY, strings.concatenate({id, model_obj.MATERIAL_FILE_EXTENSION}, context.temp_allocator)), context.temp_allocator)
+		// By the model's name: the charge controller wears the oxygen
+		// generator's (0358).
+		library, error := os.read_entire_file(platform.join_path(test_data_directory(), model_obj.MODELS_DIRECTORY, strings.concatenate({machine.model, model_obj.MATERIAL_FILE_EXTENSION}, context.temp_allocator)), context.temp_allocator)
 		testing.expect_value(t, error, nil)
 		materials := strings.count(string(library), "newmtl ")
 		testing.expectf(t, materials >= 1 && materials <= MODEL_MATERIAL_LIMIT, "%s: %d materials", id, materials)

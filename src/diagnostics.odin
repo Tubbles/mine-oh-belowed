@@ -94,10 +94,9 @@ World_Facts :: struct {
 	belt_item_count:  int,
 	leaf_decay_count: int,
 	// A field session (work item 0198): whether the local player's feet
-	// are in a pod's sealed room and its supply.
+	// are in a pod's sealed room.
 	field_session:      bool,
 	sealed_room_inside: bool,
-	sealed_room_oxygen: Oxygen_Supply,
 	// The water field's last tick (0292): the chunks with an awake
 	// sample, and the pressure pull's teleports, visits and failures.
 	water_awake_chunk_count: int,
@@ -209,7 +208,7 @@ world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
 		// The chunk and the biome are the block world's (0262); the
 		// field's feet line says where the player is.
 		append_line(&lines, false, "tick %d", facts.tick)
-		append_line(&lines, false, "%s", sealed_room_line(facts.sealed_room_inside, facts.sealed_room_oxygen))
+		append_line(&lines, false, "%s", sealed_room_line(facts.sealed_room_inside))
 		append_line(&lines, false, "water awake chunks %d  teleports %d  visits %d  failed %d", facts.water_awake_chunk_count, facts.water_teleports, facts.water_visits, facts.water_failures)
 		if facts.water_bodies {
 			append_line(&lines, false, "water bodies %d  front %d  flood visits %d  to sea %d", facts.water_body_count, facts.water_front_count, facts.water_flood_visits, facts.water_to_sea)
@@ -224,12 +223,10 @@ world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
 	return lines[:]
 }
 
-// Whether the feet are in the pod's sealed room and its supply (0198).
-sealed_room_line :: proc(inside: bool, oxygen: Oxygen_Supply) -> string {
-	if !inside {
-		return "sealed room: outside"
-	}
-	return oxygen == .Unlimited ? "sealed room: inside the pod, oxygen unlimited" : "sealed room: inside the pod, no oxygen"
+// Whether the feet are in the pod's sealed room (0198; no supply since
+// 0358).
+sealed_room_line :: proc(inside: bool) -> string {
+	return inside ? "sealed room: inside the pod" : "sealed room: outside"
 }
 
 // WORLD_PAGE_KINDS_PER_LINE kinds per line, without None.

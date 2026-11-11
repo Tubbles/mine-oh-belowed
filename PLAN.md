@@ -41,7 +41,7 @@ Each milestone has a single verify statement. Work items in `doc/work/` referenc
 | M12 Architecture toward the engine cut | 0142 to 0166 | Cleanup, audits, code map, pilot split, pure moves and hubs done (0142 to 0162); the seams re-read against the new world, the ones lockstep needs move into M13 |
 | M13 The first slice | 0167, then 0168 to 0179 | Implemented 2026-10-03 and judged viable by the user 2026-10-04 (the trial is finished); its lockstep couch test rides into couch test 6 |
 | M14 The ground game on the smooth world | 0237 (the brief), then the items written from it | Picked 2026-10-04, the brief first |
-| M15 Survival, the suit and the modes | | Todo |
+| M15 Survival, the charge and the modes | | Todo |
 | M16 Low orbit and the station | | Todo |
 | M17 The first hop | | Todo |
 | M18 The system | | Todo |
@@ -72,13 +72,13 @@ Every machine of the current content placed on foundation frames, belts and pipe
 
 Verify: couch test 6. Chapters 1 to 7 played through by two players on the couch and one remote, saved and resumed between sessions, at 60 ticks per second at benchmark size 16.
 
-### M15 Survival, the suit and the modes
+### M15 Survival, the charge and the modes
 
-The three modes at world creation, the suit's tanks and their fill points, the pod's oxygen generator and panels, the slow drain and the quiet death, the respawn action, keep inventory as a setting, the death pack, sealed rooms and the first dome with crops, weather's drains, the repair kit and the first breakdowns.
+The three modes at world creation, the charge (its drains, the cradle's fill, the pod's supply), the quiet loss, the respawn action, keep inventory as a setting, the death pack, weather's drains on the charge, the repair kit and the first breakdowns. Proposed by 0358, the user's to decide: a condition in place of health with a slow drain at zero charge, the loss a breakdown, and the repair kit mending the unit as it mends machines.
 
-The pod's sealed room (the cabin and the airlock behind its hatches) and its oxygen generator with an unlimited supply exist since 0198; M15 adds the suit's drain reading `sealed_room_at_feet`, the generator's water and rate, and the bench as the place crafting happens in survival.
+The charging cradle, the charge controller and the shared wait exist since 0358, nothing charged yet; M15 adds the charge and its fill, and the bench as the place crafting happens in survival.
 
-Verify: couch test 7. A survival world from the pod to the first sealed dome with crops, with one death and the pack recovered, and a peaceful world where none of it shows.
+Verify: couch test 7. A survival world from the pod through its first night on the charge, with one loss and the pack recovered, and a peaceful world where none of it shows.
 
 ### M16 Low orbit and the station (phase 8)
 
@@ -88,7 +88,7 @@ Verify: couch test 8. The first capsule launched, the outpost built around it ov
 
 ### M17 The first hop (phase 9)
 
-The dock's sealed rooms and cage, the small ship from lifted kit parts, timed hops on the system map, the moon with its own material, landings refused on steep ground, the lift off line, wrecks and salvage trips.
+The dock's rooms and cage, the small ship from lifted kit parts, timed hops on the system map, the moon with its own material, landings refused on steep ground, the lift off line, wrecks and salvage trips.
 
 Verify: a small ship built in the dock lands on the moon, brings back its material, and a ship stranded there is salvaged with its cargo on a second trip.
 
@@ -102,7 +102,7 @@ Verify: three bases on three bodies linked by logistics rockets, and a contract 
 
 Hydrogen and cryogenics, staging, the orbital refinery on belt ore, medium and large ships from the yard, explosives and the deep world's core ores, the second living world's flora and fauna pools, terraforming stages to a breathable home world.
 
-Verify: a large ship leaves the yard built from belt ore, and the home world's atmosphere becomes breathable with the suit's oxygen stat gone.
+Verify: a large ship leaves the yard built from belt ore, and the home world's atmosphere becomes breathable.
 
 ### M20 Signals and logic
 

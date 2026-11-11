@@ -73,8 +73,10 @@ World_File :: struct {
 	seed:                     u64,
 	settings:                 World_File_Settings,
 	tick:                     u64,
-	// Ticks into the current day (the tick plus the day offset), for a
-	// world list to show and to restore the time of day a developer set.
+	// The day clock, the tick plus the day offset, whole (0358): it keeps
+	// the time of day a developer set and the days the wait moved on. A
+	// file written before 0358 holds it modulo the day length, under the
+	// tick once the first day is over (saved_day_offset).
 	day_time_ticks:           u64,
 	last_played_unix_seconds: i64,
 	// The landing pad's centre (0049), so a loaded world keeps its pad when
@@ -183,7 +185,6 @@ existing_save_directory :: proc(location: Save_Location) -> (directory: string, 
 // world.sjson.
 
 make_world_file :: proc(state: ^Simulation_State, display_name: string, last_played_unix_seconds: i64) -> World_File {
-	day_length_ticks := max(state.day_length_ticks, 1)
 	return World_File {
 		format_version = SAVE_FORMAT_VERSION,
 		generator_version = GENERATOR_VERSION,
@@ -204,7 +205,7 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 			water_model = state.world.settings.water_model,
 		},
 		tick = state.tick,
-		day_time_ticks = simulation_day_ticks(state^) % day_length_ticks,
+		day_time_ticks = simulation_day_ticks(state^),
 		last_played_unix_seconds = last_played_unix_seconds,
 		landing_pad_present = state.landing_pad.present,
 		landing_pad = cast([3]i32)state.landing_pad.centre,
@@ -694,6 +695,18 @@ load_region_files :: proc(world: ^World, directory: string, expected: Save_Heade
 	return ""
 }
 
+// The day offset of a world file. The clock is whole (the tick plus the
+// offset, so never under the tick) since 0358; a file before it holds the
+// clock modulo the day length, which under the tick gives the offset within
+// the day (day_offset_for), and at or over it, in the first day, the same
+// offset as the whole clock.
+saved_day_offset :: proc(file: World_File, day_length_ticks: u64) -> u64 {
+	if file.day_time_ticks >= file.tick {
+		return file.day_time_ticks - file.tick
+	}
+	return day_offset_for(file.tick, file.day_time_ticks, day_length_ticks)
+}
+
 // Reads a save into a simulation made for it: make_simulation with the
 // file's seed and settings, before any chunk is loaded. Saved chunks go
 // to World.saved_chunks, where streaming picks them up. Returns an empty
@@ -702,7 +715,7 @@ load_world :: proc(state: ^Simulation_State, content: Simulation_Content, direct
 	expected := make_save_header()
 	state.tick = file.tick
 	state.day_length_ticks = u64(file.settings.day_length_seconds) * u64(max(state.tick_rate, 1))
-	state.day_offset_ticks = day_offset_for(file.tick, file.day_time_ticks, state.day_length_ticks)
+	state.day_offset_ticks = saved_day_offset(file, state.day_length_ticks)
 	state.world.settings = world_settings_from_file(file.seed, file.settings)
 	remap: Content_Remap
 	if problem := load_entities_file(state, content, directory, expected, &remap); problem != "" {
@@ -743,7 +756,7 @@ load_world_from_files :: proc(state: ^Simulation_State, content: Simulation_Cont
 	expected := make_save_header()
 	state.tick = file.tick
 	state.day_length_ticks = u64(file.settings.day_length_seconds) * u64(max(state.tick_rate, 1))
-	state.day_offset_ticks = day_offset_for(file.tick, file.day_time_ticks, state.day_length_ticks)
+	state.day_offset_ticks = saved_day_offset(file, state.day_length_ticks)
 	state.world.settings = world_settings_from_file(file.seed, file.settings)
 	remap: Content_Remap
 	if problem := decode_entities(state, content, files.entities, name, expected, &remap); problem != "" {

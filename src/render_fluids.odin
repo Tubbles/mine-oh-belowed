@@ -61,7 +61,7 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Hatch         = {},
 	.Locker        = {},
 	.Crafting_Bench = {},
-	.Oxygen_Generator = {},
+	.Charge_Controller = {},
 }
 
 fluid_color :: proc(fluids: Fluid_Registry, fluid: Fluid_Id) -> rl.Color {

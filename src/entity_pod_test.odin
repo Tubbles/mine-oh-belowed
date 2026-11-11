@@ -79,12 +79,12 @@ test_pod_fixture :: proc(entities: ^Entities, frame: Frame, pod: Machine, index:
 }
 
 // The shipped record's fixtures: the outer hatch, the inner hatch, the
-// locker, the bench and the oxygen generator.
+// locker, the bench and the charge controller.
 TEST_OUTER_HATCH :: 0
 TEST_INNER_HATCH :: 1
 TEST_LOCKER :: 2
 TEST_BENCH :: 3
-TEST_GENERATOR :: 4
+TEST_CHARGE_CONTROLLER :: 4
 
 // The shipped record's open cells boxes (0221): the floor before the
 // chair, the lane to the inner hatch and the airlock's bore.
@@ -182,9 +182,9 @@ test_pod_fixture_placement_composes_the_rotations :: proc(t: ^testing.T) {
 }
 
 // The pod places both hatches closed, the locker as a chest of 16 empty
-// slots, the bench and the generator, each at its placement; the panels
-// are the locker's, the bench's and the generator's, and none of them is
-// picked up.
+// slots, the bench and the charge controller, each at its placement; the
+// panels are the locker's, the bench's and the controller's, and none of
+// them is picked up.
 @(test)
 test_place_pod_places_its_hatches_and_fixtures :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -220,15 +220,15 @@ test_place_pod_places_its_hatches_and_fixtures :: proc(t: ^testing.T) {
 		}
 	}
 	bench := test_pod_fixture(&entities, frame, pod, TEST_BENCH)
-	generator := test_pod_fixture(&entities, frame, pod, TEST_GENERATOR)
+	controller := test_pod_fixture(&entities, frame, pod, TEST_CHARGE_CONTROLLER)
 	testing.expect_value(t, machines.machines[entity_common(&entities, bench).machine].kind, Machine_Kind.Crafting_Bench)
-	testing.expect_value(t, machines.machines[entity_common(&entities, generator).machine].kind, Machine_Kind.Oxygen_Generator)
-	for handle in ([3]Entity_Handle{locker, bench, generator}) {
+	testing.expect_value(t, machines.machines[entity_common(&entities, controller).machine].kind, Machine_Kind.Charge_Controller)
+	for handle in ([3]Entity_Handle{locker, bench, controller}) {
 		testing.expect(t, entity_has_panel(&entities, machines, handle))
 	}
 	pod_handle := entity_at(&entities, pod_origin(pod), frame.id)
 	testing.expect(t, !entity_has_panel(&entities, machines, pod_handle))
-	for handle in ([6]Entity_Handle{pod_handle, outer, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), locker, bench, generator}) {
+	for handle in ([6]Entity_Handle{pod_handle, outer, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), locker, bench, controller}) {
 		testing.expect(t, field_entity_is_placed_by_world(&entities, machines, handle))
 	}
 }
@@ -498,8 +498,7 @@ test_pod_box_cells :: proc(pod: Machine, box: int) -> []World_Coordinate {
 }
 
 // Both hatches closed: one room of exactly the pod's inside open cells
-// (the cabin, the lane and the bore), supplied by the generator. Outer
-// open: the cabin alone. Inner open: the inside cells and the inner
+// (the cabin, the lane and the bore). Outer open: the cabin alone. Inner open: the inside cells and the inner
 // hatch's. Both open: no room.
 @(test)
 test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
@@ -508,7 +507,6 @@ test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
 	open := test_pod_inside_cells(pod)
-	generator := test_pod_fixture(&entities, frame, pod, TEST_GENERATOR)
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
 	inner := test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)
 	testing.expect_value(t, len(entities.sealed_rooms), 1)
@@ -517,9 +515,6 @@ test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
 	}
 	room := entities.sealed_rooms[0]
 	testing.expect(t, slice.equal(sorted_cells(room.cells[:]), sorted_cells(open)), "the room is the inside open cells")
-	testing.expect_value(t, room.supplier, generator)
-	testing.expect_value(t, room.oxygen, Oxygen_Supply.Unlimited)
-	testing.expect(t, oxygen_generator_supplies_a_room(&entities, generator))
 
 	toggle_hatch(&entities, machines, outer, 1, nil)
 	airlock := test_pod_box_cells(pod, TEST_AIRLOCK_BOX)
@@ -532,7 +527,6 @@ test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(entities.sealed_rooms), 1)
 	if len(entities.sealed_rooms) == 1 {
 		testing.expect(t, slice.equal(sorted_cells(entities.sealed_rooms[0].cells[:]), sorted_cells(cabin[:])), "outer open: the cabin")
-		testing.expect_value(t, entities.sealed_rooms[0].oxygen, Oxygen_Supply.Unlimited)
 	}
 
 	toggle_hatch(&entities, machines, outer, 2, nil)
@@ -547,11 +541,10 @@ test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
 
 	toggle_hatch(&entities, machines, outer, 4, nil)
 	testing.expect_value(t, len(entities.sealed_rooms), 0)
-	testing.expect(t, !oxygen_generator_supplies_a_room(&entities, generator))
 }
 
-// The spawn's feet are in the sealed room with its unlimited supply, a
-// point in front of the outer hatch is outside; the F3 line says which.
+// The spawn's feet are in the sealed room, a point in front of the outer
+// hatch is outside; the F3 line says which.
 @(test)
 test_the_feet_tell_the_sealed_room :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -560,14 +553,12 @@ test_the_feet_tell_the_sealed_room :: proc(t: ^testing.T) {
 	frame, _ := place_test_pod(&entities, machines)
 	spawn, found := field_pod_spawn(&entities, machines)
 	testing.expect(t, found)
-	room, inside := sealed_room_at_feet(&entities, spawn.position)
+	_, inside := sealed_room_at_feet(&entities, spawn.position)
 	testing.expect(t, inside)
-	testing.expect_value(t, room.oxygen, Oxygen_Supply.Unlimited)
 	_, outside := sealed_room_at_feet(&entities, frame_floor_point(frame, 1, 0, 11))
 	testing.expect(t, !outside)
-	testing.expect_value(t, sealed_room_line(true, .Unlimited), "sealed room: inside the pod, oxygen unlimited")
-	testing.expect_value(t, sealed_room_line(true, .None), "sealed room: inside the pod, no oxygen")
-	testing.expect_value(t, sealed_room_line(false, .None), "sealed room: outside")
+	testing.expect_value(t, sealed_room_line(true), "sealed room: inside the pod")
+	testing.expect_value(t, sealed_room_line(false), "sealed room: outside")
 }
 
 // A machine or a foundation over the bench or in front of the locker is
@@ -655,8 +646,8 @@ test_an_old_pod_is_replaced_at_load :: proc(t: ^testing.T) {
 // Work item 0221: the shipped record follows the lab's model: the cabin
 // box on the floor, 4 rows high, the lane and the cabin before the inner
 // hatch's face, the bore exactly between the hatches, nothing but open
-// cells or the outside before the outer hatch, every fixture facing an
-// open cell and the generator touching the sealed room.
+// cells or the outside before the outer hatch and every fixture facing an
+// open cell.
 @(test)
 test_the_pods_record_follows_the_model :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -687,21 +678,10 @@ test_the_pods_record_follows_the_model :: proc(t: ^testing.T) {
 			testing.expect(t, test_record_cell_is_open(pod, {x, 0, outer.from.z}), "the way out runs to the footprint's front")
 		}
 	}
-	for index in ([3]int{TEST_LOCKER, TEST_BENCH, TEST_GENERATOR}) {
+	for index in ([3]int{TEST_LOCKER, TEST_BENCH, TEST_CHARGE_CONTROLLER}) {
 		front := test_fixture_front_cell(pod, index)
 		testing.expectf(t, test_record_cell_is_open(pod, front), "fixture %d faces record cell %v, no open cell", index, front)
 	}
-	inside := test_pod_inside_cells(pod)
-	generator := pod.fixture_boxes[TEST_GENERATOR]
-	touches := false
-	for x in generator.from.x ..= generator.to.x {
-		for z in generator.from.z ..= generator.to.z {
-			for step in ([4][3]i32{{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}}) {
-				touches ||= slice.contains(inside, test_pod_record_cell(pod, [3]i32{x, generator.from.y, z} + step))
-			}
-		}
-	}
-	testing.expect(t, touches, "the oxygen generator touches the sealed room")
 }
 
 // Work item 0221: both hatches close round a crouched player in the
@@ -728,9 +708,9 @@ test_both_hatches_close_round_a_crouched_player_in_the_airlock :: proc(t: ^testi
 }
 
 // Work item 0221: a 0198 pod in a save is replaced at load with its
-// fixtures: the old hatches, locker, bench and generator go with the old
-// frame, the old locker's stacks fill the new locker's first slots, and
-// nothing keeps its saved size.
+// fixtures: the old hatches, locker, bench and charge controller go with
+// the old frame, the old locker's stacks fill the new locker's first
+// slots, and nothing keeps its saved size.
 @(test)
 test_an_old_pod_and_its_fixtures_are_replaced_at_load :: proc(t: ^testing.T) {
 	content := make_save_test_content()
@@ -753,7 +733,7 @@ test_an_old_pod_and_its_fixtures_are_replaced_at_load :: proc(t: ^testing.T) {
 	old_chest.slots[0] = Item_Stack{stone, 5}
 	old_chest.slots[4] = Item_Stack{coal, 3}
 	add_entity(entities, machines, test_machine(machines, "crafting_bench"), {16, 0, 0}, 0, old_frame_id)
-	add_entity(entities, machines, test_machine(machines, "oxygen_generator"), {18, 0, 0}, 0, old_frame_id)
+	add_entity(entities, machines, test_machine(machines, "charge_controller"), {18, 0, 0}, 0, old_frame_id)
 	directory := make_save_test_directory()
 	defer remove_save_test_directory(directory)
 	location := save_test_location(directory)
@@ -839,8 +819,8 @@ test_an_old_lockers_stacks_past_the_new_lockers_slots_are_dropped :: proc(t: ^te
 }
 
 // Work item 0224: the pod always counts as working for its model (its
-// emissive materials and its lamps), a hatch while open, the oxygen
-// generator while it supplies a room.
+// emissive materials and its lamps), a hatch while open, the charge
+// controller always (0358).
 @(test)
 test_the_pod_counts_as_working_for_its_model :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -852,17 +832,17 @@ test_the_pod_counts_as_working_for_its_model :: proc(t: ^testing.T) {
 		return foundation_model_working(entities, foundation, machines.machines[foundation.machine])
 	}
 	pod_handle := entity_at(&entities, pod_origin(pod), frame.id)
-	generator := test_pod_fixture(&entities, frame, pod, TEST_GENERATOR)
+	controller := test_pod_fixture(&entities, frame, pod, TEST_CHARGE_CONTROLLER)
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
 	inner := test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)
 	testing.expect(t, working(&entities, machines, pod_handle))
-	testing.expect(t, working(&entities, machines, generator))
+	testing.expect(t, working(&entities, machines, controller))
 	testing.expect(t, !working(&entities, machines, outer))
 	testing.expect(t, !working(&entities, machines, inner))
 	testing.expect(t, toggle_hatch(&entities, machines, outer, 1, nil))
 	testing.expect(t, working(&entities, machines, outer))
 	testing.expect(t, toggle_hatch(&entities, machines, inner, 2, nil))
-	testing.expect(t, !working(&entities, machines, generator))
+	testing.expect(t, working(&entities, machines, controller), "the controller works with both hatches open")
 	testing.expect(t, working(&entities, machines, pod_handle))
 }
 
@@ -872,12 +852,12 @@ test_the_pod_counts_as_working_for_its_model :: proc(t: ^testing.T) {
 test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	pod_machine := find_machine_of_kind(machines, .Pod)
-	generator_machine := find_machine_of_kind(machines, .Oxygen_Generator)
+	controller_machine := find_machine_of_kind(machines, .Charge_Controller)
 	machines.machines[pod_machine].lights[0] = {position = {0, 5.8, 0}, color = {1, 0.6, 0.15}, radius_cells = 6, clip = true}
 	machines.machines[pod_machine].lights[1] = {position = {3, 2, 0}, color = {0.77, 0.89, 1}, radius_cells = 2, clip = true}
 	machines.machines[pod_machine].light_count = 2
-	machines.machines[generator_machine].lights[0] = {position = {0, 1, 0}, color = {0.77, 0.89, 1}, radius_cells = 3}
-	machines.machines[generator_machine].light_count = 1
+	machines.machines[controller_machine].lights[0] = {position = {0, 1, 0}, color = {0.77, 0.89, 1}, radius_cells = 3}
+	machines.machines[controller_machine].light_count = 1
 	entities: Entities
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
@@ -901,7 +881,8 @@ test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 	toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), 2, nil)
 	clear(&lights)
 	gather_machine_lights(&lights, &entities, machines, Model_Renderer{}, Model_Frame{})
-	testing.expect_value(t, len(lights), 2)
+	// The charge controller shines with both hatches open too (0358).
+	testing.expect_value(t, len(lights), 3)
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, frame.id), 500)
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, BLOCK_FRAME), 1000)
 }
@@ -947,9 +928,9 @@ test_the_pod_and_its_fixtures_take_the_interior_light_share :: proc(t: ^testing.
 	}
 	tint, _ = foundation_light(&entities, machines, model_frame, test_pod_fixture(&entities, frame, pod, TEST_BENCH))
 	expect_channels(t, tint, 0.25, "the bench")
-	tint, glow = foundation_light(&entities, machines, model_frame, test_pod_fixture(&entities, frame, pod, TEST_GENERATOR))
-	expect_channels(t, tint, 0.25, "the generator")
-	expect_channels(t, glow, 1, "the supplying generator's emissive")
+	tint, glow = foundation_light(&entities, machines, model_frame, test_pod_fixture(&entities, frame, pod, TEST_CHARGE_CONTROLLER))
+	expect_channels(t, tint, 0.25, "the charge controller")
+	expect_channels(t, glow, 1, "the charge controller's emissive")
 	locker := entity_common(&entities, test_pod_fixture(&entities, frame, pod, TEST_LOCKER))^
 	tint, _ = posed_model_light(model_frame, locker, machines.machines[locker.machine], {})
 	expect_channels(t, tint, 0.25, "the locker")
@@ -1095,6 +1076,63 @@ test_the_pod_seat_eye_is_clear_of_the_chair :: proc(t: ^testing.T) {
 	testing.expectf(t, vector_length(facing - frame.axes[FRAME_RIGHT]) <= UNIT_VECTOR_ONE / 64, "the facing %v is off the frame's right %v", facing, frame.axes[FRAME_RIGHT])
 	up, _ := normalize_fixed(cast([3]i64)eye)
 	testing.expect(t, abs(fixed_dot(facing, up)) <= UNIT_VECTOR_ONE / 64, "the facing is a tangent")
+}
+
+// Work item 0358: on the shipped pod with its collision volumes the
+// cradled eye lies clear of the bed by more than the camera's near plane
+// (0.1 m), and the cradled facing is a unit tangent along the frame's
+// right, where POD_ROTATION turns the model's -z.
+@(test)
+test_the_pod_cradle_eye_is_clear_of_the_bed :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pod_id := find_machine_of_kind(machines, .Pod)
+	volumes, problem := load_machine_collision(test_data_directory(), machines.machines[pod_id], context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	machines.machines[pod_id].collision = volumes
+	entities: Entities
+	defer destroy_entities(&entities)
+	place_test_pod(&entities, machines)
+	pod, frame, found := find_pod(&entities, machines)
+	testing.expect(t, found)
+	machine := machines.machines[pod.machine]
+	testing.expect(t, machine.cradle.present)
+	testing.expect(t, len(entities.frames.bodies) > 0, "the pod registered no body")
+	eye := pod_cradle_eye(frame, pod, machine)
+	probe := frame_body_probe(&entities.frames, eye, millimetres_to_position_units(100))
+	testing.expectf(t, !probe.found, "the eye lies %d from the bed", probe.distance)
+	facing := pod_cradle_facing(frame, pod, machine)
+	testing.expect(t, abs(vector_length(facing) - UNIT_VECTOR_ONE) <= UNIT_VECTOR_ONE / 64, "the facing is a unit vector")
+	testing.expectf(t, vector_length(facing - frame.axes[FRAME_RIGHT]) <= UNIT_VECTOR_ONE / 64, "the facing %v is off the frame's right %v", facing, frame.axes[FRAME_RIGHT])
+	up, _ := normalize_fixed(cast([3]i64)eye)
+	testing.expect(t, abs(fixed_dot(facing, up)) <= UNIT_VECTOR_ONE / 64, "the facing is a tangent")
+}
+
+// Work item 0358: the airlock leaves a cradled player out: of a standing
+// and a cradled player one capsule goes to it, and the cradled one alone,
+// whose own capsule would reach the inner hatch, leaves both hatches
+// closed.
+@(test)
+test_a_cradled_player_holds_no_door_open :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	tuning := test_field_tuning(1000)
+	airlock := test_pod_airlock_tuning()
+	cradled := Player{field = make_field_player(frame.origin, frame.axes[FRAME_FORWARD])}
+	testing.expect(t, cradle_field_player(&entities, machines, tuning, &cradled.field, 5))
+	testing.expect_value(t, cradled.field.seat, Field_Seat.Cradled)
+	testing.expect_value(t, cradled.field.cradled_tick, 5)
+	standing := Player{field = make_field_player(frame.origin, frame.axes[FRAME_FORWARD])}
+	both := [2]Player{standing, cradled}
+	testing.expect_value(t, len(field_player_capsules(both[:], tuning)), 1)
+	inner := test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)
+	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
+	own := [1]Field_Capsule{field_player_capsule(tuning, cradled.field)}
+	testing.expect(t, test_door_wanted(&entities, machines, frame, inner, own[:], airlock.reach), "the cradled capsule reaches the inner hatch")
+	alone := [1]Player{cradled}
+	tick_pod_airlocks(&entities, machines, field_player_capsules(alone[:], tuning), airlock, 6)
+	testing.expect(t, !hatch_is_open(&entities, inner) && !hatch_is_open(&entities, outer), "both hatches closed")
 }
 
 // Work item 0270: for the homes of seeds 1 to 64, the pod placed as

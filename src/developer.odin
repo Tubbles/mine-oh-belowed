@@ -508,13 +508,20 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 
 // The chair (0223) for the command socket's seat: refused while the world
 // falls; Standing stands up, Seated (or Strapped) sits in the first pod's
-// chair, refused without one.
+// chair, refused without one, Cradled waits in its cradle (0358), refused
+// without one.
 set_field_seat_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, seat: Field_Seat) -> string {
 	if field_arrival_falling(state.field.arrival) {
 		return "the world is falling"
 	}
 	if seat == .Standing {
 		stand_field_player_from_seat(&state.world.entities, content.machines, &player.field)
+		return ""
+	}
+	if seat == .Cradled {
+		if !cradle_field_player(&state.world.entities, content.machines, content.field.tuning, &player.field, state.tick) {
+			return "there is no cradle"
+		}
 		return ""
 	}
 	if !seat_field_player(&state.world.entities, content.machines, content.field.tuning, &player.field, seat) {

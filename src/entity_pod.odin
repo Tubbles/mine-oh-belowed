@@ -12,7 +12,8 @@ import "platform"
 // pod has no panel, no slots and no item (machines.sjson).
 //
 // Its fixtures (work item 0198): the record's fixtures key lists the
-// hatches, the locker, the crafting bench and the oxygen generator, each
+// hatches, the locker, the crafting bench and the charge controller (the
+// oxygen generator until 0358), each
 // its own entity on the pod's frame in cells the pod leaves to it
 // (machine_held_cells). A hatch is closed (solid) or open (passable, its
 // top row aimable), toggled on its own as an airlock (toggle_hatch from
@@ -130,7 +131,13 @@ pod_seat_facing :: proc(frame: Frame, pod: Entity_Common, machine: Machine) -> [
 // Whether the frame cell lies in the seat's cells, turned and placed as
 // pod_fixture_placement turns a fixture's box.
 pod_seat_contains_cell :: proc(pod: Entity_Common, machine: Machine, cell: World_Coordinate) -> bool {
-	box := machine.seat.cells
+	return pod_box_contains_cell(pod, machine, machine.seat.cells, cell)
+}
+
+// Whether the frame cell lies in a box of the pod's unrotated footprint
+// (the seat's, the cradle's), turned and placed as pod_fixture_placement
+// turns a fixture's box.
+pod_box_contains_cell :: proc(pod: Entity_Common, machine: Machine, box: Cell_Box, cell: World_Coordinate) -> bool {
 	first := rotate_footprint_cell({box.from.x, box.from.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
 	last := rotate_footprint_cell({box.to.x, box.to.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
 	low := cast([3]i32)pod.origin + {min(first.x, last.x), box.from.y, min(first.y, last.y)}
@@ -157,6 +164,58 @@ field_aimed_chair :: proc(entities: ^Entities, machines: Machine_Registry, targe
 	return machine.kind == .Pod && machine.seat.present && entry.frame == target.frame && pod_seat_contains_cell(entry.common, machine, target.cell)
 }
 
+// The charging cradle (work item 0358): the pod's bed, where a unit waits.
+
+// The cradled eye in the world, from the record through the model's
+// frame, integer.
+pod_cradle_eye :: proc(frame: Frame, pod: Entity_Common, machine: Machine) -> World_Position {
+	return model_point_in_frame(frame, pod.origin, pod.size, pod.rotation, machine.cradle.eye)
+}
+
+// The cradled look at yaw 0 in the world, a unit vector.
+pod_cradle_facing :: proc(frame: Frame, pod: Entity_Common, machine: Machine) -> [3]i64 {
+	return frame_world_direction(frame, body_direction_to_frame(pod.rotation, machine.cradle.facing))
+}
+
+// The target hits an alive pod with a cradle, on its frame, in a cradle
+// cell: the ray meets the bed's collision, and frame_body_hit puts the
+// hit's cell a quarter pitch inside the surface, in the cradle's cells.
+field_aimed_cradle :: proc(entities: ^Entities, machines: Machine_Registry, target: Frame_Raycast_Hit) -> bool {
+	if !target.hit {
+		return false
+	}
+	handle := entity_from_occupant(target.occupant.handle)
+	if handle.kind != .Foundation {
+		return false
+	}
+	entry := pool_get(&entities.foundations, handle)
+	if entry == nil || !entry.alive || int(entry.machine) >= len(machines.machines) {
+		return false
+	}
+	machine := machines.machines[entry.machine]
+	return machine.kind == .Pod && machine.cradle.present && entry.frame == target.frame && pod_box_contains_cell(entry.common, machine, machine.cradle.cells, target.cell)
+}
+
+// Puts the body in the first pod's cradle as seat_field_player puts it in
+// the chair, Cradled since tick: the eye on the cradle's, facing the
+// cradle's facing. False, and nothing changed, without a pod that has a
+// cradle. stand_field_player_from_seat stands it up as from the chair.
+cradle_field_player :: proc(entities: ^Entities, machines: Machine_Registry, tuning: Field_Player_Tuning, body: ^Field_Player, tick: u64) -> bool {
+	pod, frame, found := find_pod(entities, machines)
+	if !found || !machines.machines[pod.machine].cradle.present {
+		return false
+	}
+	machine := machines.machines[pod.machine]
+	if !place_body_at_eye(pod_cradle_eye(frame, pod, machine), tuning, body) {
+		return false
+	}
+	body.forward = tangent_of(body.up, pod_cradle_facing(frame, pod, machine))
+	body.yaw, body.pitch = 0, 0
+	body.seat = .Cradled
+	body.cradled_tick = tick
+	return true
+}
+
 // Puts the body in the first pod's chair: the eye on the seat's
 // (place_body_in_seat), facing the seat. False, and nothing changed,
 // without a pod that has a seat. The capsule then hangs 0.25 m below the
@@ -178,13 +237,18 @@ seat_field_player :: proc(entities: ^Entities, machines: Machine_Registry, tunin
 	return true
 }
 
-// The body at the seat of the pod on frame: the eye on the seat's, the
-// up the eye's normalised, the feet the standing eye height below it (so
-// field_player_eye gives the seat's eye exactly), at rest, not
-// crouching. The look and the seat are the caller's. False, and nothing
-// changed, for an eye at the planet's centre.
+// The body at the seat of the pod on frame (place_body_at_eye at the
+// seat's eye).
 place_body_in_seat :: proc(frame: Frame, pod: Entity_Common, machine: Machine, tuning: Field_Player_Tuning, body: ^Field_Player) -> bool {
-	eye := pod_seat_eye(frame, pod, machine)
+	return place_body_at_eye(pod_seat_eye(frame, pod, machine), tuning, body)
+}
+
+// The body with its eye at eye: the up the eye's normalised, the feet the
+// standing eye height below it (so field_player_eye gives the eye
+// exactly), at rest, not crouching. The look and the seat are the
+// caller's. False, and nothing changed, for an eye at the planet's
+// centre.
+place_body_at_eye :: proc(eye: World_Position, tuning: Field_Player_Tuning, body: ^Field_Player) -> bool {
 	up, ok := normalize_fixed(cast([3]i64)eye)
 	if !ok {
 		return false
@@ -233,8 +297,9 @@ pod_rest_pose :: proc(frame: Frame, pod: Entity_Common, machine: Machine, tilt_d
 	return origin, axes
 }
 
-// Out of the chair onto the cabin's floor (field_pod_spawn) at rest; the
-// forward, the yaw and the pitch kept, so the look does not jump.
+// Out of the chair, or the cradle (0358), onto the cabin's floor
+// (field_pod_spawn) at rest; the forward, the yaw and the pitch kept, so
+// the look does not jump.
 stand_field_player_from_seat :: proc(entities: ^Entities, machines: Machine_Registry, body: ^Field_Player) {
 	body.seat = .Standing
 	spawn, found := field_pod_spawn(entities, machines)
@@ -291,13 +356,18 @@ occupy_open_hatch_cells :: proc(entities: ^Entities, common: Entity_Common, occu
 	}
 }
 
-// Every field player's capsule, in the temp allocator.
+// Every field player's capsule but a cradled one's, in the temp
+// allocator, for the airlock (its only caller). A cradled eye's capsule
+// comes 5 cm from the inner hatch's cells, inside the airlock's reach, so
+// a unit waiting in the cradle would hold the door open (0358).
 field_player_capsules :: proc(players: []Player, tuning: Field_Player_Tuning) -> []Field_Capsule {
-	capsules := make([]Field_Capsule, len(players), context.temp_allocator)
-	for player, index in players {
-		capsules[index] = field_player_capsule(tuning, player.field)
+	capsules := make([dynamic]Field_Capsule, 0, len(players), context.temp_allocator)
+	for player in players {
+		if player.field.seat != .Cradled {
+			append(&capsules, field_player_capsule(tuning, player.field))
+		}
 	}
-	return capsules
+	return capsules[:]
 }
 
 // Whether a capsule reaches into a cell's box: its axis sampled every
@@ -362,20 +432,14 @@ hatch_meets_a_capsule :: proc(entities: ^Entities, machines: Machine_Registry, h
 
 // The sealed room.
 
-Oxygen_Supply :: enum u8 {
-	None,
-	Unlimited,
-}
-
 // The cells of a pod the outside does not reach, in its frame in scan
-// order (y, then z, then x), the first oxygen generator in pool order
-// touching them (NO_ENTITY for none) and the supply it gives.
+// order (y, then z, then x). Derived, with no supply since 0358: the F3
+// line reads it, and the survival milestone may (shelter from the
+// weather's drain on the charge).
 Sealed_Room :: struct {
-	pod:      Entity_Handle,
-	frame:    Frame_Id,
-	cells:    [dynamic]World_Coordinate,
-	supplier: Entity_Handle,
-	oxygen:   Oxygen_Supply,
+	pod:   Entity_Handle,
+	frame: Frame_Id,
+	cells: [dynamic]World_Coordinate,
 }
 
 destroy_sealed_rooms :: proc(entities: ^Entities) {
@@ -401,13 +465,7 @@ rebuild_sealed_rooms :: proc(entities: ^Entities, machines: Machine_Registry) {
 		if len(cells) == 0 {
 			continue
 		}
-		supplier := room_supplier(entities, machines, entry.frame, cells)
-		room := Sealed_Room {
-			pod      = entry.handle,
-			frame    = entry.frame,
-			supplier = supplier,
-			oxygen   = supplier != NO_ENTITY ? .Unlimited : .None,
-		}
+		room := Sealed_Room{pod = entry.handle, frame = entry.frame}
 		append(&room.cells, ..cells)
 		append(&entities.sealed_rooms, room)
 	}
@@ -476,33 +534,9 @@ pod_sealed_cells :: proc(frames: ^Frame_Table, frame: Frame_Id, minimum, maximum
 	return cells[:]
 }
 
-// The first alive oxygen generator of the foundations' pool on the frame
-// with a footprint cell face adjacent to a room cell, NO_ENTITY for none.
-room_supplier :: proc(entities: ^Entities, machines: Machine_Registry, frame: Frame_Id, cells: []World_Coordinate) -> Entity_Handle {
-	room := make(map[World_Coordinate]bool, len(cells), context.temp_allocator)
-	for cell in cells {
-		room[cell] = true
-	}
-	neighbours := [6]World_Coordinate{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}
-	for entry in entities.foundations.entries {
-		if !entry.alive || entry.frame != frame || int(entry.machine) >= len(machines.machines) || machines.machines[entry.machine].kind != .Oxygen_Generator {
-			continue
-		}
-		for cell in common_cells(entry.common, machines) {
-			for offset in neighbours {
-				if cell + offset in room {
-					return entry.handle
-				}
-			}
-		}
-	}
-	return NO_ENTITY
-}
-
 // The sealed room the feet stand in (the cell a quarter pitch over them
 // along the room's frame's up). The room's cells stay the room's: the
-// caller reads them within the frame and keeps no slice. For the F3 line
-// now and the suit's drain in M15.
+// caller reads them within the frame and keeps no slice. For the F3 line.
 sealed_room_at_feet :: proc(entities: ^Entities, feet: World_Position) -> (room: Sealed_Room, inside: bool) {
 	for candidate in entities.sealed_rooms {
 		frame, found := find_frame(&entities.frames, candidate.frame)
@@ -515,16 +549,6 @@ sealed_room_at_feet :: proc(entities: ^Entities, feet: World_Position) -> (room:
 		}
 	}
 	return {}, false
-}
-
-// Whether a room's supplier is the handle. For the draw.
-oxygen_generator_supplies_a_room :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	for room in entities.sealed_rooms {
-		if room.supplier == handle {
-			return true
-		}
-	}
-	return false
 }
 
 // The old pod at load.
@@ -590,7 +614,7 @@ upgrade_resized_pods :: proc(entities: ^Entities, machines: Machine_Registry) ->
 }
 
 // Takes the old pod's fixtures off its frame (0221): every alive hatch,
-// crafting bench and oxygen generator and every alive locker on the
+// crafting bench and charge controller and every alive locker on the
 // frame. None of these kinds has an item, so all of them on the frame are
 // the pod's. Returns the lockers' non empty stacks in slot order, in the
 // temp allocator, and how many entries went.
@@ -601,7 +625,7 @@ take_old_pod_fixtures :: proc(entities: ^Entities, machines: Machine_Registry, f
 			continue
 		}
 		kind := machines.machines[entry.machine].kind
-		if kind == .Hatch || kind == .Crafting_Bench || kind == .Oxygen_Generator {
+		if kind == .Hatch || kind == .Crafting_Bench || kind == .Charge_Controller {
 			pool_remove(&entities.foundations, entry.handle)
 			removed += 1
 		}

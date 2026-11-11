@@ -794,9 +794,9 @@ test_a_blocked_world_closes_the_double_tap_window :: proc(t: ^testing.T) {
 }
 
 // Work item 0223: the pod's chair takes Interact like a switch: never
-// while the world falls, always for a strapped or seated body, for a
-// standing one aimed at it and not aimed at the bench; the X press is
-// then Interact's alone.
+// while the world falls, always for a strapped, seated or cradled (0358)
+// body, for a standing one aimed at it or at the cradle and not aimed at
+// the bench; the X press is then Interact's alone.
 @(test)
 test_the_chair_takes_interact_like_a_switch :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -813,12 +813,16 @@ test_the_chair_takes_interact_like_a_switch :: proc(t: ^testing.T) {
 	bench_handle := entity_at(&entities, bench_origin, frame.id)
 	testing.expect_value(t, machines.machines[entity_common(&entities, bench_handle).machine].kind, Machine_Kind.Crafting_Bench)
 	bench := Frame_Raycast_Hit{hit = true, frame = frame.id, cell = bench_origin, occupant = {handle = entity_occupant_handle(bench_handle)}}
+	cradle_corner := rotate_footprint_cell({machine.cradle.cells.from.x, machine.cradle.cells.from.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
+	cradle := Frame_Raycast_Hit{hit = true, frame = frame.id, cell = pod.origin + {cradle_corner.x, machine.cradle.cells.from.y, cradle_corner.y}, occupant = {handle = entity_occupant_handle(pod.handle)}}
 	strapped := Field_Player{seat = .Strapped}
-	testing.expect(t, !field_chair_takes_interact(&entities, machines, strapped, true), "strapped while falling")
-	testing.expect(t, field_chair_takes_interact(&entities, machines, strapped, false), "strapped after the landing")
-	testing.expect(t, field_chair_takes_interact(&entities, machines, Field_Player{seat = .Seated}, false), "seated")
-	testing.expect(t, field_chair_takes_interact(&entities, machines, Field_Player{frame_target = chair}, false), "standing at the chair")
-	testing.expect(t, !field_chair_takes_interact(&entities, machines, Field_Player{frame_target = bench}, false), "standing at the bench")
+	testing.expect(t, !field_pod_seat_takes_interact(&entities, machines, strapped, true), "strapped while falling")
+	testing.expect(t, field_pod_seat_takes_interact(&entities, machines, strapped, false), "strapped after the landing")
+	testing.expect(t, field_pod_seat_takes_interact(&entities, machines, Field_Player{seat = .Seated}, false), "seated")
+	testing.expect(t, field_pod_seat_takes_interact(&entities, machines, Field_Player{seat = .Cradled}, false), "cradled")
+	testing.expect(t, field_pod_seat_takes_interact(&entities, machines, Field_Player{frame_target = chair}, false), "standing at the chair")
+	testing.expect(t, field_pod_seat_takes_interact(&entities, machines, Field_Player{frame_target = cradle}, false), "standing at the cradle")
+	testing.expect(t, !field_pod_seat_takes_interact(&entities, machines, Field_Player{frame_target = bench}, false), "standing at the bench")
 	takes_interact, has_panel := aimed_target_calls_for(&entities, machines, NO_ENTITY, Field_Player{frame_target = chair}, false)
 	press := Input_Frame{pressed = {.Interact, .Open_Inventory}, just_pressed = {.Interact, .Open_Inventory}}
 	routed := route_open_inventory_press(press, false, has_panel, takes_interact)

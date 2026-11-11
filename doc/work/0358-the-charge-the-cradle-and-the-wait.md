@@ -1,6 +1,6 @@
 # 0358: The charge, the cradle and the wait
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-11)
 
 The player is a machine (user, 2026-11-11). Of 0353's proposal for what a machine keeps of the human's survival design the user said: "shared sleep stays, but not as sleep, just like a \"wait\" feature. charging cradle is fine. pod stays as is for the moment". Then: "Yes drop food and oxygen as needs".
 

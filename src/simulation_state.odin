@@ -12,8 +12,10 @@ Simulation_State :: struct {
 	tick_rate:        int,
 	day_length_ticks: u64,
 	// Added to the tick for the day cycle, so the developer menu can set
-	// the time of day without moving the tick every counter reads. Saved
-	// through world.sjson's day_time_ticks.
+	// the time of day and the wait move the day on (0358) without moving
+	// the tick every counter reads. Whole, not within a day: the readers
+	// take the time of day modulo the day length. Saved through
+	// world.sjson's day_time_ticks.
 	day_offset_ticks: u64,
 	world:            World,
 	records:          Game_Records,

@@ -237,16 +237,16 @@ lab_model_working :: proc(lab: Lab) -> bool {
 
 // The pod always works for its model, its emissive materials and its
 // lamps (0224), so its cabin is lit from the arrival on; a hatch while it
-// is open (as hatch_pose); the oxygen generator while it supplies a
-// sealed room.
+// is open (as hatch_pose); the charge controller always (0358), as the
+// cradle's supply is unlimited.
 foundation_model_working :: proc(entities: ^Entities, foundation: Foundation, machine: Machine) -> bool {
 	#partial switch machine.kind {
 	case .Pod:
 		return true
 	case .Hatch:
 		return foundation.hatch_open
-	case .Oxygen_Generator:
-		return oxygen_generator_supplies_a_room(entities, foundation.handle)
+	case .Charge_Controller:
+		return true
 	}
 	return false
 }
@@ -380,7 +380,7 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 			draw_launch_pad(pad, machines, models, frame)
 		}
 	}
-	// The pod, its hatches, its crafting bench and its oxygen generator
+	// The pod, its hatches, its crafting bench and its charge controller
 	// and the crafting stations ride in the foundations' pool
 	// (entity_pod.odin); the foundations themselves are draw_frames'
 	// boxes. A hatch's door follows its state (draw_hatch); the others

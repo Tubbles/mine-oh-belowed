@@ -139,8 +139,10 @@ Ui_Audit_Case :: struct {
 	// selected hotbar stack, so the glyph bar shows the held hints (0219).
 	field_session:     bool,
 	// The HUD's field player in the pod's chair (0223): strapped in, the
-	// bar keeps Unbuckle at every size.
+	// bar keeps Unbuckle at every size; cradled (0358), Stop waiting.
 	seat:              Field_Seat,
+	// The wait's counts (0358, Hud_Context.wait_waiting and wait_units).
+	wait_counts:       [2]int,
 }
 
 // Owns everything a Screen_Context points into.
@@ -384,6 +386,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.field_session {
 		audit_field_session_hud(audit, &hud)
 		hud.field_view.seat = audit_case.seat
+		hud.wait_waiting, hud.wait_units = audit_case.wait_counts[0], audit_case.wait_counts[1]
 	}
 	if audit_case.hud {
 		draw_hud(state, screen_context, hud)
@@ -409,6 +412,11 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.seat == .Strapped && !audit_case.touch {
 		if _, found := glyph_beside_label(state.draw_list[:], text("hint_unbuckle")); !found {
 			audit_report(audit, case_text, frame_name, .Glyph_Hint_Dropped, .Text, {}, text("hint_unbuckle"))
+		}
+	}
+	if audit_case.seat == .Cradled && !audit_case.touch {
+		if _, found := glyph_beside_label(state.draw_list[:], text("hint_stop_waiting")); !found {
+			audit_report(audit, case_text, frame_name, .Glyph_Hint_Dropped, .Text, {}, text("hint_stop_waiting"))
 		}
 	}
 }
@@ -1115,6 +1123,9 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	// Strapped into the pod's chair after the landing (0223): Unbuckle on
 	// the bar.
 	audit_case(audit, {name = "hud field strapped", hud = true, field_session = true, seat = .Strapped})
+	// Waiting in the cradle (0358): the backdrop, the wait's line with the
+	// counts fitted, and Stop waiting on the bar.
+	audit_case(audit, {name = "hud field waiting", hud = true, field_session = true, seat = .Cradled, wait_counts = {1, 2}})
 	// The configure pop-up of a foundation over the inventory (0202),
 	// checked at every size down to the smallest, and the inventory's
 	// touch row with Configure in Sort's place.

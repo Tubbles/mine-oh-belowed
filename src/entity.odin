@@ -318,7 +318,7 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 // (0295) have no panel:
 // Open_Aimed does nothing on them (the inventory opens instead, 0194).
 // In the foundations' pool a crafting station (work item 0196), the pod's
-// crafting bench and its oxygen generator (work item 0198) have one.
+// crafting bench and its charge controller (work items 0198, 0358) have one.
 // Interact on a schematic crate takes its schematic (schematic.odin).
 entity_has_panel :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
 	if handle.kind == .Foundation {
@@ -327,7 +327,7 @@ entity_has_panel :: proc(entities: ^Entities, machines: Machine_Registry, handle
 			return false
 		}
 		kind := machines.machines[common.machine].kind
-		return kind == .Crafting_Station || kind == .Crafting_Bench || kind == .Oxygen_Generator
+		return kind == .Crafting_Station || kind == .Crafting_Bench || kind == .Charge_Controller
 	}
 	// The demo's water pump (0295) has no ports and no slots: nothing to
 	// show.
@@ -685,7 +685,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.core_sample_drills, .Core_Sample_Drill, make_core_sample_drill(common))
 	case .Launch_Pad:
 		handle = pool_add(&entities.launch_pads, .Launch_Pad, make_launch_pad(common, machines.machines[machine]))
-	case .Foundation, .Pod, .Crafting_Station, .Hatch, .Crafting_Bench, .Oxygen_Generator:
+	case .Foundation, .Pod, .Crafting_Station, .Hatch, .Crafting_Bench, .Charge_Controller:
 		handle = pool_add(&entities.foundations, .Foundation, Foundation{common = common})
 	case .Belt_Pole:
 		handle = pool_add(&entities.belt_poles, .Belt_Pole, Belt_Pole{common = common})

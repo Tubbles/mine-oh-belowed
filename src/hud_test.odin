@@ -241,26 +241,60 @@ test_the_chair_hints_unbuckle_stand_and_sit :: proc(t: ^testing.T) {
 	screen_context := Screen_Context{world = &world, player = &player, items = items, machines = machines}
 	hud := Hud_Context{field_view_set = true, field_session = true}
 	hud.field_view.tool = .Machine
-	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "")
+	testing.expect_value(t, field_pod_seat_hint_key(screen_context, hud), "")
 	hud.field_view.frame_target = chair
-	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "hint_sit")
+	testing.expect_value(t, field_pod_seat_hint_key(screen_context, hud), "hint_sit")
 	hud.field_view.frame_target = {}
 	hud.field_view.seat = .Seated
-	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "hint_stand")
+	testing.expect_value(t, field_pod_seat_hint_key(screen_context, hud), "hint_stand")
 	hud.field_view.seat = .Strapped
-	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "hint_unbuckle")
+	testing.expect_value(t, field_pod_seat_hint_key(screen_context, hud), "hint_unbuckle")
 	hints, kept := world_glyph_hints(screen_context, hud, true)
 	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Pause}), "Unbuckle, Pause")
 	testing.expect_value(t, hints[0].label, "Unbuckle")
 	testing.expect_value(t, kept, 1)
 	falling := screen_context
 	falling.arrival_falling = true
-	testing.expect_value(t, field_chair_hint_key(falling, hud), "")
+	testing.expect_value(t, field_pod_seat_hint_key(falling, hud), "")
 	hints, _ = world_glyph_hints(falling, hud)
 	testing.expect(t, !slice.contains(hint_buttons(hints), Glyph_Button.Interact), "no Interact while falling")
 	testing.expect(t, !slice.contains(hint_buttons(hints), Glyph_Button.Use_Item), "no held hints strapped in")
 	hud.field_session = false
-	testing.expect_value(t, field_chair_hint_key(screen_context, hud), "")
+	testing.expect_value(t, field_pod_seat_hint_key(screen_context, hud), "")
+}
+
+// Work item 0358: aimed at a cradle cell the bar says Wait, cradled Stop
+// waiting, kept as the first hint; nothing while the world falls. The
+// wait's line is the lone unit's, or counts the waiting units.
+@(test)
+test_the_cradle_hints_wait_and_stop_waiting :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	world: World
+	defer destroy_world(&world)
+	machines := make_test_machines()
+	place_test_pod(&world.entities, machines)
+	pod, frame, _ := find_pod(&world.entities, machines)
+	machine := machines.machines[pod.machine]
+	corner := rotate_footprint_cell({machine.cradle.cells.from.x, machine.cradle.cells.from.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
+	cradle := Frame_Raycast_Hit{hit = true, frame = frame.id, cell = pod.origin + {corner.x, machine.cradle.cells.from.y, corner.y}, occupant = {handle = entity_occupant_handle(pod.handle)}}
+	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
+	screen_context := Screen_Context{world = &world, player = &player, items = make_test_items(), machines = machines}
+	hud := Hud_Context{field_view_set = true, field_session = true}
+	hud.field_view.frame_target = cradle
+	testing.expect_value(t, field_pod_seat_hint_key(screen_context, hud), "hint_wait")
+	hud.field_view.frame_target = {}
+	hud.field_view.seat = .Cradled
+	testing.expect_value(t, field_pod_seat_hint_key(screen_context, hud), "hint_stop_waiting")
+	hints, kept := world_glyph_hints(screen_context, hud, true)
+	testing.expect_value(t, hints[0].button, Glyph_Button.Interact)
+	testing.expect_value(t, hints[0].label, "Stop waiting")
+	testing.expect_value(t, kept, 1)
+	falling := screen_context
+	falling.arrival_falling = true
+	testing.expect_value(t, field_pod_seat_hint_key(falling, hud), "")
+	testing.expect_value(t, hud_waiting_text(1, 1), "Waiting in the cradle")
+	testing.expect_value(t, hud_waiting_text(1, 3), "Waiting in the cradle: 1 of 3 units")
 }
 
 // Work item 0296: the jet bar shows while the budget is below full and

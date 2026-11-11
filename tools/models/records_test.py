@@ -74,7 +74,7 @@ class RecordsTest(unittest.TestCase):
 
     def test_the_pod_fixture_boxes(self):
         pod = MACHINES["pod"]
-        self.assertEqual([fixture.machine for fixture in pod.fixtures], ["pod_hatch", "pod_hatch", "pod_locker", "crafting_bench", "oxygen_generator"])
+        self.assertEqual([fixture.machine for fixture in pod.fixtures], ["pod_hatch", "pod_hatch", "pod_locker", "crafting_bench", "charge_controller"])
         self.assertEqual(pod.fixtures[2].size, (2, 4, 1))
         self.assertEqual(records.fixture_box(pod, 0), ((4.0, -1.0, 0), (5.0, 1.0, 2)))
         self.assertEqual(records.fixture_box(pod, 2), ((-1.0, -3.0, 0), (1.0, -2.0, 4)))

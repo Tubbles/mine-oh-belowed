@@ -1069,3 +1069,39 @@ test_the_field_player_saves_its_seat :: proc(t: ^testing.T) {
 	testing.expect(t, read_value_of(&reader, &read))
 	testing.expect_value(t, read.seat, Field_Seat.Standing)
 }
+
+// Work item 0358: a cradled player round trips through the save's players
+// with its seat and the tick it entered the cradle; Player.connected is
+// never written, so it loads false and changes no byte.
+@(test)
+test_a_cradled_player_round_trips :: proc(t: ^testing.T) {
+	player := make_player({})
+	defer destroy_player(player)
+	player.field = make_field_player(FAR_FEET, {UNIT_VECTOR_ONE, 0, 0})
+	player.field.seat = .Cradled
+	player.field.cradled_tick = 1234
+	player.connected = true
+	bytes := make([dynamic]byte, context.temp_allocator)
+	append_u32(&bytes, 1)
+	write_value_of(&bytes, &player)
+	player.connected = false
+	unconnected := make([dynamic]byte, context.temp_allocator)
+	append_u32(&unconnected, 1)
+	write_value_of(&unconnected, &player)
+	testing.expect(t, slice.equal(bytes[:], unconnected[:]), "connected changes the saved bytes")
+	players: [dynamic]Player
+	defer {
+		for entry in players {
+			destroy_player(entry)
+		}
+		delete(players)
+	}
+	reader := Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_players(&reader, &players))
+	testing.expect_value(t, len(players), 1)
+	if len(players) == 1 {
+		testing.expect_value(t, players[0].field.seat, Field_Seat.Cradled)
+		testing.expect_value(t, players[0].field.cradled_tick, 1234)
+		testing.expect(t, !players[0].connected, "connected loads false")
+	}
+}

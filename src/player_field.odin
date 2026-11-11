@@ -101,11 +101,19 @@ Field_Player_Buttons :: bit_set[Field_Player_Button]
 
 // Where the player is in the pod's chair (work item 0223): standing (not
 // in it), strapped in by the fall (Interact says Unbuckle) or seated
-// later (Interact says Stand).
+// later (Interact says Stand); or waiting in the charging cradle (0358,
+// Interact says Stop waiting). Saved by name: an older build reads
+// Cradled as Standing.
 Field_Seat :: enum u8 {
 	Standing,
 	Strapped,
 	Seated,
+	Cradled,
+}
+
+// The chair holds the body: strapped in or seated, not the cradle.
+field_seat_in_chair :: proc(seat: Field_Seat) -> bool {
+	return seat == .Strapped || seat == .Seated
 }
 
 // One tick's input, quantised from the input frame before the tick
@@ -245,6 +253,10 @@ Field_Player :: struct {
 	// In the pod's chair (0223, seat_field_player): the look turns, the
 	// body stays. A save from before 0223 loads Standing.
 	seat:              Field_Seat,
+	// The tick the body entered the cradle (0358, cradle_field_player),
+	// from which the wait's settle counts. Saved by name; a save from
+	// before 0358 loads 0.
+	cradled_tick:      u64,
 }
 
 Field_Ground :: struct {
@@ -1208,10 +1220,10 @@ field_ground_loaded :: proc(world: ^Field_World, tuning: Field_Player_Tuning, pl
 	return sample_to_field_chunk_coordinate(world_position_to_sample(below, tuning.spacing_millimetres)) in world.chunks
 }
 
-// A body in the chair (0223): the look turns and the aim follows it, the
-// body stays where the seat put it, with no jump, crouch or move. The
-// camera toggles while Seated, never Strapped, and fly and no clip never
-// (0285).
+// A body in the chair (0223) or the cradle (0358): the look turns and
+// the aim follows it, the body stays where the seat put it, with no jump,
+// crouch or move. The camera toggles while Seated, never Strapped or
+// Cradled, and fly and no clip never (0285).
 tick_seated_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
 	if player.seat == .Seated {
 		apply_field_player_toggles(player, input.just_pressed & {.Toggle_Camera_Mode})

@@ -450,30 +450,36 @@ Field_Body_Pose :: enum u8 {
 	Seated,
 }
 
-// The player the chair shows: the viewer when it is not standing, else
-// the lowest index not standing, -1 for none. The one chair holds every
-// seated player (0223), so it shows one body.
+// The player the chair shows: the viewer when it is in the chair, else
+// the lowest index in the chair, -1 for none. The one chair holds every
+// seated player (0223), so it shows one body; a cradled one is not in the
+// chair (0358).
 first_seated_player :: proc(scene: Field_Scene) -> int {
-	if scene.viewer >= 0 && scene.viewer < len(scene.state.players) && field_scene_player(scene, scene.viewer).field.seat != .Standing {
+	if scene.viewer >= 0 && scene.viewer < len(scene.state.players) && field_seat_in_chair(field_scene_player(scene, scene.viewer).field.seat) {
 		return scene.viewer
 	}
 	for index in 0 ..< len(scene.state.players) {
-		if field_scene_player(scene, index).field.seat != .Standing {
+		if field_seat_in_chair(field_scene_player(scene, index).field.seat) {
 			return index
 		}
 	}
 	return -1
 }
 
-// Hidden where the body is not drawn (the viewer in first person) and for
-// a seated player the chair does not show, so a viewer in the chair sees
-// no other seated body round its eye.
+// Hidden where the body is not drawn (the viewer in first person), for a
+// seated player the chair does not show, so a viewer in the chair sees no
+// other seated body round its eye, and for a cradled one (0358): the
+// model has no lying pose, and the bed stands for it.
 field_player_body_pose :: proc(scene: Field_Scene, index: int) -> Field_Body_Pose {
 	if !field_player_body_drawn(scene, index) {
 		return .Hidden
 	}
-	if field_scene_player(scene, index).field.seat == .Standing {
+	switch field_scene_player(scene, index).field.seat {
+	case .Standing:
 		return .Standing
+	case .Cradled:
+		return .Hidden
+	case .Strapped, .Seated:
 	}
 	return index == first_seated_player(scene) ? .Seated : .Hidden
 }
@@ -709,10 +715,10 @@ draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sk
 }
 
 // The camera mode a body is seen in: first person while strapped in for
-// the descent (0223), the stored mode otherwise, also seated in the chair
-// by choice (0268).
+// the descent (0223) and while waiting in the cradle (0358), the stored
+// mode otherwise, also seated in the chair by choice (0268).
 field_view_camera_mode :: proc(body: Field_Player) -> Camera_Mode {
-	if body.seat == .Strapped {
+	if body.seat == .Strapped || body.seat == .Cradled {
 		return .First_Person
 	}
 	return body.camera_mode

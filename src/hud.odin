@@ -103,6 +103,10 @@ Hud_Context :: struct {
 	// The field's sample spacing (0295), for the buckets' litres on the
 	// tool line; 0 (no field) reads 0 L.
 	field_spacing_millimetres: int,
+	// The wait's counts (0358, field_wait_counts): the connected units in
+	// the cradle and all the connected units, for the wait's line.
+	wait_waiting:             int,
+	wait_units:               int,
 }
 
 // The field player the tool line describes.
@@ -657,6 +661,10 @@ draw_contract_objective :: proc(state: ^Ui_State, screen_context: Screen_Context
 
 draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Context) {
 	player, items := screen_context.player, screen_context.items
+	// Waiting in the cradle (0358): the backdrop under the rest of the HUD.
+	if hud.field_session && hud_field_player(screen_context, hud).seat == .Cradled {
+		draw_field_wait(state, hud)
+	}
 	if hud.touch_aims {
 		draw_mining_ring(state, player.mining, hud.mining_ring_centre)
 	} else {
@@ -762,11 +770,11 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, inte
 }
 
 // What the aimed thing takes, the first group that applies: the pod's
-// chair (0223), the schematic crate or a usable item, a trunk's Fell, a
-// field cell's pick up (with a switch's Turn), a power switch's Turn. In
-// the temp allocator.
+// chair (0223) or cradle (0358), the schematic crate or a usable item, a
+// trunk's Fell, a field cell's pick up (with a switch's Turn), a power
+// switch's Turn. In the temp allocator.
 aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> []Glyph_Hint {
-	if key := field_chair_hint_key(screen_context, hud); key != "" {
+	if key := field_pod_seat_hint_key(screen_context, hud); key != "" {
 		hints := make([]Glyph_Hint, 1, context.temp_allocator)
 		hints[0] = Glyph_Hint{.Interact, text(key)}
 		return hints
@@ -922,18 +930,19 @@ inventory_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> 
 	return aimed ? "hint_open" : "hint_inventory"
 }
 
-// The aimed thing takes Interact (a switch, a crate, the pod's chair), as
-// the frame's routing reads it.
+// The aimed thing takes Interact (a switch, a crate, the pod's chair or
+// cradle), as the frame's routing reads it.
 hud_target_takes_interact :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
 	entities := &screen_context.world.entities
 	body := hud_field_player(screen_context, hud)
-	return entity_takes_interact(entities, screen_context.machines, aimed_entity(screen_context.player.target.entity, body.frame_target)) || field_chair_takes_interact(entities, screen_context.machines, body, screen_context.arrival_falling)
+	return entity_takes_interact(entities, screen_context.machines, aimed_entity(screen_context.player.target.entity, body.frame_target)) || field_pod_seat_takes_interact(entities, screen_context.machines, body, screen_context.arrival_falling)
 }
 
-// What Interact on the pod's chair says (0223): nothing outside a field
-// session or while the world falls; Unbuckle strapped in, Stand seated,
-// Sit standing aimed at the chair.
-field_chair_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> string {
+// What Interact on the pod's chair (0223) or cradle (0358) says: nothing
+// outside a field session or while the world falls; Unbuckle strapped in,
+// Stand seated, Stop waiting cradled, Sit standing aimed at the chair,
+// Wait standing aimed at the cradle.
+field_pod_seat_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> string {
 	if !hud.field_session || screen_context.arrival_falling || screen_context.world == nil {
 		return ""
 	}
@@ -943,12 +952,35 @@ field_chair_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -
 		return "hint_unbuckle"
 	case .Seated:
 		return "hint_stand"
+	case .Cradled:
+		return "hint_stop_waiting"
 	case .Standing:
 		if field_aimed_chair(&screen_context.world.entities, screen_context.machines, body.frame_target) {
 			return "hint_sit"
 		}
+		if field_aimed_cradle(&screen_context.world.entities, screen_context.machines, body.frame_target) {
+			return "hint_wait"
+		}
 	}
 	return ""
+}
+
+// The wait's line (0358): the lone unit's, or how many of the connected
+// units wait. In the temp allocator.
+hud_waiting_text :: proc(waiting, units: int) -> string {
+	if units <= 1 {
+		return text("hud_waiting")
+	}
+	line := replace_message_mark(text("hud_waiting_count"), "{waiting}", fmt.tprint(waiting))
+	return replace_message_mark(line, "{units}", fmt.tprint(units))
+}
+
+// The wait's screen (0358): the backdrop over the world and the wait's
+// line fitted and centred over the crosshair.
+draw_field_wait :: proc(state: ^Ui_State, hud: Hud_Context) {
+	ui_backdrop(state)
+	line := Ui_Rectangle{UI_PADDING, state.screen_units.y / 2 - CROSSHAIR_SIZE - UI_GAP - UI_ROW_HEIGHT, state.screen_units.x - 2 * UI_PADDING, UI_ROW_HEIGHT}
+	draw_text_fitted(state, line, hud_waiting_text(hud.wait_waiting, hud.wait_units), UI_HEADING_TEXT_SIZE, .Centre)
 }
 
 // The aimed frame cell holds a power switch, which Interact turns (0194).

@@ -30,6 +30,12 @@ import "core:math"
 // nearest dry point to the record's (new_world_home, 0180), and a place
 // that would raise ground into the spawn's capsule is refused with a
 // refusal of its own (Would_Bury_Spawn, field_place_buries_a_player).
+//
+// The wait (work item 0358): when every connected player waits in the
+// pod's charging cradle, each for WAIT_SETTLE_SECONDS at least, the day
+// moves on WAIT_HOURS and every connected cradled player stands
+// (finish_field_wait). Connected comes from the records
+// (Input_Frame.connected), so every machine decides it alike.
 
 // A torch is aimed at while the reticle's ray passes this close to its
 // sample.
@@ -37,6 +43,12 @@ FIELD_TORCH_AIM_RADIUS_MILLIMETRES :: 600
 // A new player starts this far above the cabin's floor or the generated
 // surface and drops.
 FIELD_SPAWN_CLEARANCE_MILLIMETRES :: 250
+// The wait (0358): the hours of the day's WEATHER_HOURS_PER_DAY it moves
+// on (DESIGN.md's rule, Mission Control's line), and the seconds every
+// waiting unit lies in the cradle first, so a lone unit sees the wait's
+// screen.
+WAIT_HOURS :: 8
+WAIT_SETTLE_SECONDS :: 3
 
 // The field's tables for a session (Simulation_Content.field): the
 // tuning of the planet, the spacing and the tick rate; the brushes and the
@@ -357,7 +369,7 @@ interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content,
 	return {}
 }
 
-// The chair (0223).
+// The chair (0223) and the cradle (0358).
 
 // What a Seated player's frame keeps of the actions: the inventory
 // binding at the bench opens its panel from the chair, as the HUD's Open
@@ -365,7 +377,8 @@ interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content,
 SEATED_FIELD_ACTIONS :: Action_Set{.Open_Aimed, .Toggle_Camera_Mode}
 
 // What a Strapped player's frame keeps: Open_Aimed alone, the descent
-// stays first person (0223).
+// stays first person (0223). A Cradled one's keeps the same (0358): the
+// cradle is first person too.
 STRAPPED_FIELD_ACTIONS :: Action_Set{.Open_Aimed}
 
 // A seated or strapped player's frame: no walk and no action but the
@@ -380,17 +393,18 @@ seated_field_frame :: proc(frame: Input_Frame, seat: Field_Seat) -> Input_Frame 
 	return seated
 }
 
-// Interact on the chair, never while the world falls: a strapped or
-// seated player stands whatever the aim (the chair is under them), a
-// standing one aimed at the chair sits. True when it acted.
-interact_on_field_chair :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> bool {
+// Interact on the chair or the cradle (0358), never while the world
+// falls: a strapped, seated or cradled player stands whatever the aim
+// (the chair or the cradle is under them), a standing one aimed at the
+// chair sits, aimed at the cradle waits in it. True when it acted.
+interact_on_field_pod_seat :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> bool {
 	if field_arrival_falling(state.field.arrival) || .Interact not_in frame.just_pressed {
 		return false
 	}
 	player := &state.players[index]
 	entities := &state.world.entities
 	switch player.field.seat {
-	case .Strapped, .Seated:
+	case .Strapped, .Seated, .Cradled:
 		stand_field_player_from_seat(entities, content.machines, &player.field)
 		return true
 	case .Standing:
@@ -398,19 +412,23 @@ interact_on_field_chair :: proc(state: ^Simulation_State, content: Simulation_Co
 			player.sneaking = false
 			return true
 		}
+		if field_aimed_cradle(entities, content.machines, player.field.frame_target) && cradle_field_player(entities, content.machines, content.field.tuning, &player.field, state.tick) {
+			player.sneaking = false
+			return true
+		}
 	}
 	return false
 }
 
-// One field player's part of the tick, before the drain: the chair, the
-// hotbar, the tool, the move and the queued edits and placements, the
-// hand crafting. A strapped player keeps the look and Open_Aimed alone,
-// a Seated one the camera toggle too (seated_field_frame); the hand
-// crafting runs on.
+// One field player's part of the tick, before the drain: the chair and
+// the cradle, the hotbar, the tool, the move and the queued edits and
+// placements, the hand crafting. A strapped or cradled player keeps the
+// look and Open_Aimed alone, a Seated one the camera toggle too
+// (seated_field_frame); the hand crafting runs on.
 tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
 	frame := frame
-	if interact_on_field_chair(state, content, index, frame) {
+	if interact_on_field_pod_seat(state, content, index, frame) {
 		frame.just_pressed -= {.Interact}
 		frame.pressed -= {.Interact}
 	}
@@ -454,11 +472,13 @@ field_refusal_is_news :: proc(refusal, previous: Field_Edit_Refusal, pressed: bo
 
 // Every field player in player order, then the queues drain, then the
 // refusals the drain left are told (field_refusal_is_news). inputs[index]
-// is players[index]'s; a missing one is no input.
+// is players[index]'s; a missing one is no input, and its player is not
+// connected (0358).
 tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Input_Frame) {
 	previous := make([]Field_Edit_Refusal, len(state.players), context.temp_allocator)
 	pressed := make([]bool, len(state.players), context.temp_allocator)
 	for index in 0 ..< len(state.players) {
+		state.players[index].connected = index < len(inputs) && inputs[index].connected
 		// Only the look turns a player while the world falls (0200, 0223).
 		frame := arrival_input(state.field.arrival, index < len(inputs) ? inputs[index] : Input_Frame{})
 		previous[index] = state.players[index].field_refusal
@@ -474,6 +494,7 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 	// after this step, so the fall still counts here).
 	if !field_arrival_falling(state.field.arrival) {
 		tick_pod_airlocks(&state.world.entities, content.machines, field_player_capsules(state.players[:], content.field.tuning), content.field.pod_airlock, state.tick)
+		finish_field_wait(state, content)
 	}
 	for index in 0 ..< len(previous) {
 		if refusal := state.players[index].field_refusal; field_refusal_is_news(refusal, previous[index], pressed[index]) {
@@ -489,6 +510,76 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 	// The fall's last tick: it lands, the hatches closed (0200, 0222).
 	if field_arrival_due(state.field.arrival, state.tick) {
 		land_field_arrival(state, content)
+	}
+}
+
+// The wait (0358).
+
+// The wait's counts: units, the connected players, and waiting, those of
+// them in the cradle.
+field_wait_counts :: proc(players: []Player) -> (waiting, units: int) {
+	for player in players {
+		if !player.connected {
+			continue
+		}
+		units += 1
+		if player.field.seat == .Cradled {
+			waiting += 1
+		}
+	}
+	return waiting, units
+}
+
+// The wait is due at tick: at least one unit connected, every connected
+// one in the cradle, each since settle_ticks at least.
+field_wait_due :: proc(players: []Player, tick, settle_ticks: u64) -> bool {
+	waiting, units := field_wait_counts(players)
+	if units == 0 || waiting != units {
+		return false
+	}
+	for player in players {
+		if player.connected && player.field.cradled_tick + settle_ticks > tick {
+			return false
+		}
+	}
+	return true
+}
+
+// The day's offset WAIT_HOURS of the day's WEATHER_HOURS_PER_DAY on, whole:
+// the day index (the moon's phase) and the weather's hours move on with it
+// and never back, and the readers take the time of day modulo the day
+// length. Integer.
+waited_day_offset :: proc(offset, day_length_ticks: u64) -> u64 {
+	return offset + day_length_ticks * WAIT_HOURS / WEATHER_HOURS_PER_DAY
+}
+
+// When the wait is due, the day moves on and every connected cradled
+// player stands at the cabin's spawn with a Wait_Finished event, so the
+// rule does not fire again on the next tick. A cradled entry not
+// connected stays where it lies.
+finish_field_wait :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	settle_ticks := u64(WAIT_SETTLE_SECONDS * state.tick_rate)
+	if !field_wait_due(state.players[:], state.tick, settle_ticks) {
+		return
+	}
+	state.day_offset_ticks = waited_day_offset(state.day_offset_ticks, state.day_length_ticks)
+	for &player, index in state.players {
+		if player.connected && player.field.seat == .Cradled {
+			stand_field_player_from_seat(&state.world.entities, content.machines, &player.field)
+			append(&state.events, Simulation_Event{player = index, kind = .Wait_Finished})
+		}
+	}
+}
+
+// A world loaded from disk stands every cradled player at the cabin's
+// spawn before its first tick, with no event (make_session_simulation):
+// the saved cradled_tick would fire the wait on that tick. A join snapshot
+// keeps its cradled players as the host's state holds them.
+stand_cradled_field_players :: proc(state: ^Simulation_State, machines: Machine_Registry) {
+	for &player in state.players {
+		if player.field.seat == .Cradled {
+			stand_field_player_from_seat(&state.world.entities, machines, &player.field)
+		}
 	}
 }
 

@@ -159,8 +159,8 @@ test_world_page_lines_from_facts :: proc(t: ^testing.T) {
 // feet are in the pod's sealed room; a block world says nothing of it.
 @(test)
 test_the_world_page_tells_the_sealed_room :: proc(t: ^testing.T) {
-	inside := World_Facts{field_session = true, sealed_room_inside = true, sealed_room_oxygen = .Unlimited}
-	testing.expect(t, contains_line(world_page_lines(inside), "sealed room: inside the pod, oxygen unlimited"))
+	inside := World_Facts{field_session = true, sealed_room_inside = true}
+	testing.expect(t, contains_line(world_page_lines(inside), "sealed room: inside the pod"))
 	outside := World_Facts{field_session = true}
 	testing.expect(t, contains_line(world_page_lines(outside), "sealed room: outside"))
 	for line in world_page_lines(World_Facts{}) {

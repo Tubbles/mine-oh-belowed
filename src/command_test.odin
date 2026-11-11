@@ -1124,8 +1124,28 @@ test_the_seat_command_sits_and_stands :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_player_eye(body^, test.content.field.tuning), pod_seat_eye(frame, pod, test.content.machines.machines[pod.machine]))
 	testing.expect_value(t, expect_field_command_ok(t, test, "seat stand").text, "seat standing")
 	testing.expect_value(t, body.seat, Field_Seat.Standing)
-	expect_field_command_error(t, test, "seat lie", "usage: seat <stand|sit>")
+	expect_field_command_error(t, test, "seat lie", "usage: seat <stand|sit|wait>")
 	test.session.simulation.field.arrival = {start_tick = test.session.simulation.tick, fall_ticks = 600}
 	expect_field_command_error(t, test, "seat sit", "the world is falling")
+	testing.expect_value(t, body.seat, Field_Seat.Standing)
+}
+
+// Work item 0358: seat wait puts the body in the pod's charging cradle,
+// its eye on the cradle's, and query player says so; seat stand stands
+// it; refused while the world falls.
+@(test) // slow
+test_the_seat_command_waits_in_the_cradle :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	testing.expect_value(t, expect_field_command_ok(t, test, "seat wait").text, "seat cradled")
+	testing.expectf(t, strings.contains(expect_field_command_ok(t, test, "query player").text, "\nseat cradled"), "cradled after seat wait")
+	pod, frame, found := find_pod(&test.session.simulation.world.entities, test.content.machines)
+	testing.expect(t, found)
+	body := field_command_body(test)
+	testing.expect_value(t, field_player_eye(body^, test.content.field.tuning), pod_cradle_eye(frame, pod, test.content.machines.machines[pod.machine]))
+	testing.expect_value(t, expect_field_command_ok(t, test, "seat stand").text, "seat standing")
+	testing.expect_value(t, body.seat, Field_Seat.Standing)
+	test.session.simulation.field.arrival = {start_tick = test.session.simulation.tick, fall_ticks = 600}
+	expect_field_command_error(t, test, "seat wait", "the world is falling")
 	testing.expect_value(t, body.seat, Field_Seat.Standing)
 }

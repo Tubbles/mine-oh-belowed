@@ -171,6 +171,7 @@ make_session_simulation :: proc(plan: Session_Plan, config: Game_Config, content
 	if plan.loading {
 		simulation, problem = make_simulation_from_save(world_config, start.player, simulation_content, start.landing_pad, plan.directory, plan.file)
 		if problem == "" {
+			stand_cradled_field_players(&simulation, simulation_content.machines)
 			platform.log_printf("world: loaded %q at tick %d from %s", plan.file.name, plan.file.tick, plan.directory)
 		}
 		return simulation, problem

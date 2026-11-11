@@ -42,7 +42,7 @@ World_Settings :: struct {
 	// session's recorded planet (World.planet).
 	planet_id:                  string,
 	planet_radius_metres:       int,
-	// Stored; only peaceful is in effect until the survival stats (M15).
+	// Stored; only peaceful is in effect until the charge (M15).
 	mode:                       World_Mode,
 	// Stored; read by death and respawn (M15).
 	keep_inventory:             bool,
