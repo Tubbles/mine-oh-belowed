@@ -1,6 +1,6 @@
 # 0342: The frame profiler and its views
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, ae770c5)
 
 0340's research found that nothing has ever timed a frame on the couch's GPU: the F3 frame time includes the wait for the display, and the cost items (0310, 0311, 0328) left estimates. The target (the user, 2026-11-11): 60 frames a second on average at 1080p and 60 Hz on the couch, with the view at 512 m, in split screen too, with an early game factory of a handful of machines; the Steam Deck is a target, the phone secondary.
 
