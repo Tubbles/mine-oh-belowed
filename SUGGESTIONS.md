@@ -271,11 +271,11 @@ The work the switch left that an agent would do anyway became work items on 2026
 - 0314's parity tests (bounded against unbounded generation) hold no lake chunk with tiles. The 0327 review compared 27 such chunks by probe and found them equal, so this is cover for later changes, not a known gap.
 - `test_water_tiles_keep_the_waters_across_the_seams` analyses 30 border tiles and is marked slow without a measured time under a quiet machine. If the night shows it over a minute, fewer tiles round two corners keep the same cases.
 
-## Decisions The Last Caretaker opens (2026-11-11)
+## What The Last Caretaker's decisions leave open (2026-11-11)
 
-The user named its look, the lone machine's tone, the vessel as a base and its power and cable play as influences, all four. Each meets a decision `DESIGN.md` already holds. 0353 studies the game first; these are the forks it will bring back with pictures and sources.
+The user decided the four forks: the player becomes a machine and Mission Control stays for now; the pod stays and the vehicle is built from scratch, a new one on every new planet; all power is run by hand; The Last Caretaker's look takes precedence. `DESIGN.md` holds them. What they do to the rest of the design is not decided, and 0353 brings a proposal for each:
 
-- Tone: the player is a contractor with Mission Control's corporate voice in the ear (Lore and tone). A lone machine's quiet is the opposite register. Does the player become a machine, does Mission Control fall silent for long stretches, or does only the world's mood change?
-- The base: the pod lands once and stays, and the factory grows on the ground round it. A vessel as a base moves with the player. Does the pod become a vehicle, does a later ship take that role (Space already has ships that park), or is it the pod's interior that grows? The user's direction (2026-11-11): "by vessel, we could have a land based one for now that you build up and improve like a ship of theseus". So a land vessel, improved part by part until little of the first one is left. Still open for 0353's proposal: whether it is the pod itself, whether it drives, and what of the factory rides on it against what stands on the ground.
-- Power: poles join into networks (Power). Cables run by hand from socket to socket are a different game at the small scale. Do cables replace the poles early on, with poles as the later bulk form, or sit beside them?
-- The look: Techtonica is the leading star (Art direction, user, 2026-10-05). Which of the two leads where they differ?
+- A machine and the survival stats: the suit's oxygen and food, the bed, the sealed rooms, the greenhouse and its farming were written for a human (The player, Building). Which go, which turn into a machine's needs (charge, heat, wear), and what the pod's oxygen generator becomes.
+- The vehicle: whether it drives or is moved another way, what of the factory rides on it against what stands on foundations, and what "from scratch" asks for on a second planet.
+- Hand run power at factory scale: what a cable is (length, capacity, sockets per machine), what joins many machines without a pole, what happens to the power poles the game has and to the saves that hold them. Belt and pipe poles are not power and are untouched.
+- The look: which parts of the booklet's astro-industrial punk and of Techtonica's reference stand beside The Last Caretaker's, and whether the README's line "Techtonica in space" still names the game.

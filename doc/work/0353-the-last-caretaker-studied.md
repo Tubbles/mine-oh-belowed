@@ -6,6 +6,8 @@ The user (2026-11-11) named The Last Caretaker "a new major influence and inspir
 
 The user on the vessel (2026-11-11): "we could have a land based one for now that you build up and improve like a ship of theseus". The proposal for the base starts from that: a land vessel improved part by part.
 
+The user's decisions on the four forks (2026-11-11): "Tone: player becomes a machine, mission control stays for now. Base: pod stays, the vehicle is built from scratch. New planets need new vehicles from scratch. Power: everything is hand run. Look: caretaker takes precedent". `DESIGN.md` holds them; the proposals are now for what they leave open (`SUGGESTIONS.md`, What The Last Caretaker's decisions leave open).
+
 ## Goal
 
 The four parts described from sources as the genre study of 0211 described the machines' looks, and for each a proposal of what changes in our design, for the user to decide.
