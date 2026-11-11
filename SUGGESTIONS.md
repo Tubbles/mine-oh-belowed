@@ -270,3 +270,12 @@ The work the switch left that an agent would do anyway became work items on 2026
 - `water_tiles_near` skips a face when a corner of its square lies behind it, which is why the query reach stops at 21 percent of the radius. A skip by the disc's angle from the face's axis would lift the limit. Nothing shipped needs it: the largest reach against the radius is 803 m at 4 km, 20.1 percent, so a preset under 3824 m with the shipped waters is refused at load.
 - 0314's parity tests (bounded against unbounded generation) hold no lake chunk with tiles. The 0327 review compared 27 such chunks by probe and found them equal, so this is cover for later changes, not a known gap.
 - `test_water_tiles_keep_the_waters_across_the_seams` analyses 30 border tiles and is marked slow without a measured time under a quiet machine. If the night shows it over a minute, fewer tiles round two corners keep the same cases.
+
+## Decisions The Last Caretaker opens (2026-11-11)
+
+The user named its look, the lone machine's tone, the vessel as a base and its power and cable play as influences, all four. Each meets a decision `DESIGN.md` already holds. 0353 studies the game first; these are the forks it will bring back with pictures and sources.
+
+- Tone: the player is a contractor with Mission Control's corporate voice in the ear (Lore and tone). A lone machine's quiet is the opposite register. Does the player become a machine, does Mission Control fall silent for long stretches, or does only the world's mood change?
+- The base: the pod lands once and stays, and the factory grows on the ground round it. A vessel as a base moves with the player. Does the pod become a vehicle, does a later ship take that role (Space already has ships that park), or is it the pod's interior that grows?
+- Power: poles join into networks (Power). Cables run by hand from socket to socket are a different game at the small scale. Do cables replace the poles early on, with poles as the later bulk form, or sit beside them?
+- The look: Techtonica is the leading star (Art direction, user, 2026-10-05). Which of the two leads where they differ?
