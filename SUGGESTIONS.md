@@ -280,6 +280,8 @@ Still open, each with 0353's proposal kept below:
 - The crawler: the deck is simulated in full while it drives (user, 2026-11-11: "Full physics sim on the deck"). 0353 proposed moving the crawler itself without physics, its pose set from the terrain in integers, so the lockstep holds; whether the user's words mean the crawler's own motion too is for 0357's design to put to the user. Whether the chassis kind follows the planet is open.
 - The belts where no player is: the netlists of power and pipes run at all times with the assets unloaded (user, 2026-11-11), and "Jury's still out on the conveyor belts". To decide with figures: what a belt costs a tick after 0351's gap belts, at the size of a late factory.
 - Mission Control's address for the player (a unit number or a name), and whether the system holds an earlier unit's wreck.
+- The wait: 0358 puts it at the charging cradle (every connected player in a cradle, then eight hours pass). The user's "just like a \"wait\" feature" may mean a wait from anywhere, for example the pause menu; the rule and the HUD would stay.
+- The strings still call the player "Contractor" and a note has a station of forty people (found by 0358's design): both wait for the address question above.
 - A booklet round on the stone furnace and the drill in the retro look before any model is touched.
 
 The proposals of 0353 in full, as written before the decisions:
