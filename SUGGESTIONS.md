@@ -260,3 +260,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - `landmark_sites_most` (`generation_planet_bound.odin`) walks every site cube a projected box meets. When `projected_box` answers the radius cube (a box nearer the centre than 3/4 of the radius, so a planet under about 1.1 km with deep relief) and `site_spacing_metres` is small, that is (2R / spacing)³ cubes per box: slow, never wrong. The shipped data cannot reach it (4 km and up, 448 m). If a small planet is ever shipped, the radius cube should answer a full raise and cut without the walk. Read in the code by the review, not reproduced.
 
+## Suggestions from the tree tiles' relief cost (0337, 2026-11-11)
+
+- The tree tiles' relief reads are the standing trees' own: a base and two slope probes each, the slope's two being 65 percent of a tile's reads (825k of 1.27M at the 8 km home). They fall only if the trees' bytes change: a slope taken from a coarser lattice of reads, recorded with the forest so only new worlds differ, would read about 0.1M instead (the designer's estimate from the tiles' area at an 8 m lattice, not probed), at the price of trees standing or missing where a slope crosses the limit between lattice points. Worth weighing once the night's tree line (0337, 0338) shows what the tiles still cost.
+
