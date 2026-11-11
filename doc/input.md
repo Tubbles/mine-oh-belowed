@@ -2,7 +2,7 @@
 
 How input reaches the game: devices, backends, bindings and the input frame. How the UI consumes it (focus, pointer, glyphs) is in [ui.md](ui.md); the touch screen's virtual gamepad is in [touch_overlay.md](touch_overlay.md).
 
-- Two backends: SDL3 (the desktop default, the only one that reads the Steam Controller's trackpads, gyro, grips and touch sense) and raylib (fallback, and the only one on Android). Keyboard and mouse always come from raylib, since SDL runs without video.
+- Three backends: SDL3 (the desktop default, the only one that reads the Steam Controller's trackpads, gyro, grips and touch sense), raylib (fallback, and the only one on Android) and none (the command socket's virtual devices alone, for headless runs, 0341). On the first two keyboard and mouse always come from raylib, since SDL runs without video.
 - Every control reaches the game as an action through `data/bindings.sjson`; the sticks and WASD are not bindings.
 - Each frame becomes an `Input_Frame`; the simulation reads only that frame, never the settings or the wall clock.
 - The couch runs Steam Input beside the game, so the gyro comes from Steam's layout as mouse movement while SDL reads everything else.
@@ -15,10 +15,24 @@ How input reaches the game: devices, backends, bindings and the input frame. How
 | --- | --- | --- |
 | SDL3 (`input_sdl3.odin`) | Every gamepad through `vendor:sdl3` (`sdl.Init` with the joystick and gamepad subsystems), up to `SDL3_GAMEPAD_CAPACITY` (8) open at once, each with touchpads, sensors, touch sense, its own gyro calibration and rumble | Default on the desktop; `--input=sdl3` fails instead of falling back |
 | raylib (`input_raylib.odin`) | The first of raylib's 4 gamepad slots: sticks, buttons, triggers (as buttons) | `--input=raylib`, when SDL fails to initialise, and always on Android |
+| none (`input_injected.odin`) | The command socket's virtual devices: a gamepad in SDL3's numbering, a keyboard and a mouse, set by the input commands ([commands.md](commands.md), Input) | `--input=none`, with developer mode |
 
 - The raylib backend has no paddles, MISC buttons or trackpads. It logs the bindings it cannot express once at start (`unsupported_bindings_report`), so there the hotbar radial comes only from held Tab with the right stick, the keyboard's way on either backend.
-- Both backends merge the touch overlay's gamepad into the physical one after reading it (`touch_overlay_gamepad`), so the overlay works on either.
+- Every backend merges the touch overlay's gamepad into the gamepad it reads (`touch_overlay_gamepad`), so the overlay works on each.
 - Android has no SDL: `input_sdl3.odin` is `#+build !linux:android`, `input_sdl3_android.odin` stands in and `init_sdl3_input` fails with "no SDL on Android".
+
+### The none backend
+
+`--input=none` (0341) reads no keyboard, mouse or controller, so a headless capture sees nothing of the machine's devices; the command socket's input commands are its only input.
+
+- SDL is never initialised: no joystick or gamepad subsystem, no device opened, no rumble, no pad events, and no other viewport joins.
+- No raylib reader runs (`read_raylib_gamepad`, `read_raylib_mouse`, `read_raylib_keyboard` with its character queue, `keyboard_mouse_actions`, `keyboard_move`). raylib still polls the window's events into its own state, which nothing of the game reads.
+- The first viewport's frame comes from the virtual devices alone (`read_injected_input_frame`), through `read_sdl3_input_frame`'s steps: the touch overlay merged in, the sticks through the deadzone, the bindings' tables, the edges. From there everything is a device's frame: the UI's focus, pointer and typed text, the world action guard, the tick input and the input record.
+- `input_backend` is `.Sdl3`, the virtual gamepad's numbering, so the bindings, the glyphs and the F3 Input page read as on sdl3; the page names the gamepad `Command socket`. `input_devices_off` on `Frame_Interaction` marks the backend.
+- The cursor is never disabled, so the window grabs no pointer, and there is no system keyboard: a text field draws the game's keys.
+- The touch overlay, when on, takes the virtual pointer as its touch point 0 while the virtual left button is held.
+- Glyphs start on the gamepad's (the game is gamepad first, so a capture shows what the couch shows). A held key, a pointer move or a click switches to the keyboard's and mouse's, a button edge or a stick past the deadzone back (a trigger does not: `detect_input_device` reads button edges and the first four axes, as for a real pad); typed text and releases change nothing. `GUIDE` is bound to nothing, so `press gamepad GUIDE` switches back without an action.
+- It needs developer mode (the socket is its only input) and the socket, which the Windows build lacks: either missing exits 2. Android never sees the flag.
 
 ## The input frame
 
@@ -26,7 +40,7 @@ Rule: the input layer puts everything the simulation needs into `Input_Frame`, a
 
 - `move` (x right, y forward), `look` (stick rate, y up) and `look_delta` (pointer pixels in window coordinates, y down; mouse, right trackpad and gyro add into it), `pressed` and `just_pressed` action sets.
 - `apply_hold_settings` sets `sneak_toggles` and `sprint_holds`; `world_input` sets `developer` and `world_blocked`; the touch overlay sets `aim_direction` with `aim_overrides`.
-- Frames and ticks run at different rates. `Tick_Input_Accumulator` sums the events (`look_delta`, `just_pressed`, `world_blocked`) over the frames until the next tick takes them; held state (`move`, `look`, `pressed`) is read from the latest frame. While the simulation is paused the events are dropped, but a blocked frame is kept for the first tick after (`paused_frame_input`).
+- Frames and ticks run at different rates. `Tick_Input_Accumulator` sums the events (`look_delta`, `just_pressed`, `world_blocked`) over the frames until the next tick takes them; held state (`move`, `look`, `pressed`) is read from the latest frame. While the simulation is paused the events are dropped, but a blocked frame is kept for the first tick after (`paused_frame_input`). Under `--input=none` while only the command socket's `pause` holds the ticks the events wait for the tick command's first tick instead (`frame_events_dropped`, [commands.md](commands.md), Input).
 - While a screen is open the world gets none of `WORLD_ACTIONS`. A world action still held when the screen closes stays hidden until released (`update_world_action_guard`), so the A that picked Resume does not also jump.
 - `STICK_DEADZONE` (0.15) is radial on both sticks; a trigger presses past `TRIGGER_PRESS_THRESHOLD` (0.5).
 

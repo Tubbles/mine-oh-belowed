@@ -26,7 +26,9 @@ import "platform"
 // pausing screen) in a session without other machines they run at once.
 // The frame loop owns what the simulation cannot do itself: running ticks
 // fast (tick), holding them (pause), saving and screenshots; those
-// commands set Command_Control, which the loop reads.
+// commands set Command_Control, which the loop reads. The input commands
+// (command_input.odin, 0341) are neither kind: they set the virtual
+// devices the frames read under --input=none.
 
 // The most ticks one tick command runs: a little over four and a half
 // hours of game time at 60 ticks per second.
@@ -54,6 +56,12 @@ Command_Control :: struct {
 	line_waiting:    bool,
 	line_client:     u64,
 	screenshot_path: string,
+	// An input command (command_input.odin) waits until a frame's UI saw
+	// its last change; later lines wait behind it. input_answer is owned
+	// and freed when the loop answers (answer_input_command).
+	input_waiting:   bool,
+	input_client:    u64,
+	input_answer:    string,
 }
 
 // simulation is nil without a world. content has the world's generator
@@ -84,6 +92,9 @@ Command_Context :: struct {
 	// builds its modules on the block floor beside the field
 	// (benchmark_factory.odin). The socket's lines never set it.
 	block_forms:          bool,
+	// The first viewport's virtual devices and UI for the input commands
+	// and query ui (work item 0341); zero in a tick's context.
+	input:                Command_Input_Context,
 }
 
 // text may hold several lines. deferred: the tick command answers once
@@ -134,8 +145,16 @@ command_usages := [?]Command_Usage {
 	{"save", "save the world"},
 	{"reload", "reload the content tables into the running world"},
 	{"screenshot [name]", "a PNG of the next frame, the answer names the path"},
+	{PRESS_USAGE, "--input=none: the action's control or the control down for the frames (1 by default), answer once the UI saw it go up"},
+	{HOLD_USAGE, "--input=none: the control down until released"},
+	{RELEASE_USAGE, "--input=none: the control up, or every control up and the sticks and triggers at rest"},
+	{STICK_USAGE, "--input=none: the stick at x right and y up, each -1 to 1, held until set again"},
+	{TRIGGER_USAGE, "--input=none: the trigger at 0 to 1, held until set again"},
+	{POINTER_USAGE, "--input=none: the mouse to the render pixel, a mouse's move"},
+	{TYPE_USAGE, "--input=none: printable ASCII into the open text field, 16 characters a frame"},
 	{"query player|world|quests|contracts", "state as key value lines"},
 	{"query textures", "each procedural texture's current parameters in data/textures/procedural.sjson's form"},
+	{"query ui", "the first viewport's screens, glyph device, pointer, focus, text field and input backend"},
 	{"query veins [radius] | query entities [kind] [radius] | query frames [radius] | query stats <item>", "state around the player, or of an item"},
 }
 
@@ -284,6 +303,10 @@ serve_command_request :: proc(command_context: Command_Context, request: Develop
 
 execute_command :: proc(command_context: Command_Context, words: []string) -> Command_Response {
 	name, arguments := words[0], words[1:]
+	// The input commands and query ui need no world (0341).
+	if command_reads_input(name) {
+		return execute_input_command(command_context, name, arguments)
+	}
 	switch name {
 	case "help":
 		return command_help()
@@ -300,6 +323,9 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 		// The textures exist without a world.
 		if len(arguments) > 0 && arguments[0] == "textures" {
 			return query_textures(command_context, arguments[1:])
+		}
+		if len(arguments) > 0 && arguments[0] == "ui" {
+			return query_ui(command_context.input, arguments[1:])
 		}
 	}
 	if command_context.simulation == nil || command_context.player < 0 || command_context.player >= len(command_context.simulation.players) {
@@ -1058,7 +1084,7 @@ command_query :: proc(command_context: Command_Context, arguments: []string) -> 
 	case "frames":
 		return command_error(NO_FIELD_WORLD_PROBLEM)
 	}
-	return usage_error("query player|world|veins|entities|frames|quests|contracts|stats|textures")
+	return usage_error("query player|world|veins|entities|frames|quests|contracts|stats|textures|ui")
 }
 
 // One line per procedural texture in the data file's form, the texture

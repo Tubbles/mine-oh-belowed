@@ -1,6 +1,6 @@
 # 0341: Input injected through the command socket
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-11)
 
 A headless session is framed through the command socket (0183), but a screen the commands do not reach (a menu, a panel, the inventory view) is still driven by `xdotool` sending keys and mouse moves into the virtual display, and the session reads whatever controller is plugged into the machine: on 2026-11-11 a capture came out with the inventory open because the user played another game with the same controller. The user (2026-11-11): headless runs "should not" read any physical controller, "it shouldn't respond to keyboard and mouse either. Only injected commands make sense", and "let's shed the xdotool dependency and have the game have a way to inject instead, like a command socket API".
 
@@ -35,7 +35,7 @@ Rejected:
 - Actions pressed into the frame (`apply_touch_overlay_hotbar`'s way): no control behind them, so Confirm comes without the Jump its button also carries, and every raw reader (typed text, Enter and Backspace, the pointer, the glyph device) needs a path of its own.
 - A virtual gamepad alone (the touch overlay's seam): no text, no pointer, no keyboard-only action (Open_Recipes, the F keys, Hotbar_Slot_N), so a second seam is needed anyway.
 
-Glyphs: the virtual gamepad is not `on_screen`, so `detect_input_device` reads it as any pad: a button or trigger edge, or a stick past the deadzone, shows the gamepad's glyphs; a held key, a pointer move or a click shows the keyboard's and mouse's. Typed text and releases change nothing. Before the first input the UI's default holds (`Keyboard_Mouse`). `press gamepad GUIDE`, bound to nothing in `data/bindings.sjson`, turns the gamepad's glyphs on without an action (question 1).
+Glyphs: the virtual gamepad is not `on_screen`, so `detect_input_device` reads it as any pad: a button edge or a stick past the deadzone shows the gamepad's glyphs, a trigger does not (it reads button edges and the first four axes); a held key, a pointer move or a click shows the keyboard's and mouse's. Typed text and releases change nothing. Before the first input the UI's default holds (`Keyboard_Mouse`). `press gamepad GUIDE`, bound to nothing in `data/bindings.sjson`, turns the gamepad's glyphs on without an action (question 1).
 
 ### The none backend
 
@@ -226,3 +226,7 @@ Shipped bindings through `shipped_default_bindings(t)`, tables from `build_input
 1. `--input=none` starts on the gamepad's glyphs: the game is gamepad first and a capture should show what the couch shows. A held key, a pointer move or a click switches to the keyboard's and mouse's as on a device, and `press gamepad GUIDE` back. A test asserts the glyph device before the first injected input.
 2. The capture recipe is as written. The memory note is the main agent's at the landing.
 3. Every build or test run of the implementer goes inside `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0`.
+
+### Deviations (implementation, 2026-11-11)
+
+- `doc/commands.md`: each input command's bounds stand in its row of the Commands table, as every other command's do, and `## Input` holds the targets, the rules, the errors, `query ui` and Timing without repeating them (one place per fact).

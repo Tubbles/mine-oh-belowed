@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 282 files under `src/` plus 202 test files beside them. 256 are the `game` package, grouped into seven clusters; 26 are eight leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 284 files under `src/` plus 204 test files beside them. 258 are the `game` package, grouped into seven clusters; 26 are eight leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -11,13 +11,13 @@ The entry page for the source: 282 files under `src/` plus 202 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network, the LAN discovery and the server, the requests served between frames | `loop.odin` | 16 | 7914 | [loop](audit/loop.md) |
-| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 50 | 17617 | [ui](audit/ui.md) |
+| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network, the LAN discovery and the server, the requests served between frames | `loop.odin` | 16 | 8040 | [loop](audit/loop.md) |
+| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 51 | 17917 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 54 | 18400 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 54 | 21665 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 47 | 12120 | [presentation](audit/presentation.md) |
-| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 18 | 6292 | [content](audit/content.md) |
-| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 9 | 4602 | [loop](audit/loop.md), [content](audit/content.md) |
+| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 18 | 6295 | [content](audit/content.md) |
+| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 10 | 4974 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write, the TCP transport and the LAN discovery's UDP, the stop signal | `logging.odin` | 19 | 1843 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 79 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
@@ -93,6 +93,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `ui_font.odin`, `ui_theme.odin`, `ui_format.odin`: fonts and `Font_Cache`; the theme loader and icon names; one formatter per unit and `format_game_time`.
   - `input_actions.odin`: `Action`, `Raw_Input`, `Input_Frame`, `Tick_Input_Accumulator`, gyro calibration.
   - `input_raylib.odin`, `input_sdl3.odin`, `input_sdl3_android.odin`: the raylib backend with keyboard and mouse; the SDL3 backend; its Android stubs.
+  - `input_injected.odin`: the none backend (0341), `Injected_Input`, the command socket's virtual gamepad, keyboard and mouse, read as a device's frame by `read_injected_input_frame`.
   - `bindings.odin`, `ui_input.odin`: the bindings file and `Input_Bindings`; `make_ui_input`, device detection.
   - `text_input.odin`, `ui_keyboard.odin`: `Text_Field` and `Keyboard_State`; the text field widget and the game's keyboard.
   - `ui_screens.odin`: `Frame_Request` (what a screen asks of the loop), `Screen_Context` and `Developer_Context`, `handle_screen_keys`, `run_screens`, the pause menu, settings.
@@ -290,11 +291,12 @@ The developer's and the assistant's instruments: they drive, inspect or measure 
 - Files in reading order:
   - `command.odin`: the command protocol, usage rows, blueprints, queries ([commands.md](commands.md)).
   - `command_field.odin`: the field world's forms of the commands and queries (0183).
+  - `command_input.odin`: the input commands that set the virtual devices and `query ui` (0341).
   - `command_socket.odin`, `command_socket_posix.odin`, `command_socket_windows.odin`: paths and `Queued_Command_Line`; the Unix socket and `Command_Server`; the Windows stub.
   - `diagnostics.odin`: `Render_Facts`, `World_Facts`, `Diagnostics_Context`, `Frame_Time_Ring`, the diagnostics pages and world overlay.
   - `data_browser.odin`, `data_export.odin`: `Data_Browser`, the Data files screen's trees and edits; the export.
   - `benchmark_factory.odin`: the factory benchmark, a second driver of `simulation_tick`.
-- State: `Command_Context`, `Command_Server`, `Data_Browser`, `Frame_Time_Ring`; they live on `Frame_State` or the stack of a run.
+- State: `Command_Context` (with `Command_Input_Context`), `Command_Server`, `Data_Browser`, `Frame_Time_Ring`; they live on `Frame_State` or the stack of a run.
 - Tests: every `*_test.odin` beside its file; `benchmark_test.odin` runs sizes 1 and 4 and requires no idle machine.
 - Reaches into: loop 3 (accepted: `session_generator`, `parse_seed`, `BUILD_STAMP`).
 

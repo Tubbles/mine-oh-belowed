@@ -1951,7 +1951,10 @@ read_touch_overlay_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_
 	screen_size := render_size()
 	screen := [2]f32{f32(screen_size.x), f32(screen_size.y)}
 	buffer: [TOUCH_POINT_CAPACITY]Touch_Point
-	frame := touch_overlay_frame(&touch_context.interaction.touch_overlay, frame_touch_layout(touch_context), read_touch_points(buffer[:]), screen, !ui_blocks_world(touch_context.ui.screens), touch_interaction_frame(touch_context))
+	// Under --input=none the socket's pointer is the touch (0341).
+	interaction := touch_context.interaction
+	points := interaction.input_devices_off ? injected_touch_points(interaction.injected, buffer[:]) : read_touch_points(buffer[:])
+	frame := touch_overlay_frame(&interaction.touch_overlay, frame_touch_layout(touch_context), points, screen, !ui_blocks_world(touch_context.ui.screens), touch_interaction_frame(touch_context))
 	frame.output.look_delta = render_pixels_to_window_units(frame.output.look_delta, cursor_window_size(), screen_size)
 	if frame.output.aims {
 		simulation := &touch_context.session.simulation

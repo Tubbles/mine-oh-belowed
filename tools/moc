@@ -7,12 +7,27 @@ developer mode (--dev or the developer_mode setting).
   tools/moc <words...>          one command, prints the response
   tools/moc -                   one command per stdin line, each response printed
   tools/moc blueprint <path>    the blueprint command with an absolute path
+  tools/moc --until <regular expression> <words...>
+                                one command, sent again after each answer
+                                until a line of an answer matches
+                                (re.search), at most 600 times; prints the
+                                last answer
 
-Exit status: 0 when every response is ok, 1 when one is an error, 2 when
-the socket is missing or refuses the connection.
+Started with --input=none (work item 0341) the game reads no keyboard,
+mouse or controller, only the input commands press, hold, release,
+stick, trigger, pointer and type (doc/commands.md, Input), and query ui
+reads its screens. The game reads the socket once a frame, so each try
+of --until lands in a later frame: tools/moc --until '^top recipes$'
+query ui waits for a screen without a sleep.
+
+Exit status: 0 when every response is ok (--until: on a match), 1 when
+one is an error (--until: or when the tries ran out), 2 when the socket
+is missing or refuses the connection (--until: or the expression is
+bad).
 """
 
 import os
+import re
 import shlex
 import socket
 import sys
@@ -20,6 +35,8 @@ import sys
 GAME_DIRECTORY_NAME = "mine-oh-belowed"
 SOCKET_FILE_NAME = "command.sock"
 TERMINATOR = "."
+# The most times --until sends its command.
+UNTIL_TRIES = 600
 
 
 def socket_path(environment):
@@ -98,16 +115,51 @@ def send_lines(path, lines):
     return status
 
 
+def send_until(path, line, expression):
+    """Sends the line again after each answer until a line of an answer
+    matches the expression; prints the last answer. An error answer ends
+    it at once."""
+    client = connect(path)
+    with client:
+        reader = Response_Reader(client)
+        response = ""
+        for _ in range(UNTIL_TRIES):
+            client.sendall((line + "\n").encode("utf-8"))
+            response = reader.read()
+            if not response.startswith("ok"):
+                print(response, flush=True)
+                return 1
+            if any(expression.search(response_line) for response_line in response.split("\n")):
+                print(response, flush=True)
+                return 0
+        print(response, flush=True)
+        print(f"moc: no answer matched {expression.pattern!r} in {UNTIL_TRIES} tries", file=sys.stderr)
+        return 1
+
+
 def main(arguments):
     if not arguments or arguments[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0 if arguments else 2
     path = socket_path(os.environ)
-    if arguments == ["-"]:
+    expression = None
+    if arguments[0] == "--until":
+        if len(arguments) < 3:
+            print("moc: --until takes a regular expression and a command", file=sys.stderr)
+            return 2
+        try:
+            expression = re.compile(arguments[1])
+        except re.error as error:
+            print(f"moc: bad regular expression {arguments[1]!r}: {error}", file=sys.stderr)
+            return 2
+        arguments = arguments[2:]
+    if arguments == ["-"] and expression is None:
         lines = [line.rstrip("\n") for line in sys.stdin]
     else:
         lines = [command_line(arguments)]
     try:
+        if expression is not None:
+            return send_until(path, lines[0], expression)
         return send_lines(path, lines)
     except (ConnectionError, OSError) as error:
         print(f"moc: {error}", file=sys.stderr)

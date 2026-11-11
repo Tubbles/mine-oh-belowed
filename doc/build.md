@@ -122,7 +122,7 @@ Parsed with `core:flags` in Unix style; `--help` or `-h` prints the usage page. 
 | `config` | Prints the configuration files found and the effective values, no window |
 | `--version` | Prints the build stamp, no window |
 | `--set=<key>=<value>` | The last configuration layer, repeatable |
-| `--input=sdl3`, `--input=raylib` | Input backend (default SDL3 with raylib fallback; [input.md](input.md)) |
+| `--input=sdl3`, `--input=raylib`, `--input=none` | Input backend (default SDL3 with raylib fallback); `none` reads no device, only the command socket's input commands, and needs developer mode ([input.md](input.md), The none backend); the planet preview reads raylib's devices directly and takes no `--input` |
 | `--seed=<n>` | Seed of a new world, an unsigned 64 bit decimal; the default is a fixed constant, so runs reproduce |
 | `--name=<world>`, `--load=<world>` | Name a new world, or load a saved one |
 | `--debug-terrain` | The fixed 8 by 2 by 8 chunk test terrain, nothing streams |
@@ -270,7 +270,7 @@ Gotcha: raylib's release library is built for the dynamic C runtime (`/DEFAULTLI
 
 ### What the Windows build lacks
 
-- The command socket: `COMMAND_SOCKET_SUPPORTED` is false, so developer mode opens none and logs nothing about it (0108); `tools/moc` is Linux only.
+- The command socket: `COMMAND_SOCKET_SUPPORTED` is false, so developer mode opens none and logs nothing about it (0108); `tools/moc` is Linux only, and `--input=none`, whose only input is the socket, exits 2 (0341).
 - The stderr redirect into the log and the raw back trace on SIGSEGV or SIGILL; an assertion or panic of the main thread still logs its back trace.
 - The couch launcher and the play build installer (Linux only).
 - Testing here: the build runs only on the phone; this machine checks the target with `./build.sh check-windows`.

@@ -80,6 +80,13 @@ Frame_Interaction :: struct {
 	input_backend:      Input_Backend,
 	// Every open gamepad (input_sdl3.odin); each viewport reads its own.
 	sdl3_input:         Sdl3_Input_State,
+	// The command socket's virtual devices (input_injected.odin, 0341),
+	// which the first viewport reads under --input=none.
+	injected:           Injected_Input,
+	// --input=none (0341): input_backend is then only the virtual
+	// gamepad's numbering (.Sdl3), SDL is not initialised and no device is
+	// read, so nothing that calls SDL or reads raylib's input may run.
+	input_devices_off:  bool,
 	// The touch overlay's fingers (touch_overlay.odin), and --touch-overlay.
 	// It drives the first viewport.
 	touch_overlay:        Touch_Overlay_State,
@@ -270,7 +277,8 @@ frame_touch_overlay_on :: proc(state: ^Frame_State) -> bool {
 }
 
 // The viewport's device: the first reads the keyboard, the mouse and the
-// touch overlay besides its pad.
+// touch overlay besides its pad. Under --input=none the first reads the
+// command socket's virtual devices alone and any other nothing (0341).
 read_input_frame :: proc(state: ^Frame_State, index: int, frame_seconds: f32) -> Input_Frame {
 	viewport := &state.viewports[index]
 	overlay: Touch_Overlay_Frame
@@ -279,10 +287,14 @@ read_input_frame :: proc(state: ^Frame_State, index: int, frame_seconds: f32) ->
 	}
 	frame: Input_Frame
 	previous := viewport.interaction.input
-	switch state.interaction.input_backend {
-	case .Sdl3:
+	switch {
+	case state.interaction.input_devices_off && index == 0:
+		frame = read_injected_input_frame(state.interaction.injected, previous.pressed, state.interaction.input_bindings, overlay)
+		advance_injected_input(&state.interaction.injected)
+	case state.interaction.input_devices_off:
+	case state.interaction.input_backend == .Sdl3:
 		frame = read_sdl3_input_frame(&state.interaction.sdl3_input, viewport.gamepad, viewport.keyboard_mouse, previous, frame_seconds, state.settings, state.interaction.input_bindings, overlay)
-	case .Raylib:
+	case state.interaction.input_backend == .Raylib:
 		frame = read_raylib_input_frame(previous.pressed, state.interaction.input_bindings, overlay)
 	}
 	frame = apply_touch_overlay_jump(apply_touch_overlay_hotbar(apply_touch_overlay_aim(frame, overlay), overlay), overlay)
@@ -293,11 +305,21 @@ read_input_frame :: proc(state: ^Frame_State, index: int, frame_seconds: f32) ->
 	return frame
 }
 
+// --input=none (0341): the frames read the command socket's virtual
+// devices alone, and the glyphs start on the gamepad's (the game is
+// gamepad first, so a capture shows what the couch shows) until an
+// injected key, pointer move or click switches them.
+turn_input_devices_off :: proc(state: ^Frame_State) {
+	state.interaction.input_devices_off = true
+	primary_ui(state).active_device = .Gamepad
+}
+
 // Lost pads leave their viewports waiting; a pad no viewport reads may
 // take one or join (pad_claim). Only the SDL3 backend tells pads apart;
-// the raylib backend's pad is the first viewport's.
+// the raylib backend's pad is the first viewport's. Without SDL
+// (--input=none) no pad joins.
 update_viewport_pads :: proc(state: ^Frame_State) {
-	if state.interaction.input_backend != .Sdl3 {
+	if state.interaction.input_backend != .Sdl3 || state.interaction.input_devices_off {
 		return
 	}
 	sdl3 := &state.interaction.sdl3_input
@@ -324,7 +346,11 @@ update_viewport_pads :: proc(state: ^Frame_State) {
 // The mouse steers the view while the world is shown and is free for the
 // diagnostics screen and the menus. With the touch overlay on it stays
 // free, since on the desktop the mouse is the overlay's touch point.
+// Under --input=none the window never grabs a pointer (0341).
 apply_cursor_mode :: proc(state: ^Frame_State) {
+	if state.interaction.input_devices_off {
+		return
+	}
 	wanted := state.developer.diagnostics_page != .Off || primary_ui(state).screens.count > 0 || frame_touch_overlay_on(state)
 	if wanted == state.interaction.cursor_enabled {
 		return
@@ -395,7 +421,11 @@ update_frame :: proc(state: ^Frame_State) {
 		update_joining(state)
 	}
 	serve_command_socket(state)
+	// No rumble without a device (--input=none).
 	for viewport, index in active_viewports(state) {
+		if state.interaction.input_devices_off {
+			break
+		}
 		switch state.interaction.input_backend {
 		case .Sdl3:
 			apply_sdl3_haptics(&state.interaction.sdl3_input, viewport.gamepad, viewport.interaction.haptic)
@@ -568,10 +598,11 @@ stamp_viewport_records :: proc(state: ^Frame_State, worlds: []Input_Frame) -> bo
 }
 
 // A pause command holds the ticks like a pausing screen, and a tick
-// command replaces the frame's ticks with its own (run_command_ticks),
-// both only without other machines. The frame's ticks go through the
-// lockstep driver (lockstep.odin): each viewport stamps a local input
-// record for its player, the records go out and come back
+// command replaces the frame's ticks with its own (run_command_ticks, or
+// run_command_input_ticks with the first viewport's input under
+// --input=none), both only without other machines. The frame's ticks go
+// through the lockstep driver (lockstep.odin): each viewport stamps a
+// local input record for its player, the records go out and come back
 // (session_network.odin), and every tick whose records are there runs,
 // once for the frame however many viewports feed it.
 // The frame's ticks stand: only offline, and only for the first
@@ -582,6 +613,13 @@ session_ticks_held :: proc(state: ^Frame_State) -> bool {
 	return offline && (ui_pauses_simulation(state.viewports[0].interaction.ui.screens) || state.developer.command_control.paused)
 }
 
+// The frames' events (presses, pointer moves) are dropped while the ticks
+// are held, except under --input=none while only the socket's pause holds
+// them: there they wait for the tick command's first tick (0341).
+frame_events_dropped :: proc(holding, pausing_screen, devices_off: bool) -> bool {
+	return holding && (pausing_screen || !devices_off)
+}
+
 update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	session := state.session
 	lockstep, simulation := &session.lockstep, &session.simulation
@@ -589,11 +627,12 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	offline := session_alone(session.network)
 	holding := session_ticks_held(state)
 	fast := offline && state.developer.command_control.pending_ticks > 0
+	dropped := frame_events_dropped(holding, ui_pauses_simulation(state.viewports[0].interaction.ui.screens), state.interaction.input_devices_off)
 	worlds: [MAXIMUM_VIEWPORTS]Input_Frame
 	for &viewport, index in active_viewports(state) {
 		worlds[index] = viewport_world_input(state, viewport)
 		apply_field_light_actions(state, &viewport, worlds[index])
-		viewport.tick_input = holding ? paused_frame_input(viewport.tick_input, worlds[index]) : accumulate_frame_input(viewport.tick_input, worlds[index])
+		viewport.tick_input = dropped ? paused_frame_input(viewport.tick_input, worlds[index]) : accumulate_frame_input(viewport.tick_input, worlds[index])
 	}
 	tick_count: int
 	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), holding || fast)
@@ -615,12 +654,16 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	}
 	exchange_session_records(session, content)
 	ran += run_ready_ticks(session, content, &state.developer.command_control, &answers)
-	send_line_answers(state, answers[:])
 	// A machine that joined during the exchange runs from the join tick
 	// on, so the tick command's ticks without records stop here.
 	if fast && session_alone(session.network) {
-		ran += run_command_ticks(state, content)
+		if state.interaction.input_devices_off {
+			ran += run_command_input_ticks(state, content, worlds[:state.viewport_count], &answers)
+		} else {
+			ran += run_command_ticks(state, content)
+		}
 	}
+	send_line_answers(state, answers[:])
 	rebuild_prediction(lockstep, simulation, content)
 	session.stalled_frames = stalled_frames_after(session.stalled_frames, ran, session.chunk_stalled)
 	state.frame_tick_count = ran
@@ -1823,6 +1866,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		// raylib starts with the cursor shown; the first apply hides it.
 		cursor_enabled  = true,
 	}
+	if player_configuration.input_devices_off {
+		turn_input_devices_off(state)
+	}
 	state.presentation = {
 		renderer        = renderer,
 		window_settings = window_settings,
@@ -1867,12 +1913,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_item_atlas(&state.presentation.ui_icon_atlas)
 	defer destroy_title_state(&state.interaction.title)
 	defer write_changed_settings(state)
-	defer if input_backend == .Sdl3 {
+	defer if input_backend == .Sdl3 && !player_configuration.input_devices_off {
 		shutdown_sdl3_input(&state.interaction.sdl3_input)
 	}
 	state.interaction.vibrator = start_vibrator()
 	defer stop_vibrator(&state.interaction.vibrator)
-	state.interaction.system_keyboard_available = system_keyboard_available()
+	state.interaction.system_keyboard_available = !player_configuration.input_devices_off && system_keyboard_available()
 	platform.log_printf("keyboard: system keyboard %s", state.interaction.system_keyboard_available ? "available" : "not available")
 	defer destroy_chunk_renderer(&state.presentation.renderer)
 	state.presentation.item_atlas = upload_item_atlas(&state.content.items, data_directory)
@@ -2010,6 +2056,7 @@ destroy_command_frame_state :: proc(state: ^Frame_State) {
 	delete(state.developer.command_socket_path)
 	delete(state.developer.screenshot_directory)
 	delete(state.developer.command_control.screenshot_path)
+	delete(state.developer.command_control.input_answer)
 }
 
 // Listens while developer mode is on (--dev or the setting), and stops
@@ -2035,8 +2082,10 @@ update_command_server_open :: proc(state: ^Frame_State) {
 	}
 }
 
-// After the frame's ticks: answers a tick command whose ticks ran, then
-// executes the queued lines in order until one starts a tick command.
+// After the frame's ticks: answers a tick command whose ticks ran and an
+// input command whose change the UI saw, then executes the queued lines
+// in order until one waits (a tick command, a line for the simulation,
+// an input command).
 serve_command_socket :: proc(state: ^Frame_State) {
 	update_command_server_open(state)
 	server := &state.developer.command_server
@@ -2045,7 +2094,9 @@ serve_command_socket :: proc(state: ^Frame_State) {
 	}
 	poll_command_server(server)
 	answer_command_ticks(state)
-	for !state.developer.command_control.ticks_waiting && !state.developer.command_control.line_waiting {
+	answer_input_command(state)
+	control := &state.developer.command_control
+	for !control.ticks_waiting && !control.line_waiting && !control.input_waiting {
 		queued := take_command_line(server) or_break
 		execute_queued_command(state, queued)
 		delete(queued.line)
@@ -2082,6 +2133,18 @@ answer_command_ticks :: proc(state: ^Frame_State) {
 	}
 }
 
+// An input command answers once the frames settled: a read took its last
+// change and the UI pass after that read ran (injected_input_settled).
+answer_input_command :: proc(state: ^Frame_State) {
+	control := &state.developer.command_control
+	if !control.input_waiting || !injected_input_settled(state.interaction.injected) {
+		return
+	}
+	send_logged_response(state, control.input_client, "input", command_ok("%s", control.input_answer))
+	delete(control.input_answer)
+	control.input_waiting, control.input_client, control.input_answer = false, 0, ""
+}
+
 send_logged_response :: proc(state: ^Frame_State, client: u64, line: string, response: Command_Response) {
 	text := format_command_response(response)
 	log_command_exchange(line, text)
@@ -2095,6 +2158,7 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 		textures             = state.developer.texture_editor.entries[:],
 		screenshot_directory = state.developer.screenshot_directory,
 		now                  = time.now(),
+		input                = {&state.interaction.injected, primary_ui(state), state.interaction.bindings, state.interaction.input_backend, state.interaction.input_devices_off, render_size()},
 	}
 	if state.session != nil {
 		command_context.simulation = &state.session.simulation
@@ -2107,7 +2171,8 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 }
 
 // save and reload need the session and the game content, the rest runs
-// in command.odin. A tick command answers later (answer_command_ticks).
+// in command.odin. A tick command answers later (answer_command_ticks),
+// as does an input command (answer_input_command).
 execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line) {
 	words, _ := split_command_words(queued.line)
 	response: Command_Response
@@ -2135,7 +2200,11 @@ execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line)
 	}
 	if response.deferred {
 		platform.log_printf("command: %s", queued.line)
-		state.developer.command_server.tick_client = queued.client
+		if command_reads_input(words[0]) {
+			state.developer.command_control.input_client = queued.client
+		} else {
+			state.developer.command_server.tick_client = queued.client
+		}
 		return
 	}
 	send_logged_response(state, queued.client, queued.line, response)
@@ -2193,6 +2262,33 @@ run_command_ticks :: proc(state: ^Frame_State, content: Simulation_Content) -> i
 		release_local_commands(&state.session.lockstep, &state.session.simulation)
 		run_command_tick(&state.session.simulation, content, &state.developer.command_control)
 		count += 1
+	}
+	return count
+}
+
+// A tick command's ticks under --input=none (0341), each from the first
+// viewport's world input the way a frame's ticks run: a stamped record
+// per tick, the held controls on every tick and the waiting events on the
+// first. So hold, tick n and release hold a control for exactly n ticks.
+// The wall budget and the chunk wait are run_command_ticks'. Returns how
+// many ran.
+run_command_input_ticks :: proc(state: ^Frame_State, content: Simulation_Content, worlds: []Input_Frame, answers: ^[dynamic]Line_Answer) -> int {
+	session, control := state.session, &state.developer.command_control
+	start := time.tick_now()
+	count := 0
+	for control.pending_ticks > 0 && time.tick_since(start) < COMMAND_TICK_WALL_BUDGET {
+		if !simulated_chunks_ready(&session.simulation) {
+			break
+		}
+		// False while the next record still waits to run.
+		stamp_viewport_records(state, worlds)
+		deliver_records_alone(session)
+		ran := run_ready_ticks(session, content, control, answers)
+		if ran == 0 {
+			break
+		}
+		control.pending_ticks = max(control.pending_ticks - ran, 0)
+		count += ran
 	}
 	return count
 }

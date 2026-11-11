@@ -29,6 +29,9 @@ Input_Backend_Request :: enum u8 {
 	Automatic,
 	Sdl3,
 	Raylib,
+	// --input=none (0341): no device, only the command socket's input
+	// commands.
+	None,
 }
 
 // Every field is a flag. core:flags turns underscores into dashes; the name
@@ -39,7 +42,7 @@ Command_Line :: struct {
 	subcommand:      string `args:"pos=0" usage:"config: print the configuration files found and the effective values, then exit"`,
 	show_version:    bool `args:"name=version" usage:"print the version and exit"`,
 	set_assignments: [dynamic]string `args:"name=set" usage:"<key>=<value>, the last configuration layer, repeatable (--set=settings.ui_scale=1.25)"`,
-	input:           string `usage:"input backend: sdl3 or raylib (default: SDL3 with raylib fallback)"`,
+	input:           string `usage:"input backend: sdl3, raylib or none (only the command socket's input commands, needs developer mode); default SDL3 with raylib fallback"`,
 	seed:            string `usage:"seed of a new world, an unsigned 64 bit decimal"`,
 	load_name:       string `args:"name=load" usage:"load the saved world with this name"`,
 	world_name:      string `args:"name=name" usage:"name of a new world"`,
@@ -176,6 +179,8 @@ parse_input_request :: proc(value: string) -> (request: Input_Backend_Request, o
 		return .Sdl3, true
 	case "raylib":
 		return .Raylib, true
+	case "none":
+		return .None, true
 	}
 	return .Automatic, false
 }
@@ -212,7 +217,7 @@ command_line_value_problem :: proc(command_line: Command_Line) -> string {
 		return fmt.tprintf("invalid seed %q (expected an unsigned 64 bit integer, for example --seed=12345)", command_line.seed)
 	}
 	if _, ok := parse_input_request(command_line.input); !ok {
-		return fmt.tprintf("unknown input backend %q (supported: --input=sdl3, --input=raylib)", command_line.input)
+		return fmt.tprintf("unknown input backend %q (supported: --input=sdl3, --input=raylib, --input=none)", command_line.input)
 	}
 	if command_line.subcommand != "" && command_line.subcommand != CONFIG_SUBCOMMAND {
 		return fmt.tprintf("unknown command %q (supported: %s)", command_line.subcommand, CONFIG_SUBCOMMAND)
@@ -274,6 +279,12 @@ command_line_developer_requests :: proc(requests: ^[dynamic]Developer_Request, c
 start_input_backend :: proc(request: Input_Backend_Request) -> (backend: Input_Backend, ok: bool) {
 	reset_raylib_pointer_position()
 	reset_raylib_typed_text()
+	// SDL is never initialised; .Sdl3 is only the virtual gamepad's
+	// numbering (0341).
+	if request == .None {
+		platform.log_printf("input: none backend (requested with --input=none): no keyboard, mouse or controller is read, only the command socket's input commands")
+		return .Sdl3, true
+	}
 	if request == .Raylib {
 		platform.log_printf("input: raylib backend (requested with --input=raylib)")
 		return .Raylib, true
@@ -289,6 +300,20 @@ start_input_backend :: proc(request: Input_Backend_Request) -> (backend: Input_B
 	}
 	platform.log_printf("input: raylib backend (SDL3 failed to initialise: %s)", error_message)
 	return .Raylib, true
+}
+
+// --input=none reads only the command socket, so it needs the socket
+// (not on Windows) and developer mode, which opens it.
+input_none_problem :: proc(request: Input_Backend_Request, developer_flag, developer_setting, socket_supported: bool) -> string {
+	switch {
+	case request != .None:
+		return ""
+	case !socket_supported:
+		return "--input=none reads only the command socket, which the Windows build lacks"
+	case !developer_flag && !developer_setting:
+		return "--input=none reads only the command socket, which needs developer mode (--dev or the Developer mode setting)"
+	}
+	return ""
 }
 
 game_main :: proc() {
@@ -330,6 +355,11 @@ game_main :: proc() {
 	if configuration_problem != "" {
 		platform.log_printf("error: %s", configuration_problem)
 		os.exit(1)
+	}
+	input_request, _ := parse_input_request(command_line.input)
+	if problem := input_none_problem(input_request, command_line.developer_mode, loaded_configuration.configuration.settings.developer_mode, COMMAND_SOCKET_SUPPORTED); problem != "" {
+		platform.log_printf("error: %s", problem)
+		os.exit(2)
 	}
 	apply_deck_preset_at_start(environment, &loaded_configuration)
 	edits_need_access := start_reachable_data_edits(loaded_configuration.configuration.settings)
@@ -391,7 +421,6 @@ game_main :: proc() {
 			queue_player_command(&session.simulation.player_commands, 0, request)
 		}
 	}
-	input_request, _ := parse_input_request(command_line.input)
 	input_backend, input_started := start_input_backend(input_request)
 	if !input_started {
 		os.exit(1)
@@ -411,6 +440,7 @@ game_main :: proc() {
 		edits_need_access = edits_need_access,
 		join_address = command_line.join_address,
 		tech_demo_menu = tech_demo_opens_menu(command_line),
+		input_devices_off = input_request == .None,
 	}
 	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
 }

@@ -207,3 +207,22 @@ test_command_line_model_workbench_flags :: proc(t: ^testing.T) {
 		testing.expectf(t, strings.has_prefix(command_line_conflict(combined), "--model-check runs no world"), "--model-check with %s accepted", other)
 	}
 }
+
+// Work item 0341: --input=none reads only the command socket, so it
+// needs the socket and developer mode from the flag or the setting.
+@(test)
+test_input_none_is_parsed_and_needs_developer_mode_and_the_socket :: proc(t: ^testing.T) {
+	request, ok := parse_input_request("none")
+	testing.expect(t, ok)
+	testing.expect_value(t, request, Input_Backend_Request.None)
+	none, none_error := parse_command_line({"--input=none"})
+	testing.expect_value(t, none_error, nil)
+	testing.expect_value(t, command_line_value_problem(none), "")
+	unknown, _ := parse_command_line({"--input=vulkan"})
+	testing.expect(t, strings.contains(command_line_value_problem(unknown), "--input=none"), command_line_value_problem(unknown))
+	testing.expect_value(t, input_none_problem(.None, false, false, true), "--input=none reads only the command socket, which needs developer mode (--dev or the Developer mode setting)")
+	testing.expect_value(t, input_none_problem(.None, true, false, false), "--input=none reads only the command socket, which the Windows build lacks")
+	testing.expect_value(t, input_none_problem(.None, true, false, true), "")
+	testing.expect_value(t, input_none_problem(.None, false, true, true), "")
+	testing.expect_value(t, input_none_problem(.Sdl3, false, false, true), "")
+}

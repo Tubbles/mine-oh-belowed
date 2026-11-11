@@ -89,6 +89,9 @@ Player_Configuration :: struct {
 	// --tech-demo alone (0291): the title opens with the Tech demos list
 	// and the Tech demo screen pushed (push_tech_demo_menu, 0302).
 	tech_demo_menu: bool,
+	// --input=none (0341): no keyboard, mouse or controller is read, only
+	// the command socket's input commands.
+	input_devices_off: bool,
 }
 
 // The environment variables the layering reads, passed in so that tests

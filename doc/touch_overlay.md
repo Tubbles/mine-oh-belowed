@@ -11,7 +11,7 @@ A virtual gamepad the game draws on a touch screen (0115, `src/touch_overlay.odi
 
 `settings.touch_overlay` (`auto`, `on`, `off`; the Accessibility tab's Touch controls row): `auto` is on for the Android build and off elsewhere (`touch_overlay_enabled`). `--touch-overlay` forces it on for a run. It is read only in a world (the title screens take touch as the pointer alone) and not while the touch layout editor is on top.
 
-On the desktop raylib has no touch points, so the mouse is touch point 0 while its left button is down (`read_touch_points`): a drag on the left walks, one elsewhere looks, a click places or interacts, a click at the right edge jumps, a held click mines. The cursor stays free in the world while the overlay is on. It works on both backends, so `--touch-overlay` also runs on the couch and the Deck with SDL3.
+On the desktop raylib has no touch points, so the mouse is touch point 0 while its left button is down (`read_touch_points`): a drag on the left walks, one elsewhere looks, a click places or interacts, a click at the right edge jumps, a held click mines. The cursor stays free in the world while the overlay is on. It works on every backend, so `--touch-overlay` also runs on the couch and the Deck with SDL3; under `--input=none` the command socket's pointer is the touch point while its left button is held (`injected_touch_points`, 0341).
 
 ## Into the gamepad
 

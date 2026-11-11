@@ -140,7 +140,6 @@ The work the switch left that an agent would do anyway became work items on 2026
 ## Suggestions from the multiplayer series (0188, 0185, 0186, 0187, 0182, 0190; 2026-10-03)
 
 - Builds and test runs load every core of the couch machine while the user plays (asked 2026-10-03). This session pinned itself to cores 4 to 7 at nice 10 by hand, which does not survive the session. `build.sh` could pin and renice itself whenever a game process runs on the machine (a `pgrep` of the play build and of `build/mine-oh-belowed`), with a flag to turn it off. Decide whether the user wants that, or a build cores variable they set in the shell instead.
-- A headless game under Xvfb opens the system's gamepads through SDL and takes the user's Steam Controller while they play (seen 2026-10-03, headless 0187 shots). A `--no-gamepad` flag (or the SDL joystick device hint set empty in `tools/moc`'s recipe) would keep the assistant's games off the controller. Decide the form; the dev flag is the smallest.
 
 ## Suggestions from the placement editor (0215, 2026-10-04)
 
@@ -279,3 +278,8 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The vehicle: whether it drives or is moved another way, what of the factory rides on it against what stands on foundations, and what "from scratch" asks for on a second planet.
 - Hand run power at factory scale: what a cable is (length, capacity, sockets per machine), what joins many machines without a pole, what happens to the power poles the game has and to the saves that hold them. Belt and pipe poles are not power and are untouched.
 - The look: which parts of the booklet's astro-industrial punk and of Techtonica's reference stand beside The Last Caretaker's, and whether the README's line "Techtonica in space" still names the game.
+
+## Suggestions from the injected input (0341, 2026-11-11)
+
+- Under `--input=none` with developer mode on by the setting alone, a Settings change made through the socket that switches developer mode off closes the socket and leaves the game with no input at all. Refusing that one change under the none backend would close the hole; it takes a deliberate sequence to reach, so it is left until a script trips on it.
+- No test replays a recorded input stream of an injected session against its state hash. The review's comparison of a held action under `tick` with the same frames run free stands in for one.
