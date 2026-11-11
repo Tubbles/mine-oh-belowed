@@ -1,6 +1,6 @@
 # 0326: Waters over the whole planet
 
-Status: designed (2026-11-07)
+Status: implementing (2026-11-11)
 
 0312 finds springs and lakes on one grid within 2.5 km of the home (at most half the radius), once per session on the main thread. Past it the ground has no derived springs and no lakes, which a player meets after a few minutes' walk on the 8 km planet.
 
