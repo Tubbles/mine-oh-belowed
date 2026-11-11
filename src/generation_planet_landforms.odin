@@ -93,17 +93,28 @@ landform_ridge :: proc(noise: i64) -> i64 {
 // 0 within calm_metres of the home, NOISE_ONE from wild_metres out, a
 // smoothstep between; no root beyond the wild ground.
 home_wildness :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
-	landforms := generation.landforms
 	offset := point - generation.landform_home
-	squared := offset.x * offset.x + offset.y * offset.y + offset.z * offset.z
+	return home_wildness_at_squared(generation, offset.x * offset.x + offset.y * offset.y + offset.z * offset.z)
+}
+
+// home_wildness at the squared chord from the home.
+home_wildness_at_squared :: proc(generation: Planet_Generation, squared: i64) -> i64 {
+	return noise_fade(home_wildness_fraction(generation, squared))
+}
+
+// The wildness's smoothstep input at the squared chord from the home: 0
+// within calm_metres, NOISE_ONE from wild_metres out (no root there).
+// It never falls with the chord (the box bound reads it at both ends of a
+// range, 0314); the smoothstep in integers does (fade_range).
+home_wildness_fraction :: proc(generation: Planet_Generation, squared: i64) -> i64 {
+	landforms := generation.landforms
 	wild := metres_to_position_units(i64(landforms.wild_metres))
 	if squared >= wild * wild {
 		return NOISE_ONE
 	}
 	calm := metres_to_position_units(i64(landforms.calm_metres))
 	distance := i64(integer_square_root(u64(squared)))
-	fraction := clamp((distance - calm) * NOISE_ONE / (wild - calm), 0, NOISE_ONE)
-	return fraction * fraction / NOISE_ONE * (3 * NOISE_ONE - 2 * fraction) / NOISE_ONE
+	return clamp((distance - calm) * NOISE_ONE / (wild - calm), 0, NOISE_ONE)
 }
 
 // What the landforms read at a point, kept for the landmarks (0323): the

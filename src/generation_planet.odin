@@ -34,6 +34,9 @@ import "platform"
 // generation into the field (dig_impact_crater).
 // The waters (0312, generation_planet_waters.odin) fill the lakes beside
 // the sea and add the derived springs beside the record's.
+// The chunks and the grids read no column for a sample the relief's range
+// over its box of samples decides (0314, generation_planet_bound.odin),
+// which gets the bytes its column would give.
 
 TOPSOIL_DEPTH_METRES :: 2
 DEEP_STONE_DEPTH_METRES :: 40
@@ -498,6 +501,12 @@ planet_sample_reading :: proc(generation: Planet_Generation, position: World_Pos
 	if !needs_relief {
 		return shortcut, false, false
 	}
+	return planet_sample_reading_at(generation, position, distance, on_sphere)
+}
+
+// planet_sample_reading past the shortcut, from its distance and its
+// point on the sphere: the column's sample.
+planet_sample_reading_at :: proc(generation: Planet_Generation, position: World_Position, distance: i64, on_sphere: [3]i64) -> (sample: Field_Sample, shaded, carved: bool) {
 	column := surface_column(generation, on_sphere)
 	sample = planet_sample_at_column(generation, position, distance, on_sphere, column)
 	if sample.density <= 0 {
@@ -696,17 +705,30 @@ mark_field_chunk_spring :: proc(chunk: ^Field_Chunk, sample: Sample_Coordinate) 
 // crater's cylinder (impact_crater_reaches_box), also records the baked
 // sample wherever it differs from the whole one (0271,
 // Field_Chunk.crater_overlay), from the same projection and relief.
+// A sample the relief's range over its box decides (0314,
+// planet_sample_by_boxes) reads no column: it is ground or open air the
+// crater does not reach, so it has no shade, no carve and no overlay.
 generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int, coordinate: Field_Chunk_Coordinate, chunk: ^Field_Chunk, crater_overlay := false) {
 	generation := make_planet_generation(seed, planet, spacing_millimetres)
 	origin := field_chunk_origin(coordinate)
 	chunk.coordinate = coordinate
 	overlay := crater_overlay && planet.crater_at_impact && impact_crater_reaches_box(generation, field_node_box(field_chunk_node(coordinate), spacing_millimetres))
 	shaded, carved: Field_Sample_Bits
+	boxes := Relief_Boxes {
+		first               = origin,
+		step                = 1,
+		samples             = FIELD_CHUNK_SIZE,
+		spacing_millimetres = spacing_millimetres,
+	}
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		sample := origin + Sample_Coordinate(field_index_to_local(index))
 		position := sample_to_world_position(sample, spacing_millimetres)
 		value, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+		decided := false
 		if needs_relief {
+			value, decided = planet_sample_by_boxes(generation, &boxes, field_index_to_local(index), position, distance)
+		}
+		if needs_relief && !decided {
 			column := surface_column(generation, on_sphere)
 			value = planet_sample_at_column(generation, position, distance, on_sphere, column)
 			if value.density <= 0 && column_shades(column, distance - generation.radius, generation.spacing) {

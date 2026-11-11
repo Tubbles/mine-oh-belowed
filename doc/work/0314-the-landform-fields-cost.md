@@ -1,6 +1,6 @@
 # 0314: The landform field's cost
 
-Status: implementing (2026-11-07)
+Status: verified (2026-11-11)
 
 Milestone: the world generation series, after 0306. 0306's design measured its relief at about three times the cost of an evaluation in the wild and a fresh view at 5 to 6.5 times the CPU of before (a start, a teleport, the tech demo), about a quarter of a core while walking. The design left out an estimated reject per node: the steepest crests (about 64 degrees) make the slack swamp the coarse nodes, and a missed fold leaves a hole.
 
@@ -145,3 +145,10 @@ The report (`test_report_the_relief_cost`, `src/generation_planet_landforms_test
 1. The tree tiles' relief reads (1.27M at the home's 1024 m view, a third of the view's cost after this item) stay out of this item; 0337 takes them.
 2. The night bar: each shipped view within 1.3 times its pre-0306 cost, as designed.
 3. The implementation starts from main. 0326 (planet-wide waters) shares `generation_planet.odin` and `world_field_lod.odin` with it and follows in the same stream.
+
+### Deviations (implementation, 2026-11-11)
+
+- `noise_fade` and `quintic_fade` fall by at most 1 and 3 in integers, so they are not monotone: a fade's range goes through `fade_range` with `FADE_FALL_LIMIT`, the mesa's range is widened by `mesa_raise_fall`, and `test_the_fades_fall_at_most_the_limit` replaces `test_the_fades_are_monotone`.
+- The deep stone band's depth includes the topsoil's, `projected_box` answers the radius cube for a box nearer the centre than 3/4 of the radius, and a box of 4 under a box of 8 below the crater skips the intersection.
+- `test_the_bounded_generation_matches_the_samples` is four tests, one per planet (plain, `_with_the_crater_baked`, `_before_0306`, `_with_the_carving`).
+

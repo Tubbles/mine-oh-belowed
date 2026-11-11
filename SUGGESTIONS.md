@@ -255,3 +255,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - The walk up a water column is not charged to the flood's visit budget and runs once for every popped sample of no one's water under the sill: up to the far water's depth under the sill in steps, each a map lookup and an integer square root, for up to 4000 pops a tick. Bounded and not measured. Worth a count in the night's water report before a deep generated lake (0326 finds more of them) is blamed for a slow tick.
 - `test_a_water_column_reaches_the_level_its_top_stands_at` walks the +y half axis only. The review's probe walked the -x half axis across a chunk border (`tmp/0336/verify/tree/src/zz_verify_0336_test.odin`, untracked) and passed; it could join the suite if the walk is ever changed.
+
+## Suggestions from the relief's box bound (0314, 2026-11-11)
+
+- `landmark_sites_most` (`generation_planet_bound.odin`) walks every site cube a projected box meets. When `projected_box` answers the radius cube (a box nearer the centre than 3/4 of the radius, so a planet under about 1.1 km with deep relief) and `site_spacing_metres` is small, that is (2R / spacing)³ cubes per box: slow, never wrong. The shipped data cannot reach it (4 km and up, 448 m). If a small planet is ever shipped, the radius cube should answer a full raise and cut without the walk. Read in the code by the review, not reproduced.
+

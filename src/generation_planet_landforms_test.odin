@@ -379,7 +379,10 @@ test_landforms_problems :: proc(t: ^testing.T) {
 // Measured, not asserted (0306), so it runs only with the define (log
 // and time are required imports for it): the relief's cost per point and the
 // coarse grids' and the simulated set's samples that need it, before the
-// landforms, with them (0306) and with the landmarks (0323). Run alone with
+// landforms, with them (0306) and with the landmarks (0323), those the box
+// bound leaves to the column and the generation's wall time with the
+// bound beside the samples read one by one (0314), and the tree tiles'
+// wall time. Run alone with
 // ./build.sh test quick game.test_report_the_relief_cost -o:speed -define:RELIEF_COST=true
 // or in ./build.sh nightly.
 RELIEF_COST :: #config(RELIEF_COST, false)
@@ -402,7 +405,8 @@ when RELIEF_COST {
 				place := fmt_place(label, camera_index)
 				nodes := select_field_nodes(make_field_view(camera, planet, 1000, levels), context.temp_allocator)
 				testing.expect(t, len(nodes) > 0, "a view selects nodes")
-				report_relief_cost_of_view(generation, nodes, camera, place)
+				report_relief_cost_of_view(generation, planet, nodes, camera, place)
+				report_tree_tile_cost(generation, camera, place)
 			}
 		}
 	}
@@ -427,53 +431,134 @@ when RELIEF_COST {
 		log.infof("relief cost %s: %.0f ns a surface_relief on a line, %.0f ns within 50 m of the home (%d)", label, f64(line) / 200_000, f64(near) / 200_000, sum)
 	}
 
-	// Per level the nodes and the grid positions whose shortcut needs the
-	// relief, the same over the 7 by 7 by 7 chunks round the camera's
-	// chunk, and the wall time of the first 16 coarsest nodes' grids.
-	report_relief_cost_of_view :: proc(generation: Planet_Generation, nodes: []Field_Node, camera: World_Position, place: string) {
-		counts, samples: [FIELD_LEVEL_COUNT]int
-		coarse := make([dynamic]Field_Node, context.temp_allocator)
+	// Per level the nodes, the grid positions whose shortcut needs the
+	// relief and those the box bound leaves to the column (0314), the same
+	// over the 7 by 7 by 7 chunks round the camera's chunk, then the wall
+	// times (report_generation_cost).
+	report_relief_cost_of_view :: proc(generation: Planet_Generation, planet: Planet, nodes: []Field_Node, camera: World_Position, place: string) {
+		counts, samples, left: [FIELD_LEVEL_COUNT]int
+		boxes := new(Relief_Boxes, context.temp_allocator)
 		for node in nodes {
 			counts[node.level] += 1
 			step := field_node_step(node)
 			grid_generation := field_grid_generation(generation, step)
 			origin := field_node_origin(node)
+			boxes^ = {
+				first               = origin - step,
+				step                = step,
+				samples             = FIELD_GRID_SIZE,
+				spacing_millimetres = generation.spacing_millimetres,
+			}
 			for z in i32(-1) ..= FIELD_GRID_CELLS {
 				for y in i32(-1) ..= FIELD_GRID_CELLS {
 					for x in i32(-1) ..= FIELD_GRID_CELLS {
 						position := sample_to_world_position(origin + Sample_Coordinate([3]i32{x, y, z} * step), generation.spacing_millimetres)
-						_, _, _, needs_relief := planet_sample_shortcut(grid_generation, position)
-						samples[node.level] += needs_relief ? 1 : 0
-					}
-				}
-			}
-			if node.level == FIELD_COARSEST_LEVEL && len(coarse) < 16 {
-				append(&coarse, node)
-			}
-		}
-		log.infof("relief cost %s: nodes per level %v, grid samples needing the relief per level %v", place, counts, samples)
-		centre := sample_to_field_chunk_coordinate(world_position_to_sample(camera, generation.spacing_millimetres))
-		chunk_samples := 0
-		for chunk_z in i32(-3) ..= 3 {
-			for chunk_y in i32(-3) ..= 3 {
-				for chunk_x in i32(-3) ..= 3 {
-					origin := field_chunk_origin(centre + {chunk_x, chunk_y, chunk_z})
-					for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
-						position := sample_to_world_position(origin + Sample_Coordinate(field_index_to_local(index)), generation.spacing_millimetres)
-						_, _, _, needs_relief := planet_sample_shortcut(generation, position)
-						chunk_samples += needs_relief ? 1 : 0
+						_, distance, _, needs_relief := planet_sample_shortcut(grid_generation, position)
+						if !needs_relief {
+							continue
+						}
+						samples[node.level] += 1
+						if _, decided := planet_sample_by_boxes(grid_generation, boxes, {x + 1, y + 1, z + 1}, position, distance); !decided {
+							left[node.level] += 1
+						}
 					}
 				}
 			}
 		}
-		log.infof("relief cost %s: samples needing the relief in the 7 by 7 by 7 chunks round the camera %d", place, chunk_samples)
+		log.infof("relief cost %s: nodes per level %v, grid samples needing the relief per level %v, left to the column by the box bound %v", place, counts, samples, left)
+		chunk_samples, chunk_left := test_box_bound_left(generation, camera)
+		log.infof("relief cost %s: samples needing the relief in the 7 by 7 by 7 chunks round the camera %d, left to the column by the box bound %d", place, chunk_samples, chunk_left)
+		report_generation_cost(generation, planet, nodes, camera, place)
+	}
+
+	// The wall time of generate_field_grid over every node of levels 1 to
+	// 3 and of generate_field_chunk over the 7 by 7 by 7 chunks round the
+	// camera's chunk, each beside the same positions read sample by sample
+	// through planet_sample_reading (the cost before 0314).
+	report_generation_cost :: proc(generation: Planet_Generation, planet: Planet, nodes: []Field_Node, camera: World_Position, place: string) {
 		grid := new(Field_Grid)
 		defer free(grid)
+		grids := 0
 		begin := time.tick_now()
-		for node in coarse {
-			grid^ = {}
-			generate_field_grid(generation, node, grid)
+		for node in nodes {
+			if node.level >= 1 {
+				grid^ = {}
+				generate_field_grid(generation, node, grid)
+				grids += 1
+			}
 		}
-		log.infof("relief cost %s: generate_field_grid of %d coarsest nodes %.1f ms", place, len(coarse), f64(time.duration_nanoseconds(time.tick_since(begin))) / 1e6)
+		bounded := time.tick_since(begin)
+		sum := 0
+		begin = time.tick_now()
+		for node in nodes {
+			if node.level >= 1 {
+				sum += report_read_grid(generation, node)
+			}
+		}
+		read := time.tick_since(begin)
+		log.infof("relief cost %s: the %d grids of levels 1 to 3 generated %.1f ms, read sample by sample %.1f ms (%d)", place, grids, report_milliseconds(bounded), report_milliseconds(read), sum)
+		centre := sample_to_field_chunk_coordinate(world_position_to_sample(camera, generation.spacing_millimetres))
+		chunk := new(Field_Chunk)
+		defer free(chunk)
+		begin = time.tick_now()
+		for chunk_index in 0 ..< 343 {
+			chunk^ = {}
+			generate_field_chunk(DEFAULT_WORLD_SEED, planet, generation.spacing_millimetres, centre + report_chunk_offset(chunk_index), chunk)
+		}
+		bounded = time.tick_since(begin)
+		begin = time.tick_now()
+		for chunk_index in 0 ..< 343 {
+			origin := field_chunk_origin(centre + report_chunk_offset(chunk_index))
+			for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+				sample, _, _ := planet_sample_reading(generation, sample_to_world_position(origin + Sample_Coordinate(field_index_to_local(index)), generation.spacing_millimetres))
+				sum += int(sample.density)
+			}
+		}
+		read = time.tick_since(begin)
+		log.infof("relief cost %s: the 343 chunks generated %.1f ms, read sample by sample %.1f ms (%d)", place, report_milliseconds(bounded), report_milliseconds(read), sum)
+	}
+
+	// The chunk offset of an index of the 7 by 7 by 7 chunks, x fastest.
+	report_chunk_offset :: proc(index: int) -> Field_Chunk_Coordinate {
+		return {i32(index % 7) - 3, i32(index / 7 % 7) - 3, i32(index / 49) - 3}
+	}
+
+	report_milliseconds :: proc(duration: time.Duration) -> f64 {
+		return f64(time.duration_nanoseconds(duration)) / 1e6
+	}
+
+	// The node's positions read sample by sample, the densities summed.
+	report_read_grid :: proc(generation: Planet_Generation, node: Field_Node) -> int {
+		step := field_node_step(node)
+		grid_generation := field_grid_generation(generation, step)
+		origin := field_node_origin(node)
+		sum := 0
+		for z in i32(-1) ..= FIELD_GRID_CELLS {
+			for y in i32(-1) ..= FIELD_GRID_CELLS {
+				for x in i32(-1) ..= FIELD_GRID_CELLS {
+					sample, _, _ := planet_sample_reading(grid_generation, sample_to_world_position(origin + Sample_Coordinate([3]i32{x, y, z} * step), generation.spacing_millimetres))
+					sum += int(sample.density)
+				}
+			}
+		}
+		return sum
+	}
+
+	// The tree tiles' wall time to 1024 and 512 m round the camera (0311,
+	// their relief reads are 0337's).
+	report_tree_tile_cost :: proc(generation: Planet_Generation, camera: World_Position, place: string) {
+		tree_generation := generation
+		for distance in ([2]int{1024, 512}) {
+			tiles := field_tree_tiles_around(&tree_generation, []World_Position{camera}, distance)
+			trees := 0
+			begin := time.tick_now()
+			for tile in tiles {
+				keys, instances := generate_field_tree_tile(&tree_generation, tile, field_tree_tile_cells(tree_generation.trees.spacing), 1000)
+				trees += len(keys)
+				delete(keys)
+				delete(instances)
+			}
+			log.infof("relief cost %s: generate_field_tree_tile over the %d tiles to %d m %.1f ms (%d trees)", place, len(tiles), distance, report_milliseconds(time.tick_since(begin)), trees)
+		}
 	}
 }

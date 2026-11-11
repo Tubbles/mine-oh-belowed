@@ -307,12 +307,20 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 		high := grid.origin + (FIELD_GRID_CELLS + 1) * grid.step
 		lakes = planet_lakes_meeting_box(generation.lakes, cast([3]i64)sample_to_world_position(low, generation.spacing_millimetres), cast([3]i64)sample_to_world_position(high, generation.spacing_millimetres))
 	}
+	// The relief's range over boxes of the grid's samples (0314), of the
+	// coarse generation, whose spacing gives the air band and the topsoil.
+	boxes := Relief_Boxes {
+		first               = grid.origin - grid.step,
+		step                = grid.step,
+		samples             = FIELD_GRID_SIZE,
+		spacing_millimetres = generation.spacing_millimetres,
+	}
 	for z in i32(-1) ..= FIELD_GRID_CELLS {
 		for y in i32(-1) ..= FIELD_GRID_CELLS {
 			for x in i32(-1) ..= FIELD_GRID_CELLS {
 				sample := grid.origin + Sample_Coordinate([3]i32{x, y, z} * grid.step)
 				position := sample_to_world_position(sample, generation.spacing_millimetres)
-				value, shaded, carved := planet_sample_reading(density_generation, position)
+				value, shaded, carved := planet_sample_reading_boxed(density_generation, position, &boxes, {x + 1, y + 1, z + 1})
 				water := planet_sea_density(density_generation, position, value.density)
 				index := field_grid_index({x, y, z})
 				if len(lakes) > 0 && !carved && !grid.loaded[index] {

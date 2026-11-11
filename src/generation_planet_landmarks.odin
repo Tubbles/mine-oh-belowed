@@ -242,6 +242,13 @@ landmark_mesa_raise :: proc(generation: Planet_Generation, point: [3]i64, hill, 
 	landmarks := generation.landmarks
 	noise := gradient_noise(generation_seed.hash_combine(generation.landmark_seed, 2), point, metres_to_position_units(i64(landmarks.mesa_wavelength_metres)))
 	noise += i64(landmarks.mesa_rough_percent) * hill / 100
+	return mesa_raise_at(landmarks, noise, strength)
+}
+
+// The mesas' raise at the roughened noise and the strength, which it
+// never falls with in either (the box bound reads it at the ends of their
+// ranges, 0314).
+mesa_raise_at :: proc(landmarks: Planet_Landmarks, noise, strength: i64) -> i64 {
 	threshold := i64(landmarks.mesa_threshold_percent) * NOISE_ONE / 100 + (NOISE_ONE - strength) * MESA_SHRINK_PERCENT / 100
 	if noise <= threshold {
 		return 0
@@ -307,6 +314,13 @@ landmark_carving_relief :: proc(generation: Planet_Generation, site: Landmark_Si
 		shape_noise  = shape_noise,
 	}
 	return
+}
+
+// The most a site of a carving kind raises (the box bound, 0314): the
+// shape's share is at most NOISE_ONE and each roughening at most its
+// percent, a grotto's two of them.
+landmark_raise_most :: proc(site: Landmark_Site) -> i64 {
+	return site.height * (100 + CARVE_RELIEF_ROUGH_PERCENT) * (100 + GROTTO_KNOLL_ROUGH_PERCENT) / 10000 + 2
 }
 
 // The value moved by percent of itself at the noise's full swing.
