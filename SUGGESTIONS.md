@@ -327,3 +327,8 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `Holds_The_Vessel_Together` refuses whenever the other structure pieces are more than one set, not only when the removal is what splits them. No placement can build a split vessel today; the decoupler's split will, and then the rule must compare before and after.
 - Parts are drawn as boxes, unlit and without haze, so they stand out at a distance. Worth lighting only if the modelled parts are far off.
 - The slot aim skips a box that holds the eye. It could skip every box that overlaps the player's capsule, so a part is never aimed where the drain then refuses `Would_Bury_Player`.
+
+## Suggestions from the view's edge (0354, 2026-11-11)
+
+- `count_dropped_field_children` (`world_field_lod_test.odin`) looks at the first children of a split node only. The review's probe checked every generation and found none dropped; the test could do the same.
+- The balance pass's cost at 1000 mm, where it runs, is not in the frame table yet: read `select` in the night's table before deciding whether the selection needs caching between frames while the eye stands still.

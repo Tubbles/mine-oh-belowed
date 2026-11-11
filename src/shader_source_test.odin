@@ -526,6 +526,18 @@ test_the_lit_shaders_share_the_open_sky :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0354: the sky share scales only the aerial haze, so the end
+// fade takes a shaded face to the end colour as it takes a lit one; the
+// other three shaders follow through the comparison above.
+@(test)
+test_the_end_fade_is_full_on_shaded_ground :: proc(t: ^testing.T) {
+	field, _ := read_lit_shaders(t)
+	haze := shader_function_text(field, "vec3 apply_haze(")
+	testing.expect(t, strings.contains(haze, "    vec3 hazed = mix(color, sky, aerial * sky_share);\n"), "field.fs's apply_haze does not scale only the aerial haze by the sky share")
+	testing.expect(t, strings.contains(haze, "    return mix(hazed, end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));\n"), "field.fs's apply_haze does not end in the full end fade")
+	testing.expect(t, !strings.contains(haze, "mix(color, hazed, sky_share)"), "field.fs's apply_haze still scales the end fade by the sky share")
+}
+
 // Work item 0328: the four lit shaders take the same sun's shadow, its
 // uniforms and sun_shadow_light and sun_shadow_tap_weight line for line,
 // with the offset and the bias render_sun_shadows.odin names.

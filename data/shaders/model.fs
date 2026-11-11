@@ -148,8 +148,10 @@ float sun_shadow_light(vec3 position, vec3 normal, vec3 eye)
 // mixed by haze_end_share (the sky's share at the eye), so the far
 // nodes, the globe and the horizon read as one from the ground and the
 // drawn terrain blends into the globe from above the air.
-// sky_share scales it: air the sky does not light (a cave's, by its
-// samples' sky light) scatters no sky colour.
+// sky_share scales the aerial haze: air the sky does not light (a cave's,
+// by its samples' sky light) scatters no sky colour. The end fade is full
+// whatever the share (0354): past the view lies only the end colour, so a
+// shaded face fades there as a lit one does.
 // apply_haze is field.fs's line for line.
 uniform vec3 haze_color;
 uniform vec3 haze_sun_color;
@@ -184,8 +186,8 @@ vec3 apply_haze(vec3 color, vec3 position, vec3 eye, float sky_share)
     vec3 up = position / max(length(position), smallest_weight_sum);
     vec3 globe = min(globe_color * outdoor_light(up, up, 1.0), vec3(1.0));
     vec3 end_color = mix(globe, sky, haze_end_share);
-    vec3 hazed = mix(mix(color, sky, aerial), end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
-    return mix(color, hazed, sky_share);
+    vec3 hazed = mix(color, sky, aerial * sky_share);
+    return mix(hazed, end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
 }
 
 bool point_light_inside_box(uint index, vec3 position)

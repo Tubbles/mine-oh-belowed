@@ -57,6 +57,218 @@ test_the_selection_refines_towards_the_camera :: proc(t: ^testing.T) {
 	testing.expect_value(t, levels_seen, [FIELD_LEVEL_COUNT]bool{true, true, true, true})
 }
 
+// 48 eyes on a golden angle spiral round the planet's centre, each
+// radius_metres plus 2, 32, 62 or 92 m from it.
+contact_test_eyes :: proc(radius_metres: int) -> [48]World_Position {
+	eyes: [48]World_Position
+	for index in 0 ..< 48 {
+		z := 1 - 2 * (f64(index) + 0.5) / 48
+		ring := math.sqrt(1 - z * z)
+		angle := f64(index) * 2.399963
+		distance := f64(metres_to_position_units(i64(radius_metres + 2 + (index % 4) * 30)))
+		eyes[index] = {i64(distance * ring * math.cos(angle)), i64(distance * ring * math.sin(angle)), i64(distance * z)}
+	}
+	return eyes
+}
+
+// Whether the closed boxes of the nodes meet on every axis.
+field_nodes_touch :: proc(first, second: Field_Node, spacing_millimetres: int) -> bool {
+	first_box, second_box := field_node_box(first, spacing_millimetres), field_node_box(second, spacing_millimetres)
+	for axis in 0 ..< 3 {
+		if first_box.maximum[axis] < second_box.minimum[axis] || second_box.maximum[axis] < first_box.minimum[axis] {
+			return false
+		}
+	}
+	return true
+}
+
+// The pairs of nodes two or more levels apart that touch, by brute force.
+count_two_level_contacts :: proc(nodes: []Field_Node, spacing_millimetres: int) -> int {
+	count := 0
+	for first, index in nodes {
+		for second in nodes[index + 1:] {
+			if abs(first.level - second.level) >= 2 && field_nodes_touch(first, second, spacing_millimetres) {
+				count += 1
+			}
+		}
+	}
+	return count
+}
+
+// The pairs of nodes whose boxes share volume, by brute force.
+count_overlapping_field_nodes :: proc(nodes: []Field_Node, spacing_millimetres: int) -> int {
+	boxes := make([]Field_Box, len(nodes), context.temp_allocator)
+	for node, index in nodes {
+		boxes[index] = field_node_box(node, spacing_millimetres)
+	}
+	count := 0
+	for first, index in boxes {
+		for second in boxes[index + 1:] {
+			apart := false
+			for axis in 0 ..< 3 {
+				if first.maximum[axis] <= second.minimum[axis] || second.maximum[axis] <= first.minimum[axis] {
+					apart = true
+				}
+			}
+			count += apart ? 0 : 1
+		}
+	}
+	return count
+}
+
+// The nearest camera's distance squared to the node's box, as the walk
+// takes it.
+contact_test_distance_squared :: proc(view: Field_View, node: Field_Node) -> i64 {
+	box := field_node_box(node, view.spacing_millimetres)
+	distance_squared := box_distance_squared(box, view.camera)
+	for camera in view.more_cameras {
+		distance_squared = min(distance_squared, box_distance_squared(box, camera))
+	}
+	return distance_squared
+}
+
+// Whether the node or one of its ancestors is in the set.
+field_node_within :: proc(set: map[Field_Node]struct{}, node: Field_Node) -> bool {
+	for ancestor := node; ancestor.level <= FIELD_COARSEST_LEVEL; ancestor = field_node_parent(ancestor) {
+		if ancestor in set {
+			return true
+		}
+	}
+	return false
+}
+
+// The children of the walk's nodes the balance split that meet the shell
+// and lie inside the view, missing from the balanced selection and
+// holding none of it.
+count_dropped_field_children :: proc(view: Field_View, walk: map[Field_Node]struct{}, balanced: []Field_Node) -> int {
+	index := make_field_selection_index(balanced, context.temp_allocator)
+	view_end := view.level_distances[FIELD_COARSEST_LEVEL]
+	count := 0
+	for node in walk {
+		if node in index.selected || node.level == 0 {
+			continue
+		}
+		for corner in 0 ..< 8 {
+			child := Field_Node{node.level - 1, node.coordinate * 2 + field_corner_offset(corner)}
+			box := field_node_box(child, view.spacing_millimetres)
+			if !field_box_in_shell(box, view.shell_inner, view.shell_outer) || contact_test_distance_squared(view, child) >= view_end * view_end {
+				continue
+			}
+			count += (child in index.selected || child in index.holds_finer) ? 0 : 1
+		}
+	}
+	return count
+}
+
+// Work item 0354: the shipped levels packed at each view distance, over 48
+// eyes round the test planet alone and every fourth with a second eye
+// 150 m off: the selection holds no two nodes two levels apart in
+// contact, no two sharing volume and none at or past the view; the
+// balance adds no ground the walk did not hold and drops none it did; and
+// the walk alone meets two levels apart at 256 m and at 512 m.
+@(test) // slow
+test_no_selection_holds_nodes_two_levels_apart_in_contact :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	field_view := config.field_view
+	planet := make_test_planet()
+	base := make_field_view({}, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, field_view.level_distances_metres)
+	eyes := contact_test_eyes(planet.radius_metres)
+	free_all(context.temp_allocator)
+	spacing := DEFAULT_SAMPLE_SPACING_MILLIMETRES
+	for view_metres in ([?]int{256, 512, 768, 1024}) {
+		base.level_distances = {}
+		for distance, level in field_view_level_distances(field_view, view_metres) {
+			base.level_distances[level] = metres_to_position_units(i64(distance))
+		}
+		view_end := base.level_distances[FIELD_COARSEST_LEVEL]
+		walk_contacts := 0
+		for eye, eye_index in eyes {
+			for paired in ([2]bool{false, true}) {
+				if paired && eye_index % 4 != 0 {
+					continue
+				}
+				more := [1]World_Position{eye + {metres_to_position_units(150), 0, 0}}
+				view := base
+				view.camera = eye
+				view.more_cameras = paired ? more[:] : nil
+				walk := walk_field_nodes(view)
+				walk_nodes := make([]Field_Node, len(walk), context.temp_allocator)
+				walk_set := make(map[Field_Node]struct{}, len(walk), context.temp_allocator)
+				for entry, index in walk {
+					walk_nodes[index] = entry.node
+					walk_set[entry.node] = {}
+				}
+				if !paired {
+					walk_contacts += count_two_level_contacts(walk_nodes, spacing)
+				}
+				balanced := select_field_nodes(view, context.temp_allocator)
+				testing.expectf(t, count_two_level_contacts(balanced, spacing) == 0, "%d m, eye %d (paired %v): nodes two levels apart touch", view_metres, eye_index, paired)
+				testing.expectf(t, count_overlapping_field_nodes(balanced, spacing) == 0, "%d m, eye %d (paired %v): nodes share volume", view_metres, eye_index, paired)
+				for node in balanced {
+					testing.expectf(t, contact_test_distance_squared(view, node) < view_end * view_end, "%d m, eye %d (paired %v): %v lies at or past the view", view_metres, eye_index, paired, node)
+					testing.expectf(t, field_node_within(walk_set, node), "%d m, eye %d (paired %v): %v lies in no node of the walk", view_metres, eye_index, paired, node)
+				}
+				testing.expectf(t, count_dropped_field_children(view, walk_set, balanced) == 0, "%d m, eye %d (paired %v): the balance drops ground", view_metres, eye_index, paired)
+				free_all(context.temp_allocator)
+			}
+		}
+		if view_metres <= 512 {
+			testing.expectf(t, walk_contacts > 0, "%d m: the walk alone meets no node two levels apart, so the test has no teeth", view_metres)
+		}
+	}
+}
+
+// The shipped levels packed at the view, over the test planet at the
+// spacing, the camera at the origin.
+packed_test_field_view :: proc(field_view: Field_View_Config, view_metres, spacing_millimetres: int) -> Field_View {
+	return make_field_view({}, make_test_planet(), spacing_millimetres, field_view_level_distances(field_view, view_metres))
+}
+
+// Work item 0354: at 333 mm spacing the shipped levels leave no contact
+// possible at any view, so the balance keeps the walk as it is, and no
+// node of the walk over the 48 eyes passes the balance's check.
+@(test) // slow
+test_the_balance_keeps_the_walk_at_333_millimetres :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	field_view := config.field_view
+	eyes := contact_test_eyes(make_test_planet().radius_metres)
+	free_all(context.temp_allocator)
+	for view_metres in ([?]int{256, 512, 768, 1024}) {
+		base := packed_test_field_view(field_view, view_metres, 333)
+		testing.expectf(t, field_selection_needs_no_balance(base), "%d m: the balance runs at 333 mm", view_metres)
+		view_end := base.level_distances[FIELD_COARSEST_LEVEL]
+		for eye, eye_index in eyes {
+			view := base
+			view.camera = eye
+			walk := walk_field_nodes(view)
+			walk_set := make(map[Field_Node]struct{}, len(walk), context.temp_allocator)
+			for entry in walk {
+				walk_set[entry.node] = {}
+				level := entry.node.level
+				if level <= FIELD_COARSEST_LEVEL - 2 && view.level_distances[level + 1] < view_end {
+					testing.expectf(t, !field_node_may_touch_coarser(view, entry), "%d m, eye %d: %v passes the balance's check", view_metres, eye_index, entry.node)
+				}
+			}
+			balanced := select_field_nodes(view, context.temp_allocator)
+			testing.expectf(t, len(balanced) == len(walk), "%d m, eye %d: %d nodes against the walk's %d", view_metres, eye_index, len(balanced), len(walk))
+			for node in balanced {
+				testing.expectf(t, node in walk_set, "%d m, eye %d: %v is not the walk's", view_metres, eye_index, node)
+			}
+			free_all(context.temp_allocator)
+		}
+	}
+}
+
+// Work item 0354: at 1000 mm spacing the shipped levels leave a contact
+// possible at every view, so the balance runs.
+@(test)
+test_the_balance_runs_at_1000_millimetres :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	for view_metres in ([?]int{256, 512, 768, 1024}) {
+		testing.expectf(t, !field_selection_needs_no_balance(packed_test_field_view(config.field_view, view_metres, 1000)), "%d m: the balance is skipped at 1000 mm", view_metres)
+	}
+}
+
 @(test)
 test_far_from_the_planet_nothing_is_selected :: proc(t: ^testing.T) {
 	planet := make_test_planet()

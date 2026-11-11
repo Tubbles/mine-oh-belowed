@@ -40,7 +40,7 @@ test_the_field_view_distances_rise_within_the_limit :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_view_problem({{64, 120, 231, 453}}), "")
 	refused := [?][FIELD_LEVEL_COUNT]int{{64, 119, 384, 1024}, {64, 160, 270, 1024}, {64, 160, 384, 605}}
 	for distances in refused {
-		testing.expectf(t, field_view_problem({distances}) != "", "%v lets a node border one two levels coarser", distances)
+		testing.expectf(t, field_view_problem({distances}) != "", "%v leaves a level less than its gap above the one before", distances)
 	}
 }
 

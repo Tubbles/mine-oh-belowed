@@ -1294,13 +1294,12 @@ field_brushes_problem :: proc(brushes: []Field_Brush_Config) -> string {
 	return ""
 }
 
-// The least gap between the distances of levels L - 1 and L: the diagonal
-// of a level L - 1 node at the widest spacing. Any node touching a level
-// L - 1 node lies within that node's diagonal of it, so with this gap a
-// node chosen at level L - 1 for its own distance never borders one chosen
-// two levels coarser (the 2:1 balance the skirts' reach assumes), and the
-// children of a node split at the last but one distance never lie beyond
-// the last one (no hole at the far end).
+// The least gap between the distances of levels L - 1 and L: a level
+// L - 1 node's diagonal at the widest spacing, so few nodes meet one two
+// levels coarser. It does not rule that out: the child of a split node
+// reaches up to its parent's diagonal, twice this, past its level's
+// distance and can meet such a node at an edge or a corner, which the
+// selection's balance splits (balance_field_selection, 0354).
 field_level_gap_metres :: proc(level: int) -> int {
 	node_metres := FIELD_FINEST_NODE_MAXIMUM_METRES << uint(level - 1)
 	return (node_metres * SQUARE_ROOT_OF_THREE_TEN_THOUSANDTHS + 9999) / 10000

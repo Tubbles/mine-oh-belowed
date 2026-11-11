@@ -24,7 +24,9 @@ import "platform"
 // which meets the shallow rays from the finer side that pass over the
 // finer node's flap. Nodes of one level meet without a gap and hang none
 // there: a skirt's straight leg leaves a curved surface (a dug pit's rim)
-// and would stand in the air. Everything here is integer: positions in
+// and would stand in the air. The selection is balanced at faces, edges
+// and corners (balance_field_selection, 0354), so a skirt never meets a
+// node two levels coarser. Everything here is integer: positions in
 // World_Position units, distances squared.
 
 // FIELD_LEVEL_COUNT is with the data that sets the levels' distances
@@ -202,10 +204,9 @@ field_walk_top_level :: proc(view: Field_View) -> i32 {
 	return level
 }
 
-// The nodes to draw, split down the octree from the 27 nodes of the walk's
-// top level around each camera; nearest first, so streaming serves the near
-// ones first.
-select_field_nodes :: proc(view: Field_View, allocator := context.allocator) -> []Field_Node {
+// The nodes split down the octree from the 27 nodes of the walk's top
+// level around each camera, unsorted, in the temp allocator.
+walk_field_nodes :: proc(view: Field_View) -> [dynamic]Field_Node_Distance {
 	top := field_walk_top_level(view)
 	node_size := sample_axis_to_position(field_node_samples(top), view.spacing_millimetres)
 	selected := make([dynamic]Field_Node_Distance, context.temp_allocator)
@@ -225,6 +226,134 @@ select_field_nodes :: proc(view: Field_View, allocator := context.allocator) -> 
 			}
 		}
 	}
+	return selected
+}
+
+// A node's diagonal in World_Position units, rounded up.
+field_node_diagonal :: proc(level: i32, spacing_millimetres: int) -> i64 {
+	edge := sample_axis_to_position(field_node_samples(level), spacing_millimetres)
+	return (edge * SQUARE_ROOT_OF_THREE_TEN_THOUSANDTHS + 9999) / 10000
+}
+
+// Whether a selected node can touch one two or more levels coarser: such a
+// node lies at least the next level's distance from its nearest camera,
+// and a node touching this one lies within its distance plus its diagonal
+// (the + 1 covers the square root's floor).
+field_node_may_touch_coarser :: proc(view: Field_View, entry: Field_Node_Distance) -> bool {
+	distance := i64(integer_square_root(u64(entry.distance_squared)))
+	return distance + 1 + field_node_diagonal(entry.node.level, view.spacing_millimetres) >= view.level_distances[entry.node.level + 1]
+}
+
+// The held node of least_level or coarser that holds the region: its
+// ancestors from least_level up to the coarsest level, the first in held.
+field_selected_holder :: proc(held: map[Field_Node]int, region: Field_Node, least_level: i32) -> (holder: Field_Node, found: bool) {
+	ancestor := region
+	for ancestor.level < least_level {
+		ancestor = field_node_parent(ancestor)
+	}
+	for ; ancestor.level <= FIELD_COARSEST_LEVEL; ancestor = field_node_parent(ancestor) {
+		if ancestor in held {
+			return ancestor, true
+		}
+	}
+	return {}, false
+}
+
+// The selected node replaced by its children as the walk selects them
+// (select_field_node), each appended child held at its index.
+split_selected_field_node :: proc(view: Field_View, node: Field_Node, selected: ^[dynamic]Field_Node_Distance, held: ^map[Field_Node]int) {
+	delete_key(held, node)
+	first := len(selected^)
+	for child in 0 ..< 8 {
+		select_field_node(view, Field_Node{node.level - 1, node.coordinate * 2 + field_corner_offset(child)}, selected)
+	}
+	for index in first ..< len(selected^) {
+		held^[selected^[index].node] = index
+	}
+}
+
+// Whether no node of the walk can pass field_node_may_touch_coarser, so
+// the balance would split nothing: a level l node's parent was split
+// within level l's distance, so the node lies under that distance plus
+// twice its diagonal, and the check asks that plus its diagonal to reach
+// level l + 1's distance. So it holds when, for every level l with a
+// level two coarser present (level l + 1's distance below the last),
+// the next distance lies more than three of its diagonals past its own,
+// in the check's rounding. The shipped levels at 333 mm spacing do.
+field_selection_needs_no_balance :: proc(view: Field_View) -> bool {
+	distances := view.level_distances
+	for level in i32(0) ..= FIELD_COARSEST_LEVEL - 2 {
+		coarser_present := distances[level + 1] < distances[FIELD_COARSEST_LEVEL]
+		if coarser_present && distances[level + 1] - distances[level] <= 3 * field_node_diagonal(level, view.spacing_millimetres) {
+			return false
+		}
+	}
+	return true
+}
+
+// Whether the entry at index is still held there (not split).
+field_selection_holds :: proc(held: map[Field_Node]int, entry: Field_Node_Distance, index: int) -> bool {
+	position, found := held[entry.node]
+	return found && position == index
+}
+
+// The selection balanced 2:1 at faces, edges and corners (0354): a
+// selected node touching one two or more levels finer is split, finest
+// contacts first. The level gap does not ensure it: a level L node's
+// parent was split within the distance of level L, so the node reaches
+// up to that distance plus the parent's diagonal, twice the gap, where a
+// node two levels coarser needs only the distance of level L + 1.
+// A split child lies past its parent's distance, so the walk keeps it
+// whole; splits append only levels coarser than the one in hand, so one
+// pass from the finest up settles every contact. Where the distances
+// leave no contact possible (field_selection_needs_no_balance) the walk
+// is kept as it is, before anything is built.
+balance_field_selection :: proc(view: Field_View, selected: ^[dynamic]Field_Node_Distance) {
+	if field_selection_needs_no_balance(view) {
+		return
+	}
+	held := make(map[Field_Node]int, len(selected^), context.temp_allocator)
+	for entry, index in selected^ {
+		held[entry.node] = index
+	}
+	for level in i32(0) ..= FIELD_COARSEST_LEVEL - 2 {
+		for index := 0; index < len(selected^); index += 1 {
+			entry := selected^[index]
+			if entry.node.level != level || !field_selection_holds(held, entry, index) || !field_node_may_touch_coarser(view, entry) {
+				continue
+			}
+			for neighbour in 0 ..< 27 {
+				offset := [3]i32{i32(neighbour % 3), i32(neighbour / 3 % 3), i32(neighbour / 9)} - 1
+				if offset == ([3]i32{}) {
+					continue
+				}
+				region := Field_Node{level, entry.node.coordinate + offset}
+				for {
+					holder, found := field_selected_holder(held, region, level + 2)
+					if !found {
+						break
+					}
+					split_selected_field_node(view, holder, selected, &held)
+				}
+			}
+		}
+	}
+	kept := 0
+	for entry, index in selected^ {
+		if field_selection_holds(held, entry, index) {
+			selected^[kept] = entry
+			kept += 1
+		}
+	}
+	resize(selected, kept)
+}
+
+// The nodes to draw: the walk's (walk_field_nodes) balanced
+// (balance_field_selection), nearest first, so streaming serves the near
+// ones first.
+select_field_nodes :: proc(view: Field_View, allocator := context.allocator) -> []Field_Node {
+	selected := walk_field_nodes(view)
+	balance_field_selection(view, &selected)
 	slice.sort_by(selected[:], field_node_distance_before)
 	nodes := make([]Field_Node, len(selected), allocator)
 	for entry, index in selected {
