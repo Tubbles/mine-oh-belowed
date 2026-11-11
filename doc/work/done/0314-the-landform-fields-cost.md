@@ -1,6 +1,6 @@
 # 0314: The landform field's cost
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, 2e7d874)
 
 Milestone: the world generation series, after 0306. 0306's design measured its relief at about three times the cost of an evaluation in the wild and a fresh view at 5 to 6.5 times the CPU of before (a start, a teleport, the tech demo), about a quarter of a core while walking. The design left out an estimated reject per node: the steepest crests (about 64 degrees) make the slack swamp the coarse nodes, and a missed fold leaves a hole.
 
