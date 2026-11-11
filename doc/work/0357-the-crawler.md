@@ -15,7 +15,8 @@ The main agent writes the control design before the design stage starts: the dri
 ## Change
 
 - A frame whose pose changes every tick, set from the terrain under its tracks in integers, with a climb limit in data; a player and everything on the deck carried with it; parked while a belt, a pipe or a cable joins it to another frame.
-- The chassis built from parts and each part replaced by a better one with nothing on the deck taken off.
+- A sandbox, no slots (user, 2026-11-11: "I don't like prebaked slots on the vessel though, I want to capture the sandbox feel from TLC"): the crawler is built freely on its own grid from structure pieces (deck, wall, ramp, rail) and track units, grown in any direction, and each piece replaced by a better one in place. What bounds it is numbers, not slots: the mass the tracks carry and the power they draw, in integers from data.
+- What is placed on it is vessel equipment, not the factory's machines (user, 2026-11-11: "vessel oriented power up machines"): a kind in data says where a thing mounts (the ground, a vessel, both), with a first list for the design to propose (battery bank, charging cradle, hold, fabricator, lamp mast, scanner, cable reel). On board they are joined by hand run cables as on the ground (0355); belts and pipes on board are not part of this item.
 - Everything on the deck is simulated in full while it drives (user, 2026-11-11: "Full physics sim on the deck"): machines work, belts carry, bodies stand and collide. What rides on the deck and what stands on the ground. Whether the crawler's own motion is physics too or set from the terrain is put to the user by the design (`SUGGESTIONS.md`).
 - A new planet's crawler starts from that planet's material.
 - The renderer draws a frame that moves (0346 and 0347 must allow it).
