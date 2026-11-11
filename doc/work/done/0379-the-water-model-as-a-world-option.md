@@ -1,6 +1,6 @@
 # 0379: The water model as a world option
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, c654c85)
 
 A new world uses the teleport water model; only the water tech demo's screen offers bodies. The user (2026-11-11): "teleport for now, but make both selectable from world options".
 
