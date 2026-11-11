@@ -1,6 +1,6 @@
 # 0343: A view distance setting
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, cfbad26)
 
 The field draws its terrain and its trees to 1024 m, fixed in the code. The user (2026-11-11), asked whether the view may shrink for 60 frames a second: "yes let's make it into a setting if it isn't already, and I can play around with it and say if I think its performant enough. 512 m can be the threshold for 60 fps for now".
 
