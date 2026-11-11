@@ -1,6 +1,6 @@
 # 0370: Water leaves at the loaded set's edge
 
-Status: designed (2026-11-11)
+Status: implementing (2026-11-11)
 
 Found by 0367's design: under the teleport water model sources only add and nothing above the sea takes water away, so a spring in a closed basin grows a pool for ever and its water never reaches a repeating state. 0367's savings do not meet its target there.
 
@@ -168,3 +168,7 @@ Before reporting: `./build.sh check`, `./build.sh check-android`, `./build.sh te
 4. Question 4: the spring's course drawn beyond the set goes to `SUGGESTIONS.md`.
 5. Question 5: step 2 (the sea's samples under teleport) stays in this item.
 6. Order: after 0367 has landed, in its stream, since both edit the water's spread and the probe. One implementer.
+
+### After 0367's landing (main agent, 2026-11-11)
+
+0367 landed with `spring_fill_per_tick = 64`, not 16: at 16 the stream spread too thin to be drawn. Wherever this specification says 16, the shipped rate is 64 and stays; the expected figures scale (the growth is `64 × 600` a window before this item). The probe's constant is `SPRING_REPORT_RECORDED_DIGESTS`, recorded at 64. Everything else stands.
