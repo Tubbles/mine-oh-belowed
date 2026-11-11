@@ -2,7 +2,7 @@
 
 Status: designed (2026-11-11)
 
-Part B of 0361's specification (`doc/work/0361-the-vessel-model-system.md`), split off at its approval: the swap in place, the computed figures, the link seam and the vessel's panel.
+Part B of 0361's specification (`doc/work/done/0361-the-vessel-model-system.md`), split off at its approval: the swap in place, the computed figures, the link seam and the vessel's panel.
 
 ## Goal
 
