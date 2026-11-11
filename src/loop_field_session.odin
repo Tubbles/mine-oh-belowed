@@ -119,15 +119,16 @@ field_viewport_eyes :: proc(state: ^Frame_State) -> []World_Position {
 	return eyes[:]
 }
 
-// One selection for every viewport's eye (Field_View.more_cameras), in
-// the temp allocator; none outside a field session.
-field_viewport_selection :: proc(state: ^Frame_State) -> []Field_Node {
+// One selection for every viewport's eye (Field_View.more_cameras) at the
+// given level distances, in the temp allocator; none outside a field
+// session.
+field_viewport_selection :: proc(state: ^Frame_State, level_distances_metres: [FIELD_LEVEL_COUNT]int) -> []Field_Node {
 	session := state.session
 	eyes := field_viewport_eyes(state)
 	if len(eyes) == 0 {
 		return nil
 	}
-	view := make_field_view(eyes[0], session.planet, session.simulation.field.spacing_millimetres, state.config.field_view.level_distances_metres)
+	view := make_field_view(eyes[0], session.planet, session.simulation.field.spacing_millimetres, level_distances_metres)
 	view.more_cameras = eyes[1:]
 	return select_field_nodes(view, context.temp_allocator)
 }
@@ -147,10 +148,13 @@ carry_field_turn :: proc(frame: Input_Frame, remainder: [2]f32, tick_rate: int) 
 }
 
 // The frame's selection, made on the first call of the frame and reused
-// by the streaming and every viewport's draw (render_frame clears it).
+// by the streaming and every viewport's draw (render_frame clears it). It
+// is made at the level distances packed inside the view distance setting
+// (0343), stored beside it so the frame's other uses read the same view.
 frame_field_selection :: proc(state: ^Frame_State) -> []Field_Node {
 	if state.presentation.field_selection == nil {
-		state.presentation.field_selection = field_viewport_selection(state)
+		state.presentation.field_level_distances = field_view_level_distances(state.config.field_view, state.settings.view_distance_metres)
+		state.presentation.field_selection = field_viewport_selection(state, state.presentation.field_level_distances)
 	}
 	return state.presentation.field_selection
 }
@@ -874,22 +878,27 @@ field_arrival_debris_site :: proc(simulation: ^Simulation_State, content: Simula
 	return arrival_debris_site(generation, config, pod_base, reach)
 }
 
-// Before the viewports draw: the sun's shadow map released when the
-// setting turned it off or its size changed (0328, serve_sun_shadows),
-// the finished meshes up, the trees' tiles round the eyes
-// (update_field_tree_cache, upload_field_tree_tiles) and each player's
-// crouch progress (0218), read by value by the draws.
+// Before the viewports draw, at the frame's view distance (0343, the
+// distances frame_field_selection stored): the sun's shadow map released
+// when the setting turned it off or its size changed (0328,
+// serve_sun_shadows), the haze's end, the finished meshes up and those of
+// the nodes that left the selection unloaded, the trees' tiles round the
+// eyes out to the view (update_field_tree_cache, upload_field_tree_tiles)
+// and each player's crouch progress (0218), read by value by the draws.
 prepare_field_frame :: proc(state: ^Frame_State) {
 	session := state.session
 	if !state.presentation.field_renderer_ready {
 		return
 	}
+	frame_field_selection(state)
+	last := state.presentation.field_level_distances[FIELD_COARSEST_LEVEL]
 	receivers := sun_shadow_receivers(&state.presentation.field_renderer, state.presentation.model_renderer)
 	row := sun_shadows_row(state.config.sun_shadows)
 	serve_sun_shadows(&state.presentation.field_renderer.sun_shadows, receivers[:], sun_shadows_enabled(state.settings.sun_shadows, row.on), row.map_texels)
+	state.presentation.field_renderer.last_distance_metres = f32(last)
 	upload_streamed_field_meshes(&state.presentation.field_renderer, &session.field_streaming)
 	trees := &state.presentation.field_renderer.trees
-	update_field_tree_cache(trees, &session.field_streaming, field_tree_generation(&session.simulation.field), field_viewport_eyes(state), session.simulation.field.felled_trees, field_trees_row(state.config.field_trees), session.field_content.foundation_pitch_millimetres)
+	update_field_tree_cache(trees, &session.field_streaming, field_tree_generation(&session.simulation.field), field_viewport_eyes(state), session.simulation.field.felled_trees, field_trees_view_row(field_trees_row(state.config.field_trees), last), session.field_content.foundation_pitch_millimetres)
 	upload_field_tree_tiles(trees)
 	crouch_progress := &state.presentation.field_renderer.crouch_progress
 	resize(crouch_progress, len(session.simulation.players))

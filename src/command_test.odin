@@ -611,6 +611,37 @@ test_the_arrival_camera_command_sets_and_clears :: proc(t: ^testing.T) {
 	testing.expect(t, !command_writes_simulation("arrival_camera"))
 }
 
+// Work item 0343: view_distance sets the setting; a value outside 256 to
+// 1024, a word and a wrong count fail and keep it; without the frame's
+// settings it runs only in the game; it needs no world and never writes
+// the simulation.
+@(test)
+test_the_view_distance_command_sets_the_setting :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	settings := DEFAULT_SETTINGS
+	command_context := command_test_context(test)
+	command_context.settings = &settings
+	response, _ := execute_command_line(command_context, "view_distance 512")
+	testing.expect(t, response.ok, response.text)
+	testing.expect_value(t, response.text, "view distance 512 m")
+	testing.expect_value(t, settings.view_distance_metres, 512)
+	for bad in ([?]string{"view_distance 255", "view_distance 1025", "view_distance abc", "view_distance", "view_distance 512 768"}) {
+		response, _ = execute_command_line(command_context, bad)
+		testing.expectf(t, !response.ok, "%q answers %q", bad, response.text)
+		testing.expectf(t, settings.view_distance_metres == 512, "%q changed the setting to %d", bad, settings.view_distance_metres)
+	}
+	command_context.settings = nil
+	response, _ = execute_command_line(command_context, "view_distance 768")
+	testing.expect(t, !response.ok && strings.contains(response.text, "runs only in the game"), response.text)
+	command_context.settings = &settings
+	command_context.simulation = nil
+	response, _ = execute_command_line(command_context, "view_distance 768")
+	testing.expect(t, response.ok, response.text)
+	testing.expect_value(t, settings.view_distance_metres, 768)
+	testing.expect(t, !command_writes_simulation("view_distance"))
+}
+
 @(test)
 test_command_queries :: proc(t: ^testing.T) {
 	test := make_command_test()

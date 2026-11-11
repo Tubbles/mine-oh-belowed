@@ -31,6 +31,9 @@ Settings :: struct {
 	// render_sun_shadows.odin): default takes the build's data row
 	// (sun_shadows_row's on), on and off override it.
 	sun_shadows:               Sun_Shadows_Mode,
+	// How far the field is drawn, in whole metres (work item 0343,
+	// field_view_level_distances).
+	view_distance_metres:      int,
 	// The first person camera rises and falls with each step (work item
 	// 0066); off for reduced motion.
 	head_bob:                  bool,
@@ -167,6 +170,7 @@ DEFAULT_SETTINGS :: Settings {
 	third_person_shoulder     = 0.6,
 	weather                   = true,
 	sun_shadows               = .Default,
+	view_distance_metres      = MAXIMUM_VIEW_DISTANCE_METRES,
 	head_bob                  = true,
 	split_screen              = .Stacked,
 	master_volume             = 0.8,
@@ -213,6 +217,10 @@ THIRD_PERSON_SHOULDER_RANGE :: Slider_Range{-1, 1, 0.1}
 // MAXIMUM_AUTOSAVE_MINUTES; the slider stops at an hour so a stick can
 // walk it.
 AUTOSAVE_MINUTES_RANGE :: Slider_Range{0, 60, 1}
+MINIMUM_VIEW_DISTANCE_METRES :: 256
+MAXIMUM_VIEW_DISTANCE_METRES :: 1024
+VIEW_DISTANCE_STEP_METRES :: 256
+VIEW_DISTANCE_RANGE :: Slider_Range{MINIMUM_VIEW_DISTANCE_METRES, MAXIMUM_VIEW_DISTANCE_METRES, VIEW_DISTANCE_STEP_METRES}
 
 // Stick sensitivity and pitch inversion. Gyro and trackpad sensitivity are
 // applied by the SDL3 backend, where those deltas are still separate.

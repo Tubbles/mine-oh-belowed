@@ -11,7 +11,7 @@ SETTINGS_PANEL_WIDTH :: 960
 // Title, tabs, the longest tab's rows and the back button. The tabs
 // scroll where the panel is shorter (UI scale 1.5).
 SETTINGS_ROW_COUNT :: 14
-DISPLAY_SETTINGS_ROW_COUNT :: 19
+DISPLAY_SETTINGS_ROW_COUNT :: 20
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
 ACCESSIBILITY_SETTINGS_ROW_COUNT :: 10
@@ -555,6 +555,12 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 	shadows := sun_shadows_enabled(settings.sun_shadows, sun_shadows_default)
 	if ui_toggle(state, cut_row(content), text("settings_sun_shadows"), &shadows, text("settings_sun_shadows_tooltip")) {
 		settings.sun_shadows = shadows ? .On : .Off
+	}
+	// The view distance (0343): a drag applies on release, so it does not
+	// restream the field at each step.
+	view_distance := f32(settings.view_distance_metres)
+	if ui_layout_slider(state, cut_row(content), text("settings_view_distance"), &view_distance, VIEW_DISTANCE_RANGE, whole_number_text, text("settings_view_distance_tooltip")) {
+		settings.view_distance_metres = int(math.round(view_distance))
 	}
 	ui_toggle(state, cut_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
 	// Applied on the release of a drag (ui_layout_slider), since it

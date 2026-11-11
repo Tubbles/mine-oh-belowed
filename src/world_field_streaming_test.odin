@@ -265,6 +265,59 @@ test_one_selection_serves_two_viewports :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0343: the selection at a 256 m view holds no eighth level node
+// and nothing past 256 m, and the streaming drops exactly the meshed nodes
+// of the 1024 m selection the shorter one left out, keeping the shared.
+@(test)
+test_a_shorter_view_drops_the_far_nodes :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	eye := World_Position{0, metres_to_position_units(i64(planet.radius_metres + 2)), 0}
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	field_view := config.field_view
+	selection_at :: proc(eye: World_Position, planet: Planet, field_view: Field_View_Config, view_distance_metres: int) -> []Field_Node {
+		view := make_field_view(eye, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, field_view_level_distances(field_view, view_distance_metres))
+		return select_field_nodes(view, context.temp_allocator)
+	}
+	far := selection_at(eye, planet, field_view, 1024)
+	near := selection_at(eye, planet, field_view, 256)
+	testing.expectf(t, len(near) < len(far), "%d nodes at 256 m against %d at 1024 m", len(near), len(far))
+	reach := metres_to_position_units(256)
+	near_set := make(map[Field_Node]struct{}, context.temp_allocator)
+	for node in near {
+		near_set[node] = {}
+		testing.expectf(t, node.level < FIELD_COARSEST_LEVEL, "%v is an eighth level node at 256 m", node)
+		testing.expectf(t, box_distance_squared(field_node_box(node, DEFAULT_SAMPLE_SPACING_MILLIMETRES), eye) <= reach * reach, "%v lies past 256 m", node)
+	}
+	far_has_coarsest := false
+	for node in far {
+		far_has_coarsest ||= node.level == FIELD_COARSEST_LEVEL
+	}
+	testing.expect(t, far_has_coarsest, "the 1024 m selection holds eighth level nodes")
+	streaming := start_field_streaming(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
+	defer stop_field_streaming(&streaming)
+	for node in far {
+		streaming.mesh_revisions[node] = 1
+	}
+	drop_unselected_field_nodes(&streaming, near)
+	dropped := make(map[Field_Node]struct{}, context.temp_allocator)
+	for node in streaming.dropped {
+		dropped[node] = {}
+	}
+	testing.expect_value(t, len(dropped), len(streaming.dropped))
+	missing := 0
+	for node in far {
+		if node in near_set {
+			testing.expectf(t, node in streaming.mesh_revisions, "the shared %v keeps its revision", node)
+			testing.expectf(t, node not_in dropped, "the shared %v is dropped", node)
+		} else {
+			missing += 1
+			testing.expectf(t, node in dropped, "%v left the selection but is not dropped", node)
+		}
+	}
+	testing.expect_value(t, len(dropped), missing)
+	free_all(context.temp_allocator)
+}
+
 // The waves' budget (0294 fix round, 2026-11-06): 64 meshed nodes whose
 // chunks only the waves marked and ten nodes never meshed, farther in the
 // selection. The unmeshed take the frame's cap first; the waves' remeshes

@@ -1,6 +1,7 @@
 package game
 
 import "core:encoding/json"
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -258,6 +259,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.frame_rate_cap = 144
 	settings.weather = false
 	settings.sun_shadows = .Off
+	settings.view_distance_metres = 512
 	settings.head_bob = false
 	settings.field_of_view = 95
 	settings.sprint_field_of_view_kick = 0
@@ -311,6 +313,43 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\tedits_directory = \"/storage/emulated/0/Download\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tdeck_preset_applied = true\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tsun_shadows = \"off\"\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tview_distance_metres = 512\n"), string(written_data))
+}
+
+// Work item 0343: the view distance loads as 1024 without the key, keeps
+// a value between the steps, refuses one outside 256 to 1024 or not whole,
+// and takes the command line's.
+@(test)
+test_the_view_distance_setting_keeps_its_bounds :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	drop_in := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-view.sjson")
+	write_test_file(drop_in, "settings = {weather = false}")
+	loaded, problem := load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, loaded.configuration.settings.view_distance_metres, 1024)
+	for metres in ([?]int{256, 1024, 600}) {
+		write_test_file(drop_in, strings.concatenate({"settings = {view_distance_metres = ", fmt.tprint(metres), "}"}))
+		loaded, problem = load_configuration(test_environment(root), {})
+		testing.expect_value(t, problem, "")
+		testing.expect_value(t, loaded.configuration.settings.view_distance_metres, metres)
+	}
+	refused := [?][2]string {
+		{"settings = {view_distance_metres = 255}", "settings.view_distance_metres is 255, outside 256 to 1024"},
+		{"settings = {view_distance_metres = 1025}", "settings.view_distance_metres is 1025, outside 256 to 1024"},
+		{"settings = {view_distance_metres = 512.5}", "settings.view_distance_metres must be a whole number"},
+	}
+	for entry in refused {
+		write_test_file(drop_in, entry[0])
+		_, problem = load_configuration(test_environment(root), {})
+		expect_problem_mentions(t, problem, drop_in, entry[1])
+	}
+	os.remove(drop_in)
+	loaded, problem = load_configuration(test_environment(root), {"settings.view_distance_metres=512"})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, loaded.configuration.settings.view_distance_metres, 512)
+	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.view_distance_metres"), COMMAND_LINE_SOURCE)
 }
 
 // Work item 0328: a settings file written before the Sun shadows setting

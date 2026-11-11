@@ -525,6 +525,9 @@ validate_settings :: proc(settings: Settings, provenance: Configuration_Provenan
 	if problem := range_problem(provenance, "settings.frame_rate_cap", f32(settings.frame_rate_cap), 0, MAXIMUM_FRAME_RATE_CAP); problem != "" {
 		return problem
 	}
+	if problem := range_problem(provenance, "settings.view_distance_metres", f32(settings.view_distance_metres), MINIMUM_VIEW_DISTANCE_METRES, MAXIMUM_VIEW_DISTANCE_METRES); problem != "" {
+		return problem
+	}
 	return resolution_problem(provenance, settings.resolution)
 }
 

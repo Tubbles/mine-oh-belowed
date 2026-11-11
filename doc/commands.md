@@ -30,7 +30,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 - `#` outside quotes starts a comment. Blank and comment lines get no response.
 - A response is `ok`, `ok <text>` or `error <text>`, then further lines for queries, then a line holding only `.`.
 - On the block world coordinates are world block coordinates as the diagnostics show them. On a field world a position is metres in the world's frame (the planet's centre at the origin, +y through latitude 90), up to three decimals; latitude and longitude are degrees as the F3 page shows them (longitude 0 towards +x, 90 towards +z); a height is metres above the sea level; a yaw is the bearing in degrees from north, turning the way the game's yaw turns, and a pitch is degrees up. A frame cell is the frame's id and the cell's three integers ([architecture.md](architecture.md), Frames). Rotations: 0 points to +x, 1 to +z, 2 to -x, 3 to -z (on a frame along its axes). Names are the ids in the data files. Numbers outside a command's bounds are refused.
-- Commands other than `help`, `pause`, `resume`, `screenshot`, `reload`, `query textures`, `query ui` and the input commands need a loaded world (`error no world is loaded`).
+- Commands other than `help`, `pause`, `resume`, `view_distance`, `screenshot`, `reload`, `query textures`, `query ui` and the input commands need a loaded world (`error no world is loaded`).
 - Changes land at the start of the next tick. While a pausing screen is open in single player the world changes at once but time does not move.
 
 ## Commands
@@ -67,6 +67,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | `blueprint <path>` | Runs a blueprint file (below). |
 | `tick <n>` | Runs n ticks (1 to 1000000) with no player input (under `--input=none` with the first viewport's, Input, Timing), up to one second of wall time per frame; a tick whose chunks are not there yet (a loaded field world's set while it generates) waits for a later frame as a lockstep tick does. Then answers `ok ran n ticks, now at tick T`. Later lines wait for it. |
 | `pause`, `resume` | Holds the ticks like a pausing screen, or releases them. `tick` still runs while paused. |
+| `view_distance <metres>` | Sets the View distance setting (0343, [ui.md](ui.md), Display) to 256 to 1024 whole metres as its Settings row does, answering `ok view distance <metres> m`; the next frame draws at it and the farther nodes and tree tiles stream in over the frames after. Presentation only, so a joined machine may use it; the change persists in `config.d/90-settings.sjson` at the end of the frame like any setting. |
 | `save` | Saves the world like the pause menu's Save. |
 | `reload` | The content reload of F8 and the Developer screen ([architecture.md](architecture.md), Data driven content). Answers `ok reloaded: ...` with the ids added and removed per table, or `error <file and problem>` with the old data and world kept. |
 | `screenshot [name]` | A PNG of the next frame at `<state>/screenshots/<name>.png`, default name the UTC time (`2026-09-27T12-00-00Z`). A name holds letters, digits, `.`, `-` and `_`, up to 64, not starting with a dot. |

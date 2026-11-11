@@ -44,7 +44,9 @@ loose_item_despawn_minutes = 15
 // resolution, nearer than the second at half, the third at a quarter, the
 // fourth at an eighth; beyond the fourth only the globe is drawn. Rising,
 // in metres, at most 4096. The planet preview (--planet-preview) streams
-// field chunks within the first.
+// field chunks within the first. The View distance setting packs these
+// levels inside a shorter view (work item 0343), so the first distance
+// must fit the least view distance, 256 m, together with the gaps.
 field_view = {
 	level_distances_metres = [64, 160, 384, 1024]
 }

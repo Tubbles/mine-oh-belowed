@@ -85,6 +85,9 @@ Command_Context :: struct {
 	// The session's arrival camera (work item 0304), nil without a world:
 	// render only like the weather, never saved.
 	arrival_camera:       ^Maybe([3]f32),
+	// The frame's settings (work item 0343, view_distance); nil in the
+	// tick's context (session_command_context) and the benchmark's.
+	settings:             ^Settings,
 	// The texture editor's entries (work item 0100) with their current
 	// parameters, for query textures.
 	textures:             []Texture_Editor_Entry,
@@ -128,6 +131,7 @@ command_usages := [?]Command_Usage {
 	{"time <dawn|noon|dusk|midnight>", "set the time of day"},
 	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
 	{"arrival_camera <x> <y> <z> | arrival_camera off", "during the fall, the camera at the point in cells of the pod's model frame looking at its middle, moved with the pod; off returns to the seat"},
+	{"view_distance <metres>", "how far the field is drawn, 256 to 1024 m, as the View distance setting"},
 	{"fly <on|off>", "fly mode, swept against blocks"},
 	{"noclip <on|off>", "flying passes through blocks"},
 	{"cheat_speed <on|off>", "fast movement and hand mining"},
@@ -319,6 +323,8 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 	case "pause", "resume":
 		command_context.control.paused = name == "pause"
 		return command_ok("%s", name == "pause" ? "paused" : "resumed")
+	case "view_distance":
+		return command_view_distance(command_context, arguments)
 	case "query":
 		// The textures exist without a world.
 		if len(arguments) > 0 && arguments[0] == "textures" {
@@ -556,6 +562,23 @@ command_weather :: proc(command_context: Command_Context, arguments: []string) -
 		}
 	}
 	return usage_error("weather <clear|overcast|rain|fog|auto>")
+}
+
+// view_distance <metres> (work item 0343): sets the View distance setting
+// as its Settings row does; the next frame draws at it. Needs no world.
+command_view_distance :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	if command_context.settings == nil {
+		return command_error("view_distance runs only in the game")
+	}
+	if len(arguments) != 1 {
+		return usage_error("view_distance <metres>")
+	}
+	metres, problem := parse_ranged_word(arguments[0], MINIMUM_VIEW_DISTANCE_METRES, MAXIMUM_VIEW_DISTANCE_METRES, "the view distance")
+	if problem != "" {
+		return command_error("%s", problem)
+	}
+	command_context.settings.view_distance_metres = metres
+	return command_ok("view distance %d m", metres)
 }
 
 // arrival_camera <x> <y> <z> (cells of the pod's model frame, each within

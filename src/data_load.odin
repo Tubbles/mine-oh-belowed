@@ -304,6 +304,16 @@ field_trees_row :: proc(config: Field_Trees_Config) -> Field_Trees_Row {
 	}
 }
 
+// The row inside the view distance setting (work item 0343): the cards end
+// at the smaller of the row's far distance and the view, and the far fade
+// is at most a quarter of that.
+field_trees_view_row :: proc(row: Field_Trees_Row, view_distance_metres: int) -> Field_Trees_Row {
+	result := row
+	result.far_metres = min(row.far_metres, view_distance_metres)
+	result.far_fade_metres = min(row.far_fade_metres, result.far_metres / 4)
+	return result
+}
+
 // The ground cover (work item 0311, world_field_cover.odin): each kind's
 // reach (its near and far) times distance_percent, clamped 8 m inside the
 // first level of detail's distance; the instances placed kept by their
@@ -1312,7 +1322,41 @@ field_view_problem :: proc(field_view: Field_View_Config) -> string {
 	if distances[FIELD_LEVEL_COUNT - 1] > MAXIMUM_FIELD_VIEW_DISTANCE_METRES {
 		return fmt.tprintf("field_view.level_distances_metres[%d] %d is above %d", FIELD_LEVEL_COUNT - 1, distances[FIELD_LEVEL_COUNT - 1], MAXIMUM_FIELD_VIEW_DISTANCE_METRES)
 	}
+	if field_view_level_distances(field_view, MINIMUM_VIEW_DISTANCE_METRES)[0] != distances[0] {
+		return fmt.tprintf("field_view.level_distances_metres[0] %d leaves the coarser levels no room inside the least view distance, %d m", distances[0], MINIMUM_VIEW_DISTANCE_METRES)
+	}
 	return ""
+}
+
+// The level distances packed inside the view distance setting (work item
+// 0343): the view is the smaller of the setting and the data's last
+// distance. From the coarsest level down, the first level that can end at
+// the view while each finer level keeps its gap below the next and level 0
+// keeps its data distance is the one that ends there; the coarser levels
+// are empty, their distance the view.
+field_view_level_distances :: proc(field_view: Field_View_Config, view_distance_metres: int) -> [FIELD_LEVEL_COUNT]int {
+	data := field_view.level_distances_metres
+	last := min(view_distance_metres, data[FIELD_LEVEL_COUNT - 1])
+	for coarsest := FIELD_LEVEL_COUNT - 1; coarsest >= 1; coarsest -= 1 {
+		packed := pack_field_level_distances(data, last, coarsest)
+		if packed[0] == data[0] {
+			return packed
+		}
+	}
+	return pack_field_level_distances(data, last, 0)
+}
+
+// The levels from coarsest up end at last; each finer level takes the
+// smaller of its data distance and the next level's less the gap.
+pack_field_level_distances :: proc(data: [FIELD_LEVEL_COUNT]int, last, coarsest: int) -> [FIELD_LEVEL_COUNT]int {
+	result: [FIELD_LEVEL_COUNT]int
+	for level in coarsest ..< FIELD_LEVEL_COUNT {
+		result[level] = last
+	}
+	for level := coarsest - 1; level >= 0; level -= 1 {
+		result[level] = min(data[level], result[level + 1] - field_level_gap_metres(level + 1))
+	}
+	return result
 }
 
 // Each row's values inside their bounds (0310): the cards reach at most

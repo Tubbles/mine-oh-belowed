@@ -141,6 +141,11 @@ Frame_Presentation :: struct {
 	// once (frame_field_selection) and cleared at the end of render_frame;
 	// in the temp allocator.
 	field_selection:      []Field_Node,
+	// The frame's level distances packed inside the view distance setting
+	// (field_view_level_distances, work item 0343), made together with the
+	// selection; prepare_field_frame reads them, so every draw of a frame
+	// uses one view. Not cleared at the end of the frame.
+	field_level_distances: [FIELD_LEVEL_COUNT]int,
 	// The item icons (render_icons.odin), rebuilt with the block atlas;
 	// content.items.icon_loaded points into it.
 	item_atlas:         Item_Atlas,
@@ -2159,6 +2164,7 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 		screenshot_directory = state.developer.screenshot_directory,
 		now                  = time.now(),
 		input                = {&state.interaction.injected, primary_ui(state), state.interaction.bindings, state.interaction.input_backend, state.interaction.input_devices_off, render_size()},
+		settings             = &state.settings,
 	}
 	if state.session != nil {
 		command_context.simulation = &state.session.simulation

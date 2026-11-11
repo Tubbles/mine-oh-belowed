@@ -1,6 +1,6 @@
 # 0343: A view distance setting
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-11)
 
 The field draws its terrain and its trees to 1024 m, fixed in the code. The user (2026-11-11), asked whether the view may shrink for 60 frames a second: "yes let's make it into a setting if it isn't already, and I can play around with it and say if I think its performant enough. 512 m can be the threshold for 60 fps for now".
 
@@ -210,3 +210,8 @@ UI audit: no new case is needed. `settings tab 0` (walk_focus, every size and te
 2. The fall at a short view is accepted as specified (the globe until the pod's ground comes within the view, through the haze). A capture of the descent at 256 m goes to the user with the landing; if it reads poorly, the descent at the data's distance is an item of its own.
 3. `src/command.odin` is also changed by 0341, in flight on its own branch: add the command where the specification says and expect the main agent to merge the two at the landing.
 4. Every build or test run goes inside `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0`.
+
+### Deviations (implementation, 2026-11-11)
+
+- `doc/code_map.md`: the content to ui record rises from 40 to 41 (`VIEW_DISTANCE_RANGE` is a `Slider_Range`, the accepted kind); `code_graph.py --check` fails without it.
+- `doc/presentation.md`: the field session's `prepare_field_frame` bullet also names the haze's end, since that bullet lists what the procedure does.

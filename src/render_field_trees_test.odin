@@ -214,6 +214,41 @@ test_a_felled_tree_rebuilds_its_tile :: proc(t: ^testing.T) {
 	testing.expect(t, tile not_in cache.tiles, "the tiles are generated again")
 }
 
+// Work item 0343: a cache holding every tile out to 1024 m, updated at a
+// 256 m view, keeps exactly the tiles within 256 m and two tile edges and
+// sends nothing to the workers.
+@(test)
+test_a_shorter_view_evicts_the_far_tree_tiles :: proc(t: ^testing.T) {
+	planet, generation, eye := tree_draw_test_setup()
+	streaming := start_field_streaming(DEFAULT_WORLD_SEED, planet, 1000, 0)
+	defer stop_field_streaming(&streaming)
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	eyes := [1]World_Position{eye}
+	cache: Field_Tree_Cache
+	defer destroy_field_tree_cache(&cache)
+	cache.cells = field_tree_tile_cells(generation.trees.spacing)
+	before := field_tree_tiles_around(&generation, eyes[:], 1024)
+	for tile in before {
+		cache.tiles[tile] = {}
+	}
+	felled := make(map[Tree_Key]struct{}, context.temp_allocator)
+	update_field_tree_cache(&cache, &streaming, &generation, eyes[:], felled, field_trees_view_row(config.field_trees.desktop, 256), 500)
+	testing.expect_value(t, cache.config.far_metres, 256)
+	edge := field_tree_tile_edge(&generation)
+	points := field_tree_eye_points(&generation, eyes[:])
+	keep := metres_to_position_units(256) + FIELD_TREE_KEEP_TILES * edge
+	for tile in cache.tiles {
+		testing.expectf(t, field_tree_tile_distance(tile, edge, points) <= keep * keep, "%v is kept past the view", tile)
+	}
+	for tile in before {
+		if field_tree_tile_distance(tile, edge, points) <= keep * keep {
+			testing.expectf(t, tile in cache.tiles, "%v within the view is evicted", tile)
+		}
+	}
+	testing.expect(t, len(cache.tiles) < len(before), "tiles are evicted")
+	testing.expect_value(t, len(cache.pending), 0)
+}
+
 // The tile as upload_field_tree_tiles leaves it, without the GPU.
 mark_field_tree_tile_uploaded :: proc(tile: Field_Tree_Tile_Draw) -> Field_Tree_Tile_Draw {
 	uploaded := tile

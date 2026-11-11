@@ -44,6 +44,54 @@ test_the_field_view_distances_rise_within_the_limit :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0343: the shipped levels packed inside each view distance,
+// level 0 kept, every level above the one before by at least its gap, and
+// empty levels only at the coarse end.
+@(test)
+test_the_view_distance_packs_the_levels_inside_it :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	field_view := config.field_view
+	cases := [?]struct {
+		view:     int,
+		expected: [FIELD_LEVEL_COUNT]int,
+	} {
+		{256, {64, 145, 256, 256}},
+		{512, {64, 160, 290, 512}},
+		{768, {64, 160, 384, 768}},
+		{1024, {64, 160, 384, 1024}},
+		{2048, {64, 160, 384, 1024}},
+		{600, {64, 160, 378, 600}},
+	}
+	for entry in cases {
+		testing.expectf(t, field_view_level_distances(field_view, entry.view) == entry.expected, "%d m packs %v, not %v", entry.view, field_view_level_distances(field_view, entry.view), entry.expected)
+	}
+	for view in MINIMUM_VIEW_DISTANCE_METRES ..= MAXIMUM_VIEW_DISTANCE_METRES {
+		distances := field_view_level_distances(field_view, view)
+		testing.expectf(t, distances[0] == 64 && distances[FIELD_LEVEL_COUNT - 1] == view, "%d m packs %v", view, distances)
+		empty_from := FIELD_LEVEL_COUNT
+		for level in 1 ..< FIELD_LEVEL_COUNT {
+			if distances[level] > distances[level - 1] {
+				testing.expectf(t, distances[level] - distances[level - 1] >= field_level_gap_metres(level), "%d m packs %v, level %d inside its gap", view, distances, level)
+			} else if empty_from == FIELD_LEVEL_COUNT {
+				empty_from = level
+			}
+		}
+		for level in empty_from ..< FIELD_LEVEL_COUNT {
+			testing.expectf(t, distances[level] == view, "%d m packs %v, an empty level before a coarser one", view, distances)
+		}
+	}
+}
+
+// Work item 0343: a first distance that packing at the least view would
+// cut is refused.
+@(test)
+test_the_first_level_must_fit_the_least_view :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, field_view_problem(config.field_view), "")
+	testing.expect_value(t, field_view_problem({{200, 300, 520, 1024}}), "")
+	testing.expect_value(t, field_view_problem({{210, 300, 520, 1024}}), "field_view.level_distances_metres[0] 210 leaves the coarser levels no room inside the least view distance, 256 m")
+}
+
 // Work item 0310: the shipped field_trees rows (the phone's shorter
 // reach) and each key one past its bound in either row.
 @(test)
@@ -84,6 +132,25 @@ test_the_field_trees_config_is_bounded :: proc(t: ^testing.T) {
 		entry.change(&android.android)
 		testing.expect(t, strings.has_prefix(field_trees_problem(android, config.field_view), strings.concatenate({"field_trees.android.", entry.expected}, context.temp_allocator)), entry.expected)
 	}
+}
+
+// Work item 0343: the cards end inside the view, the far fade at most a
+// quarter of that, the rest of the row kept.
+@(test)
+test_the_trees_row_ends_inside_the_view :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	desktop := config.field_trees.desktop
+	short := desktop
+	short.far_metres = 256
+	short.far_fade_metres = 64
+	testing.expect_value(t, field_trees_view_row(desktop, 256), short)
+	testing.expect_value(t, field_trees_view_row(desktop, 1024), desktop)
+	android := config.field_trees.android
+	testing.expect_value(t, field_trees_view_row(android, 1024), android)
+	testing.expect_value(t, field_trees_view_row(android, 256).far_metres, 256)
+	wide_fade := desktop
+	wide_fade.far_fade_metres = 256
+	testing.expect_value(t, field_trees_view_row(wide_fade, 256).far_fade_metres, 64)
 }
 
 // Work item 0311: the shipped field_cover rows (the phone's shorter reach

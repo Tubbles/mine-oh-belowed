@@ -273,6 +273,88 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 	testing.expect(t, simulation_state_hash(&first.simulation) != simulation_state_hash(&second.simulation), "one extra input parts the hashes")
 }
 
+// One presentation frame of a session at the view distance (0343), on
+// the test's thread: the selection round player 0's eye at the packed
+// distances, the streaming with no requested chunks (the tick stages its
+// set), the mesh jobs run and their meshes freed, then the tree tiles out
+// to the view. The selection, in the temp allocator.
+stream_view_distance_test_frame :: proc(session: ^Session, streaming: ^Field_Streaming, trees: ^Field_Tree_Cache, field_view: Field_View_Config, trees_row: Field_Trees_Row, view_distance_metres: int) -> []Field_Node {
+	simulation := &session.simulation
+	distances := field_view_level_distances(field_view, view_distance_metres)
+	eyes := make([]World_Position, 1, context.temp_allocator)
+	eyes[0] = field_player_eye(simulation.players[0].field, session.field_content.tuning)
+	view := make_field_view(eyes[0], session.planet, simulation.field.spacing_millimetres, distances)
+	selection := select_field_nodes(view, context.temp_allocator)
+	arrivals := make([dynamic]^Field_Chunk, context.temp_allocator)
+	update_field_streaming(streaming, &simulation.field.world, Field_Stream_Frame{selection = selection, frames = &simulation.world.entities.frames}, &arrivals)
+	run_queued_field_jobs(streaming)
+	for result in take_current_field_meshes(streaming, context.temp_allocator) {
+		destroy_field_mesh_data(result.mesh)
+		destroy_field_mesh_data(result.water_mesh)
+		destroy_field_cover_data(result.cover)
+	}
+	update_field_tree_cache(trees, streaming, field_tree_generation(&simulation.field), eyes, simulation.field.felled_trees, field_trees_view_row(trees_row, distances[FIELD_COARSEST_LEVEL]), session.field_content.foundation_pitch_millimetres)
+	run_queued_field_tree_jobs(streaming)
+	return selection
+}
+
+// Work item 0343: the view distance is presentation only. Two sessions of
+// one plan fed the script, one drawn at 256 m and the other at 1024 m
+// (streamed, meshed and their tree tiles made every 100 ticks), hash alike
+// at tick 600.
+@(test) // slow
+test_two_view_distances_keep_one_state_hash :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	config.starting_items = field_test_digging_kit()
+	shipped, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	content := make_field_test_game_content()
+	near := start_field_test_session(config, content)
+	defer end_session(near)
+	far := start_field_test_session(config, content)
+	defer end_session(far)
+	near_content, far_content := field_test_content(near, content), field_test_content(far, content)
+	move_test_players_out_of_the_pod(&near.simulation, near_content.machines)
+	move_test_players_out_of_the_pod(&far.simulation, far_content.machines)
+	start_streaming :: proc(session: ^Session) -> Field_Streaming {
+		return start_field_streaming(DEFAULT_WORLD_SEED, session.planet, session.simulation.field.spacing_millimetres, 0)
+	}
+	near_streaming, far_streaming := start_streaming(near), start_streaming(far)
+	defer stop_field_streaming(&near_streaming)
+	defer stop_field_streaming(&far_streaming)
+	near_trees, far_trees: Field_Tree_Cache
+	defer destroy_field_tree_cache(&near_trees)
+	defer destroy_field_tree_cache(&far_trees)
+	has_coarsest :: proc(selection: []Field_Node) -> bool {
+		for node in selection {
+			if node.level == FIELD_COARSEST_LEVEL {
+				return true
+			}
+		}
+		return false
+	}
+	for tick in 0 ..< 600 {
+		tick_field_test_simulation(&near.simulation, near_content, field_test_script_frame(tick))
+		tick_field_test_simulation(&far.simulation, far_content, field_test_script_frame(tick))
+		if tick == 495 {
+			// The dug dirt into the hotbar, as a drag would put it.
+			for session in ([2]^Session{near, far}) {
+				slots := session.simulation.players[0].inventory.slots
+				slots[3], slots[HOTBAR_SLOT_COUNT] = slots[HOTBAR_SLOT_COUNT], slots[3]
+			}
+		}
+		if tick % 100 != 0 {
+			continue
+		}
+		near_selection := stream_view_distance_test_frame(near, &near_streaming, &near_trees, config.field_view, shipped.field_trees.desktop, 256)
+		far_selection := stream_view_distance_test_frame(far, &far_streaming, &far_trees, config.field_view, shipped.field_trees.desktop, 1024)
+		testing.expectf(t, len(near_selection) < len(far_selection), "tick %d: %d nodes at 256 m against %d at 1024 m", tick, len(near_selection), len(far_selection))
+		testing.expectf(t, !has_coarsest(near_selection), "tick %d: an eighth level node at 256 m", tick)
+		testing.expectf(t, has_coarsest(far_selection), "tick %d: no eighth level node at 1024 m", tick)
+	}
+	testing.expect_value(t, near.simulation.tick, 600)
+	testing.expect_value(t, simulation_state_hash(&near.simulation), simulation_state_hash(&far.simulation))
+}
+
 // After the script's dig two sessions walk on across the ground (0203:
 // the footprint probes and the step a step height higher run on both)
 // and hash alike.

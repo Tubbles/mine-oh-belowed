@@ -271,6 +271,50 @@ test_a_drag_on_the_ui_scale_slider_applies_on_the_release :: proc(t: ^testing.T)
 	testing.expect_value(t, audit.settings.ui_scale, shown)
 }
 
+// Work item 0343: the View distance row steps by 256 m with Left and
+// Right and stops at the ends, a still tap at the track's left end sets
+// 256 on the release, and a value between the steps from a file goes to a
+// step by the slider's rounding.
+@(test)
+test_the_view_distance_row_steps_by_256_metres :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	audit.settings.ui_scale = 1
+	audit.settings.view_distance_metres = 1024
+	push_screen(&state.screens, .Pause)
+	push_screen(&state.screens, .Settings)
+	row_id := settings_row_id("settings_view_distance")
+	state.requested_focus = row_id
+	for _ in 0 ..< 3 {
+		scaled_settings_frame(audit, &state, {})
+	}
+	testing.expect_value(t, state.focus, row_id)
+	step :: proc(audit: ^Ui_Audit, state: ^Ui_State, direction: Ui_Direction) -> int {
+		scaled_settings_frame(audit, state, {navigation = direction})
+		scaled_settings_frame(audit, state, {})
+		return audit.settings.view_distance_metres
+	}
+	for expected in ([?]int{768, 512, 256, 256}) {
+		testing.expect_value(t, step(audit, &state, .Left), expected)
+	}
+	testing.expect_value(t, step(audit, &state, .Right), 512)
+	// A still tap at the track's left end (slider_begin's layout).
+	audit.settings.view_distance_metres = 1024
+	scaled_settings_frame(audit, &state, {})
+	row := state.widgets[widget_index(state.widgets[:], row_id)].rectangle
+	left_end := [2]f32{row.x + row.width * 0.45, row.y + row.height / 2} * state.pixels_per_unit
+	scaled_settings_frame(audit, &state, touch_input(left_end, true, pressed = true))
+	scaled_settings_frame(audit, &state, touch_input(left_end, false, moved = false))
+	testing.expect_value(t, audit.settings.view_distance_metres, 256)
+	// A value between the steps.
+	audit.settings.view_distance_metres = 600
+	testing.expect_value(t, step(audit, &state, .Right), 768)
+	audit.settings.view_distance_metres = 600
+	testing.expect_value(t, step(audit, &state, .Left), 256)
+}
+
 // A vertical drag that starts on the UI scale track scrolls the Display
 // tab and leaves the scale as it was.
 @(test)

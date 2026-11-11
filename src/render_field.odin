@@ -78,7 +78,9 @@ Field_Renderer :: struct {
 	// ground's bounce (Field_Light_Inputs.ground_color).
 	globe_color:              [3]f32,
 	// The last level of detail's distance in metres, where the haze's end
-	// fade ends.
+	// fade ends. prepare_field_frame sets it every frame from the frame's
+	// distances, inside the view distance setting (0343); the planet
+	// preview keeps the data's value from init_field_renderer.
 	last_distance_metres:     f32,
 	spacing_millimetres:      int,
 	meshes:                   map[Field_Node]Field_Node_Render,
