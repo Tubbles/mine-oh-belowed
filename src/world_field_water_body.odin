@@ -902,11 +902,17 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 			return true
 		}
 		if bottom + span.height <= flood.sill {
-			// Beyond a saddle: the spill, unless it is the body's own water
-			// and the saddle lies under its level (0300, rule 1). Then the
-			// flood passes it and keeps the highest such saddle; the slab
-			// lies wholly under the sill, so under the level.
-			if owner != WATER_OWNER_RELEASED || flood.sill > flood.join_level {
+			// Beyond a saddle: the spill, unless the saddle lies under water
+			// the flood passes. The body's own water with the saddle under
+			// its level (0300, rule 1): the slab lies wholly under the sill,
+			// so under the level. Water no one owns, still or woken, whose
+			// column stands at or over the sill beyond it (0336): a
+			// generated lake's flat water covers its basin's inner saddles.
+			// The flood passes either and keeps the highest such saddle.
+			passes :=
+				(owner == WATER_OWNER_RELEASED && flood.sill <= flood.join_level) ||
+				(owner == WATER_OWNER_NONE && field_sample_is_column_water(chunk, index, own) && field_water_column_reaches(world, chunk, index, entry.sample, own, flood.sill))
+			if !passes {
 				body.spill, body.spill_level = entry.sample, flood.sill
 				return true
 			}
@@ -1518,6 +1524,54 @@ mark_bodies_beside_lake_pocket :: proc(world: ^Field_World, chunk: ^Field_Chunk,
 // ground.
 field_sample_is_still_unowned_water :: proc(chunk: ^Field_Chunk, index: int) -> bool {
 	return chunk.water[index] > 0 && chunk.water_owner[index] == WATER_OWNER_NONE && chunk.density[index] <= 0 && !field_sample_bit(&chunk.water_awake, index) && !field_sample_bit(&chunk.water_source, index)
+}
+
+// Water a column walk passes (0336): water, not ground, not a spring, no
+// one's, the flood's own body's or released; awake or asleep alike.
+field_sample_is_column_water :: proc(chunk: ^Field_Chunk, index: int, own: Water_Owner) -> bool {
+	owner := chunk.water_owner[index]
+	return chunk.water[index] > 0 && chunk.density[index] <= 0 && !field_sample_bit(&chunk.water_source, index) && (owner == WATER_OWNER_NONE || owner == own || owner == WATER_OWNER_RELEASED)
+}
+
+// Whether the water standing on the sample reaches level (0336). The walk
+// goes up the sample's column, to the neighbour along the axis of its
+// largest absolute coordinate away from the centre (ties to x, then y,
+// then z), through full samples: a sample not full answers by its level,
+// a full one by its top. A sample above that is not loaded or not column
+// water ends the column under level, and so do
+// MAXIMUM_FIELD_WATER_FLOOD_RISE steps. It reads saved state only (fills,
+// owners, bits), so peers and a loaded save decide alike, and stops at
+// level, so a walk is the water's depth under level in samples.
+field_water_column_reaches :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, own: Water_Owner, level: i64) -> bool {
+	axis := 0
+	for candidate in 1 ..< 3 {
+		if abs(sample[candidate]) > abs(sample[axis]) {
+			axis = candidate
+		}
+	}
+	up: Sample_Coordinate
+	up[axis] = sample[axis] < 0 ? -1 : 1
+	current_chunk, current_index, current := chunk, index, sample
+	for steps in 0 ..= MAXIMUM_FIELD_WATER_FLOOD_RISE {
+		span := field_water_span(current)
+		fill := i32(current_chunk.water[current_index])
+		if fill < FIELD_WATER_FULL {
+			return field_water_level(span, fill) >= level
+		}
+		if field_water_bottom(span) + span.height >= level {
+			return true
+		}
+		if steps == MAXIMUM_FIELD_WATER_FLOOD_RISE {
+			break
+		}
+		next := current + up
+		next_chunk, next_index := field_world_cell(world, next)
+		if next_chunk == nil || !field_sample_is_column_water(next_chunk, next_index, own) {
+			return false
+		}
+		current_chunk, current_index, current = next_chunk, next_index, next
+	}
+	return false
 }
 
 // The simulated set's edges.

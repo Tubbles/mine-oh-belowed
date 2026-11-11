@@ -342,6 +342,96 @@ test_shipped_lakes_settle_under_bodies_streamed :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0336: the order the 27 chunks round a shipped lake arrive in.
+Shipped_Lake_Arrival :: enum {
+	// All at once, as test_shipped_lakes_settle_under_bodies.
+	Together,
+	// The centre settled, then the 26 neighbours 30 ticks apart in
+	// (dz, dy, dx) order, as test_shipped_lakes_settle_under_bodies_streamed.
+	Streamed,
+	// Streamed, the neighbours in the reverse order.
+	Reversed,
+}
+
+// A bodies world holding the 27 chunks round centre at 1 m, arrived in
+// the order; a streamed world is stepped through the last arrival's 30
+// ticks.
+shipped_lake_world_arrived :: proc(t: ^testing.T, planet: Planet, centre: Field_Chunk_Coordinate, arrival: Shipped_Lake_Arrival, tuning: Field_Water_Tuning, tick: ^u64) -> (world: Field_World) {
+	world.water_model = .Bodies
+	world.water_planet = make_field_water_planet(DEFAULT_WORLD_SEED, planet, 1000)
+	make_sea_water_body(&world)
+	offsets := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
+	for dz in i32(-1) ..= 1 {
+		for dy in i32(-1) ..= 1 {
+			for dx in i32(-1) ..= 1 {
+				if arrival == .Together || dx != 0 || dy != 0 || dz != 0 {
+					append(&offsets, Field_Chunk_Coordinate{dx, dy, dz})
+				}
+			}
+		}
+	}
+	if arrival == .Reversed {
+		slice.reverse(offsets[:])
+	}
+	if arrival != .Together {
+		chunk := new(Field_Chunk)
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, centre, chunk)
+		field_world_insert_chunk(&world, chunk)
+		testing.expectf(t, settle_body_test_water(&world, tuning, tick, 600) < 600, "%v: the centre settles", arrival)
+	}
+	for offset in offsets {
+		chunk := new(Field_Chunk)
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, centre + offset, chunk)
+		field_world_insert_chunk(&world, chunk)
+		if arrival == .Together {
+			continue
+		}
+		for _ in 0 ..< 30 {
+			tick^ += 1
+			step_field_water(&world, tuning, tick^)
+		}
+	}
+	return
+}
+
+// Work item 0336: the lake at 79.46, 40.95 at 8 km and 1 m, whose flat
+// water covers inner saddles of its basin (2.13 samples under its level at
+// the deepest), settles as one body in every order its chunks arrive.
+// Before 0336 each flood spilled at an inner saddle into the lake's water
+// beyond it; the lake settled after 979, 1,091 and 2,622 ticks into 1, 3
+// and 3 bodies.
+@(test) // slow
+test_a_lake_over_its_inner_saddles_settles_as_one_body :: proc(t: ^testing.T) {
+	planet := waters_test_planet(8000)
+	planet.water_features = make_planet_water_features(DEFAULT_WORLD_SEED, planet)
+	defer destroy_planet_water_features(&planet.water_features)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	index := waters_test_lake_near(planet.water_features.lakes, 79.46, 40.95)
+	testing.expect(t, index >= 0, "a lake lies at 79.46, 40.95")
+	if index < 0 {
+		return
+	}
+	centre := shipped_lake_centre_chunk(generation, planet.water_features.lakes[index])
+	limits := [Shipped_Lake_Arrival]int {
+		.Together = 300,
+		.Streamed = 60,
+		.Reversed = 120,
+	}
+	for limit, arrival in limits {
+		tick: u64 = 0
+		world := shipped_lake_world_arrived(t, planet, centre, arrival, tuning, &tick)
+		ticks := settle_body_test_water(&world, tuning, &tick, limit)
+		bodies := alive_water_body_count(&world)
+		testing.expectf(t, ticks < limit, "%v: the lake settles within %d ticks", arrival, limit)
+		testing.expectf(t, bodies == 1, "%v: %d bodies", arrival, bodies)
+		testing.expectf(t, !any_water_awake(&world), "%v: nothing is awake", arrival)
+		testing.expectf(t, still_unowned_water_samples(&world) == 0, "%v: %d samples of still water no one owns", arrival, still_unowned_water_samples(&world))
+		log.infof("0336: the lake at 79.46, 40.95 arrived %v settled %d ticks after the last arrival into %d bodies", arrival, ticks, bodies)
+		destroy_field_world(&world)
+	}
+}
+
 @(test) // slow
 test_the_tech_demo_start_follows_the_longest_fall :: proc(t: ^testing.T) {
 	small := waters_test_planet(4000)

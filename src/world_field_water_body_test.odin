@@ -2262,3 +2262,62 @@ test_a_fringe_found_not_joined_is_not_searched_again :: proc(t: ^testing.T) {
 		testing.expectf(t, !water_sample_joins_body_water(&world, id, remembered, 1, &not_joined), "the remembered %v answers unsearched", remembered)
 	}
 }
+
+// Work item 0336: the water standing on a generated lake's sample reaches
+// the lake's level from any layer, full or half full, and not a unit over
+// it; a sample another body owns above ends the column at the top of the
+// sample under it.
+@(test)
+test_a_water_column_reaches_the_level_its_top_stands_at :: proc(t: ^testing.T) {
+	world: Field_World
+	defer destroy_field_world(&world)
+	make_bodies_world(&world)
+	chunk, _ := make_test_lake_chunk(0, BASIN_LOW, BASIN_HIGH, test_lake_level())
+	field_world_insert_chunk(&world, chunk)
+	own := water_owner_of(3)
+	level := test_lake_level()
+	for y in ([4]i32{BASIN_LOW.y, 6, 9, 10}) {
+		index := field_local_to_index({6, y, 6})
+		sample := field_chunk_sample(chunk, index)
+		testing.expectf(t, field_water_column_reaches(&world, chunk, index, sample, own, level), "from y %d the column reaches the level", y)
+		testing.expectf(t, !field_water_column_reaches(&world, chunk, index, sample, own, level + 1), "from y %d the column stays under one over the level", y)
+	}
+	chunk.water_owner[field_local_to_index({6, 8, 6})] = water_owner_of(5)
+	index := field_local_to_index({6, BASIN_LOW.y, 6})
+	sample := field_chunk_sample(chunk, index)
+	under := field_water_span(field_chunk_sample(chunk, field_local_to_index({6, 7, 6})))
+	top := field_water_bottom(under) + under.height
+	testing.expect(t, field_water_column_reaches(&world, chunk, index, sample, own, top), "the column reaches the top of the sample under another body's")
+	testing.expect(t, !field_water_column_reaches(&world, chunk, index, sample, own, top + 1), "the column ends under another body's sample")
+}
+
+// Work item 0336: a generated lake over a ridge under its level is one
+// body after its first flood: the flood passes the ridge into the lake's
+// water beyond it, which stands over the ridge, instead of spilling there
+// (before 0336, 479 and 399 samples stayed no one's, the spill at the
+// ridge).
+@(test)
+test_a_generated_lake_over_a_ridge_is_one_body_after_its_first_flood :: proc(t: ^testing.T) {
+	tuning := water_body_test_tuning()
+	for ridge in ([2]i32{2, 4}) {
+		world: Field_World
+		make_bodies_world(&world)
+		chunk, _ := make_split_test_lake_chunk(ridge)
+		field_world_insert_chunk(&world, chunk)
+		flooded := false
+		for tick in u64(1) ..= 200 {
+			step_field_water(&world, tuning, tick)
+			if alive_water_body_count(&world) > 0 && !world.water_flood.active {
+				flooded = true
+				break
+			}
+		}
+		testing.expectf(t, flooded, "ridge %d: a body lives and no flood is pending", ridge)
+		body, _ := only_water_body(t, &world)
+		testing.expectf(t, still_unowned_water_samples(&world) == 0, "ridge %d: %d samples of still water no one owns", ridge, still_unowned_water_samples(&world))
+		if body != nil {
+			testing.expectf(t, body.spill_level == max(i64), "ridge %d: no spill (%d over the level)", ridge, body.spill_level - body.level)
+		}
+		destroy_field_world(&world)
+	}
+}

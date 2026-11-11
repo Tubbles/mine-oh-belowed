@@ -250,3 +250,8 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - The precision patch (0126) may be dead weight: desktop compilers define `GL_FRAGMENT_PRECISION_HIGH` for ES 3.00 although the specification does not list it. If the phone's driver does too (a one line log of a shader compiled with the `#ifdef` would tell), the patch can go and the Android archive is built from unpatched rlgl.
 - The poll after a cursor capture resets the mouse delta on X11 and Windows. The review read that a capture under a native Wayland GLFW would still jump, as it did before this item; the archive is built with X11 only, so today the game never runs there. It matters only if the Linux build gains Wayland.
+
+## Suggestions from the flood's pass under a lake (0336, 2026-11-11)
+
+- The walk up a water column is not charged to the flood's visit budget and runs once for every popped sample of no one's water under the sill: up to the far water's depth under the sill in steps, each a map lookup and an integer square root, for up to 4000 pops a tick. Bounded and not measured. Worth a count in the night's water report before a deep generated lake (0326 finds more of them) is blamed for a slow tick.
+- `test_a_water_column_reaches_the_level_its_top_stands_at` walks the +y half axis only. The review's probe walked the -x half axis across a chunk border (`tmp/0336/verify/tree/src/zz_verify_0336_test.odin`, untracked) and passed; it could join the suite if the walk is ever changed.
