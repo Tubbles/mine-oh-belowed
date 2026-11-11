@@ -1,6 +1,6 @@
 # 0367: The water tick at a flowing spring
 
-Status: verified (2026-11-11)
+Status: landed (2026-11-11, 7d9a255)
 
 0342's first check run (2026-11-11, the couch's RX 5700 under headless gamescope, 512 m, capped at 30) found what holds the spring start at 3 to 6 frames a second, the figure the user saw: not the GPU (2.0 ms a frame) but the simulation. At the spring view `field_water` costs 14.1 ms of a 14.9 ms tick (worst 24.4 ms), so the frame falls behind, runs about 10 ticks a frame (155 ms) and never catches up; beside it the streaming remeshes 8 nodes every frame (14.8 ms). The view never settles. Every other view of the run ticks in 0.3 to 1.0 ms and draws in under 6 ms. The user's bar is 60 frames a second at 512 m.
 
