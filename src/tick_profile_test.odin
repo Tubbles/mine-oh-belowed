@@ -40,7 +40,7 @@ test_simulation_tick_fills_a_given_profile :: proc(t: ^testing.T) {
 
 // Work item 0342: a field session's tick fills the field's sections; the
 // state hash is run_session_tick's, so simulation_tick leaves it 0.
-@(test)
+@(test) // slow
 test_a_field_tick_fills_the_field_sections :: proc(t: ^testing.T) {
 	game := make_field_test_game_content()
 	session := start_field_test_session(test_field_game_config(), game)
