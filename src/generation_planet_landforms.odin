@@ -48,10 +48,11 @@ gradient_noise :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
 		fade[axis] = quintic_fade(fraction[axis])
 	}
 	directions := GRADIENT_NOISE_DIRECTIONS
+	hashes := noise_cell_hashes(seed, cell)
 	corners: [8]i64
 	for &corner, index in corners {
 		offset := [3]i64{i64(index & 1), i64(index >> 1 & 1), i64(index >> 2)}
-		direction := directions[hash_lattice(seed, cell + offset) >> 60]
+		direction := directions[hashes[index] >> 60]
 		away := fraction - offset * NOISE_ONE
 		corner = direction.x * away.x + direction.y * away.y + direction.z * away.z
 	}

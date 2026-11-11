@@ -215,9 +215,53 @@ hash_lattice :: proc(seed: u64, cell: [3]i64) -> u64 {
 	return generation_seed.hash_combine(generation_seed.hash_combine(seed, u64(cell.x)), generation_seed.pack_pair(i32(cell.y), i32(cell.z)))
 }
 
+NOISE_CELL_CACHE_SLOTS :: 256
+
+// A noise cell's 8 corner hashes, in value_noise's corner order, with
+// their key.
+Noise_Cell_Slot :: struct {
+	seed:   u64,
+	cell:   [3]i64,
+	hashes: [8]u64,
+	filled: bool,
+}
+
+// The last cell each slot saw, per thread, so no lock; the hashes are a
+// pure function of the seed and the cell, so the noise is the same bytes
+// with or without it (0338). Nothing but noise_cell_hashes reads or
+// writes it.
+@(thread_local)
+noise_cell_cache: [NOISE_CELL_CACHE_SLOTS]Noise_Cell_Slot
+
+// The cache's slot of a seed and a cell, from the top 8 bits of a mix of
+// the four.
+noise_cell_slot :: proc(seed: u64, cell: [3]i64) -> int {
+	#assert(NOISE_CELL_CACHE_SLOTS == 256)
+	mixed := seed ~ u64(cell.x) * 0x9E3779B97F4A7C15 ~ u64(cell.y) * 0xC2B2AE3D27D4EB4F ~ u64(cell.z) * 0x165667B19E3779F9
+	return int((mixed * 0x9E3779B97F4A7C15) >> 56)
+}
+
+// The hash_lattice hashes of a cell's 8 corners, from the cache when its
+// slot holds the seed and the cell, else hashed and stored there.
+noise_cell_hashes :: proc(seed: u64, cell: [3]i64) -> [8]u64 {
+	slot := &noise_cell_cache[noise_cell_slot(seed, cell)]
+	if slot.filled && slot.seed == seed && slot.cell == cell {
+		return slot.hashes
+	}
+	for &hash, index in slot.hashes {
+		hash = hash_lattice(seed, cell + {i64(index & 1), i64(index >> 1 & 1), i64(index >> 2)})
+	}
+	slot.seed, slot.cell, slot.filled = seed, cell, true
+	return slot.hashes
+}
+
 // From -NOISE_ONE to NOISE_ONE - 1, from the top 17 bits.
+lattice_value_of_hash :: proc(hash: u64) -> i64 {
+	return i64(hash >> 47) - NOISE_ONE
+}
+
 lattice_value :: proc(seed: u64, cell: [3]i64) -> i64 {
-	return i64(hash_lattice(seed, cell) >> 47) - NOISE_ONE
+	return lattice_value_of_hash(hash_lattice(seed, cell))
 }
 
 // Smoothstep of a fraction in 0 to NOISE_ONE.
@@ -229,16 +273,18 @@ noise_interpolate :: proc(first, second, fraction: i64) -> i64 {
 	return first + (second - first) * fraction / NOISE_ONE
 }
 
-// Trilinear value noise of one octave, from -NOISE_ONE to NOISE_ONE.
+// Trilinear value noise of one octave, from -NOISE_ONE to NOISE_ONE. The
+// corners' hashes come from the cell cache (noise_cell_hashes, 0338).
 value_noise :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
 	cell, fraction: [3]i64
 	for axis in 0 ..< 3 {
 		cell[axis] = floor_divide_i64(point[axis], wavelength)
 		fraction[axis] = noise_fade((point[axis] - cell[axis] * wavelength) * NOISE_ONE / wavelength)
 	}
+	hashes := noise_cell_hashes(seed, cell)
 	corners: [8]i64
 	for &corner, index in corners {
-		corner = lattice_value(seed, cell + {i64(index & 1), i64(index >> 1 & 1), i64(index >> 2)})
+		corner = lattice_value_of_hash(hashes[index])
 	}
 	for axis in 0 ..< 3 {
 		width := 8 >> uint(axis + 1)

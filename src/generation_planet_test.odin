@@ -2,6 +2,7 @@ package game
 
 import "base:intrinsics"
 import "core:testing"
+import "core:thread"
 import "generation_seed"
 
 TEST_PLANET_SEED :: u64(42)
@@ -102,6 +103,146 @@ test_value_noise_stays_in_range :: proc(t: ^testing.T) {
 	}
 	// On a lattice point the noise is the lattice value.
 	testing.expect_value(t, value_noise(7, {wavelength, 0, -wavelength}, wavelength), lattice_value(7, {1, 0, -1}))
+}
+
+// value_noise as before the cell cache (0338): the corners hashed directly.
+value_noise_uncached :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
+	cell, fraction: [3]i64
+	for axis in 0 ..< 3 {
+		cell[axis] = floor_divide_i64(point[axis], wavelength)
+		fraction[axis] = noise_fade((point[axis] - cell[axis] * wavelength) * NOISE_ONE / wavelength)
+	}
+	corners: [8]i64
+	for &corner, index in corners {
+		corner = lattice_value(seed, cell + {i64(index & 1), i64(index >> 1 & 1), i64(index >> 2)})
+	}
+	for axis in 0 ..< 3 {
+		width := 8 >> uint(axis + 1)
+		for index in 0 ..< width {
+			corners[index] = noise_interpolate(corners[2 * index], corners[2 * index + 1], fraction[axis])
+		}
+	}
+	return corners[0]
+}
+
+// gradient_noise as before the cell cache (0338): the corners hashed
+// directly.
+gradient_noise_uncached :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
+	cell, fraction, fade: [3]i64
+	for axis in 0 ..< 3 {
+		cell[axis] = floor_divide_i64(point[axis], wavelength)
+		fraction[axis] = (point[axis] - cell[axis] * wavelength) * NOISE_ONE / wavelength
+		fade[axis] = quintic_fade(fraction[axis])
+	}
+	directions := GRADIENT_NOISE_DIRECTIONS
+	corners: [8]i64
+	for &corner, index in corners {
+		offset := [3]i64{i64(index & 1), i64(index >> 1 & 1), i64(index >> 2)}
+		direction := directions[hash_lattice(seed, cell + offset) >> 60]
+		away := fraction - offset * NOISE_ONE
+		corner = direction.x * away.x + direction.y * away.y + direction.z * away.z
+	}
+	for axis in 0 ..< 3 {
+		width := 8 >> uint(axis + 1)
+		for index in 0 ..< width {
+			corners[index] = noise_interpolate(corners[2 * index], corners[2 * index + 1], fade[axis])
+		}
+	}
+	return clamp(corners[0], -NOISE_ONE, NOISE_ONE)
+}
+
+// hash_lattice at a cell's 8 corners, in value_noise's corner order.
+test_lattice_corner_hashes :: proc(seed: u64, cell: [3]i64) -> (hashes: [8]u64) {
+	for &hash, index in hashes {
+		hash = hash_lattice(seed, cell + {i64(index & 1), i64(index >> 1 & 1), i64(index >> 2)})
+	}
+	return
+}
+
+// A hashed point from -reach to reach on every axis.
+test_hashed_point :: proc(hash: u64, reach: i64) -> (point: [3]i64) {
+	for axis in 0 ..< 3 {
+		point[axis] = i64(generation_seed.hash_combine(hash, u64(axis)) % u64(2 * reach + 1)) - reach
+	}
+	return
+}
+
+// How many of the cached noises differ from the uncached ones at a point,
+// the seeds taken in turn so they evict each other's slots.
+test_noise_cache_mismatches :: proc(seeds: [3]u64, wavelengths: [4]i64, point: [3]i64) -> (mismatches: int) {
+	for seed in seeds {
+		for wavelength in wavelengths {
+			mismatches += int(value_noise(seed, point, wavelength) != value_noise_uncached(seed, point, wavelength))
+			mismatches += int(gradient_noise(seed, point, wavelength) != gradient_noise_uncached(seed, point, wavelength))
+		}
+	}
+	return
+}
+
+// The next cell along an axis, or the next seed for axis 3, whose key
+// falls in the same cache slot.
+test_key_in_the_same_slot :: proc(seed: u64, cell: [3]i64, axis: int) -> (u64, [3]i64) {
+	other_seed, other_cell := seed, cell
+	for {
+		if axis == 3 {
+			other_seed += 1
+		} else {
+			other_cell[axis] += 1
+		}
+		if noise_cell_slot(other_seed, other_cell) == noise_cell_slot(seed, cell) {
+			return other_seed, other_cell
+		}
+	}
+}
+
+// A new thread's first call to the cell cache, whose slots are all
+// unfilled: the zero key must not read as stored.
+test_first_noise_cell_hashes :: proc(hashes: ^[8]u64) {
+	hashes^ = noise_cell_hashes(0, {0, 0, 0})
+}
+
+// Work item 0338: the noise through the cell cache is the noise hashed
+// directly, at scattered points, along a walk, for keys sharing a slot
+// and for the zero key on a new thread.
+@(test) // slow
+test_the_noise_cell_cache_gives_the_noise :: proc(t: ^testing.T) {
+	seeds: [3]u64
+	for &seed, index in seeds {
+		seed = generation_seed.hash_combine(DEFAULT_WORLD_SEED, u64(index + 1))
+	}
+	wavelengths := [4]i64{metres_to_position_units(12), metres_to_position_units(96), metres_to_position_units(520), metres_to_position_units(2400)}
+	points_seed := generation_seed.hash_combine(DEFAULT_WORLD_SEED, 4)
+	mismatches := 0
+	for index in 0 ..< 20_000 {
+		mismatches += test_noise_cache_mismatches(seeds, wavelengths, test_hashed_point(generation_seed.hash_combine(points_seed, u64(index)), metres_to_position_units(40_000)))
+	}
+	start := test_hashed_point(generation_seed.hash_combine(points_seed, 20_000), metres_to_position_units(40_000))
+	heading := test_hashed_point(generation_seed.hash_combine(points_seed, 20_001), 1000)
+	length := max(i64(integer_square_root(u64(heading.x * heading.x + heading.y * heading.y + heading.z * heading.z))), 1)
+	step := heading * metres_to_position_units(1) / length
+	for index in i64(0) ..< 2000 {
+		mismatches += test_noise_cache_mismatches(seeds, wavelengths, start + step * index)
+	}
+	testing.expect_value(t, mismatches, 0)
+	for index in 0 ..< 1000 {
+		cell := test_hashed_point(generation_seed.hash_combine(points_seed, u64(30_000 + index)), 1 << 31)
+		for seed in seeds {
+			testing.expect(t, noise_cell_hashes(seed, cell) == test_lattice_corner_hashes(seed, cell))
+		}
+	}
+	for axis in 0 ..= 3 {
+		cell := [3]i64{5, -7, 11}
+		other_seed, other_cell := test_key_in_the_same_slot(seeds[0], cell, axis)
+		for _ in 0 ..< 2 {
+			testing.expect(t, noise_cell_hashes(seeds[0], cell) == test_lattice_corner_hashes(seeds[0], cell))
+			testing.expect(t, noise_cell_hashes(other_seed, other_cell) == test_lattice_corner_hashes(other_seed, other_cell))
+		}
+	}
+	first_hashes: [8]u64
+	first := thread.create_and_start_with_poly_data(&first_hashes, test_first_noise_cell_hashes)
+	thread.join(first)
+	thread.destroy(first)
+	testing.expect(t, first_hashes == test_lattice_corner_hashes(0, {0, 0, 0}))
 }
 
 @(test)
