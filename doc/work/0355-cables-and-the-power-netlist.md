@@ -10,7 +10,15 @@ Every power connection is a cable the player runs by hand from one thing to the 
 
 ## Controls
 
-The main agent writes the control design before the design stage starts: how a cable is taken, carried from a port to a port and taken up again on a gamepad, on which layer, and what every existing control does with a cable in hand (Code rules, keybindings).
+No new binding. The cable is a hotbar item, and running one is a mode the player enters and leaves with Place and Mine (control design, main agent, 2026-11-11):
+
+- With the cable held and nothing carried, Place aimed at a thing with a free power port (a machine, a generator, a battery, a junction box) takes the cable's first end onto that port and begins the run. Aimed at anything else Place does nothing, with the reason shown as the other refusals are. The aimed thing is the target, not the port: a thing with several ports gives the free one nearest the aim.
+- While a run is carried, the cable is drawn from its port to the player's hand and the tool line shows the length left of the span. Every movement control is unchanged. Place aimed at a second thing with a free port ends the run there and takes the cable's length from the stack. Aimed at nothing, at the first thing, or past the span, Place is refused with its reason (too short, no free port); the player is never held back by the cable.
+- Mine while a run is carried takes the run back and ends the mode, as does selecting another hotbar slot. Mine digs and fells nothing during a run.
+- With no run carried, Mine aimed at a cable takes it up into the inventory, as Mine picks up an aimed machine.
+- Rotate_Building, Interact and Open_Inventory keep their meanings with the cable held and during a run. A machine's panel shows its port's draw, and a cable's load against its capacity is read on the junction box's panel and the power overview.
+- A cable's capacity is its item (a light and a heavy cable are two items), never a setting cycled on a control. The junction box is placed as any machine.
+- Touch reaches all of it through Place's and Mine's gamepad bindings.
 
 ## Change
 
