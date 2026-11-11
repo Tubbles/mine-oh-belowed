@@ -15,7 +15,7 @@ Every power connection is a cable run by hand, and the poles are gone.
 ## Change
 
 - As 0355's specification, part B, with its decisions (8 ports at most, the control unit's 60 W).
-- After 0355, 0361 and 0362 (the field session draws no power machine before it).
+- After 0355, 0373 (the solve's charge for a poorer child, which holds a small feeding region tens of per mille under what it can reach), 0361 and 0362 (the field session draws no power machine before it).
 
 ## Verify
 
