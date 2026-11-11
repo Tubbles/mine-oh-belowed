@@ -505,9 +505,17 @@ planet_tint :: proc(generation: Planet_Generation, position: World_Position) -> 
 	return u8(hash_lattice(generation.tint_seed, cell) % u64(generation.palette_length))
 }
 
+// The sample at the position without the shade, which its callers (the
+// sky march, the water's missing samples, the spring climb) do not read,
+// so carved air marches no roof here (0339): the density, material and
+// tint planet_sample_reading_at gives with caves.
 planet_sample :: proc(generation: Planet_Generation, position: World_Position) -> Field_Sample {
-	sample, _ := planet_sample_shaded(generation, position)
-	return sample
+	shortcut, distance, on_sphere, needs_relief := planet_sample_shortcut(generation, position)
+	if !needs_relief {
+		return shortcut
+	}
+	column := surface_column(generation, on_sphere)
+	return planet_sample_at_column(generation, position, distance, on_sphere, column, cave_column(generation, column, on_sphere))
 }
 
 // The sample at the position and whether it is carved air under a roof

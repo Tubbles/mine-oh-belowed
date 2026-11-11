@@ -1,6 +1,8 @@
 package game
 
 import "core:log"
+import "core:math"
+import "core:mem"
 import "core:slice"
 import "core:strings"
 import "core:testing"
@@ -313,7 +315,7 @@ test_no_cave_lies_in_the_calm_circle :: proc(t: ^testing.T) {
 	}
 }
 
-// Caves inside their bounds dense enough to reach a lake's bound: in every
+// Caves inside their bounds dense enough to reach a lake's water: in every
 // region, wherever the presence noise lies, over the sea and with wide
 // chambers.
 DENSE_TEST_CAVES :: Planet_Caves {
@@ -337,37 +339,195 @@ DENSE_TEST_CAVES :: Planet_Caves {
 	undercut_height_millimetres = 2000,
 }
 
-// The chunks across a lake's bound plus the margin: in two directions of
-// the bound's centre, the chunks holding the samples 12 m inside and
-// outside it at 4 and 20 m under the relief.
-test_lake_edge_chunks :: proc(generation: Planet_Generation, lake: Planet_Lake) -> [dynamic]Field_Chunk_Coordinate {
-	chunks := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
-	up, _ := normalize_fixed(lake.bound_centre)
-	forward := tangent_of(up, {UNIT_VECTOR_ONE, 0, 0})
-	right := fixed_cross(forward, up)
-	edge := lake.bound_radius + metres_to_position_units(CAVE_LAKE_MARGIN_METRES)
-	for direction in ([2][3]i64{forward, right}) {
-		for offset in ([2]i64{edge - metres_to_position_units(12), edge + metres_to_position_units(12)}) {
-			point := fixed_scale(up, generation.radius) + fixed_scale(direction, offset)
-			point = project_onto_sphere(World_Position(point), vector_length(point), generation.radius)
-			column_up, _ := normalize_fixed(point)
-			relief := surface_relief(generation, point)
-			for under in ([2]i64{4, 20}) {
-				position := World_Position(fixed_scale(column_up, generation.radius + relief - metres_to_position_units(under)))
-				coordinate := sample_to_field_chunk_coordinate(world_position_to_sample(position, 1000))
-				if !slice.contains(chunks[:], coordinate) {
-					append(&chunks, coordinate)
+// The kept lakes of the tiles within 1500 m of the home, nearest first by
+// their bound centre's chord to the home, the first count; cloned from the
+// temp allocator's listing into the allocator, masks and all, which the
+// caller deletes with the array.
+test_nearest_lakes :: proc(generation: Planet_Generation, cache: ^Water_Tile_Cache, count: int, allocator := context.allocator) -> [dynamic]Planet_Lake {
+	home_direction, _ := normalize_fixed(generation.landform_home)
+	lakes := clone_planet_lakes(water_tile_lakes_near(cache, home_direction, metres_to_position_units(1500)), allocator)
+	defer delete(lakes, allocator)
+	home := generation.landform_home
+	for first in 0 ..< len(lakes) {
+		for second in first + 1 ..< len(lakes) {
+			if squared_chord(lakes[second].bound_centre, home) < squared_chord(lakes[first].bound_centre, home) {
+				lakes[first], lakes[second] = lakes[second], lakes[first]
+			}
+		}
+	}
+	nearest := make([dynamic]Planet_Lake, allocator)
+	for lake, index in lakes {
+		if index < count {
+			append(&nearest, lake)
+		} else {
+			delete(lake.mask, allocator)
+		}
+	}
+	return nearest
+}
+
+// The chunks at the generation's spacing holding the points 1 m and 6 m
+// under the lake's level over its mask's shore cells (set, with an unset
+// 4-neighbour), distinct, in the mask's row order, then most of them
+// spread evenly (temp allocator).
+test_lake_shore_chunks :: proc(generation: Planet_Generation, lake: Planet_Lake, most: int) -> [dynamic]Field_Chunk_Coordinate {
+	plane := planet_lake_plane(lake, generation.radius, metres_to_position_units(LAKE_CELL_METRES))
+	shore := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
+	for v in -lake.half ..= lake.half {
+		for u in -lake.half ..= lake.half {
+			if !planet_lake_mask_bit(lake, u, v) || (planet_lake_mask_bit(lake, u + 1, v) && planet_lake_mask_bit(lake, u - 1, v) && planet_lake_mask_bit(lake, u, v + 1) && planet_lake_mask_bit(lake, u, v - 1)) {
+				continue
+			}
+			direction := waters_plane_direction(plane, u, v)
+			for under in ([2]i64{1, 6}) {
+				position := World_Position(fixed_scale(direction, generation.radius + lake.level - metres_to_position_units(under)))
+				coordinate := sample_to_field_chunk_coordinate(world_position_to_sample(position, generation.spacing_millimetres))
+				if !slice.contains(shore[:], coordinate) {
+					append(&shore, coordinate)
 				}
 			}
 		}
 	}
+	chunks := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
+	count := min(most, len(shore))
+	for index in 0 ..< count {
+		append(&chunks, shore[index * len(shore) / count])
+	}
 	return chunks
 }
 
-// The three lakes nearest the home with dense caves: no cave at their
-// bound plus the margin; across it the chunks hold cave air outside and
-// no changed sample inside, no changed water, and the same bytes
-// generated in two orders from fresh tiles.
+// The least squared gap on the plane from the point to a set cell's
+// square over every cell of the mask, at most reach squared.
+test_mask_scan_squared_distance :: proc(lake: Planet_Lake, east, north, step, reach: i64) -> i64 {
+	best := reach * reach
+	for v in -lake.half ..= lake.half {
+		for u in -lake.half ..= lake.half {
+			if planet_lake_mask_bit(lake, u, v) {
+				gap_u := max(abs(east - u * step) - step / 2, 0)
+				gap_v := max(abs(north - v * step) - step / 2, 0)
+				best = min(best, gap_u * gap_u + gap_v * gap_v)
+			}
+		}
+	}
+	return best
+}
+
+// The sample on the radial through the 1 m plane's point of the lake at a
+// height over the radius: its position, distance and point on the sphere.
+test_lake_plane_sample :: proc(generation: Planet_Generation, lake: Planet_Lake, east_metres, north_metres, height: i64) -> (position: World_Position, distance: i64, on_sphere: [3]i64) {
+	direction := waters_plane_direction(planet_lake_plane(lake, generation.radius, metres_to_position_units(1)), east_metres, north_metres)
+	distance = generation.radius + height
+	position = World_Position(fixed_scale(direction, distance))
+	on_sphere = project_onto_sphere(position, vector_length(cast([3]i64)position), generation.radius)
+	return
+}
+
+// The mask's distance and run against a scan of every cell on hashed
+// masks; then the water's distance and the fade at a hand-made lake of 3
+// by 3 cells.
+@(test)
+test_the_lake_mask_distance_matches_a_scan_of_every_cell :: proc(t: ^testing.T) {
+	step := metres_to_position_units(LAKE_CELL_METRES)
+	reach := metres_to_position_units(16)
+	unlike_distances, unlike_bits := 0, 0
+	for trial in 0 ..< 40 {
+		half := i64(3 + trial % 20)
+		side := 2 * half + 1
+		lake := Planet_Lake {
+			half = half,
+			mask = make([]u64, (side * side + 63) / 64, context.temp_allocator),
+		}
+		share := test_bound_hash(339, trial, 60)
+		for v in -half ..= half {
+			for u in -half ..= half {
+				if test_bound_hash(340 + trial, int((v + half) * side + u + half), 100) < share {
+					set_planet_lake_mask_bit(&lake, u, v)
+				}
+			}
+		}
+		span := (half + 12) * step
+		for point in 0 ..< 400 {
+			east := test_bound_hash(400 + trial, 2 * point, 2 * span + 1) - span
+			north := test_bound_hash(400 + trial, 2 * point + 1, 2 * span + 1) - span
+			if planet_lake_mask_squared_distance(lake, east, north, step, reach) != test_mask_scan_squared_distance(lake, east, north, step, reach) {
+				unlike_distances += 1
+			}
+		}
+		for row in 0 ..< 200 {
+			v := test_bound_hash(500 + trial, 3 * row, side) - half
+			first := test_bound_hash(500 + trial, 3 * row + 1, side) - half
+			last := first + test_bound_hash(500 + trial, 3 * row + 2, min(64, half - first + 1))
+			run := planet_lake_mask_run(lake, first, last, v)
+			for u in first ..= last {
+				bit := (run >> uint(u - first)) & 1 != 0
+				if bit != planet_lake_mask_bit(lake, u, v) {
+					unlike_bits += 1
+				}
+			}
+		}
+		free_all(context.temp_allocator)
+	}
+	testing.expect_value(t, unlike_distances, 0)
+	testing.expect_value(t, unlike_bits, 0)
+
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, shipped_test_home_at(8000), 1000)
+	pit := test_bound_direction(339)
+	east, north := planet_tangents(pit)
+	half := i64(8)
+	side := 2 * half + 1
+	lake := Planet_Lake {
+		centre = pit,
+		east   = east,
+		north  = north,
+		origin = fixed_scale(pit, generation.radius),
+		level  = metres_to_position_units(10),
+		floor  = metres_to_position_units(8),
+		half   = half,
+		cells  = 9,
+		mask   = make([]u64, (side * side + 63) / 64, context.temp_allocator),
+	}
+	for v in i64(-1) ..= 1 {
+		for u in i64(-1) ..= 1 {
+			set_planet_lake_mask_bit(&lake, u, v)
+		}
+	}
+	lake.bound_centre = fixed_scale(pit, generation.radius + lake.level)
+	lake.bound_radius = (half + 1) * step * 3 / 2 + (lake.level - lake.floor) + metres_to_position_units(2)
+	listed := generation
+	listed.lakes = []Planet_Lake{lake}
+	listed.water_tiles = nil
+	under := lake.level - metres_to_position_units(1)
+	position, distance, on_sphere := test_lake_plane_sample(generation, lake, 0, 0, under)
+	testing.expect_value(t, planet_lake_water_distance(lake, generation.radius, distance, on_sphere, reach), 0)
+	testing.expect_value(t, cave_lake_fade(listed, position, distance, on_sphere), 0)
+	position, distance, on_sphere = test_lake_plane_sample(generation, lake, 7, 0, under)
+	water := planet_lake_water_distance(lake, generation.radius, distance, on_sphere, reach)
+	testing.expectf(t, abs(water - metres_to_position_units(4)) <= 4, "7 m east: %d units from the water", water)
+	position, distance, on_sphere = test_lake_plane_sample(generation, lake, 13, 0, under)
+	fade := cave_lake_fade(listed, position, distance, on_sphere)
+	testing.expectf(t, abs(fade - NOISE_ONE / 2) <= 8, "13 m east: the fade %d", fade)
+	above := generation.radius + lake.level + metres_to_position_units(10)
+	position = World_Position(fixed_scale(pit, above))
+	on_sphere = project_onto_sphere(position, vector_length(cast([3]i64)position), generation.radius)
+	testing.expect_value(t, planet_lake_water_distance(lake, generation.radius, above, on_sphere, reach), metres_to_position_units(10))
+	testing.expect_value(t, cave_lake_fade(listed, position, above, on_sphere), NOISE_ONE / 2)
+	position, distance, on_sphere = test_lake_plane_sample(generation, lake, 6, 6, under)
+	water = planet_lake_water_distance(lake, generation.radius, distance, on_sphere, reach)
+	diagonal := i64(integer_square_root(u64(18 * metres_to_position_units(1) * metres_to_position_units(1))))
+	testing.expectf(t, abs(water - diagonal) <= 4, "6 m east and north: %d units from the water, the root %d", water, diagonal)
+	position, distance, on_sphere = test_lake_plane_sample(generation, lake, 23, 0, under)
+	testing.expect_value(t, cave_lake_fade(listed, position, distance, on_sphere), NOISE_ONE)
+	position, distance, on_sphere = test_lake_plane_sample(generation, lake, 60, 0, under)
+	offset := cast([3]i64)position - lake.bound_centre
+	testing.expect(t, vector_length(offset) > lake.bound_radius + reach, "60 m east lies past the bound and the reach")
+	testing.expect_value(t, cave_lake_fade(listed, position, distance, on_sphere), NOISE_ONE)
+	free_all(context.temp_allocator)
+}
+
+// The three lakes nearest the home with dense caves, at their shores: the
+// same bytes generated in two orders from fresh tiles; cave air inside
+// 0327's bound plus the margin; no changed water a spacing or more over
+// the sea and no cave air within the margin less a spacing of such water.
 @(test) // slow
 test_the_caves_leave_the_lakes :: proc(t: ^testing.T) {
 	planet := shipped_test_home_at(8000)
@@ -376,34 +536,23 @@ test_the_caves_leave_the_lakes :: proc(t: ^testing.T) {
 	planet.water_tiles = make_water_tile_cache(DEFAULT_WORLD_SEED, planet)
 	defer destroy_water_tile_cache(planet.water_tiles)
 	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
-	home_direction, _ := normalize_fixed(generation.landform_home)
-	lakes := water_tile_lakes_near(planet.water_tiles, home_direction, metres_to_position_units(1500))
-	testing.expectf(t, len(lakes) >= 3, "%d lakes near the home", len(lakes))
-	nearest := make([dynamic]Planet_Lake, context.temp_allocator)
-	for lake in lakes {
-		append(&nearest, lake)
+	nearest := test_nearest_lakes(generation, planet.water_tiles, 3)
+	defer {
+		for lake in nearest {
+			delete(lake.mask)
+		}
+		delete(nearest)
 	}
-	for first in 0 ..< len(nearest) {
-		for second in first + 1 ..< len(nearest) {
-			if squared_chord(nearest[second].bound_centre, generation.landform_home) < squared_chord(nearest[first].bound_centre, generation.landform_home) {
-				nearest[first], nearest[second] = nearest[second], nearest[first]
+	testing.expectf(t, len(nearest) == 3, "%d lakes near the home", len(nearest))
+	chunks := make([dynamic]Field_Chunk_Coordinate)
+	defer delete(chunks)
+	for lake in nearest {
+		for coordinate in test_lake_shore_chunks(generation, lake, 8) {
+			if !slice.contains(chunks[:], coordinate) {
+				append(&chunks, coordinate)
 			}
 		}
-	}
-	directions := TEST_AXIS_PLANE_DIRECTIONS
-	margin := metres_to_position_units(CAVE_LAKE_MARGIN_METRES)
-	chunks := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
-	edges := make([dynamic]Planet_Lake, context.temp_allocator)
-	for lake in nearest[:min(3, len(nearest))] {
-		for index in 0 ..< 16 {
-			direction, _ := normalize_fixed(directions[index + 2] * UNIT_VECTOR_ONE)
-			position := World_Position(lake.bound_centre + fixed_scale(direction, lake.bound_radius + margin - 4))
-			testing.expectf(t, cave_lake_fade(generation, position) == 0, "the fade at %v by the lake at %v", position, lake.bound_centre)
-		}
-		for coordinate in test_lake_edge_chunks(generation, lake) {
-			append(&chunks, coordinate)
-			append(&edges, lake)
-		}
+		free_all(context.temp_allocator)
 	}
 	without := planet
 	without.caves = {}
@@ -413,43 +562,324 @@ test_the_caves_leave_the_lakes :: proc(t: ^testing.T) {
 	second_order := planet
 	second_order.water_tiles = make_water_tile_cache(DEFAULT_WORLD_SEED, planet)
 	defer destroy_water_tile_cache(second_order.water_tiles)
-	first := make([]Field_Chunk, len(chunks), context.temp_allocator)
-	second := make([]Field_Chunk, len(chunks), context.temp_allocator)
+	first := make([]Field_Chunk, len(chunks))
+	defer delete(first)
+	second := make([]Field_Chunk, len(chunks))
+	defer delete(second)
 	for coordinate, index in chunks {
 		generate_field_chunk(DEFAULT_WORLD_SEED, first_order, 1000, coordinate, &first[index])
+		free_all(context.temp_allocator)
 	}
 	#reverse for coordinate, index in chunks {
 		generate_field_chunk(DEFAULT_WORLD_SEED, second_order, 1000, coordinate, &second[index])
+		free_all(context.temp_allocator)
 	}
-	cave_air, inside_changed, water_changed, order_changed := 0, 0, 0, 0
-	plain := new(Field_Chunk, context.temp_allocator)
+	margin := metres_to_position_units(CAVE_LAKE_MARGIN_METRES)
+	waters := make(map[Sample_Coordinate]struct{})
+	defer delete(waters)
+	caves := make([dynamic]Sample_Coordinate)
+	defer delete(caves)
+	inside, water_changed, sea_changed, order_changed := 0, 0, 0, 0
+	plain := new(Field_Chunk)
+	defer free(plain)
 	for coordinate, index in chunks {
+		plain^ = {}
 		generate_field_chunk(DEFAULT_WORLD_SEED, without, 1000, coordinate, plain)
+		free_all(context.temp_allocator)
 		caved := &first[index]
 		if caved.density != second[index].density || caved.material != second[index].material || caved.tint != second[index].tint || caved.water != second[index].water || caved.sky_light != second[index].sky_light {
 			order_changed += 1
 		}
-		lake := edges[index]
 		origin := field_chunk_origin(coordinate)
 		for sample in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
-			water_changed += caved.water[sample] != plain.water[sample] ? 1 : 0
-			if caved.density[sample] == plain.density[sample] && caved.material[sample] == plain.material[sample] {
+			at := origin + Sample_Coordinate(field_index_to_local(sample))
+			position := sample_to_world_position(at, 1000)
+			high := vector_length(cast([3]i64)position) - generation.sea_radius >= generation.spacing
+			if caved.water[sample] != plain.water[sample] {
+				water_changed += high ? 1 : 0
+				sea_changed += high ? 0 : 1
+			}
+			if high && caved.water[sample] > 0 {
+				waters[at] = {}
+			}
+			if caved.density[sample] > 0 || plain.density[sample] <= 0 {
 				continue
 			}
-			offset := cast([3]i64)sample_to_world_position(origin + Sample_Coordinate(field_index_to_local(sample)), 1000) - lake.bound_centre
-			reach := lake.bound_radius + margin
-			if offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= reach * reach {
-				inside_changed += 1
-			} else if caved.density[sample] <= 0 && plain.density[sample] > 0 {
-				cave_air += 1
+			append(&caves, at)
+			for lake in nearest {
+				offset := cast([3]i64)position - lake.bound_centre
+				reach := lake.bound_radius + margin
+				if offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= reach * reach {
+					inside += 1
+					break
+				}
 			}
 		}
 	}
-	log.infof("0327: %d chunks across the three lakes' bounds hold %d samples of cave air outside them", len(chunks), cave_air)
-	testing.expectf(t, cave_air > 0, "%d samples of cave air across the lakes' bounds", cave_air)
-	testing.expect_value(t, inside_changed, 0)
+	reach := i32(16)
+	least, near := reach * reach + 1, 0
+	for sample in caves {
+		best := reach * reach + 1
+		for z in -reach ..= reach {
+			for y in -reach ..= reach {
+				for x in -reach ..= reach {
+					squared := x * x + y * y + z * z
+					if squared >= best {
+						continue
+					}
+					if _, found := waters[sample + {x, y, z}]; found {
+						best = squared
+					}
+				}
+			}
+		}
+		least = min(least, best)
+		near += best <= reach * reach ? 1 : 0
+	}
+	log.infof("0339: %d shore chunks of the three lakes nearest the home hold %d samples of cave air, %d inside 0327's bounds plus the margin; the nearest lies %.1f m from lake water, %d within 16 m; %d water samples under a spacing over the sea differ (the sea in cave air)", len(chunks), len(caves), inside, math.sqrt(f64(least)), near, sea_changed)
+	testing.expectf(t, inside > 0, "%d samples of cave air inside the lakes' old bounds", inside)
 	testing.expect_value(t, water_changed, 0)
 	testing.expect_value(t, order_changed, 0)
+	closest := i32((CAVE_LAKE_MARGIN_METRES * MILLIMETRES_PER_METRE - generation.spacing_millimetres) / generation.spacing_millimetres)
+	testing.expectf(t, least >= closest * closest, "cave air lies %d samples squared from lake water", least)
+}
+
+// The 27 chunks round a lake's pit at 1 m under bodies, all at once, each
+// generated on fresh temp memory, settled for at most 600 ticks.
+test_settled_lake_world :: proc(planet: Planet, centre: Field_Chunk_Coordinate, tuning: Field_Water_Tuning) -> (world: Field_World, ticks: int) {
+	world.water_model = .Bodies
+	world.water_planet = make_field_water_planet(DEFAULT_WORLD_SEED, planet, 1000)
+	make_sea_water_body(&world)
+	for z in i32(-1) ..= 1 {
+		for y in i32(-1) ..= 1 {
+			for x in i32(-1) ..= 1 {
+				chunk := new(Field_Chunk)
+				generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, centre + {x, y, z}, chunk)
+				field_world_insert_chunk(&world, chunk)
+				free_all(context.temp_allocator)
+			}
+		}
+	}
+	tick: u64 = 0
+	ticks = settle_body_test_water(&world, tuning, &tick, 600)
+	return
+}
+
+// 0312's lake at 72.02, 143.04 settles with the dense caves round it as
+// without them, and holds the same water a spacing or more over the sea.
+@(test) // slow
+test_a_lake_settles_beside_dense_caves :: proc(t: ^testing.T) {
+	planet := waters_test_planet(8000)
+	planet.water_features = make_planet_water_features(DEFAULT_WORLD_SEED, planet)
+	defer destroy_planet_water_features(&planet.water_features)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	index := waters_test_lake_near(planet.water_features.lakes, 72.02, 143.04)
+	testing.expect(t, index >= 0, "a lake lies at 72.02, 143.04")
+	if index < 0 {
+		return
+	}
+	centre := shipped_lake_centre_chunk(generation, planet.water_features.lakes[index])
+	caved_planet := planet
+	caved_planet.caves = DENSE_TEST_CAVES
+	plain_planet := planet
+	plain_planet.caves = {}
+	caved, caved_ticks := test_settled_lake_world(caved_planet, centre, tuning)
+	defer destroy_field_world(&caved)
+	plain, plain_ticks := test_settled_lake_world(plain_planet, centre, tuning)
+	defer destroy_field_world(&plain)
+	testing.expectf(t, caved_ticks < 600 && !any_water_awake(&caved), "with the caves the lake settles (%d ticks)", caved_ticks)
+	testing.expect_value(t, still_unowned_water_samples(&caved), 0)
+	testing.expectf(t, plain_ticks < 600 && !any_water_awake(&plain), "without the caves the lake settles (%d ticks)", plain_ticks)
+	testing.expect_value(t, still_unowned_water_samples(&plain), 0)
+	cave_air, high_differ, low_differ := 0, 0, 0
+	for coordinate, chunk in caved.chunks {
+		other := plain.chunks[coordinate]
+		origin := field_chunk_origin(coordinate)
+		for sample in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			cave_air += chunk.density[sample] <= 0 && other.density[sample] > 0 ? 1 : 0
+			if chunk.water[sample] == other.water[sample] {
+				continue
+			}
+			position := sample_to_world_position(origin + Sample_Coordinate(field_index_to_local(sample)), 1000)
+			if vector_length(cast([3]i64)position) - generation.sea_radius >= generation.spacing {
+				high_differ += 1
+			} else {
+				low_differ += 1
+			}
+		}
+	}
+	log.infof("0339: the lake at 72.02, 143.04 settles after %d ticks with the dense caves (%d samples of cave air) and %d without; %d samples under a spacing over the sea hold other water (the sea in cave air)", caved_ticks, cave_air, plain_ticks, low_differ)
+	testing.expectf(t, cave_air > 0, "%d samples of cave air round the lake", cave_air)
+	testing.expect_value(t, high_differ, 0)
+}
+
+// 0327's fade from a lake's bound sphere: NOISE_ONE lowered by every lake
+// whose bound plus the margin and the fade holds the position.
+test_lake_bound_fade :: proc(lakes: []Planet_Lake, position: World_Position) -> i64 {
+	margin := metres_to_position_units(CAVE_LAKE_MARGIN_METRES)
+	fade_length := metres_to_position_units(CAVE_LAKE_FADE_METRES)
+	fade: i64 = NOISE_ONE
+	for lake in lakes {
+		offset := cast([3]i64)position - lake.bound_centre
+		reach := lake.bound_radius + margin + fade_length
+		squared := offset.x * offset.x + offset.y * offset.y + offset.z * offset.z
+		if squared >= reach * reach {
+			continue
+		}
+		root := i64(integer_square_root(u64(squared)))
+		fade = min(fade, clamp((root - lake.bound_radius - margin) * NOISE_ONE / fade_length, 0, NOISE_ONE))
+	}
+	return fade
+}
+
+// The land within 1500 m of the home at 8 km with a cave share that the
+// lakes leave to the caves 4 m under the relief, on a 20 m grid: by their
+// water against 0327's bound.
+@(test) // slow
+test_the_lakes_leave_the_land_to_the_caves :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	planet.water_tiles = make_water_tile_cache(DEFAULT_WORLD_SEED, planet)
+	defer destroy_water_tile_cache(planet.water_tiles)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	up, _ := normalize_fixed(generation.landform_home)
+	lakes := clone_planet_lakes(water_tile_lakes_near(planet.water_tiles, up, metres_to_position_units(1900)))
+	free_all(context.temp_allocator)
+	defer {
+		for lake in lakes {
+			delete(lake.mask)
+		}
+		delete(lakes)
+	}
+	listed := generation
+	listed.lakes = lakes
+	listed.water_tiles = nil
+	forward := tangent_of(up, {UNIT_VECTOR_ONE, 0, 0})
+	right := fixed_cross(forward, up)
+	dry := generation.sea_radius - generation.radius + metres_to_position_units(i64(planet.caves.dry_metres))
+	under := metres_to_position_units(4)
+	step := i64(20)
+	half := 1500 / step
+	shared, before, after, full_before, full_after, under_lake := 0, 0, 0, 0, 0, 0
+	for ahead in -half ..= half {
+		for aside in -half ..= half {
+			if ahead * ahead + aside * aside > half * half {
+				continue
+			}
+			point := fixed_scale(up, generation.radius) + fixed_scale(forward, metres_to_position_units(ahead * step)) + fixed_scale(right, metres_to_position_units(aside * step))
+			point = project_onto_sphere(World_Position(point), vector_length(point), generation.radius)
+			column := surface_column(listed, point)
+			if level, found := planet_lake_level_at(lakes, point, generation.radius); found && column.relief < level {
+				under_lake += 1
+			}
+			if column.relief < dry || column.cave_share <= 0 {
+				continue
+			}
+			direction, _ := normalize_fixed(point)
+			distance := generation.radius + column.relief - under
+			position := World_Position(fixed_scale(direction, distance))
+			old_fade := test_lake_bound_fade(lakes, position)
+			new_fade := cave_lake_fade(listed, position, distance, point)
+			shared += 1
+			before += old_fade > 0 ? 1 : 0
+			after += new_fade > 0 ? 1 : 0
+			full_before += old_fade == NOISE_ONE ? 1 : 0
+			full_after += new_fade == NOISE_ONE ? 1 : 0
+		}
+		free_all(context.temp_allocator)
+	}
+	percent :: proc(count, total: int) -> f64 {
+		return 100 * f64(count) / f64(max(total, 1))
+	}
+	log.infof("0339: within 1500 m of the home at 8 km the lakes leave %.1f percent of the land with a cave share to the caves (0327's bound %.1f), %.1f percent at full strength (%.1f), of %d land columns with a share, %d under a lake's level", percent(after, shared), percent(before, shared), percent(full_after, shared), percent(full_before, shared), shared, under_lake)
+	testing.expectf(t, shared > 0 && after * 100 >= 95 * shared, "%d of %d columns left to the caves", after, shared)
+	testing.expectf(t, after > before, "%d columns left to the caves, %d under 0327's bound", after, before)
+}
+
+// Marches up from cave air by the lakes within 900 m of the home with the
+// dense caves, every step reading the generation: the fade reads the
+// tiles' lakes in place, so no march clones a mask (0327's listing took 42
+// and 151 KB a march at 1000 and 333 mm).
+@(test) // slow
+test_a_march_by_a_lake_copies_no_lake :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	planet.caves = DENSE_TEST_CAVES
+	planet.water_tiles = make_water_tile_cache(DEFAULT_WORLD_SEED, planet)
+	defer destroy_water_tile_cache(planet.water_tiles)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	lakes := test_nearest_lakes(generation, planet.water_tiles, max(int))
+	defer {
+		for lake in lakes {
+			delete(lake.mask)
+		}
+		delete(lakes)
+	}
+	near := metres_to_position_units(900)
+	smallest_mask := max(int)
+	chunks := make([dynamic]Field_Chunk_Coordinate)
+	defer delete(chunks)
+	for lake in lakes {
+		if squared_chord(lake.bound_centre, generation.landform_home) > near * near {
+			continue
+		}
+		smallest_mask = min(smallest_mask, len(lake.mask) * 8)
+		for coordinate in test_lake_shore_chunks(generation, lake, 6) {
+			if !slice.contains(chunks[:], coordinate) {
+				append(&chunks, coordinate)
+			}
+		}
+		free_all(context.temp_allocator)
+	}
+	without := planet
+	without.caves = {}
+	caved := new(Field_Chunk)
+	defer free(caved)
+	plain := new(Field_Chunk)
+	defer free(plain)
+	positions := make([dynamic]World_Position)
+	defer delete(positions)
+	for coordinate in chunks {
+		if len(positions) >= 40 {
+			break
+		}
+		caved^ = {}
+		plain^ = {}
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, coordinate, caved)
+		generate_field_chunk(DEFAULT_WORLD_SEED, without, 1000, coordinate, plain)
+		free_all(context.temp_allocator)
+		origin := field_chunk_origin(coordinate)
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			if len(positions) < 40 && caved.density[index] <= 0 && plain.density[index] > 0 {
+				append(&positions, sample_to_world_position(origin + Sample_Coordinate(field_index_to_local(index)), 1000))
+			}
+		}
+	}
+	testing.expectf(t, len(positions) > 0, "%d samples of cave air by the lakes", len(positions))
+	world: Field_World
+	for spacing_millimetres in ([2]int{1000, 333}) {
+		marching := make_planet_generation(DEFAULT_WORLD_SEED, planet, spacing_millimetres)
+		most, total, largest: int
+		for position in positions {
+			tracking: mem.Tracking_Allocator
+			mem.tracking_allocator_init(&tracking, context.temp_allocator)
+			saved := context.temp_allocator
+			context.temp_allocator = mem.tracking_allocator(&tracking)
+			field_sky_is_open(&world, marching, world_position_to_sample(position, spacing_millimetres))
+			context.temp_allocator = saved
+			for _, entry in tracking.allocation_map {
+				largest = max(largest, entry.size)
+			}
+			most = max(most, int(tracking.total_memory_allocated))
+			total += int(tracking.total_memory_allocated)
+			mem.tracking_allocator_destroy(&tracking)
+			free_all(context.temp_allocator)
+		}
+		log.infof("0339: %d marches by the lakes at %d mm take at most %d bytes, %d on average, the largest allocation %d bytes (a mask %d)", len(positions), spacing_millimetres, most, total / max(len(positions), 1), largest, smallest_mask)
+		testing.expectf(t, largest < smallest_mask, "at %d mm an allocation of %d bytes, a mask %d", spacing_millimetres, largest, smallest_mask)
+		// The whole march under one mask's bytes: a mask cloned and freed
+		// again would not stand in the live allocations above.
+		testing.expectf(t, most < smallest_mask, "at %d mm a march takes %d bytes, a mask %d", spacing_millimetres, most, smallest_mask)
+	}
 }
 
 // The overhang at the nearest notch of a gorge's wall and of a mesa's

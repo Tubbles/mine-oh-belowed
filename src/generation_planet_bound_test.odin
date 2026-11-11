@@ -690,6 +690,84 @@ test_the_bounded_chunk_shades_notch_air_under_a_tunnel :: proc(t: ^testing.T) {
 	testing.expect_value(t, test_bounded_chunk_differences(planet, generation, coordinate, 7), 0)
 }
 
+// Dense caves at the shores of the three lakes nearest the shipped home
+// with tiles (0339): the first two shore chunks holding more than 20
+// samples of cave air and the nodes of levels 1 to 3 at their centres
+// against the samples one by one. A sample read alone reads the tiles'
+// lakes in place (water_tile_cave_lake_fade), a chunk or a grid its list,
+// so this is also the two paths' parity.
+@(test) // slow
+test_the_bounded_generation_matches_the_samples_by_a_lake :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	planet.caves = DENSE_TEST_CAVES
+	planet.water_tiles = make_water_tile_cache(DEFAULT_WORLD_SEED, planet)
+	defer destroy_water_tile_cache(planet.water_tiles)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	nearest := test_nearest_lakes(generation, planet.water_tiles, 3)
+	defer {
+		for lake in nearest {
+			delete(lake.mask)
+		}
+		delete(nearest)
+	}
+	candidates := make([dynamic]Field_Chunk_Coordinate)
+	defer delete(candidates)
+	for lake in nearest {
+		for coordinate in test_lake_shore_chunks(generation, lake, 8) {
+			append(&candidates, coordinate)
+		}
+		free_all(context.temp_allocator)
+	}
+	without := planet
+	without.caves = {}
+	caved := new(Field_Chunk)
+	defer free(caved)
+	plain := new(Field_Chunk)
+	defer free(plain)
+	chunks := make([dynamic]Field_Chunk_Coordinate)
+	defer delete(chunks)
+	for coordinate in candidates {
+		if len(chunks) == 2 {
+			break
+		}
+		if slice.contains(chunks[:], coordinate) {
+			continue
+		}
+		caved^ = {}
+		plain^ = {}
+		generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, coordinate, caved)
+		generate_field_chunk(DEFAULT_WORLD_SEED, without, 1000, coordinate, plain)
+		free_all(context.temp_allocator)
+		cave_air := 0
+		for sample in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			cave_air += caved.density[sample] <= 0 && plain.density[sample] > 0 ? 1 : 0
+		}
+		if cave_air > 20 {
+			append(&chunks, coordinate)
+		}
+	}
+	testing.expect_value(t, len(chunks), 2)
+	nodes := make([dynamic]Field_Node)
+	defer delete(nodes)
+	chunk_differences, grid_differences := 0, 0
+	for coordinate in chunks {
+		chunk_differences += test_bounded_chunk_differences(planet, generation, coordinate)
+		free_all(context.temp_allocator)
+		position := sample_to_world_position(field_chunk_origin(coordinate) + FIELD_CHUNK_SIZE / 2, 1000)
+		for level in i32(1) ..= 3 {
+			if node := test_surface_node(position, 1000, level); !slice.contains(nodes[:], node) {
+				append(&nodes, node)
+			}
+		}
+	}
+	for node in nodes {
+		grid_differences += test_bounded_grid_differences(generation, node)
+		free_all(context.temp_allocator)
+	}
+	testing.expect_value(t, chunk_differences, 0)
+	testing.expect_value(t, grid_differences, 0)
+}
+
 @(test) // slow
 test_the_bounded_generation_matches_the_samples_before_0306 :: proc(t: ^testing.T) {
 	chunk_differences, grid_differences := test_bounded_generation_differences(pre_0306_test_home_at(8000))

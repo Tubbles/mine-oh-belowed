@@ -1,6 +1,6 @@
 # 0339: Caves up to the lakes' water
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-12)
 
 0327 keeps its caves and notches out of every lake's bound sphere plus 4 m (`cave_lake_fade`). The sphere is sized from 0312's refine window, not from the water: about 300 m round each pit (`bound_radius`, `find_planet_lakes`). With 0326's lakes over the whole planet (1.6 a square kilometre at 8 km) that leaves no cave under roughly half the land, as 0327's fix round reported for the 1500 m round the home. After 0327, on its tree.
 
@@ -122,3 +122,8 @@ Existing tests that follow: 0312's, 0334's and 0336's settle tests run on the sh
 2. The fade stays 12 m, judged on the capture.
 3. The chunk lists' clones stay as they are: freed per job, a note for `SUGGESTIONS.md` at the landing.
 4. The implementer stops and reports if a probe or a test needs more than the memory cap (every run inside `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0`).
+
+### Deviations (implementation, 2026-11-11)
+
+- `test_nearest_lakes` and `test_the_lakes_leave_the_land_to_the_caves` list the lakes with `water_tile_lakes_near` in the temp allocator and clone them (`clone_planet_lakes`) into the test's allocator: listed straight in `context.allocator`, the springs array `take_water_tile_finals` makes and `water_tile_lakes_near` drops leaked (1.12 KiB a test, reported by the runner).
+- `test_a_march_by_a_lake_copies_no_lake` caps a march's whole temporary memory under one mask's bytes, not at 8 and 16 KB (the review): the live allocations cannot show a mask cloned and freed again, and 8 KB would hide one.

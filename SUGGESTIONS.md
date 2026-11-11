@@ -352,3 +352,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - By arrival order a lake can end with a few bodies of 4 to 68 fill that spill out of the set, and one still sample no body owns (the 72.02 lake: 3, 11 or 17 bodies, where it was 2). The 0334 test checks the streamed order only.
 - A fed lake whose outlet's chunk was loaded and then left holds at its sill and its inflow leaves at the edge. Water is lost for good only to bodies downstream inside the set past the missing chunk.
 - A flood that spills out of the set makes one uncached lake lookup per push; a cache per seed would remove it if a profile ever shows it.
+
+## Suggestions from the caves by the lakes (0339, 2026-11-12)
+
+- The settle tests of 0312, 0334 and 0336 wait for the water to be still and compare no volume, so a lake that lost water into a cave would still pass them. `test_a_lake_settles_beside_dense_caves` is the only one that would see it.
+- `water_tile_lakes_near` drops the springs array `take_water_tile_finals` makes. Harmless under the temp allocator every caller uses, a leak of about 1 KB a call under any other.
+- `generation_lakes_meeting_box` with tiles clones every kept lake of the near tiles per chunk or grid list, twice a chunk job, where only the lakes meeting the box are read: 91 to 160 KB a job, freed with it. Filtering under the lock before the clone would cut it to the masks read. Worth doing only if a profile shows the clones.

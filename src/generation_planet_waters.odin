@@ -1,5 +1,6 @@
 package game
 
+import "base:intrinsics"
 import "core:slice"
 @(require) import "core:sync"
 
@@ -321,10 +322,90 @@ planet_lake_mask_bit :: proc(lake: Planet_Lake, u, v: i64) -> bool {
 	return lake.mask[index >> 6] & (u64(1) << uint(index & 63)) != 0
 }
 
+// The mask's bits of cells first to last of row v, all inside the window
+// and fewer than 65: bit k the cell first + k. Read by
+// planet_lake_mask_squared_distance.
+planet_lake_mask_run :: proc(lake: Planet_Lake, first, last, v: i64) -> u64 {
+	count := last - first + 1
+	index := (v + lake.half) * (2 * lake.half + 1) + first + lake.half
+	word := index >> 6
+	shift := uint(index & 63)
+	run := lake.mask[word] >> shift
+	if i64(shift) + count > 64 {
+		run |= lake.mask[word + 1] << (64 - shift)
+	}
+	if count < 64 {
+		run &= (u64(1) << uint(count)) - 1
+	}
+	return run
+}
+
+// The least squared distance on the lake's plane from (east, north)
+// (position units) to a set cell's square, at most reach squared: the
+// cells within reach of the point's cell (planet_lake_holds' rounding),
+// clipped to the window, each row read as one run, of which the nearest
+// set cell on either side of the point's column has the least gap in that
+// row. The run fits a word while the reach is at most 31 cells
+// (CAVE_LAKE_LIST_METRES' assert).
+planet_lake_mask_squared_distance :: proc(lake: Planet_Lake, east, north, step, reach: i64) -> i64 {
+	best := reach * reach
+	cells := (reach + step - 1) / step
+	centre_u := floor_divide_i64(east + step / 2, step)
+	centre_v := floor_divide_i64(north + step / 2, step)
+	first, last := max(centre_u - cells, -lake.half), min(centre_u + cells, lake.half)
+	first_v, last_v := max(centre_v - cells, -lake.half), min(centre_v + cells, lake.half)
+	if first > last || first_v > last_v {
+		return best
+	}
+	split := centre_u - first
+	for v in first_v ..= last_v {
+		gap_v := max(abs(north - v * step) - step / 2, 0)
+		if gap_v * gap_v >= best {
+			continue
+		}
+		run := planet_lake_mask_run(lake, first, last, v)
+		if right := split <= 0 ? run : run >> uint(split); right != 0 {
+			u := first + max(split, 0) + i64(intrinsics.count_trailing_zeros(right))
+			gap_u := max(abs(east - u * step) - step / 2, 0)
+			best = min(best, gap_u * gap_u + gap_v * gap_v)
+		}
+		if split <= 0 {
+			continue
+		}
+		if left := run & ((u64(1) << uint(split)) - 1); left != 0 {
+			u := first + 63 - i64(intrinsics.count_leading_zeros(left))
+			gap_u := max(abs(east - u * step) - step / 2, 0)
+			best = min(best, gap_u * gap_u + gap_v * gap_v)
+		}
+	}
+	return best
+}
+
+// The distance from a sample (its distance from the centre and its point
+// on the sphere of the radius) to the lake's water, at most reach: the
+// mask's cells under the level as a prism down from it, so horizontally
+// the plane's distance to the nearest set cell's square, vertically the
+// height over the level (0 at or under it). The root floors, so the
+// distance errs short by under a position unit. Read by cave_lake_fade_of.
+planet_lake_water_distance :: proc(lake: Planet_Lake, radius, distance: i64, on_sphere: [3]i64, reach: i64) -> i64 {
+	over := max(distance - radius - lake.level, 0)
+	if over >= reach {
+		return reach
+	}
+	plane := planet_lake_plane(lake, radius, metres_to_position_units(LAKE_CELL_METRES))
+	east, north, ok := waters_plane_coordinates(plane, on_sphere)
+	if !ok {
+		return reach
+	}
+	across := planet_lake_mask_squared_distance(lake, east, north, plane.step, reach)
+	return min(i64(integer_square_root(u64(across + over * over))), reach)
+}
+
 // Whether the lake's mask holds a point on the sphere of the radius: its
 // LAKE_CELL_METRES cell, rounded to the nearest, inside the window and
 // set. The generation, the trees, the coarse grids and the relief map
-// read the lakes only through it.
+// read the lakes only through it, and the caves' fade through
+// planet_lake_water_distance, on the same cells.
 planet_lake_holds :: proc(lake: Planet_Lake, on_sphere: [3]i64, radius: i64) -> bool {
 	plane := planet_lake_plane(lake, radius, metres_to_position_units(LAKE_CELL_METRES))
 	east, north, ok := waters_plane_coordinates(plane, on_sphere)

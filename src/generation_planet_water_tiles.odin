@@ -14,7 +14,10 @@ import "core:sync"
 // the heads within its spacing and the lakes over it, so a tile only
 // decides which thread computes a feature, and the tiles are a cache and
 // not a rule: neither the order of asking, the threads nor an eviction
-// changes a byte. Integers and fixed point.
+// changes a byte. Integers and fixed point. A reader gets copies, but the
+// caves' fade of a sample read alone, which reads the kept lakes in place
+// while it holds the lock an eviction takes (water_tile_cave_lake_fade,
+// 0339).
 
 WATER_FACE_COUNT :: 6
 // The escape flood reaches this many cells past the refine's half window.
@@ -759,6 +762,44 @@ take_water_tile_finals :: proc(cache: ^Water_Tile_Cache, keys: []Water_Tile_Key,
 		}
 	}
 	return listed_lakes[:], listed_springs[:]
+}
+
+// The caves' fade at a sample read alone (cave_lake_fade): the least of
+// cave_lake_fade_of over the kept lakes of the tiles near the position,
+// those generation_lakes_meeting_box lists for the position's box widened
+// by CAVE_LAKE_LIST_METRES. It copies no lake or mask (0339): the copies of
+// take_water_tile_finals are there so an eviction can free a tile while a
+// reader holds its lakes, which the lock prevents here, since each tile's
+// lakes are read while it is held. It allocates the keys alone (temp
+// allocator; ensure_water_tiles its claims, and a tile not yet found),
+// and nothing is allocated or locked inside the mutex.
+water_tile_cave_lake_fade :: proc(cache: ^Water_Tile_Cache, generation: Planet_Generation, position: World_Position, distance: i64, on_sphere: [3]i64) -> i64 {
+	widen := metres_to_position_units(CAVE_LAKE_LIST_METRES)
+	point := cast([3]i64)position
+	direction, half := water_query_box(point - widen, point + widen)
+	near := make(map[Water_Tile_Key]struct{}, context.temp_allocator)
+	water_tiles_near(cache, direction, cache.lake_reach + 2 * half, &near)
+	keys := water_tile_keys_sorted(near)
+	ensure_water_tiles(cache, keys, true)
+	fade: i64 = NOISE_ONE
+	for key in keys {
+		for {
+			sync.mutex_lock(&cache.mutex)
+			tile, found := cache.tiles[key]
+			if found && tile.final == .Found {
+				for index in tile.kept {
+					fade = min(fade, cave_lake_fade_of(generation, tile.lakes[index], position, distance, on_sphere))
+				}
+				cache.clock += 1
+				tile.used = cache.clock
+				sync.mutex_unlock(&cache.mutex)
+				break
+			}
+			sync.mutex_unlock(&cache.mutex)
+			ensure_water_tiles(cache, []Water_Tile_Key{key}, true)
+		}
+	}
+	return fade
 }
 
 // While more than maximum_tiles tiles hold a state Found, frees the least

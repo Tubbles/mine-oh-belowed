@@ -10,9 +10,9 @@ import "generation_seed"
 // height. A sample's depth is the least of the column's (0324) and theirs
 // (sample_depth); the cave share comes from the landforms' reading, so no
 // cave lies in the calm circle; none deeper than the shell, under the sea
-// level plus the dry margin or by a lake. Integers and fixed point, a
-// pure function of the position and the record. The box bound's ranges
-// of them are generation_planet_bound.odin's.
+// level plus the dry margin or by a lake's water. Integers and fixed
+// point, a pure function of the position and the record. The box bound's
+// ranges of them are generation_planet_bound.odin's.
 
 // A gradient noise's median slope at its zero lines, NOISE_ONE per
 // wavelength in percent, which turns a noise into metres.
@@ -22,13 +22,15 @@ CAVE_PRESENCE_FADE_PERCENT :: 6
 // The chambers' noise runs this much faster along the radial, so they are
 // wider than tall.
 CAVE_CHAMBER_SQUASH_PERCENT :: 160
-// No cave or notch within a lake's bound plus the margin, fading in over
-// the fade beyond it.
+// No cave or notch within the margin of a lake's water (its mask under its
+// level, planet_lake_water_distance), fading in over the fade beyond it.
 CAVE_LAKE_MARGIN_METRES :: 4
 CAVE_LAKE_FADE_METRES :: 12
 // A chunk's or a grid's box widened by this lists every lake the fade
 // reads at its samples.
 CAVE_LAKE_LIST_METRES :: CAVE_LAKE_MARGIN_METRES + CAVE_LAKE_FADE_METRES
+// A mask row within the reach fits one word (planet_lake_mask_run).
+#assert(2 * ((CAVE_LAKE_LIST_METRES + LAKE_CELL_METRES - 1) / LAKE_CELL_METRES) + 1 <= 64)
 // The distance of no cave.
 CAVE_NONE :: i64(1) << 40
 // A notch is computed this far past its reach, where its distance is at
@@ -102,20 +104,6 @@ cave_column :: proc(generation: Planet_Generation, column: Surface_Column, on_sp
 	return {strength, metres_to_position_units(i64(caves.level_swing_metres)) * planet_cave_noise(generation, CAVE_LEVEL_SALT, on_sphere, caves.level_wavelength_metres) / NOISE_ONE}
 }
 
-// The lakes a cave's fade reads at the position: the generation's without
-// tiles (a chunk's or a grid's list, cave_lakes_generation, or 0312's
-// features); with tiles (0326) those whose bound meets the position's box
-// widened by CAVE_LAKE_LIST_METRES, the box holding the 3D points the
-// fade reaches.
-cave_lakes :: proc(generation: Planet_Generation, position: World_Position) -> []Planet_Lake {
-	if generation.water_tiles == nil {
-		return generation.lakes
-	}
-	widen := metres_to_position_units(CAVE_LAKE_LIST_METRES)
-	point := cast([3]i64)position
-	return generation_lakes_meeting_box(generation, point - widen, point + widen)
-}
-
 // The generation a box's samples read: with caves and lakes, a copy whose
 // lakes are those meeting the box widened by CAVE_LAKE_LIST_METRES and
 // whose tiles are nil, so every sample's fade reads one short list (the
@@ -131,25 +119,42 @@ cave_lakes_generation :: proc(generation: Planet_Generation, minimum, maximum: [
 	return samples
 }
 
-// NOISE_ONE, lowered by every listed lake whose bound sphere's centre lies
-// within its radius, the margin and the fade of the position: 0 within
-// the margin, rising to NOISE_ONE over the fade. The bound holds the
-// lake's water (0312), so no cave or notch comes within the margin of it.
-cave_lake_fade :: proc(generation: Planet_Generation, position: World_Position) -> i64 {
-	margin := metres_to_position_units(CAVE_LAKE_MARGIN_METRES)
-	fade_length := metres_to_position_units(CAVE_LAKE_FADE_METRES)
+// NOISE_ONE, lowered by every lake whose bound plus the reach holds the
+// position, by its water's distance (cave_lake_fade_of); the least, so
+// the order is free. A sample read alone (with tiles) copies no lake: it
+// reads the tiles' kept lakes in place (water_tile_cave_lake_fade); a
+// chunk or a grid reads its list (cave_lakes_generation), as do 0312's
+// features.
+cave_lake_fade :: proc(generation: Planet_Generation, position: World_Position, distance: i64, on_sphere: [3]i64) -> i64 {
+	if generation.water_tiles != nil {
+		return water_tile_cave_lake_fade(generation.water_tiles, generation, position, distance, on_sphere)
+	}
 	fade: i64 = NOISE_ONE
-	for lake in cave_lakes(generation, position) {
-		offset := cast([3]i64)position - lake.bound_centre
-		reach := lake.bound_radius + margin + fade_length
-		squared := offset.x * offset.x + offset.y * offset.y + offset.z * offset.z
-		if squared >= reach * reach {
-			continue
+	for lake in generation.lakes {
+		fade = min(fade, cave_lake_fade_of(generation, lake, position, distance, on_sphere))
+		if fade == 0 {
+			break
 		}
-		root := i64(integer_square_root(u64(squared)))
-		fade = min(fade, clamp((root - lake.bound_radius - margin) * NOISE_ONE / fade_length, 0, NOISE_ONE))
 	}
 	return fade
+}
+
+// One lake's fade at the sample: NOISE_ONE when the position lies outside
+// the lake's bound sphere plus the margin and the fade (0312's bound holds
+// every water sample, so the water lies farther); else 0 within the
+// margin of its water (planet_lake_water_distance), rising to NOISE_ONE
+// over the fade.
+cave_lake_fade_of :: proc(generation: Planet_Generation, lake: Planet_Lake, position: World_Position, distance: i64, on_sphere: [3]i64) -> i64 {
+	margin := metres_to_position_units(CAVE_LAKE_MARGIN_METRES)
+	fade_length := metres_to_position_units(CAVE_LAKE_FADE_METRES)
+	reach := margin + fade_length
+	offset := cast([3]i64)position - lake.bound_centre
+	limit := lake.bound_radius + reach
+	if offset.x * offset.x + offset.y * offset.y + offset.z * offset.z >= limit * limit {
+		return NOISE_ONE
+	}
+	water := planet_lake_water_distance(lake, generation.radius, distance, on_sphere, reach)
+	return clamp((water - margin) * NOISE_ONE / fade_length, 0, NOISE_ONE)
 }
 
 // The signed distance of the caves at the sample, negative inside one:
@@ -182,7 +187,7 @@ cave_distance :: proc(generation: Planet_Generation, cave: Cave_Column, relief: 
 	if unfaded >= generation.spacing {
 		return unfaded
 	}
-	strength = strength * cave_lake_fade(generation, position) / NOISE_ONE
+	strength = strength * cave_lake_fade(generation, position, distance, on_sphere) / NOISE_ONE
 	if strength <= 0 {
 		return CAVE_NONE
 	}
@@ -352,7 +357,7 @@ sample_depth :: proc(generation: Planet_Generation, column: Surface_Column, cave
 	depth := column_depth(column, height)
 	if column.undercut.reach > 0 && undercut_box_gap(column.undercut, height) < generation.spacing {
 		notch := column.undercut
-		notch.reach = notch.reach * cave_lake_fade(generation, position) / NOISE_ONE
+		notch.reach = notch.reach * cave_lake_fade(generation, position, distance, on_sphere) / NOISE_ONE
 		if notch.reach >= millimetres_to_position_units(UNDERCUT_LEAST_REACH_MILLIMETRES) {
 			depth = min(depth, undercut_distance(notch, height))
 		}
