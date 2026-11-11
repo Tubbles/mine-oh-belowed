@@ -439,8 +439,8 @@ Machine :: struct {
 	// Combustion generators: the percent of a fuel item's energy they
 	// turn into electricity (0140).
 	fuel_efficiency_percent:     u32,
-	// Generators: which serve first, the lowest (0140,
-	// share_generator_energy).
+	// Generators: which serve first, the lowest (0140, the netlist's
+	// dispatch_by_order).
 	dispatch_order:              u8,
 	// Lamps: the block light level while lit, and its colour (white at
 	// light_level when the file gives none, resolve_light_color).

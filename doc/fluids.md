@@ -69,6 +69,7 @@ Rule: satisfaction is supply over demand, capped at one, and every consumer rece
 - Generators share only what the consumers received and burn fuel, steam or gas only for their share, so produced equals consumed.
 - A lamp shines while its network gives more than `LAMP_ON_ABOVE` per mille. Lamps are entity light sources beside block light.
 - The power overview lists each network with supply, demand, satisfaction, its generators and largest consumers. The HUD warns while any network is below full.
+- The balance runs through the leaf package `src/netlist/` (0355): each network is a star of its participants around a hub node, joined by edges of `UNLIMITED_CAPACITY`, so the netlist's fast path gives exactly the pooled balance above. Under the poles every edge is unlimited and the result is the pooled one. The solve's slow path for limited edges exists for 0368 and has a known defect: the feeding side of a limiting edge is charged the edge's full capacity, so a small region feeding an overloaded one can be held tens of per mille under what it could reach (0373).
 
 ### Generators
 

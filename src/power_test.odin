@@ -1,5 +1,6 @@
 package game
 
+import "core:math/rand"
 import "core:testing"
 
 // Power worlds stand on the stone floor of make_floor_world (top at y 1).
@@ -411,6 +412,98 @@ test_power_simulation_is_deterministic :: proc(t: ^testing.T) {
 	testing.expect(t, chest_total(world, entity_at(first, {10, 1, 8})) > 0)
 	testing.expect(t, chest_total(world, entity_at(first, {6, 1, 10})) > 0)
 	testing.expect(t, first.lamps.entries[0].lit)
+}
+
+// The balance before the netlist (0355), to hold its hub adapter to it:
+// pooled per network, every consumer its demand times the network's
+// satisfaction, and what the consumers received shared over the
+// generators by dispatch order, in proportion to their offers, rounded
+// down, the rest a joule at a time in participant order.
+pooled_balance_before_the_netlist :: proc(participants: []Electric_Participant, networks: []Electric_Network) -> []u64 {
+	delivered := make([]u64, len(participants), context.temp_allocator)
+	for &network in networks {
+		network = {}
+	}
+	for participant in participants {
+		if participant.network >= 0 {
+			add_participant_offer(&networks[participant.network], participant)
+		}
+	}
+	for &network in networks {
+		network.satisfaction = network.demand == 0 ? (network.supply > 0 ? POWER_FULL : 0) : u32(min(network.supply, network.demand) * POWER_FULL / network.demand)
+	}
+	remaining := make([]u64, len(networks), context.temp_allocator)
+	for participant, index in participants {
+		if participant.network >= 0 && !participant.generator {
+			delivered[index] = participant.offered * u64(networks[participant.network].satisfaction) / POWER_FULL
+			networks[participant.network].delivered += delivered[index]
+			remaining[participant.network] += delivered[index]
+		}
+	}
+	for order in 0 ..= u8(MAXIMUM_DISPATCH_ORDER) {
+		share_order_before_the_netlist(participants, delivered, remaining, order)
+	}
+	return delivered
+}
+
+share_order_before_the_netlist :: proc(participants: []Electric_Participant, delivered, remaining: []u64, order: u8) {
+	order_supply := make([]u64, len(remaining), context.temp_allocator)
+	assigned := make([]u64, len(remaining), context.temp_allocator)
+	for participant in participants {
+		if participant.network >= 0 && participant.generator && participant.dispatch_order == order {
+			order_supply[participant.network] += participant.offered
+		}
+	}
+	for participant, index in participants {
+		if participant.network >= 0 && participant.generator && participant.dispatch_order == order && order_supply[participant.network] > 0 {
+			delivered[index] = participant.offered * min(order_supply[participant.network], remaining[participant.network]) / order_supply[participant.network]
+			assigned[participant.network] += delivered[index]
+		}
+	}
+	for participant, index in participants {
+		if participant.network >= 0 && participant.generator && participant.dispatch_order == order {
+			share := min(order_supply[participant.network], remaining[participant.network])
+			extra := min(share - assigned[participant.network], participant.offered - delivered[index])
+			delivered[index] += extra
+			assigned[participant.network] += extra
+		}
+	}
+	for supply, network in order_supply {
+		remaining[network] -= min(supply, remaining[network])
+	}
+}
+
+// Work item 0355: the balance through the netlist gives what the pooled
+// balance gave, participant for participant and network for network, on
+// seeded factories of up to 6 networks with participants outside every
+// network, generators of every dispatch order and leftover joules.
+@(test)
+test_balance_through_the_netlist_matches_the_pooled_balance :: proc(t: ^testing.T) {
+	for seed in 0 ..< 400 {
+		state := rand.create(u64(seed))
+		generator := rand.default_random_generator(&state)
+		network_count := rand.int_max(7, generator)
+		participants := make([]Electric_Participant, rand.int_max(41, generator), context.temp_allocator)
+		for &participant in participants {
+			participant.network = rand.int_max(network_count + 1, generator) - 1
+			participant.generator = rand.int_max(3, generator) == 0
+			participant.offered = u64(rand.int_max(20_001, generator))
+			if participant.generator {
+				participant.dispatch_order = u8(rand.int_max(MAXIMUM_DISPATCH_ORDER + 1, generator))
+			}
+		}
+		before := make([]Electric_Network, network_count, context.temp_allocator)
+		expected := pooled_balance_before_the_netlist(participants, before)
+		networks := make([]Electric_Network, network_count, context.temp_allocator)
+		balance_electric_energy(participants, networks)
+		for participant, index in participants {
+			testing.expectf(t, participant.delivered == expected[index], "seed %d: participant %d %d, before %d", seed, index, participant.delivered, expected[index])
+		}
+		for network, index in networks {
+			testing.expectf(t, network == before[index], "seed %d: network %d %v, before %v", seed, index, network, before[index])
+		}
+		free_all(context.temp_allocator)
+	}
 }
 
 @(test)

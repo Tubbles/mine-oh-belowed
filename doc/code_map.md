@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 287 files under `src/` plus 206 test files beside them. 261 are the `game` package, grouped into seven clusters; 26 are eight leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 289 files under `src/` plus 207 test files beside them. 261 are the `game` package, grouped into seven clusters; 28 are nine leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -26,6 +26,7 @@ The entry page for the source: 287 files under `src/` plus 206 test files beside
 | run_length | the package `src/run_length/`: the chunk run length codec | `run_length.odin` | 1 | 39 | [world](audit/world.md) |
 | sjson_text | the package `src/sjson_text/`: the SJSON writer and `sorted_object_keys` | `sjson_text.odin` | 1 | 212 | [content](audit/content.md) |
 | android_libc | the package `src/android_libc/`: the glibc functions bionic lacks, for the Android link | `android_libc.odin` | 1 | 63 | [content](audit/content.md) |
+| netlist | the package `src/netlist/`: the power netlist's forest and its balance (0355) | `netlist.odin` | 2 | 770 | [simulation](audit/simulation.md) |
 
 ## Allowed dependencies
 
@@ -33,13 +34,13 @@ Rule: a cluster references only the clusters of its row. The pilot split (0145) 
 
 | Cluster | May reference |
 |---|---|
-| loop | ui, world, simulation, presentation, content, tools, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
-| ui | presentation, simulation, world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
-| world | content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
-| simulation | world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
-| presentation | simulation, world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
-| content | platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
-| tools | ui, world, simulation, presentation, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
+| loop | ui, world, simulation, presentation, content, tools, platform, generation_seed, model_vox, model_obj, render_frustum, run_length, sjson_text and netlist |
+| ui | presentation, simulation, world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length, sjson_text and netlist |
+| world | content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length, sjson_text and netlist |
+| simulation | world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length, sjson_text and netlist |
+| presentation | simulation, world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length, sjson_text and netlist |
+| content | platform, generation_seed, model_vox, model_obj, render_frustum, run_length, sjson_text and netlist |
+| tools | ui, world, simulation, presentation, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length, sjson_text and netlist |
 | platform | android_libc |
 | generation_seed | nothing |
 | model_vox | platform |
@@ -48,6 +49,7 @@ Rule: a cluster references only the clusters of its row. The pilot split (0145) 
 | run_length | nothing |
 | sjson_text | nothing |
 | android_libc | nothing |
+| netlist | nothing |
 
 - The packages sit where the platform cluster sat: every game cluster may reference them, and they reference only the packages of their row (`platform` imports `android_libc` for the link alone, `model_vox` and `model_obj` name `platform.join_path`).
 - The order is engine below game only in part: world storage and the platform are engine, the simulation is game, presentation and ui mix both ([audit/](audit/), section 6 of each report).
@@ -197,7 +199,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `lab.odin`, `launch_pad.odin`: `Research_State`, units and queueing; assembly stages, launch, shipments.
   - `schematic.odin`, `prospecting.odin`: the schematic crate kind; core sample drills, the magnetometer and seismic records.
   - `fluid.odin`, `fluid_machine.odin`, `machine_fluid_ports.odin`, `fluid_network.odin`: the fluid registry; pipes and fluid machines; port layouts; segments and flow.
-  - `power_machine.odin`, `power_network.odin`: generators, poles, lamps; nodes, memberships, balance.
+  - `power_machine.odin`, `power_network.odin`: generators, poles, lamps; nodes, memberships, the balance through the `netlist` package (Packages).
   - `player.odin`, `player_interaction.odin`, `player_collision.odin`: `Player` and movement; mining and placing; swept collision.
   - `player_field.odin`: `Field_Player` on the terrain field (0170), `tick_field_player`, the capsule against the signed distance, slopes, step, jump, mantle and fly mode in the planet's frame; each player's body in a field session (`Player.field`, 0179); the seat in the pod's chair (`Field_Seat`, `tick_seated_field_player`, 0223); the jetpack and the cheat movement (`field_jet_thrust`, `toggle_field_cheat_movement`, 0296).
   - `field_mining.odin`: the hand tool on the field (0171), `Field_Simulation` with its edit queue drained in `finish_field_tick` (the edits, the placements, the buckets, the pumps, then the water, 0295), the material table of `data/materials.sjson`, the yield and the credit, the tool tier, the place refusals, the torches.
@@ -325,3 +327,4 @@ Leaf packages under `src/` (work item 0145, the pilot split): each is a director
 - `run_length`: `run_length.odin` (`Run`, `run_length_encode`, `run_length_decode`). Tests: `run_length_test.odin`.
 - `sjson_text`: `sjson_text.odin` (the SJSON writer of the data edits and `sorted_object_keys`). Tests: `sjson_text_test.odin` (the writer's round trip, with its own copy of the game's `json_values_equal` test helper); the round trip of every shipped file needs the game's data file listing and stays in `data_browser_test.odin` (`test_shipped_sjson_files_round_trip`).
 - `android_libc`: `android_libc.odin` (the glibc functions bionic lacks, [android.md](android.md)).
+- `netlist`: `netlist.odin` (`Topology`, `build_topology`: the edges bundled, the chords, the forest in pre-order; `pooled_level`), `solve.odin` (`Node_Input`, `Node_Output`, `solve` and `solve_tree`: the fast path, the max-min fair levels behind saturated edges, the dispatch by order and its repair, the stores' charge; [fluids.md](fluids.md), Power). Tests: `netlist_test.odin` (the topology against shuffled edge lists, the pooled balance on unlimited edges, the brute force on small netlists, the feasibility of the output, the fast path against the slow one, determinism; the report test `test_netlist_solve_cost`).

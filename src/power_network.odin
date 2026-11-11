@@ -1,6 +1,7 @@
 package game
 
 import "base:runtime"
+import "netlist"
 
 // Electric networks (doc/fluids.md, Power). Poles and power switches are
 // the nodes. Two nodes are wired when the centres of their footprints
@@ -22,6 +23,12 @@ import "base:runtime"
 // serves first, up to its offers, the next takes the rest), within one
 // order in proportion to their offers, and burn fuel or steam only for
 // their share.
+//
+// The balance runs through the netlist package (0355, src/netlist/): each
+// network is a star of its participants around a hub node, joined by
+// edges of UNLIMITED_CAPACITY, so the netlist's fast path computes exactly
+// the pooled balance above. The hub adapter stands until cables replace
+// the poles (0368).
 
 Electric_Node :: struct {
 	handle:        Entity_Handle,
@@ -57,14 +64,16 @@ Electric_Network :: struct {
 
 // offered is a consumer's demand or a generator's supply for the tick,
 // delivered what it received or gave. network is -1 outside every network.
+// node is its node in the tick's netlist (balance_electric_energy).
 Electric_Participant :: struct {
 	handle:    Entity_Handle,
 	machine:   Machine_Id,
 	network:   int,
+	node:      int,
 	generator: bool,
 	offered:   u64,
 	delivered: u64,
-	// Generators: lower serves first (share_generator_energy).
+	// Generators: lower serves first (the netlist's dispatch_by_order).
 	dispatch_order: u8,
 }
 
@@ -248,37 +257,53 @@ entity_network :: proc(networks: ^Electric_Networks, handle: Entity_Handle) -> i
 // The energy balance, pure.
 
 power_satisfaction :: proc(supply, demand: u64) -> u32 {
-	if demand == 0 {
-		return supply > 0 ? POWER_FULL : 0
-	}
-	return u32(min(supply, demand) * POWER_FULL / demand)
+	return netlist.pooled_level(i64(supply), i64(demand))
 }
 
-// Sums the offers per network, sets each network's satisfaction, gives
-// every consumer its demand times the satisfaction, and shares what the
-// consumers received out over the generators: in proportion to their
-// offers, rounded down, the rest a joule at a time in participant order.
+// Through the netlist: the participants in order are its nodes, then one
+// hub node per network, each participant with a network joined to its
+// hub by an UNLIMITED_CAPACITY edge and one without a network a node
+// alone. A consumer receives its node's delivered, a generator gives its
+// node's supplied: the pooled level of its network times its demand, and
+// what the consumers received shared over the generators by dispatch
+// order, in proportion to their offers, the rest a joule at a time in
+// participant order. The networks' figures are summed as before.
 balance_electric_energy :: proc(participants: []Electric_Participant, networks: []Electric_Network) {
+	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	for &network in networks {
 		network = {}
 	}
-	for participant in participants {
+	node_count := len(participants) + len(networks)
+	inputs := make([]netlist.Node_Input, node_count, context.temp_allocator)
+	edges := make([dynamic]netlist.Edge, 0, len(participants), context.temp_allocator)
+	for &participant, index in participants {
+		participant.node = index
+		inputs[index] = participant_node_input(participant)
 		if participant.network >= 0 {
 			add_participant_offer(&networks[participant.network], participant)
+			append(&edges, netlist.Edge{u32(index), u32(len(participants) + participant.network), netlist.UNLIMITED_CAPACITY})
 		}
 	}
+	topology := netlist.build_topology(node_count, edges[:], context.temp_allocator)
+	outputs := make([]netlist.Node_Output, node_count, context.temp_allocator)
+	netlist.solve(topology, inputs, outputs)
 	for &network in networks {
 		network.satisfaction = power_satisfaction(network.supply, network.demand)
 	}
 	for &participant in participants {
-		participant.delivered = 0
+		output := outputs[participant.node]
+		participant.delivered = u64(participant.generator ? output.supplied : output.delivered)
 		if participant.network >= 0 && !participant.generator {
-			network := &networks[participant.network]
-			participant.delivered = participant.offered * u64(network.satisfaction) / POWER_FULL
-			network.delivered += participant.delivered
+			networks[participant.network].delivered += participant.delivered
 		}
 	}
-	share_generator_energy(participants, networks)
+}
+
+participant_node_input :: proc(participant: Electric_Participant) -> netlist.Node_Input {
+	if participant.generator {
+		return {offer = i64(participant.offered), order = participant.dispatch_order}
+	}
+	return {demand = i64(participant.offered)}
 }
 
 add_participant_offer :: proc(network: ^Electric_Network, participant: Electric_Participant) {
@@ -288,65 +313,6 @@ add_participant_offer :: proc(network: ^Electric_Network, participant: Electric_
 	} else {
 		network.demand += participant.offered
 		network.consumer_count += 1
-	}
-}
-
-// A generator of the given order inside a network.
-generator_at_order :: proc(participant: Electric_Participant, order: u8) -> bool {
-	return participant.network >= 0 && participant.generator && participant.dispatch_order == order
-}
-
-highest_dispatch_order :: proc(participants: []Electric_Participant) -> u8 {
-	highest: u8
-	for participant in participants {
-		if participant.generator {
-			highest = max(highest, participant.dispatch_order)
-		}
-	}
-	return highest
-}
-
-// One order at a time from the lowest: each takes up to its offers of
-// what the network's consumers received and has not been assigned yet.
-share_generator_energy :: proc(participants: []Electric_Participant, networks: []Electric_Network) {
-	remaining := make([]u64, len(networks), context.temp_allocator)
-	for network, index in networks {
-		remaining[index] = network.delivered
-	}
-	for order in 0 ..= int(highest_dispatch_order(participants)) {
-		share_dispatch_level(participants, remaining, u8(order))
-	}
-}
-
-// Within one order: in proportion to the offers, rounded down, the rest a
-// joule at a time in participant order.
-share_dispatch_level :: proc(participants: []Electric_Participant, remaining: []u64, order: u8) {
-	level_supply := make([]u64, len(remaining), context.temp_allocator)
-	for participant in participants {
-		if generator_at_order(participant, order) {
-			level_supply[participant.network] += participant.offered
-		}
-	}
-	level_share := make([]u64, len(remaining), context.temp_allocator)
-	for supply, index in level_supply {
-		level_share[index] = min(supply, remaining[index])
-	}
-	assigned := make([]u64, len(remaining), context.temp_allocator)
-	for &participant in participants {
-		if generator_at_order(participant, order) && level_supply[participant.network] > 0 {
-			participant.delivered = participant.offered * level_share[participant.network] / level_supply[participant.network]
-			assigned[participant.network] += participant.delivered
-		}
-	}
-	for &participant in participants {
-		if generator_at_order(participant, order) {
-			extra := min(level_share[participant.network] - assigned[participant.network], participant.offered - participant.delivered)
-			participant.delivered += extra
-			assigned[participant.network] += extra
-		}
-	}
-	for share, index in level_share {
-		remaining[index] -= share
 	}
 }
 
@@ -471,6 +437,12 @@ collect_crafting_participants :: proc(tick_context: Entity_Tick_Context) {
 	}
 }
 
+// Sets a consumer's satisfaction for the tick: the one seam every
+// consumer's share of the balance goes through.
+deliver_power_satisfaction :: proc(entities: ^Entities, handle: Entity_Handle, satisfaction: u32) {
+	participant_power(entities, handle).satisfaction = satisfaction
+}
+
 // The consumer's Power_State, or nil for a generator.
 participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_State {
 	#partial switch handle.kind {
@@ -501,7 +473,7 @@ apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content,
 	for participant in networks.participants {
 		network := participant.network >= 0 ? networks.networks[participant.network] : Electric_Network{}
 		if !participant.generator {
-			participant_power(entities, participant.handle).satisfaction = network.satisfaction
+			deliver_power_satisfaction(entities, participant.handle, network.satisfaction)
 			continue
 		}
 		generator := pool_get(&entities.fluid_machines, participant.handle)
