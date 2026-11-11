@@ -516,3 +516,4 @@ Count sites
 5. A cave view (the spring's cave mouth) joins the views file at 0327's landing, by the main agent.
 6. Built on 0343 (`view_distance`) and on 0341 (`--input=none`, landed): the worktree is made from 0343's branch once its review is weighed.
 7. Every build or test run goes inside `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0`.
+8. The ridge view stands at 76.552 N, 133.534 E, the ridge 0349's design counted nodes at, so the two items read one place.
