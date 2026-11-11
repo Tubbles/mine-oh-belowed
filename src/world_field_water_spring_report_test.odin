@@ -16,8 +16,9 @@ package game
 // per window of SPRING_REPORT_WINDOW_TICKS ticks, the means a tick of the
 // awake samples, the step's counts (Field_Water_Step_Counts), the pull's,
 // the samples written and those the tick undid, the samples whose fill
-// changed, the films and the standing water, the fill, the chunks marked
-// and the events; from SPRING_REPORT_STREAM_TICK the streaming of a
+// changed, the films and the standing water, the fill and what the set's
+// edge took (0370), the chunks marked and the events; from
+// SPRING_REPORT_STREAM_TICK the streaming of a
 // viewport at the stand, a frame every SPRING_REPORT_TICKS_PER_FRAME ticks
 // as at the spring's frame rate, started with nothing meshed, with the
 // shipped surface waves; and per scenario the digest of field_state_hash
@@ -37,14 +38,14 @@ when WATER_SPRING_REPORT {
 	// SPRING_REPORT_TICKS_PER_FRAME ticks a frame) is a repeat.
 	SPRING_REPORT_REPEAT_FRAMES :: 6
 	SPRING_REPORT_VIEW_METRES :: 512
-	// 0342's spring view's stand, latitude and longitude.
-	SPRING_REPORT_STAND :: [2]string{"79.159", "150.561"}
 	// The digests of S1, S2 and S3 recorded after 0367's C1 and C2 with the
 	// shipped spring rate of 64, 0 for a scenario that did not run (S3: the
-	// tech demo's spring lies in S1's set). At 0367's base (3f5f66e), which
-	// its pure steps B1 to B4 kept, they were 0x8d19a40a04c848d5 and
-	// 0xd7e020eeefaf81de.
-	SPRING_REPORT_RECORDED_DIGESTS :: [3]u64{0xe5076a040dc3fcd7, 0x30bf12eaaa49f85a, 0}
+	// tech demo's spring lies in S1's set): 0367's landed digests, kept as
+	// the base 0370 is read against. 0370's set's edge changes S1 and S2
+	// (a behaviour change), so their verdict reads "differs". At 0367's base
+	// (3f5f66e), which its pure steps B1 to B4 kept, they were
+	// 0x8d19a40a04c848d5 and 0xd7e020eeefaf81de.
+	SPRING_REPORT_RECORDED_DIGESTS :: [3]u64{0x24567da7e42ce7f2, 0x12079851b4b7077c, 0}
 
 	SPRING_STEP_COUNT_FIELDS :: size_of(Field_Water_Step_Counts) / size_of(i64)
 	SPRING_BODY_COUNT_FIELDS :: size_of(Water_Body_Counts) / size_of(i64)
@@ -53,22 +54,15 @@ when WATER_SPRING_REPORT {
 	test_report_the_water_at_a_flowing_spring :: proc(t: ^testing.T) {
 		config := test_field_game_config()
 		content := make_field_test_game_content()
-		// The waters kept, as in the game (make_field_test_game_content
-		// drops them for the suite).
-		content.planets = shipped_test_planets()
 		shipped, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 		testing.expect(t, error == nil, "the shipped game.sjson parses")
 		labels := [3]string{"S1 teleport", "S2 bodies", "S3 tech demo bodies"}
 		digests: [3]u64
 		ran: [3]bool
 		run_tech_demo := false
-		stand := SPRING_REPORT_STAND
 		for model, index in ([2]Water_Model{.Teleport, .Bodies}) {
-			session := start_field_test_session(config, content, water_model = model)
-			simulation := &session.simulation
-			feet, problem := surface_point_feet(simulation, stand[:])
-			testing.expect_value(t, problem, "")
-			teleport_field_player(&simulation.players[0].field, feet)
+			// The waters kept, as in the game (start_session_at_the_test_spring).
+			session := start_session_at_the_test_spring(config, &content, model)
 			digests[index] = run_spring_report_scenario(session, content, config, shipped.water_look, labels[index], true)
 			ran[index] = true
 			if index == 0 {
@@ -157,6 +151,7 @@ when WATER_SPRING_REPORT {
 		changed_chunks, reached_chunks:             i64,
 		marked_ticks, marked_dirty, marked_edited: i64,
 		events:                                     i64,
+		to_edge:                                    i64,
 		bodies:                                     [SPRING_BODY_COUNT_FIELDS]i64,
 		wall, wall_most:                            time.Duration,
 		wall_most_tick:                             int,
@@ -234,9 +229,11 @@ when WATER_SPRING_REPORT {
 				clear(&world.edited_chunks)
 			}
 			clear(&writes)
+			edge_before := world.water_to_edge
 			begin := time.tick_now()
 			tick_field_test_simulation(simulation, simulation_content, {})
 			wall := time.tick_since(begin)
+			window.to_edge += world.water_to_edge - edge_before
 			digest = fingerprint_u64(digest, field_state_hash(&simulation.field, 0))
 
 			window.ticks += 1
@@ -452,7 +449,7 @@ when WATER_SPRING_REPORT {
 		}
 		fill, beside_missing := spring_report_fill(world)
 		awake := window.awake
-		log.infof("spring %s, ticks %d to %d: %d chunks loaded; awake at the tick's start %.0f (wet %.0f, dry %.0f, springs %.2f, most %d) in %.1f chunks; films %.0f, standing %.0f; wet beside a chunk not loaded %d at the end; fill %d, %+d over the window", label, first, last, len(world.chunks), mean(awake.wet + awake.dry + awake.springs, ticks), mean(awake.wet, ticks), mean(awake.dry, ticks), mean(awake.springs, ticks), window.awake_most, mean(awake.chunks, ticks), mean(awake.films, ticks), mean(awake.standing, ticks), beside_missing, fill, fill - start_fill)
+		log.infof("spring %s, ticks %d to %d: %d chunks loaded; awake at the tick's start %.0f (wet %.0f, dry %.0f, springs %.2f, most %d) in %.1f chunks; films %.0f, standing %.0f; wet beside a chunk not loaded %d at the end; fill %d, %+d over the window; to the edge %.1f a tick", label, first, last, len(world.chunks), mean(awake.wet + awake.dry + awake.springs, ticks), mean(awake.wet, ticks), mean(awake.dry, ticks), mean(awake.springs, ticks), window.awake_most, mean(awake.chunks, ticks), mean(awake.films, ticks), mean(awake.standing, ticks), beside_missing, fill, fill - start_fill, mean(window.to_edge, ticks))
 		counts := transmute(Field_Water_Step_Counts)window.counts
 		log.infof("spring %s, ticks %d to %d: writes %.0f (most %d), samples written %.0f, %.0f of them undone by the tick's end; moves %.0f (fill %.0f); wake checks %.0f, wakes %.0f; neighbour sets %.0f; spans %.0f (wake checks %.0f, searches %.0f); searches %.1f (postponed %.1f), visits %.0f (most %d), teleports %.2f, failures %.1f; spring pours %.1f (most %d); apply over %.2f chunks visits %.0f samples, %.0f planned or given a delta",label, first, last, mean(counts.writes, ticks), window.writes_most, mean(window.written, ticks), mean(window.undone, ticks), mean(counts.moves, ticks), mean(counts.moved_fill, ticks), mean(counts.wake_checks, ticks), mean(counts.wakes, ticks), mean(counts.neighbour_sets, ticks), mean(counts.spans, ticks), mean(counts.wake_spans, ticks), mean(counts.search_spans, ticks), mean(counts.searches, ticks), mean(counts.postponed, ticks), mean(window.pressure.visits, ticks), window.visits_most, mean(window.pressure.teleports, ticks), mean(window.pressure.failures, ticks), mean(counts.spring_outflow, ticks), window.outflow_most, mean(counts.apply_chunks, ticks), mean(counts.apply_visits, ticks), mean(counts.apply_samples, ticks))
 		marks := "not counted (the streaming takes them)"

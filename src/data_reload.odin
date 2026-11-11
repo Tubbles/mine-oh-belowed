@@ -288,16 +288,17 @@ move_world_chunks :: proc(target, source: ^World, remap: ^Content_Remap) -> stri
 
 // The field's chunks, the changed ones outside the set, the arrivals and
 // the set's restoring flag move to the reloaded field, whose tables decode_entities read; the water
-// planet, the water model and the water bodies (0293: the table the
-// decode read is the same by value, the running one keeps its derived
-// chunk lists and its pending flood) go with them. The field holds no
-// content ids.
+// planet, the water model, the water the set's edge took (0370, not
+// saved) and the water bodies (0293: the table the decode read is the
+// same by value, the running one keeps its derived chunk lists and its
+// pending flood) go with them. The field holds no content ids.
 move_field_chunks :: proc(target, source: ^Field_Simulation) {
 	target.world.chunks, source.world.chunks = source.world.chunks, target.world.chunks
 	target.world.water_awake_chunks, source.world.water_awake_chunks = source.world.water_awake_chunks, target.world.water_awake_chunks
 	target.world.edited_chunks, source.world.edited_chunks = source.world.edited_chunks, target.world.edited_chunks
 	target.world.water_planet = source.world.water_planet
 	target.world.water_model = source.world.water_model
+	target.world.water_to_edge = source.world.water_to_edge
 	target.world.water_bodies, source.world.water_bodies = source.world.water_bodies, target.world.water_bodies
 	target.world.water_flood, source.world.water_flood = source.world.water_flood, target.world.water_flood
 	target.world.water_sea_seeds, source.world.water_sea_seeds = source.world.water_sea_seeds, target.world.water_sea_seeds

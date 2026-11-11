@@ -105,11 +105,13 @@ World_Facts :: struct {
 	field_session:      bool,
 	sealed_room_inside: bool,
 	// The water field's last tick (0292): the chunks with an awake
-	// sample, and the pressure pull's teleports, visits and failures.
+	// sample, and the pressure pull's teleports, visits and failures; the
+	// fill the simulated set's edge took in all (0370).
 	water_awake_chunk_count: int,
 	water_teleports:         i64,
 	water_visits:            i64,
 	water_failures:          i64,
+	water_to_edge:           i64,
 	// The water bodies' last tick (0293), under the bodies model: the live
 	// bodies (the sea among them), the front samples the passes ran, the
 	// flood's visits and the inflow the sea discarded in all.
@@ -280,7 +282,7 @@ world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
 		// field's feet line says where the player is.
 		append_line(&lines, false, "tick %d", facts.tick)
 		append_line(&lines, false, "%s", sealed_room_line(facts.sealed_room_inside))
-		append_line(&lines, false, "water awake chunks %d  teleports %d  visits %d  failed %d", facts.water_awake_chunk_count, facts.water_teleports, facts.water_visits, facts.water_failures)
+		append_line(&lines, false, "water awake chunks %d  teleports %d  visits %d  failed %d  to the edge %d", facts.water_awake_chunk_count, facts.water_teleports, facts.water_visits, facts.water_failures, facts.water_to_edge)
 		if facts.water_bodies {
 			append_line(&lines, false, "water bodies %d  front %d  flood visits %d  to sea %d", facts.water_body_count, facts.water_front_count, facts.water_flood_visits, facts.water_to_sea)
 		}

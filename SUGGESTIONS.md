@@ -344,3 +344,10 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - A sample at or under the minimum fill that no move can empty is not a film, so it sleeps without drying. Counting it as one changes the drying rule and its recorded digests.
 - The spring's rate of 64 was chosen from one capture at one spring under bodies. Under teleport a stream's width may differ; look at a teleport world's spring in the play build before 0370 is judged.
 - `test_every_change_of_the_waters_look_marks_its_chunk` takes about 22 s of the suite; fewer ticks would cut it.
+
+## Suggestions from the loaded set's edge (0370, 2026-11-12)
+
+- Under bodies a generated lake's own front water, standing above its generated level at a face, is taken by the edge while the lake's chunks arrive: 49, 243 or 9,561 fill on the 79.46 lake by arrival order (a level 2 fill lower in the worst), 516 on the 65.17 lake. It does not accumulate once the lake has settled. The front's edge branch could treat a missing sample inside a generated lake's mask as a wall, as the flood does.
+- By arrival order a lake can end with a few bodies of 4 to 68 fill that spill out of the set, and one still sample no body owns (the 72.02 lake: 3, 11 or 17 bodies, where it was 2). The 0334 test checks the streamed order only.
+- A fed lake whose outlet's chunk was loaded and then left holds at its sill and its inflow leaves at the edge. Water is lost for good only to bodies downstream inside the set past the missing chunk.
+- A flood that spills out of the set makes one uncached lake lookup per push; a cache per seed would remove it if a profile ever shows it.

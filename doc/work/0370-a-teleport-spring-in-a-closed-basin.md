@@ -1,6 +1,6 @@
 # 0370: Water leaves at the loaded set's edge
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-12)
 
 Found by 0367's design: under the teleport water model sources only add and nothing above the sea takes water away, so a spring in a closed basin grows a pool for ever and its water never reaches a repeating state. 0367's savings do not meet its target there.
 
@@ -172,3 +172,11 @@ Before reporting: `./build.sh check`, `./build.sh check-android`, `./build.sh te
 ### After 0367's landing (main agent, 2026-11-11)
 
 0367 landed with `spring_fill_per_tick = 64`, not 16: at 16 the stream spread too thin to be drawn. Wherever this specification says 16, the shipped rate is 64 and stays; the expected figures scale (the growth is `64 × 600` a window before this item). The probe's constant is `SPRING_REPORT_RECORDED_DIGESTS`, recorded at 64. Everything else stands.
+
+### Deviations (implementer, 2026-11-11)
+
+1. The flood pushes a spill out of the set at the missing sample's bottom and spills when it pops it; the spill sample is the one beyond the edge. Spilling at once ends a flood at a missing sample above unclaimed lower ones.
+2. A body whose seed lies in a generated lake's mask takes the edge as a wall, as before 0370 (main agent's rule): a lake that spilled out of the set lost water at its shore's pockets and parted its mask's fringe into bodies of their own, which depended on what was loaded.
+3. The weir of every body whose spill chunk left pours to the edge, a lake's too (it waited before): keeping a lake's weir waiting would cost a lake lookup a tick for each such body.
+4. An ended flood writes the zero record: its stale body, sill and rise, which a load does not restore, parted a loaded machine's state hash from the saving one's.
+5. Tests: the front test bounds the face samples at `minimum_fill` and each body at its spill volume plus the dead band (21 dimple bodies spill out at the faces); the spill test drains to its spill before the pour; the lake edge test uses the -x face and pours 8 times into the sample over the surface; the sea test's heap lies at y 13 to 20; the two machines test also compares at the load; `test_a_fed_lake_draining_under_the_sill_of_the_lake_pouring_into_it_stays_apart` counts `water_to_edge` (its outlet's front water enters the missing sea sample), and `WATER_STEP_RECORDED_DIGESTS` (d) is recorded again.

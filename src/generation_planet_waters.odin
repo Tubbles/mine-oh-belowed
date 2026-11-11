@@ -861,18 +861,47 @@ fill_field_chunk_lakes :: proc(generation: Planet_Generation, chunk: ^Field_Chun
 		if field_water_bottom(span) >= highest {
 			continue
 		}
-		position := sample_to_world_position(sample, generation.spacing_millimetres)
-		on_sphere := project_onto_sphere(position, vector_length(cast([3]i64)position), generation.radius)
-		for lake in listed {
-			if !planet_lake_holds(lake, on_sphere, generation.radius) {
-				continue
-			}
-			if fill := field_sea_fill(planet_lake_fill_level(generation, lake), span); fill > 0 {
-				chunk.water[index] = u8(fill)
-			}
-			break
+		if fill := lake_fill_of_sample(generation, listed, sample, span); fill > 0 {
+			chunk.water[index] = u8(fill)
 		}
 	}
+}
+
+// The first listed lake whose mask holds the sample's point on the
+// sphere.
+lake_holding_sample :: proc(generation: Planet_Generation, listed: []Planet_Lake, sample: Sample_Coordinate) -> (lake: Planet_Lake, found: bool) {
+	position := sample_to_world_position(sample, generation.spacing_millimetres)
+	on_sphere := project_onto_sphere(position, vector_length(cast([3]i64)position), generation.radius)
+	for candidate in listed {
+		if planet_lake_holds(candidate, on_sphere, generation.radius) {
+			return candidate, true
+		}
+	}
+	return {}, false
+}
+
+// The fill the first listed lake whose mask holds the sample's point on
+// the sphere gives its cell under the lake's level; 0 for none.
+lake_fill_of_sample :: proc(generation: Planet_Generation, listed: []Planet_Lake, sample: Sample_Coordinate, span: Field_Water_Span) -> i32 {
+	lake, found := lake_holding_sample(generation, listed, sample)
+	return found ? field_sea_fill(planet_lake_fill_level(generation, lake), span) : 0
+}
+
+// The level in fill units of the lake whose mask holds the sample, among
+// the lakes meeting its position (0370, the set's edge); false for none.
+planet_lake_fill_level_at :: proc(generation: Planet_Generation, sample: Sample_Coordinate) -> (level: i64, found: bool) {
+	position := cast([3]i64)sample_to_world_position(sample, generation.spacing_millimetres)
+	lake := lake_holding_sample(generation, generation_lakes_meeting_box(generation, position, position), sample) or_return
+	return planet_lake_fill_level(generation, lake), true
+}
+
+// The lake water the generation gives a sample (0370, the set's edge):
+// the fill under the level of the lake whose mask holds it; 0 for none.
+// No carved test (fill_field_chunk_lakes leaves carved air dry), so a
+// carved sample under a lake reads as water.
+planet_lake_fill_at :: proc(generation: Planet_Generation, sample: Sample_Coordinate) -> i32 {
+	level, found := planet_lake_fill_level_at(generation, sample)
+	return found ? field_sea_fill(level, field_water_span(sample)) : 0
 }
 
 // A listed lake's density in the generation's spacing at a position, as

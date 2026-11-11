@@ -2,6 +2,7 @@ package game
 
 import "core:container/queue"
 import "core:log"
+import "core:mem/virtual"
 import "core:os"
 import "core:slice"
 import "core:strings"
@@ -2290,4 +2291,146 @@ test_a_wait_across_midnight_moves_the_weather_on :: proc(t: ^testing.T) {
 	testing.expect_value(t, weather_at(42, waited, day_length), weather_at(42, 28 * hour_length, day_length))
 	testing.expect_value(t, day_sky(waited, day_length).day_number, day_sky(tick, day_length).day_number + 1)
 	testing.expect_value(t, waited % day_length, 4 * hour_length)
+}
+
+// 0342's spring view's stand, latitude and longitude: the spring probe's
+// (0367) and 0370's sessions.
+TEST_SPRING_STAND :: [2]string{"79.159", "150.561"}
+
+// A new world of the default settings under the water model, with the
+// shipped planets' waters, which content keeps from now
+// (make_field_test_game_content drops them for the suite), player 0 at
+// 0342's spring view's stand: the spring probe's setup (0367).
+start_session_at_the_test_spring :: proc(config: Game_Config, content: ^Game_Content, model: Water_Model) -> ^Session {
+	content.planets = shipped_test_planets()
+	session := start_field_test_session(config, content^, water_model = model)
+	stand := TEST_SPRING_STAND
+	feet, problem := surface_point_feet(&session.simulation, stand[:])
+	assert(problem == "", problem)
+	teleport_field_player(&session.simulation.players[0].field, feet)
+	return session
+}
+
+// Ticks of an empty frame, the temp allocator a scratch arena freed after
+// each tick, as the spring probe runs them, so a long run keeps no tick's
+// scratch.
+tick_test_spring_session :: proc(session: ^Session, content: Simulation_Content, ticks: int) {
+	scratch: virtual.Arena
+	_ = virtual.arena_init_growing(&scratch)
+	defer virtual.arena_destroy(&scratch)
+	context.temp_allocator = virtual.arena_allocator(&scratch)
+	for _ in 0 ..< ticks {
+		tick_field_test_simulation(&session.simulation, content, {})
+		free_all(context.temp_allocator)
+	}
+}
+
+// The chunk of the loaded set holding a spring sample; false for none.
+test_spring_chunk :: proc(world: ^Field_World) -> (coordinate: Field_Chunk_Coordinate, found: bool) {
+	for candidate, chunk in world.chunks {
+		if field_sample_bits_any(&chunk.water_source) {
+			return candidate, true
+		}
+	}
+	return {}, false
+}
+
+// The loaded fill's change and the water the set's edge took over the
+// session's next ticks.
+run_test_spring_window :: proc(session: ^Session, content: Simulation_Content, ticks: int) -> (fill_change, to_edge: i64) {
+	world := &session.simulation.field.world
+	fill, edge := field_water_census(world).fill, world.water_to_edge
+	tick_test_spring_session(session, content, ticks)
+	return field_water_census(world).fill - fill, world.water_to_edge - edge
+}
+
+// 0370: at 0342's spring the stream runs to the set's edge and leaves
+// there under either model, so the loaded fill holds: over ticks 1,800 to
+// 2,400 it changes by at most a quarter of the spring's pour, and the edge
+// takes at least a quarter of it.
+@(test) // slow
+test_a_spring_stream_leaves_the_set_and_its_fill_holds :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	for model in ([2]Water_Model{.Teleport, .Bodies}) {
+		session := start_session_at_the_test_spring(config, &content, model)
+		defer end_session(session)
+		simulation_content := field_test_content(session, content)
+		rate := i64(simulation_content.field.water.spring_rate)
+		tick_test_spring_session(session, simulation_content, 1800)
+		fill_change, to_edge := run_test_spring_window(session, simulation_content, 600)
+		testing.expectf(t, abs(fill_change) <= rate * 150, "%v: the loaded fill changed by %d over ticks 1,800 to 2,400", model, fill_change)
+		testing.expectf(t, to_edge >= rate * 150, "%v: the edge took %d over ticks 1,800 to 2,400", model, to_edge)
+	}
+}
+
+// 0370: a player who leaves the spring for 600 ticks and comes back finds
+// the stream as its chunks froze and no pool: the bounds of
+// test_a_spring_stream_leaves_the_set_and_its_fill_holds hold over the
+// last 600 of 1,800 ticks back, and the loaded fill grew by at most 600
+// ticks' pour since the player left (teleport).
+@(test) // slow
+test_a_returning_player_finds_the_stream_and_no_pool :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_session_at_the_test_spring(config, &content, .Teleport)
+	defer end_session(session)
+	simulation := &session.simulation
+	world := &simulation.field.world
+	simulation_content := field_test_content(session, content)
+	rate := i64(simulation_content.field.water.spring_rate)
+	tick_test_spring_session(session, simulation_content, 1200)
+	spring, found := test_spring_chunk(world)
+	testing.expect(t, found, "the set holds the spring")
+	left_fill := field_water_census(world).fill
+	away_words, stand_words := [2]string{"74.159", "150.561"}, TEST_SPRING_STAND
+	away, away_problem := surface_point_feet(simulation, away_words[:])
+	stand, stand_problem := surface_point_feet(simulation, stand_words[:])
+	testing.expect_value(t, away_problem, "")
+	testing.expect_value(t, stand_problem, "")
+	teleport_field_player(&simulation.players[0].field, away)
+	tick_test_spring_session(session, simulation_content, 600)
+	testing.expect(t, spring not_in world.chunks && spring in simulation.field.saved_chunks, "the spring's chunk left the set and is kept")
+	teleport_field_player(&simulation.players[0].field, stand)
+	tick_test_spring_session(session, simulation_content, 1200)
+	testing.expect(t, spring in world.chunks, "the spring's chunk is back")
+	fill_change, to_edge := run_test_spring_window(session, simulation_content, 600)
+	testing.expectf(t, abs(fill_change) <= rate * 150, "the loaded fill changed by %d over the last 600 ticks", fill_change)
+	testing.expectf(t, to_edge >= rate * 150, "the edge took %d over the last 600 ticks", to_edge)
+	end_fill := field_water_census(world).fill
+	testing.expectf(t, end_fill <= left_fill + rate * 600, "the loaded fill %d against %d when the player left", end_fill, left_fill)
+}
+
+// 0370: a machine that loaded a save at the spring, its edge's cache
+// cold, computes the same ticks as the one that saved it, under either
+// model: the state hashes equal at the load and every 100 ticks over 900,
+// the edge took alike.
+@(test) // slow
+test_two_machines_at_a_spring_keep_one_state_hash :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	for model in ([2]Water_Model{.Teleport, .Bodies}) {
+		first := start_session_at_the_test_spring(config, &content, model)
+		defer end_session(first)
+		first_content := field_test_content(first, content)
+		tick_test_spring_session(first, first_content, 900)
+		files := encode_save_files(&first.simulation, first_content, "restore", 0)
+		second := load_test_field_save(config, content, &files)
+		defer end_session(second)
+		stage_cached_field_set(&second.simulation)
+		testing.expect(t, restore_arrived_field_set(&second.simulation.field), "the staged set restores")
+		testing.expect_value(t, len(second.simulation.field.world.water_outside), 0)
+		second_content := field_test_content(second, content)
+		first_world, second_world := &first.simulation.field.world, &second.simulation.field.world
+		to_edge := first_world.water_to_edge
+		for step in 0 ..= 9 {
+			if step > 0 {
+				tick_test_spring_session(first, first_content, 100)
+				tick_test_spring_session(second, second_content, 100)
+			}
+			testing.expectf(t, simulation_state_hash(&first.simulation) == simulation_state_hash(&second.simulation), "%v, tick %d: the state hashes differ", model, 900 + 100 * step)
+		}
+		testing.expect(t, second_world.water_to_edge > 0, "the edge took water")
+		testing.expect_value(t, second_world.water_to_edge, first_world.water_to_edge - to_edge)
+	}
 }

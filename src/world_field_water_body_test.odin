@@ -106,6 +106,7 @@ water_bodies_equal :: proc(first, second: ^Field_World) -> bool {
 			body.sea == other.sea &&
 			body.dirty == other.dirty &&
 			body.spill_to_sea == other.spill_to_sea &&
+			body.spill_outside == other.spill_outside &&
 			body.volume == other.volume &&
 			body.level == other.level &&
 			body.written_level == other.written_level &&
@@ -914,6 +915,44 @@ test_a_malformed_water_body_table_is_refused :: proc(t: ^testing.T) {
 		append_u8(&cut, 0)
 	}
 	testing.expect(t, !reads_water_body_table(cut[:]), "the pushed count is refused")
+}
+
+// A table written before 0300, whose body records lack joined_sill and
+// spill_outside (94 bytes each), loads with many dead slots and little
+// after the list: its count is checked at the record size its schema
+// gives, not at the 95 bytes 0370's least record size took. A list cut
+// short is still refused.
+@(test)
+test_an_old_water_body_table_with_many_dead_slots_loads :: proc(t: ^testing.T) {
+	Old_Water_Body_Record :: struct {
+		id:                             u16,
+		alive, sea, dirty, spill_to_sea: bool,
+		volume, level, written_level:   i64,
+		spill_level, spill_volume:      i64,
+		flood_visits, base:             i64,
+		seed, spill:                    Sample_Coordinate,
+	}
+	CHECKED_RECORD_BYTES :: 2 + 5 + 8 * 8 + 2 * 12
+	SLOTS :: 2000
+	bodies := make([]Old_Water_Body_Record, SLOTS, context.temp_allocator)
+	for &body, id in bodies {
+		body.id = u16(id)
+	}
+	bodies[0].alive = true
+	bodies[0].sea = true
+	table := make([dynamic]byte, context.temp_allocator)
+	append_u64(&table, 0)
+	write_list(&table, bodies)
+	list_end := len(table)
+	write_list(&table, []Water_Body_Band_Record{})
+	write_list(&table, []Water_Flood_Record{{}})
+	write_list(&table, []Water_Flood_Entry{})
+	write_list(&table, []Water_Flood_Pushed_Record{})
+	after_count := len(table) - size_of(u64) - size_of(u32)
+	testing.expect(t, after_count < SLOTS * CHECKED_RECORD_BYTES, "the bytes after the count hold fewer records than the count at 95 bytes")
+	testing.expect(t, reads_water_body_table(table[:]), "the old table reads")
+	testing.expect(t, !reads_water_body_table(table[:list_end - 1]), "a list one byte short is refused")
+	testing.expect(t, !reads_water_body_table(table[:list_end / 2]), "a list cut in half is refused")
 }
 
 // A pool seeded against a lake's water, below the lake's surface, joins
@@ -1926,7 +1965,7 @@ test_a_fed_lake_draining_under_the_sill_of_the_lake_pouring_into_it_stays_apart 
 	testing.expect(t, outlet_sill < trough_sill, "the outlet lies under the trough's sill")
 	dig_test_trough(&world, 0)
 	total := conserved_water(&world)
-	to_sea, dropped := world.water_to_sea, world.water_dropped
+	to_sea, to_edge, dropped := world.water_to_sea, world.water_to_edge, world.water_dropped
 	feed := water_test_sample({17, 1, 7})
 	fed, seeds, merges, visits: i64
 	for step in 1 ..= 500 {
@@ -1939,14 +1978,16 @@ test_a_fed_lake_draining_under_the_sill_of_the_lake_pouring_into_it_stays_apart 
 		seeds += counts.seeded
 		merges += counts.merged
 		visits += counts.flood_visits
-		if conserved_water(&world) + world.water_to_sea - to_sea + world.water_dropped - dropped != total + fed {
+		if conserved_water(&world) + world.water_to_sea - to_sea + world.water_to_edge - to_edge + world.water_dropped - dropped != total + fed {
 			testing.expectf(t, false, "step %d: the water is not conserved", step)
 			break
 		}
 	}
-	fmt.printfln("0300: the fed lake under the trough: %d seeds, %d merges, %d flood visits, %d fed, %d to the sea", seeds, merges, visits, fed, world.water_to_sea - to_sea)
+	fmt.printfln("0300: the fed lake under the trough: %d seeds, %d merges, %d flood visits, %d fed, %d to the sea, %d to the edge", seeds, merges, visits, fed, world.water_to_sea - to_sea, world.water_to_edge - to_edge)
 	testing.expect_value(t, fed, 500 * 70)
-	testing.expect(t, world.water_to_sea - to_sea > 0, "the outlet runs to the sea")
+	// Since 0370 the outlet's front water at the shaft's foot moves into the
+	// missing sea sample under it over its sea fill, the set's edge.
+	testing.expect(t, world.water_to_sea - to_sea + world.water_to_edge - to_edge > 0, "the outlet runs out of the set")
 	testing.expectf(t, seeds <= 1 && merges == 0 && visits <= 456, "at most main's 1 seed, 0 merges and 456 visits")
 	a, a_found := water_body_at(&world, water_test_sample({5, 3, 7}))
 	b, b_found := water_body_at(&world, water_test_sample({17, 3, 7}))
@@ -2323,4 +2364,184 @@ test_a_generated_lake_over_a_ridge_is_one_body_after_its_first_flood :: proc(t: 
 		}
 		destroy_field_world(&world)
 	}
+}
+
+// Work item 0370, the set's edge under bodies, on the edge tests' open
+// planet (edge_test_planet) with the shipped tuning, whose films dry.
+
+pour_front_test_water :: proc(world: ^Field_World, low, high: Sample_Coordinate, fill: i32) {
+	for z in low.z ..= high.z {
+		for y in low.y ..= high.y {
+			for x in low.x ..= high.x {
+				sample := Sample_Coordinate{x, y, z}
+				chunk := world.chunks[sample_to_field_chunk_coordinate(sample)]
+				set_front_water(world, chunk, sample_to_field_index(sample), sample, fill)
+			}
+		}
+	}
+}
+
+// 0370: front water that reaches the set's edge where the generation makes
+// air leaves the simulation; no water stands against the edge.
+@(test) // slow
+test_front_water_leaves_through_the_sets_edge :: proc(t: ^testing.T) {
+	world := make_edge_test_ground(true)
+	defer destroy_field_world(&world)
+	make_bodies_world(&world)
+	pour_front_test_water(&world, water_test_sample(EDGE_TEST_HEAP_LOW), water_test_sample(EDGE_TEST_HEAP_HIGH), FIELD_WATER_FULL)
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	for tick in u64(1) ..= 600 {
+		step_field_water(&world, tuning, tick)
+	}
+	held := conserved_water(&world) + world.water_to_edge
+	testing.expect(t, world.water_to_edge > 0, "the edge took water")
+	testing.expectf(t, held <= EDGE_TEST_HEAP_FILL && held >= EDGE_TEST_HEAP_FILL - EDGE_TEST_FILMS_BOUND, "the bodies, the front and the edge hold %d of %d", held, EDGE_TEST_HEAP_FILL)
+	testing.expectf(t, edge_test_most_on_a_face(&world) <= tuning.minimum_fill, "front water on a face holds %d", edge_test_most_on_a_face(&world))
+	// The water left in the floor's dimples at the edge (the sphere's
+	// curve) seeds bodies whose floods claim the face sample beside the
+	// edge before they find the spill there: each holds no more than the
+	// water under its spill and the weir's dead band.
+	for body, id in world.water_bodies {
+		if body.alive && !body.sea {
+			testing.expectf(t, body.spill_outside && body.volume <= body.spill_volume + i64(tuning.weir_dead_band), "body %d holds %d over its spill's %d", id, body.volume, body.spill_volume)
+		}
+	}
+}
+
+// 0370's spill basin: a cave in an all ground chunk on the open planet,
+// floor at y 4, x 8 to 30, z 8 to 23, its roof over y 12, walled in ground
+// but at x 31 (the chunk's +x face), where the ground stands to y 9; filled
+// to y 11 as front water and settled.
+make_edge_spill_test_world :: proc(t: ^testing.T, tuning: Field_Water_Tuning, tick: ^u64) -> Field_World {
+	world := make_water_test_world()
+	world.water_planet = edge_test_planet(true)
+	make_bodies_world(&world)
+	carve_water_test_box(&world, water_test_sample({8, 4, 8}), water_test_sample({30, 12, 23}))
+	carve_water_test_box(&world, water_test_sample({31, 10, 8}), water_test_sample({31, 12, 23}))
+	pour_front_test_water(&world, water_test_sample({8, 4, 8}), water_test_sample({30, 11, 23}), FIELD_WATER_FULL)
+	ticks := settle_body_test_water(&world, tuning, tick, 2000)
+	testing.expectf(t, ticks < 2000, "the basin settles (%d ticks)", ticks)
+	return world
+}
+
+// 0370: a basin whose rim meets the set's edge where the generation makes
+// dry air spills out of the set there, and its weir pours to the edge.
+@(test)
+test_a_body_spills_out_where_its_basin_meets_the_sets_edge :: proc(t: ^testing.T) {
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	tick: u64 = 0
+	world := make_edge_spill_test_world(t, tuning, &tick)
+	defer destroy_field_world(&world)
+	body, id := only_water_body(t, &world)
+	if body == nil {
+		return
+	}
+	testing.expect(t, body.spill_outside, "the body spills out of the set")
+	// The spill is the sample beyond the edge, across the notch at x 31.
+	spill := body.spill - water_test_sample({0, 0, 0})
+	testing.expectf(t, spill.x == 32 && spill.y == 10, "the spill at local %v", spill)
+	// The settle leaves the water over the notch in the body (the front
+	// resting on its water joins it), which the weir pours out at its cap.
+	drained := 0
+	for ; drained < 8000 && world.water_bodies[id].volume > world.water_bodies[id].spill_volume + i64(tuning.weir_dead_band); drained += 1 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	testing.expectf(t, drained < 8000, "the weir drains the body to its spill (%d ticks)", drained)
+	to_edge := world.water_to_edge
+	pour_front_test_water(&world, water_test_sample({10, 12, 10}), water_test_sample({14, 12, 17}), FIELD_WATER_FULL)
+	poured := i64(40 * FIELD_WATER_FULL)
+	for _ in 0 ..< 1200 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	body = &world.water_bodies[id]
+	testing.expectf(t, body.volume <= body.spill_volume + i64(tuning.weir_dead_band), "the volume %d over the spill's %d", body.volume, body.spill_volume)
+	testing.expectf(t, world.water_to_edge - to_edge >= poured - i64(tuning.weir_dead_band) - EDGE_TEST_FILMS_BOUND, "the edge took %d of %d poured", world.water_to_edge - to_edge, poured)
+}
+
+// 0370: a body's own frozen part beyond the edge is a wall to its flood,
+// never a spill out of the set.
+@(test)
+test_a_frozen_part_keeps_the_sets_edge_a_wall :: proc(t: ^testing.T) {
+	world := make_ground_chunks_water_world({0, 1})
+	defer destroy_field_world(&world)
+	world.water_planet = edge_test_planet(true)
+	make_bodies_world(&world)
+	carve_water_test_box(&world, water_test_sample({20, 4, 8}), water_test_sample({FIELD_CHUNK_SIZE + 11, 12, 23}))
+	pour_front_test_water(&world, water_test_sample({20, 4, 8}), water_test_sample({FIELD_CHUNK_SIZE + 11, 9, 23}), FIELD_WATER_FULL)
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	tick: u64 = 0
+	testing.expect(t, settle_body_test_water(&world, tuning, &tick, 600) < 600, "the basin settles")
+	body, id := only_water_body(t, &world)
+	if body == nil {
+		return
+	}
+	volume := body.volume
+	destroy_field_chunk(field_world_detach_chunk(&world, {1, WATER_TEST_CHUNK_Y, 0}))
+	mark_water_body_dirty(&world, id)
+	for _ in 0 ..< 300 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	body = &world.water_bodies[id]
+	testing.expect(t, !body.spill_outside, "the frozen part is a wall")
+	testing.expect_value(t, body.volume, volume)
+	testing.expect_value(t, world.water_to_edge, 0)
+}
+
+// 0370: a chunk arriving beside a spill out of the set floods the body
+// again at once; with ground there the basin is sealed.
+@(test)
+test_a_chunk_arriving_where_a_body_spilled_out_floods_it_again :: proc(t: ^testing.T) {
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	tick: u64 = 0
+	world := make_edge_spill_test_world(t, tuning, &tick)
+	defer destroy_field_world(&world)
+	body, id := only_water_body(t, &world)
+	if body == nil {
+		return
+	}
+	testing.expect(t, body.spill_outside, "the body spills out of the set")
+	arriving := make_ground_water_test_chunk(1)
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if field_index_to_local(index).y > 12 {
+			field_chunk_set_sample(arriving, index, FIELD_AIR_SAMPLE)
+		}
+	}
+	field_world_insert_chunk(&world, arriving)
+	testing.expect(t, world.water_bodies[id].dirty, "the arrival floods the body again")
+	testing.expect(t, settle_body_test_water(&world, tuning, &tick, 600) < 600, "the flood ends")
+	testing.expect(t, !world.water_bodies[id].spill_outside, "the basin is sealed")
+}
+
+// 0370: a lake whose weir spills into a chunk that leaves the set pours
+// to the edge instead of waiting.
+@(test)
+test_a_weir_whose_spill_chunk_left_pours_out_of_the_set :: proc(t: ^testing.T) {
+	world := make_ground_chunks_water_world({0, 1})
+	defer destroy_field_world(&world)
+	world.water_planet = edge_test_planet(true)
+	run_body_test_trough_across_chunks(&world)
+	lake := water_test_sample({TROUGH_LAKE_A.x + 18, 3, 7})
+	id, found := water_body_at(&world, lake)
+	testing.expect(t, found, "lake A is a body")
+	if !found {
+		return
+	}
+	leaving := Field_Chunk_Coordinate{1, WATER_TEST_CHUNK_Y, 0}
+	testing.expect(t, sample_to_field_chunk_coordinate(world.water_bodies[id].spill) == leaving, "lake A spills into chunk 1")
+	destroy_field_chunk(field_world_detach_chunk(&world, leaving))
+	to_edge := world.water_to_edge
+	pour_front_test_water(&world, water_test_sample({TROUGH_LAKE_A.x + 18, 12, 4}), water_test_sample({TROUGH_LAKE_A.x + 21, 12, 8}), FIELD_WATER_FULL)
+	poured := i64(20 * FIELD_WATER_FULL)
+	tuning := water_body_test_tuning()
+	tick: u64 = 1600
+	for _ in 0 ..< 1200 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	body := &world.water_bodies[id]
+	testing.expectf(t, body.volume >= body.spill_volume && body.volume <= body.spill_volume + i64(tuning.weir_dead_band), "the volume %d against the spill's %d", body.volume, body.spill_volume)
+	testing.expectf(t, world.water_to_edge - to_edge >= poured - i64(tuning.weir_dead_band), "the edge took %d of %d poured", world.water_to_edge - to_edge, poured)
 }

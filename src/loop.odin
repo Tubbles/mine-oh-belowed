@@ -1274,6 +1274,7 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 		water_teleports = field_session ? field_world.water_pressure.teleports : 0,
 		water_visits = field_session ? field_world.water_pressure.visits : 0,
 		water_failures = field_session ? field_world.water_pressure.failures : 0,
+		water_to_edge = field_session ? field_world.water_to_edge : 0,
 		overlay_lines = world_overlay_statistics_lines(diagnostics),
 		tick = session.simulation.tick,
 		player_chunk = world_to_chunk_coordinate(cell),

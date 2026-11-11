@@ -28,8 +28,9 @@ import "core:slice"
 // those of its six neighbours that have something to do (inside the step
 // at its end, and only for a fill the tick changed, 0367). Fill at or below
 // the minimum on dry ground (a film) stops moving and drops by one every
-// dry ticks. Volume is conserved but at the sources, the drying and a
-// terrain place that has nowhere to push the water it displaces.
+// dry ticks. Volume is conserved but at the sources, the drying, the set's
+// edge, the sea under teleport and a terrain place that has nowhere to
+// push the water it displaces.
 //
 // Sources: a spring sample (the source bit, set by the generation) is
 // refilled by the spring's rate up to full (0367), and a sea edge sample
@@ -37,6 +38,18 @@ import "core:slice"
 // each tick they are awake. A
 // missing chunk's sample holds the sea's fill when the generation makes it
 // air (field_sea_fill), and is a wall otherwise.
+//
+// The set's edge (0370): moving water leaves the simulation across it, under
+// both models. A missing chunk's sample takes a mover's share against the
+// water the generation puts there (field_water_outside: the sea's fill or
+// a lake's, the higher, none in dry air), banded and capped as any move,
+// and the fill goes to Field_World.water_to_edge; the generation's ground
+// stays a wall. Only a move reads it: the room (field_water_room) of a
+// missing sample stays 0, so the films, the displacement and the pull keep
+// it a wall, and asleep water at the edge stays asleep. Under teleport a
+// sea sample at its sea fill takes a move as the sea, the fill going to
+// water_to_sea (field_water_sea_sink_fill), so the teleport sea does not
+// rise.
 //
 // The dead band and the pressure pull (0292, the tech demo's teleport
 // model): a move between two cells that overlap in height needs a head
@@ -417,6 +430,34 @@ field_missing_sample_sea :: proc(planet: Field_Water_Planet, sample: Sample_Coor
 		return 0
 	}
 	return fill
+}
+
+// The water a missing sample holds as the generation makes it (0370, the
+// set's edge), through the world's cache: -1 in a world without a planet
+// (the tests' worlds) and where the generation makes ground (a wall),
+// else the sea's fill or a lake's, the higher, 0 for dry air.
+field_water_outside :: proc(world: ^Field_World, sample: Sample_Coordinate, span: Field_Water_Span) -> i32 {
+	if cached, found := world.water_outside[sample]; found {
+		return cached
+	}
+	planet := world.water_planet
+	outside: i32 = -1
+	if planet.generation.spacing_millimetres != 0 && planet_sample(planet.generation, sample_to_world_position(sample, planet.generation.spacing_millimetres)).density <= 0 {
+		outside = max(field_sea_fill(planet.sea_level, span), planet_lake_fill_at(planet.generation, sample))
+	}
+	world.water_outside[sample] = outside
+	return outside
+}
+
+// The fill moving water gives a neighbour whose chunk is not loaded
+// (0370): banded and capped as every move, against the water the
+// generation puts there; none into a wall.
+field_water_edge_share :: proc(world: ^Field_World, span: Field_Water_Span, fill: i32, neighbour: Field_Water_Neighbour, tuning: Field_Water_Tuning, left: i32) -> i32 {
+	outside := field_water_outside(world, neighbour.sample, neighbour.span)
+	if outside < 0 {
+		return 0
+	}
+	return field_water_share_from(span, fill, neighbour.span, outside, FIELD_WATER_FULL - outside, tuning, left)
 }
 
 field_chunk_sample :: proc(chunk: ^Field_Chunk, index: int) -> Sample_Coordinate {
@@ -889,6 +930,16 @@ move_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, s
 	set_field_water(world, neighbour.chunk, neighbour.index, neighbour.sample, i32(neighbour.chunk.water[neighbour.index]) + amount)
 }
 
+// A move out of the simulated water (0370): the sender written down and
+// the fill credited to the sink (the set's edge, the sea), nothing
+// written beyond.
+move_field_water_out :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, amount: i32, sink: ^i64) {
+	world.water_step_counts.moves += 1
+	world.water_step_counts.moved_fill += i64(amount)
+	set_field_water(world, chunk, index, sample, i32(chunk.water[index]) - amount)
+	sink^ += i64(amount)
+}
+
 // Whether the cell below lies entirely under the mover's: a fall, which
 // the dead band never holds. Cells that overlap in height (lateral, the
 // sphere's staircase) are banded.
@@ -928,7 +979,11 @@ field_water_share_from :: proc(span: Field_Water_Span, fill: i32, neighbour_span
 // To the neighbours nearer the centre first, then to the others, at most
 // budget in all; returns the fill moved out. A move into standing water
 // (more than a film, or resting on full water) is an impact from above
-// or a stream mouth from the side (0294).
+// or a stream mouth from the side (0294). A neighbour whose chunk is not
+// loaded takes its share as the set's edge (0370): the fill leaves the
+// simulation, no event. A sea sample at its sea fill takes its share as
+// the sea (0370, field_water_sea_sink_fill): the fill goes to
+// water_to_sea, the sea's byte stays.
 spread_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, span: Field_Water_Span, neighbours: [6]Field_Water_Neighbour, tuning: Field_Water_Tuning, budget: i32) -> i32 {
 	allowed := min(budget, i32(chunk.water[index]))
 	left := allowed
@@ -937,16 +992,51 @@ spread_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int,
 			if (neighbour.span.middle < span.middle) != nearer {
 				continue
 			}
-			if amount := field_water_share(chunk, index, span, neighbour, tuning, left); amount > 0 {
-				if field_water_neighbour_fill(neighbour) > tuning.minimum_fill || field_water_rests_on_full(neighbour.span, field_water_neighbours(world, neighbour.chunk, neighbour.sample)) {
-					push_field_water_event(world, nearer ? .Impact : .Stream_Mouth, neighbour.sample, amount)
+			if neighbour.chunk == nil {
+				if amount := field_water_edge_share(world, span, i32(chunk.water[index]), neighbour, tuning, left); amount > 0 {
+					move_field_water_out(world, chunk, index, sample, amount, &world.water_to_edge)
+					left -= amount
 				}
-				move_field_water(world, chunk, index, sample, neighbour, amount)
-				left -= amount
+				continue
 			}
+			sea := field_water_sea_sink_fill(world, neighbour)
+			amount: i32
+			if sea > 0 {
+				amount = field_water_share_from(span, i32(chunk.water[index]), neighbour.span, sea, FIELD_WATER_FULL - sea, tuning, left)
+			} else {
+				amount = field_water_share(chunk, index, span, neighbour, tuning, left)
+			}
+			if amount <= 0 {
+				continue
+			}
+			if field_water_neighbour_fill(neighbour) > tuning.minimum_fill || field_water_rests_on_full(neighbour.span, field_water_neighbours(world, neighbour.chunk, neighbour.sample)) {
+				push_field_water_event(world, nearer ? .Impact : .Stream_Mouth, neighbour.sample, amount)
+			}
+			if sea > 0 {
+				move_field_water_out(world, chunk, index, sample, amount, &world.water_to_sea)
+			} else {
+				move_field_water(world, chunk, index, sample, neighbour, amount)
+			}
+			left -= amount
 		}
 	}
 	return allowed - left
+}
+
+// The sea fill a loaded neighbour holds as the sea (0370): the sea owns
+// it (fill_field_chunk_sea marks the generated sea under either model), it
+// is not ground and holds at least its fill at the sea's level, over 0;
+// else 0, so a sea sample under its fill (after a pump or a dig beside
+// it) fills as any sample.
+field_water_sea_sink_fill :: proc(world: ^Field_World, neighbour: Field_Water_Neighbour) -> i32 {
+	if neighbour.chunk.water_owner[neighbour.index] != WATER_OWNER_SEA || neighbour.chunk.density[neighbour.index] > 0 {
+		return 0
+	}
+	sea := field_sea_fill(world.water_planet.sea_level, neighbour.span)
+	if sea <= 0 || i32(neighbour.chunk.water[neighbour.index]) < sea {
+		return 0
+	}
+	return sea
 }
 
 // Whether the two samples share a face.
@@ -1302,7 +1392,8 @@ refill_field_water_front_springs :: proc(world: ^Field_World, front: ^Field_Wate
 // tick-start fill and the receiver's projected room. A move into a body's
 // water or the sea's counts against the room and goes to the volume, and
 // is an impact (from above) or a stream mouth (from the side) for the
-// surface waves (0294).
+// surface waves (0294). A move into a missing sample goes to the set's
+// edge (0370), no event.
 plan_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, pass: ^Field_Water_Front_Pass, index: int, tuning: Field_Water_Tuning, tick: u64) {
 	chunk := pass.chunk
 	sample := field_chunk_sample(chunk, index)
@@ -1356,7 +1447,23 @@ plan_field_water_front :: proc(world: ^Field_World, front: ^Field_Water_Front, p
 				continue
 			}
 			receiver := neighbour.chunk
-			if receiver == nil || receiver.density[neighbour.index] > 0 {
+			if receiver == nil {
+				// The set's edge (0370): the share leaves the simulation.
+				amount := field_water_edge_share(world, span, start + i32(pass.delta[index]), neighbour, tuning, left)
+				if amount > 0 {
+					pass.delta[index] -= i16(amount)
+					pass.outflow[index] += u8(amount)
+					left -= amount
+					world.water_step_counts.moves += 1
+					world.water_step_counts.moved_fill += i64(amount)
+					if source {
+						world.water_step_counts.spring_outflow += i64(amount)
+					}
+					world.water_to_edge += i64(amount)
+				}
+				continue
+			}
+			if receiver.density[neighbour.index] > 0 {
 				continue
 			}
 			receiver_pass := front.by_chunk[receiver.coordinate] or_else nil

@@ -939,8 +939,12 @@ test_a_generated_lake_sleeps_under_teleport :: proc(t: ^testing.T) {
 // write wakes at the step's end) recorded (a) and (b) again, from
 // 0x85dc34b57110793b and 0x7ede850335709fdf; (e) under teleport kept its
 // digest. C2 (a spring pours at most its rate) recorded (e) under both
-// models again, from 0xcb20bb04c0cea684 and 0x03f46ae2f04d127e.
-WATER_STEP_RECORDED_DIGESTS :: [6]u64{0x52b7882905345fe7, 0xad3dfcf16927b340, 0x5090dd15064d3604, 0x7d107e96a16e6f8b, 0x6cff60172b672a98, 0xd23f98c8e3a5ce2a}
+// models again, from 0xcb20bb04c0cea684 and 0x03f46ae2f04d127e. 0370
+// (the set's edge) recorded (d) again, from 0x7d107e96a16e6f8b: the
+// weir's front water at the shaft's foot moves into the missing sample
+// under it over its sea fill (about 52 a tick from tick 40), which was a
+// wall before.
+WATER_STEP_RECORDED_DIGESTS :: [6]u64{0x52b7882905345fe7, 0xad3dfcf16927b340, 0x5090dd15064d3604, 0xbaf486b755022aa2, 0x6cff60172b672a98, 0xd23f98c8e3a5ce2a}
 
 // Every chunk's state hash in coordinate order, the dropped water, the
 // water to the sea and each live body's volume and level.
@@ -1278,4 +1282,276 @@ test_a_spring_pours_at_most_its_rate :: proc(t: ^testing.T) {
 		testing.expectf(t, total == 600 * i64(tuning.spring_rate), "%v: the world holds %d", model, total)
 		testing.expectf(t, water_fill_at(&world, water_test_sample(SPRING_RAMP_FOOT)) > 0, "%v: the water reached the foot", model)
 	}
+}
+
+// Work item 0370, the set's edge: one chunk at WATER_TEST_CHUNK_Y, ground
+// to local y 8 and air above, on a bare sphere's generation (no relief, sea
+// level 0) whose radius lies under the chunk (open: every missing sample
+// beside it air) or over its top (every one ground).
+make_edge_test_ground :: proc(open: bool) -> Field_World {
+	world := make_water_test_world()
+	carve_water_test_box(&world, water_test_sample({0, 9, 0}), water_test_sample({FIELD_CHUNK_SIZE - 1, FIELD_CHUNK_SIZE - 1, FIELD_CHUNK_SIZE - 1}))
+	world.water_planet = edge_test_planet(open)
+	return world
+}
+
+// The bare sphere: 100 m under the chunk's lowest sample, or 100 m over
+// its highest, beyond the relief shortcut's deep stone either way.
+edge_test_planet :: proc(open: bool) -> Field_Water_Planet {
+	layer := open ? WATER_TEST_CHUNK_Y * FIELD_CHUNK_SIZE - 100 : (WATER_TEST_CHUNK_Y + 1) * FIELD_CHUNK_SIZE + 100
+	generation := Planet_Generation {
+		radius              = sample_axis_to_position(i32(layer), 1000),
+		spacing_millimetres = 1000,
+		spacing             = sample_axis_to_position(1, 1000),
+		palette_length      = 1,
+	}
+	return {generation = generation}
+}
+
+// The heap of 128 full samples on the edge test's floor.
+EDGE_TEST_HEAP_LOW :: [3]i32{26, 9, 14}
+EDGE_TEST_HEAP_HIGH :: [3]i32{29, 16, 17}
+EDGE_TEST_HEAP_FILL :: 128 * FIELD_WATER_FULL
+// The films' bound: 1,024 floor samples drying 10 each in 600 ticks.
+EDGE_TEST_FILMS_BOUND :: 10_240
+
+// make_edge_test_ground with the heap written through set_field_water.
+make_edge_test_world :: proc(open: bool) -> Field_World {
+	world := make_edge_test_ground(open)
+	pour_test_water(&world, water_test_sample(EDGE_TEST_HEAP_LOW), water_test_sample(EDGE_TEST_HEAP_HIGH), FIELD_WATER_FULL)
+	return world
+}
+
+// Whether every sample across the loaded chunks' faces is air (open) or
+// ground as the generation makes it.
+edge_test_faces_read :: proc(world: ^Field_World, air: bool) -> bool {
+	for coordinate in world.chunks {
+		for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
+			if coordinate + Field_Chunk_Coordinate(offset) in world.chunks {
+				continue
+			}
+			for pair in field_face_pairs(offset) {
+				across := field_chunk_origin(coordinate) + Sample_Coordinate(field_index_to_local(pair[1])) + Sample_Coordinate(offset)
+				generation := world.water_planet.generation
+				if (planet_sample(generation, sample_to_world_position(across, generation.spacing_millimetres)).density <= 0) != air {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// The most fill a sample on a face of the world's chunks holds, its front
+// water's alone under bodies.
+edge_test_most_on_a_face :: proc(world: ^Field_World) -> i32 {
+	most: i32 = 0
+	for _, chunk in world.chunks {
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			local := field_index_to_local(index)
+			on_face := false
+			for axis in 0 ..< 3 {
+				on_face = on_face || local[axis] == 0 || local[axis] == FIELD_CHUNK_SIZE - 1
+			}
+			if on_face && (world.water_model != .Bodies || field_water_is_front(chunk, index)) {
+				most = max(most, i32(chunk.water[index]))
+			}
+		}
+	}
+	return most
+}
+
+// 0370: moving water that reaches the loaded set's edge where the
+// generation makes air leaves the simulation; the rest is conserved but
+// for the films' drying.
+@(test)
+test_moving_water_leaves_through_the_sets_edge :: proc(t: ^testing.T) {
+	world := make_edge_test_world(true)
+	defer destroy_field_world(&world)
+	testing.expect(t, edge_test_faces_read(&world, true), "every missing sample beside the chunk is air")
+	tuning := water_pressure_test_tuning()
+	for tick in u64(1) ..= 600 {
+		step_field_water(&world, tuning, tick)
+	}
+	held := total_test_water(&world) + world.water_to_edge
+	testing.expect(t, world.water_to_edge > 0, "the edge took water")
+	testing.expectf(t, held <= EDGE_TEST_HEAP_FILL && held >= EDGE_TEST_HEAP_FILL - EDGE_TEST_FILMS_BOUND, "the chunk and the edge hold %d of %d", held, EDGE_TEST_HEAP_FILL)
+	testing.expectf(t, edge_test_most_on_a_face(&world) <= tuning.minimum_fill, "a face sample holds %d", edge_test_most_on_a_face(&world))
+}
+
+// 0370: where the generation makes ground the edge is a wall.
+@(test)
+test_the_sets_edge_is_a_wall_in_the_generations_ground :: proc(t: ^testing.T) {
+	world := make_edge_test_world(false)
+	defer destroy_field_world(&world)
+	testing.expect(t, edge_test_faces_read(&world, false), "every missing sample beside the chunk is ground")
+	tuning := water_pressure_test_tuning()
+	for tick in u64(1) ..= 600 {
+		step_field_water(&world, tuning, tick)
+	}
+	testing.expect_value(t, world.water_to_edge, 0)
+}
+
+// 0370: a world without a planet (the tests' worlds) keeps its edge a
+// wall.
+@(test)
+test_a_world_without_a_planet_keeps_its_edge_a_wall :: proc(t: ^testing.T) {
+	world := make_edge_test_world(true)
+	defer destroy_field_world(&world)
+	world.water_planet = {}
+	tuning := water_pressure_test_tuning()
+	for tick in u64(1) ..= 600 {
+		step_field_water(&world, tuning, tick)
+	}
+	testing.expect_value(t, world.water_to_edge, 0)
+}
+
+// 0370: the edge's cache is a pure function of the generation: a world
+// whose cache is emptied before every step moves its water alike.
+@(test)
+test_the_edge_cache_never_changes_a_result :: proc(t: ^testing.T) {
+	cached := make_edge_test_world(true)
+	defer destroy_field_world(&cached)
+	cold := make_edge_test_world(true)
+	defer destroy_field_world(&cold)
+	tuning := water_pressure_test_tuning()
+	for tick in u64(1) ..= 600 {
+		step_field_water(&cached, tuning, tick)
+		clear(&cold.water_outside)
+		step_field_water(&cold, tuning, tick)
+		if tick % 60 != 0 {
+			continue
+		}
+		testing.expect_value(t, cold.water_to_edge, cached.water_to_edge)
+		for coordinate, chunk in cached.chunks {
+			testing.expectf(t, field_chunk_state_hash(chunk) == field_chunk_state_hash(cold.chunks[coordinate]), "tick %d: the chunk %v hashes alike", tick, coordinate)
+		}
+	}
+	testing.expect(t, cached.water_to_edge > 0, "the edge took water")
+}
+
+// 0370: a lake straddling the set's edge holds at its level: the water
+// beyond the edge is a reservoir at the lake's level, so the loaded part's
+// woken water moves nothing; water poured over the level leaves there.
+@(test) // slow
+test_the_edge_takes_only_the_water_over_a_missing_lake :: proc(t: ^testing.T) {
+	planet := waters_test_planet(8000)
+	planet.water_features = make_planet_water_features(DEFAULT_WORLD_SEED, planet)
+	defer destroy_planet_water_features(&planet.water_features)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	index := waters_test_lake_near(planet.water_features.lakes, 72.02, 143.04)
+	testing.expect(t, index >= 0, "a lake lies at 72.02, 143.04")
+	if index < 0 {
+		return
+	}
+	centre := shipped_lake_centre_chunk(generation, planet.water_features.lakes[index])
+	world: Field_World
+	defer destroy_field_world(&world)
+	world.water_planet = make_field_water_planet(DEFAULT_WORLD_SEED, planet, 1000)
+	chunk := new(Field_Chunk)
+	generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, centre, chunk)
+	field_world_insert_chunk(&world, chunk)
+	// The lake runs on across the centre's -x face (its +x neighbour holds
+	// none of it).
+	offset := [3]i32{-1, 0, 0}
+	beyond := new(Field_Chunk, context.temp_allocator)
+	generate_field_chunk(DEFAULT_WORLD_SEED, planet, 1000, centre + Field_Chunk_Coordinate(offset), beyond)
+	generated := chunk.water
+	generated_fill: i64 = 0
+	for fill in generated {
+		generated_fill += i64(fill)
+	}
+	// The face's wet samples woken; its surface sample is the first whose
+	// sample across holds the lake's water, with dry air over it along +y
+	// (the lake lies at latitude 72, so +y is up most nearly).
+	surface := -1
+	across_wet := 0
+	for pair in field_face_pairs(offset) {
+		face := pair[1]
+		if chunk.water[face] == 0 {
+			continue
+		}
+		wake_field_water_sample(&world, chunk, face)
+		if beyond.water[pair[0]] == 0 {
+			continue
+		}
+		across_wet += 1
+		local := field_index_to_local(face)
+		if above := local + {0, 1, 0}; surface < 0 && field_local_in_chunk(above) && chunk.water[field_local_to_index(above)] == 0 && chunk.density[field_local_to_index(above)] <= 0 {
+			surface = face
+		}
+	}
+	testing.expectf(t, across_wet > 0 && surface >= 0, "the -x neighbour holds the lake's water across the face (%d samples), under dry air", across_wet)
+	if surface < 0 {
+		return
+	}
+	tuning := make_field_water_tuning(test_field_game_config().field_water)
+	tick: u64 = 0
+	for _ in 0 ..< 300 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	testing.expect_value(t, world.water_to_edge, 0)
+	testing.expect(t, chunk.water == generated, "every byte as generated")
+	// 8 times full water written onto the surface sample, into the sample
+	// over it, a tick apart (the surface lies 4 to 7 samples under the
+	// chunk's top, too near for 8 stacked samples).
+	above := field_local_to_index(field_index_to_local(surface) + {0, 1, 0})
+	poured: i64 = 0
+	for _ in 0 ..< 8 {
+		poured += i64(FIELD_WATER_FULL - i32(chunk.water[above]))
+		set_field_water(&world, chunk, above, field_chunk_sample(chunk, above), FIELD_WATER_FULL)
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	for _ in 0 ..< 600 {
+		tick += 1
+		step_field_water(&world, tuning, tick)
+	}
+	fill: i64 = 0
+	for value in chunk.water {
+		fill += i64(value)
+	}
+	testing.expect(t, world.water_to_edge > 0, "the water over the lake's level left at the edge")
+	testing.expectf(t, fill - generated_fill <= poured - world.water_to_edge, "the chunk gained %d of %d poured, %d to the edge", fill - generated_fill, poured, world.water_to_edge)
+}
+
+// 0370, step 2: under teleport a stream onto the sea leaves at the sea's
+// level. The edge test's closed ground with a sea whose level is the
+// middle of local layer 12, written as fill_field_chunk_sea writes it
+// (the sea's, its fill, asleep), and the edge test's heap over it (y 13 to
+// 20, since its own rows 9 to 16 lie in the sea): after 600 ticks every
+// sea sample holds its fill and sleeps, the heap went to the sea and none
+// to the edge.
+@(test)
+test_the_sea_takes_a_stream_at_its_level :: proc(t: ^testing.T) {
+	world := make_edge_test_ground(false)
+	defer destroy_field_world(&world)
+	world.water_planet.sea_level = field_water_span(water_test_sample({0, 12, 0})).middle
+	chunk := world.chunks[{0, WATER_TEST_CHUNK_Y, 0}]
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if chunk.density[index] > 0 {
+			continue
+		}
+		if fill := field_sea_fill(world.water_planet.sea_level, field_water_span(field_chunk_sample(chunk, index))); fill > 0 {
+			chunk.water[index], chunk.water_owner[index] = u8(fill), WATER_OWNER_SEA
+		}
+	}
+	pour_test_water(&world, water_test_sample(EDGE_TEST_HEAP_LOW + {0, 4, 0}), water_test_sample(EDGE_TEST_HEAP_HIGH + {0, 4, 0}), FIELD_WATER_FULL)
+	tuning := water_pressure_test_tuning()
+	for tick in u64(1) ..= 600 {
+		step_field_water(&world, tuning, tick)
+	}
+	held, asleep := true, true
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if chunk.water_owner[index] != WATER_OWNER_SEA {
+			continue
+		}
+		held = held && i32(chunk.water[index]) == field_sea_fill(world.water_planet.sea_level, field_water_span(field_chunk_sample(chunk, index)))
+		asleep = asleep && !field_sample_bit(&chunk.water_awake, index)
+	}
+	testing.expect(t, held, "every sea sample holds its sea fill")
+	testing.expect(t, asleep, "every sea sample sleeps")
+	testing.expect(t, world.water_to_sea > 0, "the sea took the heap")
+	testing.expect_value(t, world.water_to_edge, 0)
 }

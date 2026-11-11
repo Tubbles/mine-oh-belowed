@@ -189,6 +189,14 @@ Field_World :: struct {
 	water_flood:        Water_Flood,
 	water_sea_seeds:    [dynamic]Sample_Coordinate,
 	water_to_sea:       i64,
+	// The fill the simulated set's edge took since the world was made or
+	// loaded (0370): moves into a missing sample, a weir over a spill out
+	// of the set, a dying body whose spill was out; not saved, not hashed.
+	// And the cache of field_water_outside, a pure function of the
+	// generation, emptied whenever a chunk enters or leaves; not saved, not
+	// hashed.
+	water_to_edge:      i64,
+	water_outside:      map[Sample_Coordinate]i32,
 	water_body_counts:  Water_Body_Counts,
 	// The tick's water events for the surface waves (0294,
 	// push_field_water_event): cleared at the top of step_field_water,
@@ -346,12 +354,15 @@ mark_field_chunks_around_sample_dirty :: proc(world: ^Field_World, coordinate: F
 
 // Takes ownership of a chunk made with new; it starts dirty so the mesher
 // meshes it once. Under the bodies model (0293) the bodies frozen in it
-// take its samples back (thaw_water_body_chunk) and its faces beside the
-// sea seed the sea's claim (seed_water_sea_facing). The water beside it
-// wakes (wake_field_water_facing), so water held by the missing chunk
-// flows on, and the light's tick compares its borders with its
-// neighbours' (seed_field_chunk_light).
+// take its samples back (thaw_water_body_chunk), a body that spilled out
+// of the set beside it floods again (flood_water_bodies_spilling_into,
+// 0370) and its faces beside the sea seed the sea's claim
+// (seed_water_sea_facing). The water beside it wakes
+// (wake_field_water_facing), so water held by the missing chunk flows on,
+// and the light's tick compares its borders with its neighbours'
+// (seed_field_chunk_light). The edge's cache empties (0370).
 field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
+	clear(&world.water_outside)
 	chunk.dirty = true
 	if old := world.chunks[chunk.coordinate] or_else nil; old != nil {
 		free(old)
@@ -362,6 +373,7 @@ field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	}
 	if world.water_model == .Bodies {
 		thaw_water_body_chunk(world, chunk)
+		flood_water_bodies_spilling_into(world, chunk.coordinate)
 		seed_water_sea_facing(world, chunk)
 		join_field_chunk_lake_water(world, chunk)
 	}
@@ -372,12 +384,14 @@ field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 // Takes a chunk out of the world without freeing it: under the bodies
 // model its samples go to their bodies' frozen parts first
 // (freeze_water_body_chunk), so a lake straddling the set's edge keeps
-// its volume and level. Nil when the chunk is not loaded.
+// its volume and level. The edge's cache empties (0370). Nil when the
+// chunk is not loaded.
 field_world_detach_chunk :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) -> ^Field_Chunk {
 	chunk := world.chunks[coordinate] or_else nil
 	if chunk == nil {
 		return nil
 	}
+	clear(&world.water_outside)
 	delete_key(&world.chunks, coordinate)
 	if world.water_model == .Bodies {
 		freeze_water_body_chunk(world, chunk)
@@ -398,6 +412,7 @@ destroy_field_world :: proc(world: ^Field_World) {
 	delete(world.chunks)
 	delete(world.edited_chunks)
 	delete(world.water_awake_chunks)
+	delete(world.water_outside)
 	delete(world.water_events)
 	delete(world.water_touches.list)
 	destroy_field_lighting(&world.light)

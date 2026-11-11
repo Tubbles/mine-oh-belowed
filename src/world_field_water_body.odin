@@ -29,8 +29,9 @@ import "core:slice"
 //
 // The flood (run_water_body_flood) pops samples in (bottom, sample order)
 // from the seed, claims each, and stops at the first sample beyond a
-// saddle (a slab wholly under the running sill), at the sea, or past the
-// rise cap; a sealed basin floods to its rim. A saddle into the body's own
+// saddle (a slab wholly under the running sill), at the sea, at the set's
+// edge where the generation makes dry air (0370), or past the rise cap; a
+// sealed basin floods to its rim. A saddle into the body's own
 // water under its level is passed, not a spill (0300, the demo's internal
 // saddles), so a body spans a saddle while its level stands over it. It is
 // bounded per tick by flood_visit_budget and resumes next tick; its heap
@@ -89,6 +90,9 @@ Water_Body_Frozen :: struct {
 
 Water_Body :: struct {
 	alive, sea, dirty, spill_to_sea: bool,
+	// The spill leaves the set (0370): the spill is a sample of a chunk not
+	// loaded that the generation makes dry air.
+	spill_outside: bool,
 	// Fill units; 0 and unused for the sea.
 	volume:        i64,
 	// Exact fill units from the centre; the sea's is the planet's.
@@ -230,8 +234,9 @@ kill_water_body :: proc(world: ^Field_World, id: Water_Body_Id) {
 // the sea and not pending, dies where its last cell left it (0299): its
 // volume to the heir that took the cell (the sea's to water_to_sea, a
 // body's to its volume, relevelled by the caller or at the pending
-// flood's finish), with no heir as finish_water_body_flood sends its own.
-// False, and nothing done, when the body is not empty.
+// flood's finish), with no heir as finish_water_body_flood sends its own
+// (the sea, the set's edge for a spill out of the set, 0370, else
+// dropped). False, and nothing done, when the body is not empty.
 free_empty_water_body :: proc(world: ^Field_World, id: Water_Body_Id, heir: Maybe(Water_Body_Id) = nil) -> bool {
 	body := &world.water_bodies[id]
 	if !body.alive || body.sea || water_body_is_pending(world, id) || len(body.loaded) > 0 || len(body.frozen) > 0 {
@@ -245,6 +250,8 @@ free_empty_water_body :: proc(world: ^Field_World, id: Water_Body_Id, heir: Mayb
 		}
 	} else if body.spill_to_sea {
 		world.water_to_sea += body.volume
+	} else if body.spill_outside {
+		world.water_to_edge += body.volume
 	} else {
 		world.water_dropped += body.volume
 	}
@@ -720,6 +727,7 @@ start_water_body_flood :: proc(world: ^Field_World, id: Water_Body_Id, tuning: F
 	flood.sill = seed_bottom
 	flood.rise_limit = seed_bottom + i64(flood.rise_samples) * FIELD_WATER_FULL
 	body.spill_level, body.spill_volume, body.spill_to_sea, body.spill = max(i64), max(i64), false, {}
+	body.spill_outside = false
 	push_water_flood_sample(flood, body.seed)
 	return true
 }
@@ -875,6 +883,10 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 	// fresh search might have merged. A joined answer merges, so it
 	// needs no memo.
 	not_joined := make(map[Sample_Coordinate]struct{}, context.temp_allocator)
+	// Whether the body's seed lies in a generated lake's mask (0370,
+	// water_body_seed_in_lake), read once a call at the first dry sample
+	// beyond the set's edge: the seed holds while the flood runs.
+	seed_in_lake: Maybe(bool)
 	for len(flood.heap) > 0 {
 		if budget^ <= 0 {
 			return false
@@ -884,7 +896,20 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 		world.water_body_counts.flood_visits += 1
 		entry := pop_water_flood(flood)
 		chunk, index := field_world_cell(world, entry.sample)
-		if chunk == nil || chunk.density[index] > 0 {
+		if chunk == nil {
+			// A sample beyond the set's edge is pushed only as a spill out of
+			// the set (0370), taken once every sample under it is claimed.
+			if entry.bottom > flood.rise_limit {
+				return true
+			}
+			if water_body_spills_out_at(world, id, entry.sample, field_water_span(entry.sample)) {
+				body := &world.water_bodies[id]
+				body.spill, body.spill_level, body.spill_outside = entry.sample, max(flood.sill, entry.bottom), true
+				return true
+			}
+			continue
+		}
+		if chunk.density[index] > 0 {
 			continue
 		}
 		owner := chunk.water_owner[index]
@@ -945,6 +970,18 @@ run_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning, bu
 					body.spill, body.spill_level, body.spill_to_sea = entry.sample, max(flood.sill, field_water_bottom(next_span)), true
 					return true
 				}
+				// The set's edge (0370): dry air beyond it is a spill out of
+				// the set, pushed so the flood takes it in its order
+				// (water_body_spills_out_at); a generated lake's body takes
+				// the edge as a wall.
+				if water_body_spills_out_at(world, id, next, next_span) {
+					if seed_in_lake == nil {
+						seed_in_lake = water_body_seed_in_lake(world, id)
+					}
+					if !seed_in_lake.? && mark_water_flood_pushed(flood, next) {
+						push_water_flood(flood, {bottom = field_water_bottom(next_span), sample = next})
+					}
+				}
 				continue
 			}
 			if next_chunk.density[next_index] > 0 || next_chunk.water_owner[next_index] == own {
@@ -1004,12 +1041,14 @@ finish_water_body_flood :: proc(world: ^Field_World, tuning: Field_Water_Tuning)
 		}
 	}
 	body.flood_visits = 0
-	spill_to_sea := body.spill_to_sea
+	spill_to_sea, spill_outside := body.spill_to_sea, body.spill_outside
 	end_water_body_flood(world)
 	write_water_body_fills(world, id, true)
 	if len(body.loaded) == 0 && len(body.frozen) == 0 {
 		if spill_to_sea {
 			world.water_to_sea += body.volume
+		} else if spill_outside {
+			world.water_to_edge += body.volume
 		} else {
 			world.water_dropped += body.volume
 		}
@@ -1152,8 +1191,9 @@ seed_water_body :: proc(world: ^Field_World, sample: Sample_Coordinate, tuning: 
 // water (two bodies joined under water merge in the pass before,
 // merge_water_bodies_joined_under_water, 0300), or as front water at the
 // spill sample, which lies beyond the saddle, so it is never re-absorbed
-// into its own body: the stream starts. A body pending, dirty, without a
-// spill or whose spill chunk is missing waits.
+// into its own body: the stream starts. A spill out of the set, or a
+// spill sample whose chunk is not loaded, pours to the set's edge (0370).
+// A body pending, dirty or without a spill waits.
 emit_water_body_weirs :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 	for index in 1 ..< len(world.water_bodies) {
 		id := Water_Body_Id(index)
@@ -1174,7 +1214,13 @@ emit_water_body_weirs :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 			relevel_water_body(world, id)
 			continue
 		}
-		if chunk == nil || chunk.density[sample_index] > 0 {
+		if body.spill_outside || chunk == nil {
+			world.water_to_edge += flow
+			body.volume -= flow
+			relevel_water_body(world, id)
+			continue
+		}
+		if chunk.density[sample_index] > 0 {
 			continue
 		}
 		span := field_water_span(body.spill)
@@ -1198,7 +1244,8 @@ emit_water_body_weirs :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 
 // The body's merge partner (0300, rule 3, the demo's rule): a live body,
 // not the sea, settled (not dirty, not pending), at or over a sill that is
-// not the sea's (volume at least the spill volume), whose spill sample is
+// not the sea's nor out of the set (volume at least the spill volume),
+// whose spill sample is
 // loaded, not ground, and another live body's water (not the sea's, not
 // the pending flood's, released or claimed again) standing at or over the
 // sill, and spilling no lower than it (sealed, or a spill level at or over
@@ -1208,7 +1255,7 @@ emit_water_body_weirs :: proc(world: ^Field_World, tuning: Field_Water_Tuning) {
 // the front again, every few ticks while the partner is fed.
 water_body_joined_under_water :: proc(world: ^Field_World, id: Water_Body_Id) -> (other: Water_Body_Id, joined: bool) {
 	body := &world.water_bodies[id]
-	if !body.alive || body.sea || body.dirty || water_body_is_pending(world, id) || body.spill_level == max(i64) || body.spill_to_sea || body.volume < body.spill_volume {
+	if !body.alive || body.sea || body.dirty || water_body_is_pending(world, id) || body.spill_level == max(i64) || body.spill_to_sea || body.spill_outside || body.volume < body.spill_volume {
 		return 0, false
 	}
 	chunk, index := field_world_cell(world, body.spill)
@@ -1726,6 +1773,55 @@ thaw_water_body_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	}
 	if changed {
 		note_field_chunk_change(chunk)
+	}
+}
+
+// Whether the body keeps a frozen part in the chunk (0370: the flood's
+// wall there, never a spill out of the set).
+water_body_has_frozen_part :: proc(body: ^Water_Body, chunk: Field_Chunk_Coordinate) -> bool {
+	for part in body.frozen {
+		if part.chunk == chunk {
+			return true
+		}
+	}
+	return false
+}
+
+// Whether the body's flood spills out of the set at a sample of a chunk
+// not loaded (0370): the generation makes it dry air and the body keeps no
+// frozen part there. A lake's water there, the ground and the body's own
+// frozen part are walls. The flood pushes such a sample at its bottom and
+// spills when it pops it, so every sample under that is claimed first, as
+// at a saddle; the spill sample is the one beyond the edge.
+water_body_spills_out_at :: proc(world: ^Field_World, id: Water_Body_Id, sample: Sample_Coordinate, span: Field_Water_Span) -> bool {
+	return field_water_outside(world, sample, span) == 0 && !water_body_has_frozen_part(&world.water_bodies[id], sample_to_field_chunk_coordinate(sample))
+}
+
+// Whether the body's seed lies in a generated lake's mask (0370): such a
+// body takes the set's edge as a wall, as before 0370, since a generated
+// lake is held at its level by construction and what it would do at the
+// edge depends on what is loaded (doc/architecture.md, Bodies, the flood).
+water_body_seed_in_lake :: proc(world: ^Field_World, id: Water_Body_Id) -> bool {
+	_, found := planet_lake_fill_level_at(world.water_planet.generation, world.water_bodies[id].seed)
+	return found
+}
+
+// A chunk arrives (0370): every live body, not the sea, that spilled out
+// of the set at a sample with a face neighbour in it (the spill sample
+// lies beyond the edge, so its own chunk counts) floods again, since the
+// edge there is gone.
+flood_water_bodies_spilling_into :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) {
+	for index in 1 ..< len(world.water_bodies) {
+		body := &world.water_bodies[index]
+		if !body.alive || body.sea || !body.spill_outside {
+			continue
+		}
+		for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
+			if sample_to_field_chunk_coordinate(body.spill + Sample_Coordinate(offset)) == coordinate {
+				mark_water_body_dirty(world, Water_Body_Id(index))
+				break
+			}
+		}
 	}
 }
 
