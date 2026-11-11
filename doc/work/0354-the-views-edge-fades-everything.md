@@ -1,6 +1,6 @@
 # 0354: The view's edge fades everything
 
-Status: designed (2026-11-11)
+Status: implementing (2026-11-11)
 
 0343's view distance setting brings the end of the drawn world as near as 256 m, where two things that 1024 m hid show. Its review found by probe that the packed level distances leave selected nodes two levels apart meeting along edges and corners at 256 m and 512 m (130 edge and 49 corner contacts over 48 eyes at 512 m, 230 to 360 m out, against 4 corner contacts at 1024 m): the skirts and curtains cover faces only (`field_node_skirt_faces`), and `field_level_gap_metres` assumes a level's node was chosen for its own distance, where the child of a split node can lie up to its parent's diagonal past it. And `field.fs` scales the haze by the sky's share, so shaded terrain at the view's edge never fades and ends on a hard edge. The landing's capture at 256 m shows a far hilltop standing unfaded in the sky.
 
