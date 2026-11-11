@@ -4,6 +4,8 @@ Status: todo (2026-11-11)
 
 The user (2026-11-11) named The Last Caretaker "a new major influence and inspiration", and of its parts: "The look, the lone machine's tone, the vessel as a base, the power and cable play, all of it!". The docs name it (`doc/inspiration.md`, `DESIGN.md`, Lore and tone) without saying what any of the four is in that game or changes in ours, and each meets a decision the design already holds (`SUGGESTIONS.md`, Decisions The Last Caretaker opens).
 
+The user on the vessel (2026-11-11): "we could have a land based one for now that you build up and improve like a ship of theseus". The proposal for the base starts from that: a land vessel improved part by part.
+
 ## Goal
 
 The four parts described from sources as the genre study of 0211 described the machines' looks, and for each a proposal of what changes in our design, for the user to decide.
