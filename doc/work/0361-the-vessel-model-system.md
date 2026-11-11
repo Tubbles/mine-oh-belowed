@@ -475,3 +475,4 @@ B:
 6. Question 6: agreed, the rule that a tied vessel does not move is 0357's.
 7. Vessel parts only on a vessel's frame, as the user leaned. The draft's both-way parts wait for the user.
 8. Order: A, then 0365 and 0355 in either order, 0356, 0357, the rocket stage. A starts when a slot frees after 0342's landing, unless the user overturns one of the draft's six proposals first: the specification says what each reversal costs.
+9. The control unit draws 60 W, not 50 W (0355's design: 50 W floors to no joule a tick), and `MAXIMUM_MACHINE_PORTS` is 8 (0355, decision 4).

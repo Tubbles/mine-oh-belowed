@@ -278,6 +278,8 @@ Still open, each with 0353's proposal kept below:
 
 - The machine's needs: oxygen and food are dropped (user, 2026-11-11), the charge is the one need. 0353's "condition instead of health" is not answered.
 - The crawler: the deck is simulated in full while it drives (user, 2026-11-11: "Full physics sim on the deck"). 0353 proposed moving the crawler itself without physics, its pose set from the terrain in integers, so the lockstep holds; whether the user's words mean the crawler's own motion too is for 0357's design to put to the user. Whether the chassis kind follows the planet is open.
+- Power netlists are trees (0355's design): a cable that would close a loop between two things already joined is refused, since a loop needs a much heavier flow solve every tick. Cables side by side between the same two things bundle and their capacities add. The user has not seen this rule yet.
+- No battery stands on the ground in 0355 to 0369; only a vessel has one (0361).
 - The belts where no player is: the netlists of power and pipes run at all times with the assets unloaded (user, 2026-11-11), and "Jury's still out on the conveyor belts". To decide with figures: what a belt costs a tick after 0351's gap belts, at the size of a late factory.
 - Mission Control's address for the player (a unit number or a name), and whether the system holds an earlier unit's wreck.
 - The wait: 0358 puts it at the charging cradle (every connected player in a cradle, then eight hours pass). The user's "just like a \"wait\" feature" may mean a wait from anywhere, for example the pause menu; the rule and the HUD would stay.
