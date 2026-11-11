@@ -1,6 +1,6 @@
 # 0367: The water tick at a flowing spring
 
-Status: implementing (2026-11-11)
+Status: verified (2026-11-11)
 
 0342's first check run (2026-11-11, the couch's RX 5700 under headless gamescope, 512 m, capped at 30) found what holds the spring start at 3 to 6 frames a second, the figure the user saw: not the GPU (2.0 ms a frame) but the simulation. At the spring view `field_water` costs 14.1 ms of a 14.9 ms tick (worst 24.4 ms), so the frame falls behind, runs about 10 ticks a frame (155 ms) and never catches up; beside it the streaming remeshes 8 nodes every frame (14.8 ms). The view never settles. Every other view of the run ticks in 0.3 to 1.0 ms and draws in under 6 ms. The user's bar is 60 frames a second at 512 m.
 
@@ -111,11 +111,11 @@ The implementer reports the figures and stops. What they decide:
 - What changes: a write the tick undoes wakes nobody and clears no failed bit; a film's drying still wakes nobody (no `water_written`); the wakes land after every sample ran, so a sample an earlier change woke counts its still tick and then restarts at zero (it sleeps a tick later), and a failed bit an earlier change would have cleared waits a tick. The player sees nothing in a pour, a dig or a stream; the banks of water that repeats itself and the air over it sleep instead of searching.
 - An old save: no layout change; its awake and failed bits run under the rule from the next tick. The log names the rule, why, and each test whose tick count moved.
 
-**C2, a spring's rate.** `field_water.spring_fill_per_tick` in `data/game.sjson` (its comment paragraph), `Field_Water_Config.spring_fill_per_tick`, `Field_Water_Tuning.spring_rate: i32`, 1 to 254 in `field_water_problem`, shipped 16: a quarter of the link rate, about 3.8 cubic metres a second at 1 m spacing.
+**C2, a spring's rate.** `field_water.spring_fill_per_tick` in `data/game.sjson` (its comment paragraph), `Field_Water_Config.spring_fill_per_tick`, `Field_Water_Tuning.spring_rate: i32`, 1 to 254 in `field_water_problem`, shipped 64: the link rate, about 15 cubic metres a second at 1 m spacing.
 
 - Teleport: `field_water_source_fill` takes the sample's fill and the rate; a spring refills to `min(FIELD_WATER_FULL, fill + spring_rate)`, the sea edge as today.
 - Bodies: `refill_field_water_front_springs` refills the start and the byte to `min(FIELD_WATER_FULL, start + spring_rate)`, skipping an equal one; a spring under a body's level or the sea's pours `spring_rate` (1136, 1144) in place of `rate`.
-- The player sees thinner streams from springs, films nearer the spring, a spring under a lake raising it by 16 a tick in place of 64. An old save: no layout change; springs pour at the rate from the first tick, the water already out stays. The log line gives the rate before and after.
+- The player sees thinner streams from springs, films nearer the spring, a spring under a lake raising it by its rate, 64 a tick as before. An old save: no layout change; springs pour at the rate from the first tick, the water already out stays. The log line gives the rate before and after.
 
 ### Tests
 
@@ -183,3 +183,8 @@ Before reporting: `./build.sh check`, `./build.sh check-android`, `./build.sh te
 6. Question 6: `field_players` is 0371.
 7. The implementer stops after step 1 and reports the probe's figures; the main agent then confirms steps 2 and 3 or changes them.
 8. 0342's views file gains a spring view under bodies beside the default's in this item, so the table judges both.
+
+### Deviations (implementer, 2026-11-11)
+
+- C1: an undone write leaves no moving stamp on a sample asleep (`finish_field_water_touches`), since no tick would count it down and the sheet would show moving for good.
+- 0342's views file is not in this tree (ae770c5 landed after it was made): the spring view under bodies is added at the landing.

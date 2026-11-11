@@ -595,3 +595,50 @@ test_a_carved_node_gives_the_same_cover_from_either_grid :: proc(t: ^testing.T) 
 	mesh_field_grid(grid, planet.palette, 1000, {}, context.temp_allocator, make_field_ground_look(generation, planet), false, &unmeasured, streaming.shared.cover)
 	testing.expectf(t, cover_test_count(unmeasured) > cover_test_count(gathered.cover) && cover_test_count(gathered.cover) > 1000, "%d instances unmeasured against %d measured", cover_test_count(unmeasured), cover_test_count(gathered.cover))
 }
+
+// The nodes of the mesh jobs waiting on the workers, in order.
+queued_field_mesh_nodes :: proc(streaming: ^Field_Streaming) -> []Field_Node {
+	nodes := make([dynamic]Field_Node, context.temp_allocator)
+	for position in 0 ..< queue.len(streaming.shared.jobs) {
+		if job := queue.get(&streaming.shared.jobs, position); job.kind == .Mesh {
+			append(&nodes, job.node)
+		}
+	}
+	return nodes[:]
+}
+
+// Work item 0367 (B2): a node never meshed goes before any remesh. Eight
+// meshed finest nodes marked to mesh again, ahead of a coarse node never
+// meshed in the selection: the frame's jobs hold the coarse node and
+// seven of the finest, and the eighth waits for the next frame. No job
+// runs.
+@(test)
+test_a_never_meshed_node_goes_before_a_remesh :: proc(t: ^testing.T) {
+	streaming := start_field_streaming(TEST_PLANET_SEED, make_test_planet(), DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
+	defer stop_field_streaming(&streaming)
+	world: Field_World
+	defer destroy_field_world(&world)
+	selection := make([dynamic]Field_Node, context.temp_allocator)
+	for x in i32(0) ..< MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME {
+		node := field_chunk_node({x, 249, 0})
+		append(&selection, node)
+		streaming.next_revision += 1
+		streaming.mesh_revisions[node] = streaming.next_revision
+		streaming.finest_generated[node] = {}
+		streaming.remesh[node] = {}
+	}
+	coarse := Field_Node{level = 1, coordinate = {10, 124, 10}}
+	append(&selection, coarse)
+	schedule_field_jobs(&streaming, &world, selection[:])
+	sent := queued_field_mesh_nodes(&streaming)
+	testing.expect_value(t, len(sent), MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME)
+	testing.expect(t, slice.contains(sent, coarse), "the never meshed coarse node is sent")
+	waiting := selection[MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME - 1]
+	testing.expect(t, !slice.contains(sent, waiting) && waiting in streaming.remesh, "the last finest remesh waits")
+	schedule_field_jobs(&streaming, &world, selection[:])
+	sent = queued_field_mesh_nodes(&streaming)
+	testing.expect_value(t, len(sent), MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME + 1)
+	if len(sent) == MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME + 1 {
+		testing.expect_value(t, sent[MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME], waiting)
+	}
+}

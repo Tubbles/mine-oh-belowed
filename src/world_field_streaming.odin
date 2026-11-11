@@ -582,10 +582,14 @@ schedule_field_wave_remeshes :: proc(streaming: ^Field_Streaming, world: ^Field_
 	return sent
 }
 
-// Nearest first within each pass: the finest nodes' chunks and meshes take
-// the budget before any coarser node, since the ground under the camera
-// waits on 27 chunks a node and a coarse node on one job. A node whose
-// skirt faces changed meshes again. The waves' remeshes come last, at most
+// Two rounds, the selected nodes never meshed (not in mesh_revisions,
+// read before the node's own submission) first and the rest after
+// (0367), so a node edited every frame (a stream's chunk) can never keep
+// a hole in the view open. Nearest first within each pass of a round: the
+// finest nodes' chunks and meshes take the budget before any coarser
+// node, since the ground under the camera waits on 27 chunks a node and a
+// coarse node on one job. A node whose skirt faces changed meshes again.
+// The waves' remeshes come last, at most
 // MAXIMUM_FIELD_WAVE_REMESHES_PER_FRAME of what the frame's cap leaves, so
 // a moving surface never holds back a node still unmeshed or edited.
 schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node, waves: Field_Wave_Heights = nil) {
@@ -594,26 +598,28 @@ schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, se
 	full :: proc(streaming: ^Field_Streaming, submissions: int) -> bool {
 		return streaming.pending_jobs >= MAXIMUM_FIELD_PENDING_JOBS || submissions >= MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME
 	}
-	for node in selection {
-		if node.level != 0 {
-			continue
+	for never_meshed in ([2]bool{true, false}) {
+		for node in selection {
+			if node.level != 0 || (node not_in streaming.mesh_revisions) != never_meshed {
+				continue
+			}
+			if !full(streaming, submissions) {
+				submissions += schedule_finest_field_mesh(streaming, world, node, field_node_skirt_faces(index, node), waves) ? 1 : 0
+			}
 		}
-		if !full(streaming, submissions) {
-			submissions += schedule_finest_field_mesh(streaming, world, node, field_node_skirt_faces(index, node), waves) ? 1 : 0
-		}
-	}
-	for node in selection {
-		if full(streaming, submissions) {
-			return
-		}
-		if node.level == 0 || node in streaming.in_flight {
-			continue
-		}
-		faces := field_node_skirt_faces(index, node)
-		if node not_in streaming.mesh_revisions || node in streaming.remesh || field_skirt_faces_changed(streaming, node, faces) {
-			delete_key(&streaming.remesh, node)
-			submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), true, faces)
-			submissions += 1
+		for node in selection {
+			if full(streaming, submissions) {
+				return
+			}
+			if node.level == 0 || node in streaming.in_flight || (node not_in streaming.mesh_revisions) != never_meshed {
+				continue
+			}
+			faces := field_node_skirt_faces(index, node)
+			if node not_in streaming.mesh_revisions || node in streaming.remesh || field_skirt_faces_changed(streaming, node, faces) {
+				delete_key(&streaming.remesh, node)
+				submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), true, faces)
+				submissions += 1
+			}
 		}
 	}
 	room := min(MAXIMUM_FIELD_WAVE_REMESHES_PER_FRAME, MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME - submissions, MAXIMUM_FIELD_PENDING_JOBS - streaming.pending_jobs)

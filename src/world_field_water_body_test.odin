@@ -471,7 +471,7 @@ test_the_sea_does_not_rise_under_a_spring :: proc(t: ^testing.T) {
 		step_field_water(&world, tuning, tick)
 	}
 	testing.expect(t, chunk.water == bytes, "no byte changed")
-	testing.expect_value(t, world.water_to_sea - to_sea, i64(2000) * i64(tuning.rate))
+	testing.expect_value(t, world.water_to_sea - to_sea, i64(2000) * i64(tuning.spring_rate))
 	testing.expect_value(t, alive_water_body_count(&world), 0)
 	testing.expect(t, world.water_bodies[WATER_BODY_SEA].alive)
 	testing.expect_value(t, field_sample_bits_count(&chunk.water_awake), 1)
@@ -739,15 +739,18 @@ test_a_spring_refills_before_a_sender_plans_against_it :: proc(t: ^testing.T) {
 	tuning := water_body_test_tuning()
 	for tick in u64(1) ..= 20 {
 		before := water_fill_at(&world, sender)
+		// The refill is capped by the spring's rate (0367), so the sender
+		// may pour into the spring too.
+		refill := min(FIELD_WATER_FULL, water_fill_at(&world, spring) + tuning.spring_rate)
 		step_field_water(&world, tuning, tick)
-		poured := i32(chunk.water_flow[spring_index])
-		testing.expectf(t, water_fill_at(&world, spring) + poured == FIELD_WATER_FULL, "tick %d: the spring %d poured %d", tick, water_fill_at(&world, spring), poured)
-		testing.expectf(t, water_fill_at(&world, sender) == before + poured - i32(chunk.water_flow[sender_index]), "tick %d: the sender %d from %d", tick, water_fill_at(&world, sender), before)
+		poured, returned := i32(chunk.water_flow[spring_index]), i32(chunk.water_flow[sender_index])
+		testing.expectf(t, water_fill_at(&world, spring) == refill - poured + returned, "tick %d: the spring %d poured %d, took %d", tick, water_fill_at(&world, spring), poured, returned)
+		testing.expectf(t, water_fill_at(&world, sender) == before + poured - returned, "tick %d: the sender %d from %d", tick, water_fill_at(&world, sender), before)
 	}
 }
 
-// A spring under a body's level pours its rate into the body and nothing
-// more, and the level follows the volume.
+// A spring under a body's level pours its rate (spring_rate, 0367) into
+// the body and nothing more, and the level follows the volume.
 @(test)
 test_a_spring_under_a_lake_raises_it_by_its_rate :: proc(t: ^testing.T) {
 	tick: u64 = 0
@@ -768,7 +771,7 @@ test_a_spring_under_a_lake_raises_it_by_its_rate :: proc(t: ^testing.T) {
 		step_field_water(&world, tuning, tick)
 	}
 	body = &world.water_bodies[id]
-	testing.expect_value(t, body.volume, volume + 300 * i64(tuning.rate))
+	testing.expect_value(t, body.volume, volume + 300 * i64(tuning.spring_rate))
 	testing.expect_value(t, body.level, body_level_of_volume(body, body.volume))
 }
 

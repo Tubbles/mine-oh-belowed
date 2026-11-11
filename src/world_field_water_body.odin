@@ -1058,7 +1058,7 @@ absorb_seeded_front :: proc(world: ^Field_World, id: Water_Body_Id) {
 		chunk := chunk_list[entry[0]]
 		world.water_body_counts.absorbed += i64(chunk.water[entry[1]])
 		if !field_sample_bit(&chunk.water_source, entry[1]) {
-			sleep_field_water_sample(chunk, entry[1])
+			sleep_field_water_sample(world, chunk, entry[1])
 		}
 	}
 }
@@ -1082,7 +1082,7 @@ absorb_seed_candidate :: proc(world: ^Field_World, id: Water_Body_Id) {
 	world.water_bodies[id].volume += fill
 	world.water_body_counts.absorbed += fill
 	write_field_water_quiet(world, chunk, index, flood.candidate, 0)
-	sleep_field_water_sample(chunk, index)
+	sleep_field_water_sample(world, chunk, index)
 }
 
 // The pending flood first, then every live dirty body in id order whose
@@ -1394,7 +1394,7 @@ claim_sea :: proc(world: ^Field_World) {
 		note_water_owner_change(world, chunk, sample)
 		write_field_water_quiet(world, chunk, index, sample, field_sea_fill(world.water_planet.sea_level, span))
 		if !field_sample_bit(&chunk.water_source, index) && field_sample_bit(&chunk.water_awake, index) {
-			sleep_field_water_sample(chunk, index)
+			sleep_field_water_sample(world, chunk, index)
 		}
 		for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
 			if next_chunk, next_index := field_water_cell(world, chunk, sample, offset); next_chunk != nil {

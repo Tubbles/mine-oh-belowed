@@ -140,6 +140,10 @@ field_brushes = [
 // its equals; a sample whose fill did not change for still_ticks_to_sleep
 // ticks sleeps until a neighbour changes; fill at or below minimum_fill on
 // dry ground stops moving and drops by one every dry_ticks_per_step ticks.
+// A spring (work item 0367) pours at most spring_fill_per_tick fill a tick
+// (1 to 254; 64 is the link rate, about 15 cubic metres a second at 1 m
+// spacing): it refills by that much up to full, and a spring under a lake
+// or the sea pours that much into it.
 // The pressure pull (work item 0292): with pressure on, a not-full sample
 // on full water that moved nothing searches the full body under it, at
 // most pressure_visit_budget samples a search and
@@ -162,6 +166,7 @@ field_brushes = [
 // 255; 6 is ten times a second).
 field_water = {
 	fill_rate_per_tick = 64
+	spring_fill_per_tick = 64
 	still_ticks_to_sleep = 20
 	minimum_fill = 8
 	dry_ticks_per_step = 60

@@ -10,7 +10,7 @@ WATER_TEST_CHUNK_Y :: 100
 // The plain rule: pressure off and no band, so the older tests assert the
 // same bytes as before 0292.
 water_test_tuning :: proc() -> Field_Water_Tuning {
-	return {rate = 64, still_ticks = 20, minimum_fill = 8, dry_ticks = 60, pressure = false, pressure_visit_budget = 128, pressure_visit_budget_per_tick = 20000, minimum_head = 0}
+	return {rate = 64, spring_rate = 16, still_ticks = 20, minimum_fill = 8, dry_ticks = 60, pressure = false, pressure_visit_budget = 128, pressure_visit_budget_per_tick = 20000, minimum_head = 0}
 }
 
 // The shipped pressure values (0292) over the plain tuning.
@@ -925,4 +925,357 @@ test_a_generated_lake_sleeps_under_teleport :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, !any_water_awake(&world), "the lake sleeps")
 	testing.expect(t, world.chunks[{1, WATER_TEST_CHUNK_Y, 0}].water == written, "the lake's bytes stay as generated")
+}
+
+// Work item 0367: the water's state as recorded at its base (3f5f66e),
+// one digest per scenario chained over every tick (water_step_digest):
+// (a) teleport, run_water_test_sequence's steps on the two chunk basin;
+// (b) teleport, the pour on flat ground, 300 ticks; (c) bodies, the
+// trough lakes settled, the trough dug, 200 ticks; (d) bodies, the fed
+// outlet trough with its trough dug and its lake fed 70 a tick, 300 ticks;
+// (e) the spring that refills before a sender plans, teleport then bodies,
+// 300 ticks. 0367's pure steps (B1 to B4) keep every digest; a behaviour
+// change records its scenarios again and is named here. C1 (a teleport
+// write wakes at the step's end) recorded (a) and (b) again, from
+// 0x85dc34b57110793b and 0x7ede850335709fdf; (e) under teleport kept its
+// digest. C2 (a spring pours at most its rate) recorded (e) under both
+// models again, from 0xcb20bb04c0cea684 and 0x03f46ae2f04d127e.
+WATER_STEP_RECORDED_DIGESTS :: [6]u64{0x52b7882905345fe7, 0xad3dfcf16927b340, 0x5090dd15064d3604, 0x7d107e96a16e6f8b, 0x6cff60172b672a98, 0xd23f98c8e3a5ce2a}
+
+// Every chunk's state hash in coordinate order, the dropped water, the
+// water to the sea and each live body's volume and level.
+water_step_digest :: proc(digest: u64, world: ^Field_World) -> u64 {
+	result := digest
+	for coordinate in sorted_field_chunk_coordinates(world.chunks) {
+		result = fingerprint_u64(result, field_chunk_state_hash(world.chunks[coordinate]))
+	}
+	result = fingerprint_u64(result, u64(world.water_dropped))
+	result = fingerprint_u64(result, u64(world.water_to_sea))
+	for body in world.water_bodies {
+		if body.alive {
+			result = fingerprint_u64(result, u64(body.volume))
+			result = fingerprint_u64(result, u64(body.level))
+		}
+	}
+	return result
+}
+
+// Steps the world ticks times from tick, the digest chained after each.
+step_water_recording :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: ^u64, ticks: int, digest: u64) -> u64 {
+	result := digest
+	for _ in 0 ..< ticks {
+		tick^ += 1
+		step_field_water(world, tuning, tick^)
+		result = water_step_digest(result, world)
+	}
+	return result
+}
+
+// The sender and the spring of
+// test_a_spring_refills_before_a_sender_plans_against_it, under the model.
+make_spring_sender_water_world :: proc(model: Water_Model) -> Field_World {
+	world := make_water_test_world()
+	if model == .Bodies {
+		make_bodies_world(&world)
+	}
+	carve_water_test_box(&world, water_test_sample({7, 3, 7}), water_test_sample({8, 3, 7}))
+	sender := water_test_sample({7, 3, 7})
+	spring := water_test_sample({8, 3, 7})
+	chunk := world.chunks[sample_to_field_chunk_coordinate(spring)]
+	sender_index, spring_index := sample_to_field_index(sender), sample_to_field_index(spring)
+	set_field_water(&world, chunk, sender_index, sender, 200)
+	set_field_water(&world, chunk, spring_index, spring, 100)
+	set_field_sample_bit(&chunk.water_source, spring_index)
+	force_wake_field_water_sample(&world, chunk, sender_index)
+	force_wake_field_water_sample(&world, chunk, spring_index)
+	return world
+}
+
+@(test) // slow
+test_the_water_steps_state_stays_as_recorded :: proc(t: ^testing.T) {
+	digests: [6]u64
+	{
+		world := make_two_chunk_water_world({0, 1})
+		defer destroy_field_world(&world)
+		pour_test_water(&world, water_test_sample({21, 12, 5}), water_test_sample({25, 20, 6}), 200)
+		tuning := water_test_tuning()
+		tick: u64 = 0
+		digests[0] = step_water_recording(&world, tuning, &tick, 40, FINGERPRINT_START)
+		field_world_set_sample(&world, water_test_sample({FIELD_CHUNK_SIZE + 3, 2, 8}), FIELD_AIR_SAMPLE)
+		field_world_set_sample(&world, water_test_sample({22, 4, 6}), {MAXIMUM_DENSITY, .Stone, 0})
+		digests[0] = step_water_recording(&world, tuning, &tick, 200, digests[0])
+	}
+	{
+		world: Field_World
+		defer destroy_field_world(&world)
+		for coordinate in ([4][2]i32{{-1, -1}, {0, -1}, {-1, 0}, {0, 0}}) {
+			chunk := make_ground_water_test_chunk(coordinate.x)
+			chunk.coordinate.z = coordinate.y
+			field_world_insert_chunk(&world, chunk)
+		}
+		carve_water_test_box(&world, water_test_sample({-15, 3, -15}), water_test_sample({15, 10, 15}))
+		centre := water_test_sample({0, 3, 0})
+		pour_test_water(&world, centre, centre, FIELD_WATER_FULL)
+		tuning := water_test_tuning()
+		tuning.minimum_fill = 1
+		tick: u64 = 0
+		digests[1] = step_water_recording(&world, tuning, &tick, 300, FINGERPRINT_START)
+	}
+	{
+		world := make_body_test_world()
+		defer destroy_field_world(&world)
+		carve_trough_test_lakes(&world, 0)
+		tuning := water_body_test_tuning()
+		tick: u64 = 0
+		testing.expect(t, settle_body_test_water(&world, tuning, &tick, 300) < 300, "the trough lakes settle")
+		dig_test_trough(&world, 0)
+		digests[2] = step_water_recording(&world, tuning, &tick, 200, FINGERPRINT_START)
+	}
+	{
+		tick: u64 = 0
+		world := fed_outlet_trough_world(t, &tick)
+		defer destroy_field_world(&world)
+		tuning := water_body_test_tuning()
+		dig_test_trough(&world, 0)
+		feed := water_test_sample({17, 1, 7})
+		digests[3] = FINGERPRINT_START
+		for _ in 0 ..< 300 {
+			if id, found := water_body_at(&world, feed); found {
+				credit_water_body_volume(&world, id, feed, 70)
+			}
+			digests[3] = step_water_recording(&world, tuning, &tick, 1, digests[3])
+		}
+	}
+	for model, index in ([2]Water_Model{.Teleport, .Bodies}) {
+		world := make_spring_sender_water_world(model)
+		defer destroy_field_world(&world)
+		tuning := model == .Teleport ? water_pressure_test_tuning() : water_body_test_tuning()
+		tick: u64 = 0
+		digests[4 + index] = step_water_recording(&world, tuning, &tick, 300, FINGERPRINT_START)
+	}
+	recorded := WATER_STEP_RECORDED_DIGESTS
+	labels := [6]string{"(a) the teleport sequence", "(b) the teleport pour", "(c) the dug trough", "(d) the fed outlet trough", "(e) the spring under teleport", "(e) the spring under bodies"}
+	for digest, index in digests {
+		testing.expectf(t, digest == recorded[index], "%s: the digest %016x, recorded %016x", labels[index], digest, recorded[index])
+	}
+}
+
+// No chunk marked to mesh, none edited.
+clear_test_look_marks :: proc(world: ^Field_World) {
+	for _, chunk in world.chunks {
+		chunk.dirty = false
+	}
+	clear(&world.edited_chunks)
+}
+
+// 0367: inside the step's touches a write the tick undoes marks no chunk;
+// a sample left changed within FIELD_LOOK_REACH of a border marks its chunk
+// and the one across.
+@(test)
+test_a_write_the_step_undoes_marks_no_chunk :: proc(t: ^testing.T) {
+	world := make_water_test_world(2)
+	defer destroy_field_world(&world)
+	inside := water_test_sample({16, 3, 7})
+	border := water_test_sample({FIELD_CHUNK_SIZE - 2, 3, 7})
+	carve_water_test_box(&world, inside, border)
+	pour_test_water(&world, inside, border, 100)
+	clear_test_look_marks(&world)
+	chunk := world.chunks[sample_to_field_chunk_coordinate(border)]
+	begin_field_water_touches(&world, false)
+	for sample in ([2]Sample_Coordinate{inside, border}) {
+		set_field_water(&world, chunk, sample_to_field_index(sample), sample, 90)
+		set_field_water(&world, chunk, sample_to_field_index(sample), sample, 100)
+	}
+	finish_field_water_touches(&world)
+	for coordinate, other in world.chunks {
+		testing.expectf(t, !other.dirty, "the chunk %v is not marked", coordinate)
+	}
+	testing.expect_value(t, len(world.edited_chunks), 0)
+	begin_field_water_touches(&world, false)
+	set_field_water(&world, chunk, sample_to_field_index(border), border, 90)
+	finish_field_water_touches(&world)
+	for coordinate, other in world.chunks {
+		testing.expectf(t, other.dirty, "the chunk %v is marked", coordinate)
+	}
+	testing.expect(t, chunk.coordinate in world.edited_chunks, "the written chunk is edited")
+	testing.expect_value(t, len(world.water_touches.list), 0)
+}
+
+// The look a chunk's finest mesh reads: its gathered grid's water and
+// water_exact.
+water_look_digest :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) -> u64 {
+	grid := gather_field_grid(world, coordinate, nil, context.temp_allocator)
+	digest := fingerprint_bytes(FINGERPRINT_START, transmute([]u8)grid.water[:])
+	return fingerprint_bytes(digest, transmute([]u8)grid.water_exact[:])
+}
+
+// Every loaded chunk whose look changed since the last check is dirty
+// (when check is set); the marks clear. A tick on which a live body's
+// level differs from its meshed level is not checked: those marks are rate
+// limited by design (FIELD_WATER_LOOK_LEVEL_STEP).
+check_water_look_marks :: proc(t: ^testing.T, world: ^Field_World, digests: ^map[Field_Chunk_Coordinate]u64, label: string, tick: u64, check := true) {
+	skip := !check
+	for body in world.water_bodies {
+		skip = skip || (body.alive && body.level != body.meshed_level)
+	}
+	for coordinate, chunk in world.chunks {
+		digest := water_look_digest(world, coordinate)
+		if !skip && digests^[coordinate] != digest {
+			testing.expectf(t, chunk.dirty, "%s, tick %d: the look of the chunk %v changed and it is not marked", label, tick, coordinate)
+		}
+		digests^[coordinate] = digest
+	}
+	clear_test_look_marks(world)
+	free_all(context.temp_allocator)
+}
+
+step_checking_water_look :: proc(t: ^testing.T, world: ^Field_World, tuning: Field_Water_Tuning, tick: ^u64, ticks: int, digests: ^map[Field_Chunk_Coordinate]u64, label: string) {
+	for _ in 0 ..< ticks {
+		tick^ += 1
+		step_field_water(world, tuning, tick^)
+		check_water_look_marks(t, world, digests, label, tick^)
+	}
+}
+
+// 0367: with the look marked at the step's end, every change of the
+// water's look still marks the chunks that mesh it, under teleport (the
+// sequence, the spring) and under bodies (the dug trough).
+@(test) // slow
+test_every_change_of_the_waters_look_marks_its_chunk :: proc(t: ^testing.T) {
+	{
+		world := make_two_chunk_water_world({0, 1})
+		defer destroy_field_world(&world)
+		digests := make(map[Field_Chunk_Coordinate]u64)
+		defer delete(digests)
+		pour_test_water(&world, water_test_sample({21, 12, 5}), water_test_sample({25, 20, 6}), 200)
+		tick: u64 = 0
+		check_water_look_marks(t, &world, &digests, "(a)", tick, false)
+		step_checking_water_look(t, &world, water_test_tuning(), &tick, 40, &digests, "(a)")
+		field_world_set_sample(&world, water_test_sample({FIELD_CHUNK_SIZE + 3, 2, 8}), FIELD_AIR_SAMPLE)
+		field_world_set_sample(&world, water_test_sample({22, 4, 6}), {MAXIMUM_DENSITY, .Stone, 0})
+		step_checking_water_look(t, &world, water_test_tuning(), &tick, 200, &digests, "(a)")
+	}
+	{
+		world := make_body_test_world()
+		defer destroy_field_world(&world)
+		digests := make(map[Field_Chunk_Coordinate]u64)
+		defer delete(digests)
+		carve_trough_test_lakes(&world, 0)
+		tick: u64 = 0
+		check_water_look_marks(t, &world, &digests, "(c)", tick, false)
+		step_checking_water_look(t, &world, water_body_test_tuning(), &tick, 300, &digests, "(c)")
+		dig_test_trough(&world, 0)
+		step_checking_water_look(t, &world, water_body_test_tuning(), &tick, 200, &digests, "(c)")
+	}
+	{
+		world := make_spring_sender_water_world(.Teleport)
+		defer destroy_field_world(&world)
+		digests := make(map[Field_Chunk_Coordinate]u64)
+		defer delete(digests)
+		tick: u64 = 0
+		check_water_look_marks(t, &world, &digests, "(e)", tick, false)
+		step_checking_water_look(t, &world, water_pressure_test_tuning(), &tick, 300, &digests, "(e)")
+	}
+}
+
+// 0367: under teleport a write wakes at the step's end and only for a
+// changed fill. A full sample under dry air (below the sea, so it can
+// wake) whose failed bit is set and that sleeps: written down and back
+// inside the step's touches, the air sleeps on, failed; written down only,
+// it wakes and its failed bit clears.
+@(test)
+test_a_teleport_write_the_tick_undoes_wakes_nobody :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	world.water_planet = water_test_sea_planet()
+	full := water_test_sample({8, 3, 8})
+	dry := water_test_sample({8, 4, 8})
+	carve_water_test_box(&world, full, dry)
+	chunk := world.chunks[sample_to_field_chunk_coordinate(full)]
+	full_index, dry_index := sample_to_field_index(full), sample_to_field_index(dry)
+	chunk.water[full_index] = FIELD_WATER_FULL
+	set_field_sample_bit(&chunk.water_pressure_failed, dry_index)
+	testing.expect(t, field_water_can_wake(&world, chunk, dry_index), "the air can wake")
+	begin_field_water_touches(&world, true)
+	set_field_water(&world, chunk, full_index, full, 200)
+	set_field_water(&world, chunk, full_index, full, FIELD_WATER_FULL)
+	finish_field_water_touches(&world)
+	testing.expect(t, !field_sample_bit(&chunk.water_awake, dry_index), "the air sleeps on")
+	testing.expect(t, field_sample_bit(&chunk.water_pressure_failed, dry_index), "its failed bit stays")
+	testing.expect(t, !field_sample_bits_any(&chunk.water_written), "the written bits clear")
+	testing.expect(t, !field_sample_bit(&chunk.water_awake, full_index), "the written sample sleeps on")
+	testing.expect_value(t, chunk.water_moved[full_index], 0)
+	begin_field_water_touches(&world, true)
+	set_field_water(&world, chunk, full_index, full, 200)
+	testing.expect(t, !field_sample_bit(&chunk.water_awake, dry_index), "no wake before the step's end")
+	finish_field_water_touches(&world)
+	testing.expect(t, field_sample_bit(&chunk.water_awake, dry_index), "the air wakes")
+	testing.expect(t, !field_sample_bit(&chunk.water_pressure_failed, dry_index), "its failed bit clears")
+	testing.expect(t, field_sample_bit(&chunk.water_awake, full_index), "the written sample wakes")
+}
+
+// 0367: a teleport film of one fill that dries empty and sleeps in its own
+// run, then is handed one fill back in the same step, ends the step awake,
+// so it dries on; asleep it would hold the fill for good.
+@(test)
+test_a_film_given_back_its_fill_in_the_step_stays_awake :: proc(t: ^testing.T) {
+	world := make_water_test_world()
+	defer destroy_field_world(&world)
+	film := water_test_sample({8, 3, 8})
+	carve_water_test_box(&world, film, film)
+	chunk := world.chunks[sample_to_field_chunk_coordinate(film)]
+	index := sample_to_field_index(film)
+	set_field_water(&world, chunk, index, film, 1)
+	testing.expect(t, field_sample_bit(&chunk.water_awake, index), "the film is awake")
+	begin_field_water_touches(&world, true)
+	dry_field_water_film(&world, chunk, index, film)
+	sleep_field_water_sample(&world, chunk, index)
+	set_field_water(&world, chunk, index, film, 1)
+	finish_field_water_touches(&world)
+	testing.expect_value(t, water_fill_at(&world, film), 1)
+	testing.expect(t, field_sample_bit(&chunk.water_awake, index), "the film ends the step awake")
+}
+
+// 0367's ramp: a spring in the ground, a shaft under it onto a ramp
+// falling one sample a step along +x, and a basin at its foot. The
+// spring's one open neighbour is the shaft below it.
+SPRING_RAMP_SPRING :: [3]i32{4, 25, 8}
+SPRING_RAMP_FOOT :: [3]i32{24, 2, 8}
+
+carve_spring_ramp :: proc(world: ^Field_World) {
+	for x in i32(4) ..= 19 {
+		floor := 19 - (x - 4)
+		carve_water_test_box(world, water_test_sample({x, floor, 6}), water_test_sample({x, floor + 3, 10}))
+	}
+	carve_water_test_box(world, water_test_sample({4, 23, 8}), water_test_sample(SPRING_RAMP_SPRING))
+	carve_water_test_box(world, water_test_sample({20, 2, 4}), water_test_sample({27, 8, 12}))
+}
+
+// 0367: a spring empty at the start pours at most spring_rate a tick under
+// either model, and all of it: with drying off, the water in the world
+// after 600 ticks is 600 times the rate, and it reached the ramp's foot.
+@(test) // slow
+test_a_spring_pours_at_most_its_rate :: proc(t: ^testing.T) {
+	for model in ([2]Water_Model{.Teleport, .Bodies}) {
+		world := make_water_test_world()
+		defer destroy_field_world(&world)
+		if model == .Bodies {
+			make_bodies_world(&world)
+		}
+		carve_spring_ramp(&world)
+		spring := water_test_sample(SPRING_RAMP_SPRING)
+		chunk := world.chunks[sample_to_field_chunk_coordinate(spring)]
+		spring_index := sample_to_field_index(spring)
+		set_field_sample_bit(&chunk.water_source, spring_index)
+		force_wake_field_water_sample(&world, chunk, spring_index)
+		tuning := model == .Teleport ? water_pressure_test_tuning() : water_body_test_tuning()
+		tuning.dry_ticks = 0
+		for tick in u64(1) ..= 600 {
+			step_field_water(&world, tuning, tick)
+			testing.expectf(t, i32(chunk.water_flow[spring_index]) <= tuning.spring_rate, "%v, tick %d: the spring poured %d", model, tick, chunk.water_flow[spring_index])
+		}
+		total := model == .Teleport ? total_test_water(&world) : conserved_water(&world)
+		testing.expectf(t, total == 600 * i64(tuning.spring_rate), "%v: the world holds %d", model, total)
+		testing.expectf(t, water_fill_at(&world, water_test_sample(SPRING_RAMP_FOOT)) > 0, "%v: the water reached the foot", model)
+	}
 }

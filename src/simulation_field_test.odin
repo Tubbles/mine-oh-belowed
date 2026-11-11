@@ -31,10 +31,12 @@ make_field_test_game_content :: proc() -> Game_Content {
 }
 
 // A new field world of the seed (the default seed unless given) at the
-// radius (0 for the planet's default), without a save.
-start_field_test_session :: proc(config: Game_Config, content: Game_Content, radius_metres := 0, seed := DEFAULT_WORLD_SEED) -> ^Session {
+// radius (0 for the planet's default) under the water model, without a
+// save.
+start_field_test_session :: proc(config: Game_Config, content: Game_Content, radius_metres := 0, seed := DEFAULT_WORLD_SEED, water_model := Water_Model.Teleport) -> ^Session {
 	settings := default_world_file_settings(config)
 	settings.planet_radius_metres = radius_metres
+	settings.water_model = water_model
 	plan := Session_Plan{seed = seed, settings = settings}
 	session, problem := start_session(plan, config, content, make_test_generator(seed))
 	assert(problem == "", problem)
@@ -1261,7 +1263,7 @@ test_only_chunks_unlike_their_generation_are_kept_on_unload :: proc(t: ^testing.
 	testing.expect(t, !field_sample_bit(&slept.water_awake, 0), "the sample starts asleep")
 	set_field_sample_bit(&slept.water_awake, 0)
 	note_field_chunk_change(slept)
-	sleep_field_water_sample(slept, 0)
+	sleep_field_water_sample(&field.world, slept, 0)
 	dug := new(Field_Chunk)
 	generate_field_chunk(seed, planet, 1000, {1, 0, 0}, dug)
 	dug.density[0] = dug.density[0] > 0 ? 0 : 1

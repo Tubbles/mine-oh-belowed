@@ -1,6 +1,8 @@
 package game
 
+import "base:intrinsics"
 import "core:testing"
+import "generation_seed"
 
 TEST_PLANET_SEED :: u64(42)
 
@@ -49,6 +51,44 @@ test_integer_square_root_edges :: proc(t: ^testing.T) {
 	for value in u64(0) ..< 100_000 {
 		root := integer_square_root(value * 7919)
 		testing.expect(t, root * root <= value * 7919 && (root + 1) * (root + 1) > value * 7919)
+	}
+	// 0367: the float estimate gives Newton's root (newton_square_root, the
+	// method it replaced) at 0 to 4, at k squared and one either side for
+	// k at every power of two and its neighbours up to the largest root, at
+	// the largest value and at 100,000 hashed values.
+	values := make([dynamic]u64, context.temp_allocator)
+	append(&values, 0, 1, 2, 3, 4, max(u64))
+	for shift in u64(0) ..= 32 {
+		for k in ([3]u64{(u64(1) << shift) - 1, u64(1) << shift, (u64(1) << shift) + 1}) {
+			if k == 0 || k > 0xFFFF_FFFF {
+				continue
+			}
+			append(&values, k * k - 1, k * k, k * k + 1)
+		}
+	}
+	state := u64(0x9E37_79B9_7F4A_7C15)
+	for _ in 0 ..< 100_000 {
+		state = generation_seed.hash_combine(state, 0x2545_F491_4F6C_DD1D)
+		append(&values, state >> (state & 31))
+	}
+	for value in values {
+		testing.expectf(t, integer_square_root(value) == newton_square_root(value), "the root of %d: %d, Newton's %d", value, integer_square_root(value), newton_square_root(value))
+	}
+}
+
+// Newton's method in integers from a power of two at or above the root,
+// integer_square_root before 0367, kept as the reference.
+newton_square_root :: proc(value: u64) -> u64 {
+	if value < 2 {
+		return value
+	}
+	root := u64(1) << ((64 - intrinsics.count_leading_zeros(value) + 1) / 2)
+	for {
+		next := (root + value / root) / 2
+		if next >= root {
+			return root
+		}
+		root = next
 	}
 }
 

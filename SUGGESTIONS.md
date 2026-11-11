@@ -336,3 +336,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 ## Suggestions from the water model's row (0379, 2026-11-11)
 
 - A bodies world can be hosted since 0379 and no test joins one. The join snapshot goes through the save's bytes, which 0293 tests, so a failure would be in what a joiner does after the load. A join test under bodies would settle it before the model is offered for real.
+
+## Suggestions from the water tick at a spring (0367, 2026-11-11)
+
+- Never-meshed nodes now go out before remeshes, so right after a load or a teleport an edit at the player's feet waits for the view's holes, about 40 frames at the spring. If digging right after a teleport feels late, the finest level's dirty nodes near the eye could keep a share of each frame's jobs.
+- Once the view is meshed, the coarser nodes over the stream's chunks still take the frame's 8 remeshes every frame. A coarse node could mesh again only when its downsampled water changed (0344's area).
+- A sample at or under the minimum fill that no move can empty is not a film, so it sleeps without drying. Counting it as one changes the drying rule and its recorded digests.
+- The spring's rate of 64 was chosen from one capture at one spring under bodies. Under teleport a stream's width may differ; look at a teleport world's spring in the play build before 0370 is judged.
+- `test_every_change_of_the_waters_look_marks_its_chunk` takes about 22 s of the suite; fewer ticks would cut it.

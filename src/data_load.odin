@@ -426,6 +426,8 @@ Field_Player_Config :: struct {
 // refused when missing: it reads false, pressure off.
 Field_Water_Config :: struct {
 	fill_rate_per_tick:             int,
+	// The most fill a spring pours a tick (0367).
+	spring_fill_per_tick:           int,
 	still_ticks_to_sleep:           int,
 	minimum_fill:                   int,
 	dry_ticks_per_step:             int,
@@ -1500,6 +1502,7 @@ belt_runs_problem :: proc(runs: Belt_Runs_Config) -> string {
 field_water_problem :: proc(water: Field_Water_Config) -> string {
 	bounds := [?]Config_Bound {
 		{"fill_rate_per_tick", water.fill_rate_per_tick, 1, FIELD_WATER_FULL},
+		{"spring_fill_per_tick", water.spring_fill_per_tick, 1, FIELD_WATER_FULL},
 		{"still_ticks_to_sleep", water.still_ticks_to_sleep, 1, MAXIMUM_FIELD_WATER_STILL_TICKS},
 		{"minimum_fill", water.minimum_fill, 1, FIELD_WATER_FULL - 1},
 		{"dry_ticks_per_step", water.dry_ticks_per_step, 1, MAXIMUM_FIELD_WATER_DRY_TICKS},

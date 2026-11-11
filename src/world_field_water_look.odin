@@ -162,15 +162,16 @@ field_look_owned_reach :: proc(chunk: ^Field_Chunk, owner: Water_Owner) -> u32 {
 }
 
 // One awake tick of the moving stamp; the chunks that mesh the sample
-// draw it at rest again once it reaches zero.
+// draw it at rest again once it reaches zero (at the step's end inside the
+// step, note_field_water_change).
 expire_field_water_moved :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate) {
 	if chunk.water_moved[index] == 0 {
 		return
 	}
-	chunk.water_moved[index] -= 1
-	if chunk.water_moved[index] == 0 {
-		mark_field_look_dirty(world, chunk.coordinate, sample)
+	if chunk.water_moved[index] == 1 {
+		note_field_water_change(world, chunk, index, sample, true)
 	}
+	chunk.water_moved[index] -= 1
 }
 
 // A sample's owner changed, or its water turned a body's still water: the

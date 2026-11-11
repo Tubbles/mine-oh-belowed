@@ -100,6 +100,12 @@ Field_Chunk :: struct {
 	// zero on a fresh chunk, saved and hashed since 0293 (format version
 	// 5), so a joiner holds the host's failed searches.
 	water_pressure_failed: Field_Sample_Bits,
+	// The water step's scratch bits (0367, Field_Water_Touches): the
+	// samples noted this step, and those set_field_water wrote while their
+	// wakes wait for the step's end (teleport). Zero between steps; never
+	// saved, hashed or compared.
+	water_touched: Field_Sample_Bits,
+	water_written: Field_Sample_Bits,
 	block_light:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	sky_light:    [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	dirty:        bool,
@@ -158,6 +164,14 @@ Field_World :: struct {
 	// The last tick's pressure pulls (0292): teleports, visits, failures;
 	// not saved, not hashed.
 	water_pressure:     Field_Water_Pressure_Counts,
+	// The last water step's work (0367, Field_Water_Step_Counts) and the
+	// probe's log of its writes (set_field_water), nil outside the probe;
+	// not saved, not hashed.
+	water_step_counts:  Field_Water_Step_Counts,
+	water_write_log:    ^[dynamic]Field_Water_Write,
+	// The step's notes of the samples whose look it changes (0367,
+	// note_field_water_change); empty between steps.
+	water_touches:      Field_Water_Touches,
 	// The planet as the water and the light's sky march read it, set by
 	// the world's owner (make_field_water_planet); zero is a world with no
 	// sea and no sky march.
@@ -385,6 +399,7 @@ destroy_field_world :: proc(world: ^Field_World) {
 	delete(world.edited_chunks)
 	delete(world.water_awake_chunks)
 	delete(world.water_events)
+	delete(world.water_touches.list)
 	destroy_field_lighting(&world.light)
 	destroy_water_bodies(world)
 	world^ = {}

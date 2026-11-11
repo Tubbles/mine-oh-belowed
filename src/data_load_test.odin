@@ -420,6 +420,22 @@ test_field_water_pressure_values_are_bounded :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0367: a spring's rate is shipped at 64 and bounded 1 to 254.
+@(test)
+test_field_water_spring_fill_is_bounded :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	water := config.field_water
+	testing.expect_value(t, water.spring_fill_per_tick, 64)
+	testing.expect_value(t, make_field_water_tuning(water).spring_rate, 64)
+	for value in ([2]int{0, FIELD_WATER_FULL + 1}) {
+		changed := water
+		changed.spring_fill_per_tick = value
+		problem := field_water_problem(changed)
+		testing.expectf(t, strings.has_prefix(problem, "field_water.spring_fill_per_tick "), "%d: %q", value, problem)
+	}
+}
+
 // Work item 0293: the water bodies' keys of field_water are bounded and
 // a value outside its bound is named.
 @(test)
