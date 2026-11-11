@@ -2029,7 +2029,7 @@ make_split_test_lake_chunk :: proc(ridge_samples: i32) -> (chunk: ^Field_Chunk, 
 // and no still water no one owns, whole or over a ridge under its level
 // (one pocket, one wake, one body); parted to the chunk's top, each half
 // is a pocket of its own, woken and settled into a body of its own.
-@(test)
+@(test) // slow
 test_a_generated_lake_settles_into_its_bodies :: proc(t: ^testing.T) {
 	for ridge in ([4]i32{0, 2, 4, FIELD_CHUNK_SIZE}) {
 		world: Field_World
