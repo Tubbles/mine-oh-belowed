@@ -12,7 +12,8 @@ import "core:slice"
 // between the vertices of the four cells around it, wound outward (against
 // the density gradient). The geometry is integer and fixed point; floats
 // appear only in field_mesh_from_surface, which turns the surface into the
-// GPU's vertex arrays. No raylib here, render_field.odin uploads.
+// GPU's vertex arrays, positions in samples (0381). No raylib here,
+// render_field.odin uploads.
 //
 // A node meshes FIELD_GRID_CELLS cells a side from a Field_Grid that holds
 // one more sample on every side: the quads of the grid edges a node owns
@@ -95,9 +96,11 @@ Field_Surface :: struct {
 	cell_vertices:     []i32,
 }
 
-// What render_field.odin uploads: positions in metres from the node's
-// origin; colors carry the tint in red, green and blue and the sky light
-// in alpha; the material weights run from 0 to 1. raylib's attributes
+// What render_field.odin uploads: positions in samples of the world's
+// spacing from the node's first sample (0381: a 256th of a cell times the
+// grid's step, exact in f32 at every spacing; metres are samples times
+// the spacing); colors carry the tint in red, green and blue and the sky
+// light in alpha; the material weights run from 0 to 1. raylib's attributes
 // the field leaves free carry the rest: weights (the first four
 // materials, topsoil to bedrock) go up as the tangent attribute, lights
 // as the texture coordinate attribute with the block light (0 to 1)
@@ -106,7 +109,7 @@ Field_Surface :: struct {
 // ground's look, 0307) as the second texture coordinate attribute, the
 // grass colour packed first and the snow, the sand and the natural share
 // packed second. field.vs unpacks them. minimum and maximum are the
-// positions' extremes in metres from the grid's origin, the skirts, a
+// positions' extremes in samples from the grid's origin, the skirts, a
 // cave's walls and the water's waves included, zero without vertices
 // (0349: the node's culling boxes).
 Field_Mesh_Data :: struct {
@@ -424,13 +427,13 @@ field_vertex_normal :: proc(gradient: [3]i32) -> [3]f32 {
 	return length > 0 ? outward / length : {0, 1, 0}
 }
 
-// The GPU's vertex arrays: positions in metres from the grid's origin,
-// a grid cell being step samples of spacing_millimetres.
-field_mesh_from_surface :: proc(surface: Field_Surface, step: i32, spacing_millimetres: int, allocator := context.allocator) -> Field_Mesh_Data {
+// The GPU's vertex arrays: positions in samples from the grid's origin,
+// a grid cell being step samples (0381).
+field_mesh_from_surface :: proc(surface: Field_Surface, step: i32, allocator := context.allocator) -> Field_Mesh_Data {
 	data := make_field_mesh_data(allocator)
-	metres_per_unit := f32(step) * f32(spacing_millimetres) / f32(FIELD_MESH_POSITION_UNITS * MILLIMETRES_PER_METRE)
+	samples_per_unit := f32(step) / FIELD_MESH_POSITION_UNITS
 	for vertex in surface.vertices {
-		append(&data.positions, [3]f32{f32(vertex.position.x), f32(vertex.position.y), f32(vertex.position.z)} * metres_per_unit)
+		append(&data.positions, [3]f32{f32(vertex.position.x), f32(vertex.position.y), f32(vertex.position.z)} * samples_per_unit)
 		append(&data.normals, field_vertex_normal(vertex.gradient))
 		append(&data.colors, [4]u8{vertex.color.r, vertex.color.g, vertex.color.b, vertex.light[.Sky]})
 		weights := vertex.weights
@@ -484,7 +487,7 @@ mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetre
 		cover^ = place_field_cover(surface, grid, look, cover_table, spacing_millimetres, cover_frames, allocator)
 	}
 	append_field_skirts(&surface, skirt_faces)
-	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
+	return field_mesh_from_surface(surface, grid.step, allocator)
 }
 
 // The water's surface of the same grid (0172): the mesher over the water
@@ -494,12 +497,12 @@ mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetre
 // ground, so a skirt there would stand up out of the water as a fin; the
 // strip between two levels of detail stays open instead. The vertex light
 // is the terrain's air corners' (field_vertex_light).
-mesh_field_water_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, allocator := context.allocator) -> Field_Mesh_Data {
+mesh_field_water_grid :: proc(grid: ^Field_Grid, palette: [][3]int, allocator := context.allocator) -> Field_Mesh_Data {
 	water := new(Field_Grid, context.temp_allocator)
 	water.origin, water.step = grid.origin, grid.step
 	water.density = grid.water
 	surface := mesh_field_surface(water, palette, context.temp_allocator, grid)
-	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
+	return field_mesh_from_surface(surface, grid.step, allocator)
 }
 
 destroy_field_mesh_data :: proc(data: Field_Mesh_Data) {

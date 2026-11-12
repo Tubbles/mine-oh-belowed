@@ -1,6 +1,6 @@
 # 0381: Cracks between the finest nodes
 
-Status: designed (2026-11-12)
+Status: verified (2026-11-13)
 
 Found in 0327's landing capture and traced by 0380's design (2026-11-12): single pixels of the globe's colour show through the ground along the border between two level 0 nodes, where no skirt hangs. Each node is drawn with its own translation (`render_field.odin`, `rl.MatrixTranslate(origin)`; `field.vs`, `mvp * vertexPosition`), so at 8 km from the planet's centre a vertex two nodes share comes out a fraction of a millimetre apart in each, and a few pixel centres fall between the two edges. The cracks are on every such border and show only against a dark floor, as in a cave. The mechanism is read from the matrix path; no capture of the camera matrices confirmed it.
 
@@ -200,3 +200,9 @@ Checked: `mesh_field_grid` and `mesh_field_water_grid` have one production calle
 1. Approved as specified: positions in samples, an anchor per viewport's pass, one view matrix about the anchor.
 2. Implemented on 0349's tree (`item/0349`), after its snapshot.
 3. Whether the phone's GLES driver and Winlator's Gladio honour `invariant` is a hand check for the user after the landing; a driver that regroups shows the cracks as today, not worse.
+
+### Deviations
+
+- `field_anchored_view` scales by the spacing in f64 (`spacing / 1000`), not by `field_metres_per_sample`'s f32: the anchor's translation term needs the exact spacing (f32(0.333) is 4.3e-9 off, about 0.1 mm at 24,000 samples), and the rotation columns take the same value.
+- `world_field_water_look_test.odin`'s `look_test_mesh` drops the spacing from its `mesh_field_water_grid` call too, which the specification did not list.
+- `test_the_anchored_pass_keeps_the_picture` puts its eyes round the place's point (the level 0 plane's), and checks the anchor's half sample at all four places.

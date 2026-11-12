@@ -131,15 +131,16 @@ test_field_material_textures_need_every_material_once :: proc(t: ^testing.T) {
 // Stands in for load_field_presentation, whose shaders need GL: the tiles
 // load for real, and a shader fails as an older copy does, a field.vs
 // without the look's outputs as GLSL ES fails to link it (desktop Mesa
-// links it) and a field.fs without the ground atlas or the haze (0313)
-// by init_field_renderer's check. The renderer carries the tiles' mean
+// links it), a field.vs without the anchored pass's matrix (0381) and a
+// field.fs without the ground atlas or the haze (0313) by
+// init_field_renderer's checks. The renderer carries the tiles' mean
 // colours.
 test_load_field_presentation :: proc(data_directory: string, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, problem: string) {
 	tiles: Field_Ground_Tiles
 	if tiles, problem = load_field_material_tiles(data_directory); problem != "" {
 		return {}, problem
 	}
-	markers := [3][2]string{{FIELD_VERTEX_SHADER_PATH, "out vec3 fragment_look;"}, {FIELD_FRAGMENT_SHADER_PATH, "uniform sampler2D " + FIELD_GROUND_ATLAS_SAMPLER + ";"}, {FIELD_FRAGMENT_SHADER_PATH, "uniform vec3 " + FIELD_HAZE_UNIFORM + ";"}}
+	markers := [4][2]string{{FIELD_VERTEX_SHADER_PATH, "out vec3 fragment_look;"}, {FIELD_VERTEX_SHADER_PATH, "uniform mat4 " + FIELD_ANCHOR_UNIFORM + ";"}, {FIELD_FRAGMENT_SHADER_PATH, "uniform sampler2D " + FIELD_GROUND_ATLAS_SAMPLER + ";"}, {FIELD_FRAGMENT_SHADER_PATH, "uniform vec3 " + FIELD_HAZE_UNIFORM + ";"}}
 	for marker in markers {
 		source, source_path, error := read_data_file(data_directory, marker[0], context.temp_allocator)
 		if error != nil || !strings.contains(string(source), marker[1]) {
@@ -153,7 +154,8 @@ test_load_field_presentation :: proc(data_directory: string, planet: Planet, spa
 }
 
 // Work item 0307: an overlay copy of the materials file or of a field
-// shader written before the looks fails the field's start, which loads
+// shader written before the looks (or a field.vs before the anchored
+// pass, 0381) fails the field's start, which loads
 // again from the data files with the overlay off; a failure without the
 // overlay stands. The decision is tested through a stand-in, since
 // loading a shader needs a GL context the tests do not have.
@@ -163,9 +165,11 @@ test_a_stale_overlay_copy_of_the_field_falls_back :: proc(t: ^testing.T) {
 	shipped, shipped_problem := test_load_field_presentation(test_data_directory(), {}, 1000, 0)
 	testing.expect_value(t, shipped_problem, "")
 	materials_only := strings.concatenate({"materials = [\n", test_every_field_material_entry(), "]"}, context.temp_allocator)
-	stale_copies := [3][2]string {
+	stale_copies := [4][2]string {
 		{FIELD_MATERIALS_TEXTURE_FILE, materials_only},
 		{FIELD_VERTEX_SHADER_PATH, "#version 330\nout vec3 fragment_normal;\n"},
+		// The look's outputs without the anchored pass (0381).
+		{FIELD_VERTEX_SHADER_PATH, "#version 330\nout vec3 fragment_look;\n"},
 		{FIELD_FRAGMENT_SHADER_PATH, "#version 330\nuniform sampler2D material_texture_topsoil;\n"},
 	}
 	for stale in stale_copies {

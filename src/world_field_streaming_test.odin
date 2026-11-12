@@ -664,7 +664,7 @@ test_a_finest_mesh_job_carries_the_look_to_the_worker :: proc(t: ^testing.T) {
 		testing.expect(t, slice.all_of(job.grid.water[:], 0), "the gather leaves the water zero")
 		result := run_field_job(shared, job)
 		defer free_field_job_result(result)
-		testing.expect(t, mesh_data_equal(result.water_mesh, mesh_field_water_grid(look_test_grid(&world, finest), planet.palette, 1000, context.temp_allocator)), "the worker's water mesh is the look's")
+		testing.expect(t, mesh_data_equal(result.water_mesh, mesh_field_water_grid(look_test_grid(&world, finest), planet.palette, context.temp_allocator)), "the worker's water mesh is the look's")
 	}
 	testing.expect(t, schedule_finest_field_mesh(&streaming, &world, field_chunk_node(finest + {1, 0, 0}), {}), "the node beside the set's edge is sent")
 	testing.expect_value(t, queue.len(shared.jobs), 1)

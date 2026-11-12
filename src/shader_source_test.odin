@@ -685,6 +685,37 @@ test_the_field_shader_reads_the_ground_atlas_by_level :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(vertex, "\nvec3 unpack_bytes(float packed_bytes)\n"), "field.vs does not declare unpack_bytes")
 }
 
+// Work item 0381: field.vs draws from the pass's anchor: one matrix for
+// the pass and the node's offset in whole samples added to the position,
+// the sum kept invariant, the world position from the node's origin and
+// the spacing, and no raylib matrix.
+@(test)
+test_the_field_pass_draws_from_its_anchor :: proc(t: ^testing.T) {
+	vertex := #load("../data/shaders/field.vs", string)
+	invariant := strings.index(vertex, "\ninvariant gl_Position;\n")
+	main_start := strings.index(vertex, "\nvoid main()\n")
+	testing.expect(t, invariant >= 0 && main_start > invariant, "field.vs does not declare gl_Position invariant before main")
+	lines := [?]string {
+		"\nuniform mat4 field_view_projection;\n",
+		"\nuniform vec3 node_offset;\n",
+		"\nuniform vec3 node_origin;\n",
+		"\nuniform float metres_per_sample;\n",
+		"\n    gl_Position = field_view_projection * vec4(vertexPosition + node_offset, 1.0);\n",
+		"\n    fragment_world_position = node_origin + vertexPosition * metres_per_sample;\n",
+		"\n    fragment_normal = vertexNormal;\n",
+	}
+	for line in lines {
+		testing.expectf(t, strings.contains(vertex, line), "field.vs does not hold %s", strings.trim_space(line))
+	}
+	for line in ([?]string{"uniform mat4 mvp;", "uniform mat4 matModel;"}) {
+		testing.expectf(t, !strings.contains(vertex, line), "field.vs still holds %s", line)
+	}
+	names := FIELD_ANCHOR_UNIFORM_NAMES
+	for name in names {
+		testing.expectf(t, strings.contains(vertex, fmt.tprintf(" %s;\n", name)), "field.vs declares no %s", name)
+	}
+}
+
 // Work item 0307: field.fs's atlas constants are the Odin ones.
 @(test)
 test_the_field_shader_knows_the_atlas_layout :: proc(t: ^testing.T) {

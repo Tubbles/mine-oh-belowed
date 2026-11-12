@@ -1,8 +1,10 @@
 #version 330
 
-// Field vertex shader (work item 0169, render_field.odin). Attribute and
-// matrix names are the raylib defaults, so DrawMesh binds them without
-// extra code. The mesher (world_field_mesh.odin) packs:
+// Field vertex shader (work item 0169, render_field.odin). The attribute
+// names are raylib's defaults, so DrawMesh binds them; the matrix and the
+// node's place are the field's own uniforms (0381, below). The mesher
+// (world_field_mesh.odin) packs:
+//   position     samples from the node's first sample (0381), exact
 //   colour rgb   the strata's tint of the ground at the vertex
 //   colour a     the sky light (work item 0173), 0 to 1
 //   texcoord x   the block light, 0 to 1
@@ -23,8 +25,20 @@ in vec2 vertexTexCoord;
 in vec2 vertexTexCoord2;
 in vec4 vertexTangent;
 
-uniform mat4 mvp;
-uniform mat4 matModel;
+// The anchored pass (0381, use_field_anchor, set_field_node_uniforms):
+// the viewport's projection times the camera's view about the anchor,
+// the sample nearest the eye, for positions in samples; the node's first
+// sample less the anchor, whole samples; the node's first sample in the
+// world's metres; and the world's spacing in metres.
+uniform mat4 field_view_projection;
+uniform vec3 node_offset;
+uniform vec3 node_origin;
+uniform float metres_per_sample;
+
+// Two nodes' copies of a vertex they share add up to the same samples
+// from the anchor exactly, so they land on one clip position bit for
+// bit; invariant keeps the compiler from regrouping the sum (0381).
+invariant gl_Position;
 
 out vec3 fragment_world_position;
 out vec3 fragment_normal;
@@ -50,14 +64,13 @@ vec3 unpack_bytes(float packed_bytes)
 
 void main()
 {
-    vec4 world_position = matModel * vec4(vertexPosition, 1.0);
-    fragment_world_position = world_position.xyz;
-    fragment_normal = mat3(matModel) * vertexNormal;
+    fragment_world_position = node_origin + vertexPosition * metres_per_sample;
+    fragment_normal = vertexNormal;
     fragment_color = vertexColor;
     fragment_weights = vertexTangent;
     fragment_ore_weights = unpack_bytes(vertexTexCoord.y);
     fragment_grass_color = unpack_bytes(vertexTexCoord2.x);
     fragment_look = unpack_bytes(vertexTexCoord2.y);
     fragment_block_light = vertexTexCoord.x;
-    gl_Position = mvp * vec4(vertexPosition, 1.0);
+    gl_Position = field_view_projection * vec4(vertexPosition + node_offset, 1.0);
 }

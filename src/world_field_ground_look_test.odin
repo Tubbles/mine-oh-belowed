@@ -35,10 +35,16 @@ ground_look_test_grid :: proc(generation: Planet_Generation, node: Field_Node) -
 }
 
 // The mesh with the look on, its cuts measured, skirts on every face
-// unless asked otherwise.
+// unless asked otherwise. Its positions are scaled from samples to metres
+// in place (0381), since the look's tests read metres; times 1 at 1000 mm.
 ground_look_test_mesh :: proc(grid: ^Field_Grid, generation: Planet_Generation, planet: Planet, skirt_faces := Field_Seam_Faces{flaps = EVERY_FIELD_FACE}) -> Field_Mesh_Data {
 	look := make_field_ground_look(generation, planet)
-	return mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, skirt_faces, context.temp_allocator, look, true)
+	data := mesh_field_grid(grid, planet.palette, generation.spacing_millimetres, skirt_faces, context.temp_allocator, look, true)
+	metres_per_sample := field_metres_per_sample(generation.spacing_millimetres)
+	for &position in data.positions {
+		position *= metres_per_sample
+	}
+	return data
 }
 
 // A vertex's snow, sand and natural share as bytes.

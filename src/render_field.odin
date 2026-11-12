@@ -1,5 +1,6 @@
 package game
 
+import "core:math"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
 import "platform"
@@ -16,8 +17,10 @@ import "render_frustum"
 // through the model shader's lit material (draw_field_globe), lit and
 // hazed as the terrain is, after the terrain and the cover, so the depth
 // test rejects its pixels they cover before they shade (0349,
-// FIELD_PASS_ORDER). A node is culled by its meshes' own box
-// (field_node_draw_box, 0349).
+// FIELD_PASS_ORDER). Each node's meshes go up in samples and draw from
+// the pass's anchor, the sample nearest the eye, so nodes of one level
+// meet bit for bit (0381, Field_Anchor). A node is culled by its meshes'
+// own box (field_node_draw_box, 0349).
 // Each node also carries the water's mesh (0172), drawn after every
 // node's terrain through the same shader with water_color set:
 // translucent, alpha blended and without depth writes, so the terrain
@@ -49,13 +52,45 @@ FIELD_GROUND_ATLAS_SAMPLER :: "ground_atlas"
 FIELD_HAZE_UNIFORM :: "haze_color"
 // A uniform of field.fs since the sun's shadow (0328), likewise.
 FIELD_SUN_SHADOW_UNIFORM :: "sun_shadow_strength"
+// A uniform of field.vs since the anchored pass (0381), likewise.
+FIELD_ANCHOR_UNIFORM :: "field_view_projection"
+
+// field.vs's uniforms of the anchored pass (0381, use_field_anchor,
+// set_field_node_uniforms).
+Field_Anchor_Uniform :: enum {
+	View_Projection,
+	Node_Offset,
+	Node_Origin,
+	Metres_Per_Sample,
+}
+
+FIELD_ANCHOR_UNIFORM_NAMES :: [Field_Anchor_Uniform]cstring {
+	.View_Projection   = FIELD_ANCHOR_UNIFORM,
+	.Node_Offset       = "node_offset",
+	.Node_Origin       = "node_origin",
+	.Metres_Per_Sample = "metres_per_sample",
+}
+
+// A pass's anchor, the sample nearest the eye, and its matrix, the
+// viewport's projection times the camera's view about the anchor
+// (field_anchor). field.vs adds a node's first sample less the anchor, in
+// whole samples, to its positions in samples: the sum is exact, so two
+// nodes of one level put a vertex they share on one clip position bit for
+// bit, where a model matrix per node rounded differently in each (0381,
+// doc/presentation.md, Field meshes).
+Field_Anchor :: struct {
+	sample:          Sample_Coordinate,
+	view_projection: rl.Matrix,
+}
 
 #assert(FIELD_MATERIAL_TILE_COUNT == FIELD_TEXTURED_MATERIAL_COUNT, "every generated material tile is a tile of the atlas")
 
-// origin is the node's first sample in metres. A node with no water has
-// has_water false and no water mesh. cover holds a finest node's ground
-// cover per kind (0311). terrain_hash is the terrain mesh's depth hash
-// (field_mesh_depth_hash, the sun's kept shadow maps' fingerprint, 0348).
+// origin is the node's first sample in metres, origin_sample the same
+// sample (field_node_origin), which the anchored pass's offset reads
+// (0381). A node with no water has has_water false and no water mesh.
+// cover holds a finest node's ground cover per kind (0311). terrain_hash
+// is the terrain mesh's depth hash (field_mesh_depth_hash, the sun's kept
+// shadow maps' fingerprint, 0348).
 // minimum and maximum are the draw box in world metres, which the frustum
 // tests (field_node_draw_box); terrain_minimum and terrain_maximum the
 // terrain mesh's box in world metres, zero without one, which the sun's
@@ -67,6 +102,7 @@ Field_Node_Render :: struct {
 	has_mesh:        bool,
 	has_water:       bool,
 	origin:          [3]f32,
+	origin_sample:   Sample_Coordinate,
 	vertex_count:    int,
 	cover:           [MAXIMUM_COVER_KINDS]Field_Cover_Node_Draw,
 	terrain_hash:    u64,
@@ -132,6 +168,8 @@ Field_Renderer :: struct {
 	// shader's uniforms that read it.
 	sun_shadows:              Sun_Shadow_Renderer,
 	sun_shadow_locations:     [Sun_Shadow_Uniform]i32,
+	// field.vs's uniforms of the anchored pass (0381).
+	anchor_locations:         [Field_Anchor_Uniform]i32,
 	// The foundations' bricks (0347, render_frames.odin) and each
 	// viewport's instance buffers by its slot (Field_Scene.view_slot,
 	// render_model_instances.odin).
@@ -191,6 +229,7 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader) {
 	renderer.open_sky_locations = open_sky_locations(shader)
 	renderer.spot_locations = spot_light_locations(shader)
 	renderer.sun_shadow_locations = use_sun_shadow_sampler(shader)
+	renderer.anchor_locations = field_anchor_locations(shader)
 	renderer.material.shader = shader
 }
 
@@ -210,11 +249,13 @@ field_globe_color :: proc(planet: Planet, grass_mean: [3]f32) -> rl.Color {
 	return {color.r, color.g, color.b, 255}
 }
 
-// False with an error line when the shaders do not load or the fragment
-// shader has no ground atlas, no haze or no sun's shadow: a copy older
-// than the looks (0307), the open sky (0313) or the shadow (0328) links
-// with today's vertex shader on desktop GL, so the load alone does not
-// catch it.
+// False with an error line when the shaders do not load, the fragment
+// shader has no ground atlas, no haze or no sun's shadow, or the vertex
+// shader has no anchored pass: a fragment shader older than the looks
+// (0307), the open sky (0313) or the shadow (0328) links with today's
+// vertex shader on desktop GL, and a vertex shader older than the
+// anchored pass (0381) with today's fragment shader everywhere, so the
+// load alone does not catch it.
 // fog_end is the last level of detail distance in metres.
 init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, planet: Planet, spacing_millimetres: int, fog_end: f32) -> (renderer: Field_Renderer, ok: bool) {
 	shader := load_shader_pair(data_directory, FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, "field") or_return
@@ -230,6 +271,11 @@ init_field_renderer :: proc(data_directory: string, tiles: Field_Ground_Tiles, p
 	}
 	if rl.GetShaderLocation(shader, FIELD_SUN_SHADOW_UNIFORM) < 0 {
 		platform.log_printf("error: the field shader from %s and %s has no %s, a copy older than the sun's shadow", FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, FIELD_SUN_SHADOW_UNIFORM)
+		rl.UnloadShader(shader)
+		return {}, false
+	}
+	if rl.GetShaderLocation(shader, FIELD_ANCHOR_UNIFORM) < 0 {
+		platform.log_printf("error: the field shader from %s and %s has no %s, a copy older than the anchored pass", FIELD_VERTEX_SHADER_PATH, FIELD_FRAGMENT_SHADER_PATH, FIELD_ANCHOR_UNIFORM)
 		rl.UnloadShader(shader)
 		return {}, false
 	}
@@ -304,14 +350,16 @@ apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, wate
 		return
 	}
 	render := Field_Node_Render {
-		origin       = field_node_origin_metres(node, renderer.spacing_millimetres),
-		vertex_count = len(data.positions) + len(water.positions),
-		terrain_hash = terrain_hash,
+		origin        = field_node_origin_metres(node, renderer.spacing_millimetres),
+		origin_sample = field_node_origin(node),
+		vertex_count  = len(data.positions) + len(water.positions),
+		terrain_hash  = terrain_hash,
 	}
-	render.minimum, render.maximum, _ = field_node_draw_box(render.origin, data, water, cover)
+	metres := field_metres_per_sample(renderer.spacing_millimetres)
+	render.minimum, render.maximum, _ = field_node_draw_box(render.origin, metres, data, water, cover)
 	if len(data.indices) > 0 {
 		render.mesh, render.has_mesh = upload_field_mesh(data), true
-		render.terrain_minimum, render.terrain_maximum = render.origin + data.minimum, render.origin + data.maximum
+		render.terrain_minimum, render.terrain_maximum = render.origin + data.minimum * metres, render.origin + data.maximum * metres
 	}
 	if len(water.indices) > 0 {
 		render.water, render.has_water = upload_field_mesh(water), true
@@ -337,15 +385,17 @@ upload_streamed_field_meshes :: proc(renderer: ^Field_Renderer, streaming: ^Fiel
 
 // A node's draw box in world metres (0349): the origin plus the terrain
 // mesh's bounds when it has triangles, the origin plus the water's when
-// it has triangles (as apply_field_mesh uploads them), and the cover's
-// box when a kind holds an instance. found is false when none counts.
-field_node_draw_box :: proc(origin: [3]f32, mesh, water: Field_Mesh_Data, cover: Field_Cover_Data) -> (minimum, maximum: [3]f32, found: bool) {
+// it has triangles (as apply_field_mesh uploads them), the meshes' bounds
+// in samples scaled by metres_per_sample (0381), and the cover's box, in
+// world metres, when a kind holds an instance. found is false when none
+// counts.
+field_node_draw_box :: proc(origin: [3]f32, metres_per_sample: f32, mesh, water: Field_Mesh_Data, cover: Field_Cover_Data) -> (minimum, maximum: [3]f32, found: bool) {
 	box: Box
 	if len(mesh.indices) > 0 {
-		box, found = Box{origin + mesh.minimum, origin + mesh.maximum}, true
+		box, found = Box{origin + mesh.minimum * metres_per_sample, origin + mesh.maximum * metres_per_sample}, true
 	}
 	if len(water.indices) > 0 {
-		water_box := Box{origin + water.minimum, origin + water.maximum}
+		water_box := Box{origin + water.minimum * metres_per_sample, origin + water.maximum * metres_per_sample}
 		box, found = found ? box_union(box, water_box) : water_box, true
 	}
 	if field_cover_holds_instances(cover) {
@@ -374,17 +424,113 @@ set_field_water_color :: proc(renderer: ^Field_Renderer, color: [4]f32) {
 	rl.SetShaderValue(renderer.material.shader, renderer.water_color_location, &color, .VEC4)
 }
 
+// The metres of a sample: 1 at 1000 mm, exact at 500 (0381).
+field_metres_per_sample :: proc(spacing_millimetres: int) -> f32 {
+	return f32(f64(spacing_millimetres) / MILLIMETRES_PER_METRE)
+}
+
+// The sample nearest the eye, per axis in f64 (0381).
+field_anchor_sample :: proc(eye: [3]f32, spacing_millimetres: int) -> (sample: Sample_Coordinate) {
+	metres_per_sample := f64(spacing_millimetres) / MILLIMETRES_PER_METRE
+	for axis in 0 ..< 3 {
+		sample[axis] = i32(math.round(f64(eye[axis]) / metres_per_sample))
+	}
+	return sample
+}
+
+// For a position p in samples from the anchor, what view gives for the
+// world point anchor + p samples (0381): in f64 from view's f32 entries,
+// rounded once, the rotation scaled by the metres of a sample and the
+// translation carried to the anchor. At 1000 mm the rotation keeps view's
+// bits.
+field_anchored_view :: proc(view: rl.Matrix, anchor: Sample_Coordinate, spacing_millimetres: int) -> rl.Matrix {
+	metres_per_sample := f64(spacing_millimetres) / MILLIMETRES_PER_METRE
+	anchored := view
+	for row in 0 ..< 3 {
+		translation := f64(view[row, 3])
+		for column in 0 ..< 3 {
+			anchored[row, column] = f32(f64(view[row, column]) * metres_per_sample)
+			translation += f64(view[row, column]) * f64(anchor[column]) * metres_per_sample
+		}
+		anchored[row, 3] = f32(translation)
+	}
+	return anchored
+}
+
+// A pass's anchor: the sample nearest the eye and the projection times the
+// view about it (0381). Pure, so the tests call it.
+field_anchor :: proc(view, projection: rl.Matrix, eye: [3]f32, spacing_millimetres: int) -> Field_Anchor {
+	sample := field_anchor_sample(eye, spacing_millimetres)
+	return {sample = sample, view_projection = projection * field_anchored_view(view, sample, spacing_millimetres)}
+}
+
+// The viewport's anchor, inside BeginMode3D, whose modelview is
+// GetCameraMatrix(camera) (the same MatrixLookAt) and whose projection is
+// the viewport's (0381).
+field_camera_anchor :: proc(camera: rl.Camera3D, spacing_millimetres: int) -> Field_Anchor {
+	return field_anchor(rl.GetCameraMatrix(camera), rlgl.GetMatrixProjection(), camera.position, spacing_millimetres)
+}
+
+// A node's first sample less the anchor: whole samples under 2^24, exact
+// in f32 (0381).
+field_node_anchor_offset :: proc(origin_sample, anchor: Sample_Coordinate) -> [3]f32 {
+	offset := origin_sample - anchor
+	return {f32(offset.x), f32(offset.y), f32(offset.z)}
+}
+
+// A node's model matrix for a pass in world metres (the sun's shadow,
+// 0381): its positions in samples scaled by the metres of a sample, then
+// moved to its origin; rl.MatrixTranslate(origin) at 1.
+field_node_transform :: proc(origin: [3]f32, metres_per_sample: f32) -> rl.Matrix {
+	return {
+		metres_per_sample, 0, 0, origin.x,
+		0, metres_per_sample, 0, origin.y,
+		0, 0, metres_per_sample, origin.z,
+		0, 0, 0, 1,
+	}
+}
+
+field_anchor_locations :: proc(shader: rl.Shader) -> (locations: [Field_Anchor_Uniform]i32) {
+	names := FIELD_ANCHOR_UNIFORM_NAMES
+	for name, uniform in names {
+		locations[uniform] = rl.GetShaderLocation(shader, name)
+	}
+	return locations
+}
+
+// The pass's matrix and the metres of a sample (0381), at the start of
+// the terrain pass and of the water pass.
+use_field_anchor :: proc(renderer: ^Field_Renderer, anchor: Field_Anchor) {
+	shader := renderer.material.shader
+	rl.SetShaderValueMatrix(shader, renderer.anchor_locations[.View_Projection], anchor.view_projection)
+	metres_per_sample := field_metres_per_sample(renderer.spacing_millimetres)
+	rl.SetShaderValue(shader, renderer.anchor_locations[.Metres_Per_Sample], &metres_per_sample, .FLOAT)
+}
+
+// The node's offset from the anchor and its first sample in metres (0381),
+// before each of its terrain and water draws.
+set_field_node_uniforms :: proc(renderer: ^Field_Renderer, render: Field_Node_Render, anchor: Field_Anchor) {
+	shader := renderer.material.shader
+	offset := field_node_anchor_offset(render.origin_sample, anchor.sample)
+	origin := render.origin
+	rl.SetShaderValue(shader, renderer.anchor_locations[.Node_Offset], &offset, .VEC3)
+	rl.SetShaderValue(shader, renderer.anchor_locations[.Node_Origin], &origin, .VEC3)
+}
+
 // The water pass: after the terrain, the cover and the globe (0349,
 // FIELD_PASS_ORDER), alpha blended (raylib's default blend), without
 // depth writes; the back faces stay culled, so the water's faces against
-// the ground, which face into it, are not drawn.
-draw_field_water :: proc(renderer: ^Field_Renderer, visible: []Field_Node_Render) {
+// the ground, which face into it, are not drawn. It draws from the
+// terrain's anchor (0381), so the water keeps its relation to the ground.
+draw_field_water :: proc(renderer: ^Field_Renderer, visible: []Field_Node_Render, anchor: Field_Anchor) {
 	set_field_water_color(renderer, FIELD_WATER_COLOR)
+	use_field_anchor(renderer, anchor)
 	rlgl.DrawRenderBatchActive()
 	rlgl.DisableDepthMask()
 	for render in visible {
 		if render.has_water {
-			rl.DrawMesh(render.water, renderer.material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+			set_field_node_uniforms(renderer, render, anchor)
+			rl.DrawMesh(render.water, renderer.material, rl.Matrix(1))
 			count_draw_call()
 		}
 	}
@@ -507,10 +653,12 @@ draw_field_globe :: proc(renderer: ^Field_Renderer, models: Model_Renderer, dayl
 
 // Must run between BeginMode3D and EndMode3D, first of FIELD_PASS_ORDER
 // (0349): the selected nodes' terrain whose draw box the frustum meets,
-// lit by the frame's open sky and torchlight. Returns those nodes (temp
-// allocator), over which the cover and the water draw. A frame profile
-// (0342) gets the terrain's and the water's counts.
-draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights, profile: ^Frame_Profile = nil) -> []Field_Node_Render {
+// lit by the frame's open sky and torchlight, drawn from the viewport's
+// anchor (0381, field_camera_anchor); the frustum stays in world metres.
+// Returns those nodes (temp allocator), over which the cover and the
+// water draw. A frame profile (0342) gets the terrain's and the water's
+// counts.
+draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights, anchor: Field_Anchor, profile: ^Frame_Profile = nil) -> []Field_Node_Render {
 	renderer.drawn_node_count = 0
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
 	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
@@ -518,6 +666,7 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	rl.SetShaderValue(renderer.material.shader, renderer.camera_position_location, &position, .VEC3)
 	set_field_frame_lights(renderer, lights)
 	set_field_water_color(renderer, {})
+	use_field_anchor(renderer, anchor)
 	visible := make([dynamic]Field_Node_Render, 0, len(selection), context.temp_allocator)
 	triangles, water_nodes := 0, 0
 	for node in selection {
@@ -527,7 +676,8 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 		}
 		append(&visible, render)
 		if render.has_mesh {
-			rl.DrawMesh(render.mesh, renderer.material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+			set_field_node_uniforms(renderer, render, anchor)
+			rl.DrawMesh(render.mesh, renderer.material, rl.Matrix(1))
 			count_draw_call()
 			triangles += int(render.mesh.triangleCount)
 		}

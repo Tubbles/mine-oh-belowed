@@ -421,3 +421,10 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - A pit or a cave mouth dug below the globe's sphere (83 m under the radius at the home) shows the globe as its floor from outside, before this item and after. Drawing the globe only beyond the loaded nodes would end it.
 - `draw_field_cover` measures a node's cover distance from its cube; the cover's own box is tighter. To measure before changing.
 - The header of `render_field.odin` says the water is drawn after every node's terrain, which is true and leaves out that the globe now comes between.
+
+## Suggestions from the anchored terrain pass (0381, 2026-11-13)
+
+- A new world's sample spacing can only be chosen on the world setup screen. A start flag for it would let captures and the profiler reach 333 and 500 mm worlds; this item's 333 mm capture needed a build with the default changed.
+- `set_field_node_uniforms` makes two `SetShaderValue` calls a node, each binding the program again. To look at only if the frame table shows it.
+- The bit for bit test needs 16 matched pairs and would not notice two nodes giving a shared vertex different integer positions; the review's probe checked that and found none. The check could move into the test.
+- The comment in `field.vs` and the item say `invariant` requires the compiler to keep the sum; "in practice" is the honest word (the log has the reason).

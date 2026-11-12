@@ -318,7 +318,7 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		measure_cuts := job.grid != nil || job.node.level == 0
 		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces, look = shared.look, measure_cuts = measure_cuts, cover = cover, cover_table = shared.cover, cover_frames = job.cover_frames)
 		result.terrain_hash = field_mesh_depth_hash(result.mesh)
-		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
+		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette)
 		free_field_job_copies(job)
 	case .Trees:
 		result.tree_tile = job.tree_tile

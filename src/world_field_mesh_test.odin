@@ -184,13 +184,13 @@ test_the_tint_wraps_around_the_palette :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_the_vertex_arrays_are_in_metres :: proc(t: ^testing.T) {
+test_the_vertex_arrays_are_in_samples :: proc(t: ^testing.T) {
 	grid := fill_test_field_grid({0, 0, 0}, 2, test_plane_density)
 	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
-	data := field_mesh_from_surface(surface, 2, 500, context.temp_allocator)
+	data := field_mesh_from_surface(surface, 2, context.temp_allocator)
 	testing.expect_value(t, len(data.positions), len(surface.vertices))
-	// Two samples a cell, half a metre a sample: a cell is a metre.
-	expected := [3]f32{f32(surface.vertices[0].position.x), f32(surface.vertices[0].position.y), f32(surface.vertices[0].position.z)} / FIELD_MESH_POSITION_UNITS
+	// Two samples a cell.
+	expected := [3]f32{f32(surface.vertices[0].position.x), f32(surface.vertices[0].position.y), f32(surface.vertices[0].position.z)} / FIELD_MESH_POSITION_UNITS * 2
 	testing.expect_value(t, data.positions[0], expected)
 	testing.expect_value(t, data.colors[0].a, surface.vertices[0].light[.Sky])
 	testing.expect_value(t, len(data.lights), len(data.positions))
@@ -219,7 +219,7 @@ test_an_ores_ground_meshes_with_its_own_weight :: proc(t: ^testing.T) {
 			}
 		}
 		surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
-		data := field_mesh_from_surface(surface, 1, 1000, context.temp_allocator)
+		data := field_mesh_from_surface(surface, 1, context.temp_allocator)
 		testing.expect(t, len(data.positions) > 0)
 		testing.expect_value(t, len(data.lights), len(data.positions))
 		testing.expectf(t, data.weights[0] == {} && data.lights[0].y == field_pack_bytes(expected.ores), "%v: %v %v", expected.material, data.weights[0], data.lights[0])
@@ -242,7 +242,7 @@ test_the_vertex_light_is_the_mean_of_the_air_corners :: proc(t: ^testing.T) {
 	for vertex in surface.vertices {
 		testing.expect_value(t, vertex.light, [Field_Light_Channel]u8{.Block = 200, .Sky = 90})
 	}
-	data := field_mesh_from_surface(surface, 1, 1000, context.temp_allocator)
+	data := field_mesh_from_surface(surface, 1, context.temp_allocator)
 	testing.expect_value(t, data.colors[0].a, 90)
 	testing.expect_value(t, data.lights[0].x, f32(200) / FIELD_LIGHT_FULL)
 	// Water a sample above the ground: the terrain's density shifted up,
@@ -256,7 +256,7 @@ test_the_vertex_light_is_the_mean_of_the_air_corners :: proc(t: ^testing.T) {
 			}
 		}
 	}
-	water := mesh_field_water_grid(grid, TEST_FIELD_PALETTE[:], 1000, context.temp_allocator)
+	water := mesh_field_water_grid(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
 	testing.expect(t, len(water.colors) > 0)
 	for color, index in water.colors {
 		testing.expect_value(t, color.a, 90)

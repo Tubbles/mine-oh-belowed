@@ -23,7 +23,7 @@ look_test_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, 
 
 // The water mesh of the chunk, gathered as the streaming gathers it.
 look_test_mesh :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, waves: Field_Wave_Heights = nil) -> Field_Mesh_Data {
-	return mesh_field_water_grid(look_test_grid(world, coordinate, waves), TEST_FIELD_PALETTE[:], 1000, context.temp_allocator)
+	return mesh_field_water_grid(look_test_grid(world, coordinate, waves), TEST_FIELD_PALETTE[:], context.temp_allocator)
 }
 
 // The grid's water bytes and exact flags hashed, chained from seed. The

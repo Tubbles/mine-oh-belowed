@@ -737,22 +737,24 @@ FIELD_PASS_SECTIONS :: [Field_Pass]Frame_Section {
 // The field's passes in FIELD_PASS_ORDER (0349), each opening its frame
 // profile section: the terrain, which returns the nodes the frustum keeps,
 // the cover and the water over those, and the globe after the opaque
-// ground. The planet preview's nil profile skips the marks and counts.
+// ground. The terrain and the water draw from the viewport's anchor
+// (0381). The planet preview's nil profile skips the marks and counts.
 draw_field_passes :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node, daylight_tint: [3]f32) {
 	sections := FIELD_PASS_SECTIONS
 	visible: []Field_Node_Render
+	anchor := field_camera_anchor(camera, scene.renderer.spacing_millimetres)
 	for pass in FIELD_PASS_ORDER {
 		profile_mark(scene.profile, sections[pass])
 		switch pass {
 		case .Terrain:
-			visible = draw_field(scene.renderer, camera, selection, scene.lights, scene.profile)
+			visible = draw_field(scene.renderer, camera, selection, scene.lights, anchor, scene.profile)
 		case .Cover:
 			draw_field_cover(scene.renderer, camera, visible, scene.lights.sun_shadow.texture)
 			count_frame(scene.profile, .Cover_Instances, scene.renderer.cover.drawn_count)
 		case .Globe:
 			draw_field_globe(scene.renderer, scene.models, daylight_tint)
 		case .Water:
-			draw_field_water(scene.renderer, visible)
+			draw_field_water(scene.renderer, visible, anchor)
 		}
 	}
 }
@@ -907,15 +909,17 @@ refresh_kept_sun_shadow_map :: proc(scene: Field_Scene, camera: rl.Camera3D, sel
 }
 
 // The selected nodes' terrain whose box casts (sun_shadow_node_casts),
-// with the depth material. Returns how many it drew and their
-// fingerprint (sun_shadow_terrain_fingerprint's sum).
+// with the depth material, its positions in samples scaled to metres by
+// the model matrix (field_node_transform, 0381). Returns how many it drew
+// and their fingerprint (sun_shadow_terrain_fingerprint's sum).
 draw_sun_shadow_terrain :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, selection: []Field_Node, material: rl.Material) -> (drawn: int, fingerprint: u64) {
+	metres := field_metres_per_sample(renderer.spacing_millimetres)
 	for node in selection {
 		render, casts := sun_shadow_node_casts(renderer, cascade, node)
 		if !casts {
 			continue
 		}
-		rl.DrawMesh(render.mesh, material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+		rl.DrawMesh(render.mesh, material, field_node_transform(render.origin, metres))
 		count_draw_call()
 		drawn += 1
 		fingerprint += sun_shadow_node_term(node, render)

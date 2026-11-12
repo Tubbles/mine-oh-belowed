@@ -234,7 +234,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
 - Entry: `render_chunks.odin`, `Chunk_Renderer`; the frame's draw order is `draw_session_world` in `loop.odin`.
 - Files in reading order:
   - `render_chunks.odin`: shader loading with retry and the GLES rewrite, mesh upload, uniforms, `draw_chunks`.
-  - `render_field.odin`, `texture_field_materials.odin`: `Field_Renderer`, the field's triplanar shader, node meshes and the globe (0169); the field materials' and looks' generated tiles and their atlas (0307).
+  - `render_field.odin`, `texture_field_materials.odin`: `Field_Renderer`, the field's triplanar shader, node meshes drawn from the pass's anchor (0381, `Field_Anchor`) and the globe (0169); the field materials' and looks' generated tiles and their atlas (0307).
   - `render_atlas.odin`, `texture_generate.odin`, `texture_variation.odin`: `Atlas_Layout`, `load_rgba_texture` (the hashes are the `generation_seed` package); procedural ore tiles and texture edits; the Odin mirror of the shader's tile variation.
   - `render_water.odin`: `Water_Renderer`, underwater fog; the frustum test is the `render_frustum` package (Packages).
   - `render_day.odin`, `render_sky.odin`: `Day_Sky`, sun and moon, `up_to_sky_rotation` and the field's sun `field_sun_world_direction` (0297), the open sky's colours `sun_light_color`, `sky_light_color`, `ground_bounce_color` and `haze_sun_glow_color` (0313); the sky dome reaching below the horizon with the field's `Sky_Glow` (0313), stars, the survey satellite.
