@@ -1,6 +1,6 @@
 # 0346: Persistent instance buffers and cached tree selections
 
-Status: designed (2026-11-11)
+Status: implementing (2026-11-12)
 
 The near trees and the shadow trees are selected by a scan every frame (up to about 35 thousand instances in a dense forest, 0328) and drawn through `DrawMeshInstanced`, which makes and frees a buffer per call (`work/performance_research_0340.md`, 2.2).
 
