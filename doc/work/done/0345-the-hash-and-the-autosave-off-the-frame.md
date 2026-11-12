@@ -1,6 +1,6 @@
 # 0345: The state hash and the autosave off the frame
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 34b1e69)
 
 Every windowed game hosts, so it hashes the whole state every 300 ticks, and the autosave (every minute in the user's settings) encodes and writes on the main thread (`work/performance_research_0340.md`, 2.1). Neither is timed today.
 

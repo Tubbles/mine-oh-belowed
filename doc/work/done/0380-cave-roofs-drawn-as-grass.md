@@ -1,6 +1,6 @@
 # 0380: Cave roofs drawn as grass
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 9dd252e)
 
 Found by the main agent in 0327's landing captures (2026-11-12, 8 km, default seed, the cave mouth by the spring at latitude 79.007, longitude 151.054): seen from inside, the cave's roof is drawn in the grass's green over its whole underside, where the floor is stone grey. A row of single bright pixels also runs across the floor in the same capture (`tmp/shot_terrain_caves/state/mine-oh-belowed/screenshots/cave_mouth_in.png`).
 
