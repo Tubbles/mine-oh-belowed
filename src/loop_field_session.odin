@@ -12,8 +12,8 @@ import "platform"
 // for a field session. A viewport draws, in order: the sky dome turned
 // about its player's up (a second camera that maps the up to +y, drawn
 // first without depth, warmed round a low sun, 0313), the sun's shadow
-// map into its own target (0328, draw_field_sun_shadows), the globe and
-// the field's terrain and water, the foundations,
+// map into its own target (0328, draw_field_sun_shadows), the field's
+// terrain and its cover, the globe and the water (0349), the foundations,
 // the machines on their frames (draw_entities, lit by the open sky, a
 // pod's box at its interior light share), the trees (0197,
 // draw_field_trees), the belt and pipe runs, the torches, the
@@ -682,10 +682,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	set_model_spot_light(scene.models, scene.lights.spot)
 	daylight_tint := model_frame_daylight_tint(scene.frame)
 	set_model_open_sky(scene.models, scene.lights, daylight_tint, camera.position)
-	profile_mark(scene.profile, .Globe)
-	draw_field_globe(scene.renderer, scene.models, daylight_tint)
-	profile_mark(scene.profile, .Terrain)
-	draw_field(scene.renderer, camera, selection, scene.lights, scene.profile)
+	draw_field_passes(scene, camera, selection, daylight_tint)
 	world := &scene.state.world
 	view := Model_View {
 		frustum         = camera_frustum(camera),
@@ -727,6 +724,37 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	push_pod_transform(scene.pod_transform)
 	draw_field_ghosts(scene)
 	pop_pod_transform(scene.pod_transform)
+}
+
+// The frame profile's section each field pass opens (0342, 0349).
+FIELD_PASS_SECTIONS :: [Field_Pass]Frame_Section {
+	.Terrain = .Terrain,
+	.Cover   = .Cover,
+	.Globe   = .Globe,
+	.Water   = .Water,
+}
+
+// The field's passes in FIELD_PASS_ORDER (0349), each opening its frame
+// profile section: the terrain, which returns the nodes the frustum keeps,
+// the cover and the water over those, and the globe after the opaque
+// ground. The planet preview's nil profile skips the marks and counts.
+draw_field_passes :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node, daylight_tint: [3]f32) {
+	sections := FIELD_PASS_SECTIONS
+	visible: []Field_Node_Render
+	for pass in FIELD_PASS_ORDER {
+		profile_mark(scene.profile, sections[pass])
+		switch pass {
+		case .Terrain:
+			visible = draw_field(scene.renderer, camera, selection, scene.lights, scene.profile)
+		case .Cover:
+			draw_field_cover(scene.renderer, camera, visible, scene.lights.sun_shadow.texture)
+			count_frame(scene.profile, .Cover_Instances, scene.renderer.cover.drawn_count)
+		case .Globe:
+			draw_field_globe(scene.renderer, scene.models, daylight_tint)
+		case .Water:
+			draw_field_water(scene.renderer, visible)
+		}
+	}
 }
 
 #assert(SUN_SHADOW_KEPT_MAPS == MAXIMUM_VIEWPORTS, "a kept sun shadow map per viewport")

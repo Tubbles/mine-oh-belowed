@@ -654,9 +654,12 @@ test_the_cast_pass_leaves_out_entities_outside_the_casters_box :: proc(t: ^testi
 	testing.expect(t, !model_frame_draws_entity(frame, &entities, {}, common), "the cast pass leaves out an entity past the map's side")
 }
 
-// A node's render as the renderer would hold it, without meshes.
+// A node's render as the renderer would hold it, without meshes, its
+// draw box and its terrain box (0349) its cube at 1000 mm.
 sun_shadow_test_render :: proc(node: Field_Node, terrain_hash: u64, has_mesh := true) -> Field_Node_Render {
-	return Field_Node_Render{has_mesh = has_mesh, origin = field_node_origin_metres(node, 1000), terrain_hash = terrain_hash}
+	origin := field_node_origin_metres(node, 1000)
+	far := origin + f32(field_node_samples(node.level))
+	return Field_Node_Render{has_mesh = has_mesh, origin = origin, terrain_hash = terrain_hash, minimum = origin, maximum = far, terrain_minimum = origin, terrain_maximum = far}
 }
 
 // Work item 0348: the terrain's fingerprint moves with what the cascade's
@@ -697,6 +700,40 @@ test_the_terrain_fingerprint_follows_the_casting_nodes :: proc(t: ^testing.T) {
 	testing.expect(t, sun_shadow_terrain_fingerprint(&renderer, cascade, without[:]) != start, "the eye's node out of the selection changes it")
 	delete_key(&renderer.meshes, a)
 	testing.expect(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]) != start, "the eye's node unloaded changes it")
+}
+
+// Work item 0349: a node casts by its terrain box, not by its draw box,
+// so a water or a cover remesh moving only the draw box neither adds nor
+// drops a caster.
+@(test)
+test_the_casters_read_the_terrain_box :: proc(t: ^testing.T) {
+	renderer := Field_Renderer{spacing_millimetres = 1000}
+	defer delete(renderer.meshes)
+	// A holds the eye 8 km up y, B lies 2 km along x.
+	a := Field_Node{level = 0, coordinate = {0, 250, 0}}
+	b := Field_Node{level = 0, coordinate = {62, 250, 0}}
+	renderer.meshes[a] = sun_shadow_test_render(a, 101)
+	renderer.meshes[b] = sun_shadow_test_render(b, 202)
+	up := [3]f32{0, 1, 0}
+	cascade := sun_shadow_cascade({16, 8016, 16}, field_sun_world_direction(NOON_FRACTION, up), field_sun_path_world_axis(up), sun_shadows_test_row())
+	selection := [2]Field_Node{a, b}
+	cube := sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:])
+	_, casts := sun_shadow_node_casts(&renderer, cascade, a)
+	testing.expect(t, casts, "the eye's node casts")
+	// B's water or cover reaching the eye: its draw box from A's origin to
+	// its own far corner.
+	reaching := renderer.meshes[b]
+	reaching.minimum = renderer.meshes[a].origin
+	renderer.meshes[b] = reaching
+	_, casts = sun_shadow_node_casts(&renderer, cascade, b)
+	testing.expect(t, !casts, "B's draw box reaching the eye adds no caster")
+	testing.expect_value(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]), cube)
+	moved := renderer.meshes[a]
+	moved.terrain_minimum += {2000, 0, 0}
+	moved.terrain_maximum += {2000, 0, 0}
+	renderer.meshes[a] = moved
+	_, casts = sun_shadow_node_casts(&renderer, cascade, a)
+	testing.expect(t, !casts, "A's terrain box 2 km off casts nothing, its draw box holding the eye")
 }
 
 // Work item 0348 on 0346's views: the casting trees updated on a held

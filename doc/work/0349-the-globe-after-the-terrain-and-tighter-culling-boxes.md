@@ -1,6 +1,6 @@
 # 0349: The globe after the terrain, and tighter culling boxes
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-13)
 
 The far globe is drawn first, under all the terrain, so its covered pixels are shaded; and a terrain node is culled by its whole cube (256 m at level 3) widened by 4 cells, though its mesh's bounds are known at upload (`work/performance_research_0340.md`, 2.6).
 

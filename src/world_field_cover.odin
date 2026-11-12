@@ -38,6 +38,11 @@ COVER_TILT_DEGREES :: 10
 // The tallest instance's reach: a node's box is widened by it for the
 // frames that clear its cover.
 COVER_FRAME_MARGIN_METRES :: 4
+// A shape's reach sideways in its unit box, at its lean (0349,
+// cover_instance_box): foliage's half width 0.5 plus cover.vs's part_lean
+// 0.25 at the top; the stones reach 0.6 and do not lean
+// (test_the_cover_box_holds_every_leaned_shape_vertex).
+COVER_SHAPE_REACH :: 0.75
 // field.fs's steepness (1 less the cosine to the local up) where rock
 // starts and is full and where sand gives way, compared by a test.
 GROUND_ROCK_START_STEEPNESS :: 0.234
@@ -109,9 +114,13 @@ Field_Cover_Instances :: struct {
 	rank_counts: [COVER_RANK_STEPS]i32,
 }
 
-// A node's cover, a list per kind.
+// A node's cover, a list per kind, and the box in world metres round
+// every instance's shape (cover_instances_box, 0349), zero without
+// instances.
 Field_Cover_Data :: struct {
-	kinds: [MAXIMUM_COVER_KINDS]Field_Cover_Instances,
+	kinds:   [MAXIMUM_COVER_KINDS]Field_Cover_Instances,
+	minimum: [3]f32,
+	maximum: [3]f32,
 }
 
 destroy_field_cover_data :: proc(data: Field_Cover_Data) {
@@ -345,6 +354,37 @@ cover_instance_rank :: proc(instance: matrix[4, 4]f32) -> f32 {
 	return instance[3, 0]
 }
 
+// The world box round the instance's shape (0349): the unit box's x and z
+// at COVER_SHAPE_REACH and its y from 0 to 1 through the right, the up
+// and the forward columns, so per axis the base plus the up's part on the
+// side it points and the reach times the right's and the forward's parts.
+// cover.vs's shrink only pulls a vertex towards the base.
+cover_instance_box :: proc(instance: matrix[4, 4]f32) -> (minimum, maximum: [3]f32) {
+	base := cover_instance_base(instance)
+	right := [3]f32{instance[0, 0], instance[1, 0], instance[2, 0]}
+	up := [3]f32{instance[0, 1], instance[1, 1], instance[2, 1]}
+	forward := [3]f32{instance[0, 2], instance[1, 2], instance[2, 2]}
+	for axis in 0 ..< 3 {
+		side := COVER_SHAPE_REACH * (abs(right[axis]) + abs(forward[axis]))
+		minimum[axis] = base[axis] + min(0, up[axis]) - side
+		maximum[axis] = base[axis] + max(0, up[axis]) + side
+	}
+	return minimum, maximum
+}
+
+// The union of every instance's box; found is false without instances.
+cover_instances_box :: proc(kinds: []Field_Cover_Instances) -> (minimum, maximum: [3]f32, found: bool) {
+	box: Box
+	for kind in kinds {
+		for instance in kind.instances {
+			instance_box: Box
+			instance_box.minimum, instance_box.maximum = cover_instance_box(instance)
+			box, found = found ? box_union(box, instance_box) : instance_box, true
+		}
+	}
+	return box.minimum, box.maximum, found
+}
+
 cover_cross :: proc(first, second: [3]f64) -> [3]f64 {
 	return {first.y * second.z - first.z * second.y, first.z * second.x - first.x * second.z, first.x * second.y - first.y * second.x}
 }
@@ -559,7 +599,8 @@ cover_snow_buries :: proc(kind: Field_Cover_Kind, snow, unit: f32) -> bool {
 // at or above the table's density, where the snow buries it at its point
 // (cover_snow_buries) and when a frame's cell holds it
 // (cover_instance_cleared). Per kind sorted by rank, cut to the table's
-// limit, with its rank counts.
+// limit, with its rank counts; then the box round them all
+// (cover_instances_box, 0349).
 place_field_cover :: proc(surface: Field_Surface, grid: ^Field_Grid, look: Field_Ground_Look, table: Field_Cover_Table, spacing_millimetres: int, frames: []Cover_Frame, allocator := context.allocator) -> (data: Field_Cover_Data) {
 	if !table.on || !look.on || grid.step != 1 {
 		return {}
@@ -631,6 +672,7 @@ place_field_cover :: proc(surface: Field_Surface, grid: ^Field_Grid, look: Field
 	for &kind in data.kinds[:table.kind_count] {
 		finish_cover_instances(&kind, table.limit)
 	}
+	data.minimum, data.maximum, _ = cover_instances_box(data.kinds[:table.kind_count])
 	return data
 }
 

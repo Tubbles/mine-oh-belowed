@@ -12,12 +12,12 @@ import "platform"
 // without textures or discard, and goes up once as a vertex buffer; each
 // finest node's instances (world_field_cover.odin) go up per kind with
 // its mesh (upload_field_cover, from apply_field_mesh) and are drawn per
-// kind and node between the terrain and the water (draw_field_cover), the
-// prefix of the rank sorted instances its nearest point can show
-// (cover_draw_count), through data/shaders/cover.vs and cover.fs, lit and
-// hazed as the terrain. Each instance thins out by its rank from the
-// kind's near to its far distance and shrinks to nothing over the last
-// fifth of its reach, so nothing pops.
+// kind and node between the terrain and the globe (draw_field_cover,
+// 0349), the prefix of the rank sorted instances its nearest point can
+// show (cover_draw_count), through data/shaders/cover.vs and cover.fs,
+// lit and hazed as the terrain. Each instance thins out by its rank from
+// the kind's near to its far distance and shrinks to nothing over the
+// last fifth of its reach, so nothing pops.
 
 COVER_VERTEX_SHADER_PATH :: "shaders/cover.vs"
 COVER_FRAGMENT_SHADER_PATH :: "shaders/cover.fs"
@@ -473,13 +473,13 @@ set_cover_float :: proc(cover: Field_Cover_Renderer, uniform: Cover_Uniform, val
 	rl.SetShaderValue(cover.shader, cover.locations[uniform], &value, .FLOAT)
 }
 
-// Inside BeginMode3D, after the terrain and before the water, over the
-// terrain's visible nodes: the batch flushed, the shader with mvp as
-// raylib's instanced draw sets it and the camera; kind by kind its
-// uniforms, both faces for foliage and the back faces culled for the
-// stones, then per node with instances of the kind the prefix its box's
-// nearest point can show. The sun's shadow map (0328, 0 for none) is bound
-// on its unit for the whole draw.
+// Inside BeginMode3D, after the terrain and before the globe and the
+// water (0349), over the terrain's visible nodes: the batch flushed, the
+// shader with mvp as raylib's instanced draw sets it and the camera; kind
+// by kind its uniforms, both faces for foliage and the back faces culled
+// for the stones, then per node with instances of the kind the prefix its
+// box's nearest point can show. The sun's shadow map (0328, 0 for none) is
+// bound on its unit for the whole draw.
 draw_field_cover :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, visible: []Field_Node_Render, shadow_texture: u32) {
 	cover := &renderer.cover
 	cover.drawn_count = 0

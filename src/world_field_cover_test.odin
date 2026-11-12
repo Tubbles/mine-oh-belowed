@@ -525,6 +525,31 @@ test_the_cover_thins_by_rank :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0349: the meadow node's placed cover carries the box round its
+// instances' shapes, which holds every instance's base and top.
+@(test)
+test_the_placed_cover_carries_its_box :: proc(t: ^testing.T) {
+	planet, generation := cover_test_setup()
+	spots := COVER_TEST_SPOTS
+	node := cover_test_surface_node(generation, cover_test_direction(spots[0].latitude, spots[0].longitude), 0, 0)
+	data, _ := cover_test_node_cover(generation, planet, node)
+	minimum, maximum, found := cover_instances_box(data.kinds[:])
+	testing.expect(t, found, "the meadow holds cover")
+	testing.expect_value(t, data.minimum, minimum)
+	testing.expect_value(t, data.maximum, maximum)
+	outside := 0
+	for kind in data.kinds {
+		for instance in kind.instances {
+			for point in ([2][3]f32{cover_instance_base(instance), cover_instance_top(instance)}) {
+				for axis in 0 ..< 3 {
+					outside += point[axis] < data.minimum[axis] || point[axis] > data.maximum[axis] ? 1 : 0
+				}
+			}
+		}
+	}
+	testing.expectf(t, outside == 0, "%d coordinates of the bases and tops lie outside %v to %v", outside, data.minimum, data.maximum)
+}
+
 // Two neighbouring meadow nodes: of their grass's positions within their
 // node, under 1 percent coincide within 1 cm.
 @(test)

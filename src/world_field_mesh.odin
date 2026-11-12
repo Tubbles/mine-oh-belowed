@@ -105,7 +105,10 @@ Field_Surface :: struct {
 // float (field_pack_bytes: hematite, chalcopyrite, coal), and looks (the
 // ground's look, 0307) as the second texture coordinate attribute, the
 // grass colour packed first and the snow, the sand and the natural share
-// packed second. field.vs unpacks them.
+// packed second. field.vs unpacks them. minimum and maximum are the
+// positions' extremes in metres from the grid's origin, the skirts, a
+// cave's walls and the water's waves included, zero without vertices
+// (0349: the node's culling boxes).
 Field_Mesh_Data :: struct {
 	positions: [dynamic][3]f32,
 	normals:   [dynamic][3]f32,
@@ -114,6 +117,8 @@ Field_Mesh_Data :: struct {
 	weights:   [dynamic][4]f32,
 	looks:     [dynamic][2]f32,
 	indices:   [dynamic]u16,
+	minimum:   [3]f32,
+	maximum:   [3]f32,
 }
 
 #assert(FIELD_TEXTURED_MATERIAL_COUNT == 7, "the material weights travel in the tangent and three bytes of the texture coordinate's second component")
@@ -436,7 +441,20 @@ field_mesh_from_surface :: proc(surface: Field_Surface, step: i32, spacing_milli
 		append(&data.looks, [2]f32{field_pack_bytes(look.grass), field_pack_bytes({look.snow, look.sand, look.natural})})
 	}
 	append(&data.indices, ..surface.indices[:])
+	data.minimum, data.maximum = field_positions_bounds(data.positions[:])
 	return data
+}
+
+// The positions' extremes, zero for none.
+field_positions_bounds :: proc(positions: [][3]f32) -> (minimum, maximum: [3]f32) {
+	if len(positions) == 0 {
+		return {}, {}
+	}
+	minimum, maximum = positions[0], positions[0]
+	for position in positions[1:] {
+		minimum, maximum = linalg.min(minimum, position), linalg.max(maximum, position)
+	}
+	return minimum, maximum
 }
 
 make_field_mesh_data :: proc(allocator := context.allocator) -> Field_Mesh_Data {

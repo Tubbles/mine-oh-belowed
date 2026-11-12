@@ -6,6 +6,66 @@ import "generation_seed"
 
 // Work item 0311: the ground cover's draw without the GPU.
 
+// Work item 0349: every vertex of every shape, leaned as cover.vs leans a
+// foliage part at the four extremes of its lean and drawn at full size,
+// lies in its instance's box, for foliage and stones from the smallest to
+// the largest, upright and tilted, on flat and sloped ground; the reach
+// is foliage's half width plus cover.vs's lean.
+@(test)
+test_the_cover_box_holds_every_leaned_shape_vertex :: proc(t: ^testing.T) {
+	part_lean, found := shader_float_constant(#load("../data/shaders/cover.vs", string), "part_lean")
+	testing.expect(t, found && part_lean == 0.25, "cover.vs holds const float part_lean = 0.25;")
+	testing.expect_value(t, f32(COVER_SHAPE_REACH), 0.5 + part_lean)
+	cases := [?]struct {
+		shape: Cover_Shape,
+		parts: int,
+	}{{.Blades, 9}, {.Flower, 3}, {.Fern, 7}, {.Pebble, 0}, {.Crystal, 0}}
+	point := [3]f64{5000, 6000, 1000}
+	up := cover_normalized(point, {0, 1, 0})
+	aside, _ := cover_tangents(up, 0)
+	tilt := 40 * math.RAD_PER_DEG
+	normals := [2][3]f64{up, up * math.cos(tilt) + aside * math.sin(tilt)}
+	leans := [4][2]f32{{-1, -1}, {-1, 1}, {1, -1}, {1, 1}}
+	for entry in cases {
+		foliage := cover_shape_is_foliage(entry.shape)
+		kind := Field_Cover_Kind{width = {0.5, 4}, height = {0.3, 4}, foliage = foliage}
+		outside := 0
+		for seed_index in 0 ..< 3 {
+			vertices := cover_shape_vertices(entry.shape, entry.parts, generation_seed.hash_combine(COVER_SHAPE_SEED, u64(seed_index)), context.temp_allocator)
+			for normal in normals {
+				for slope_tangent in ([2]f32{0, 0.8}) {
+					for hash_set in 0 ..< 16 {
+						hashes: [4]u64
+						for &hash, slot in hashes {
+							hash = generation_seed.hash_combine(0x0349, u64(4 * hash_set + slot))
+						}
+						instance := cover_instance(kind, point, up, normal, slope_tangent, {}, {}, hashes)
+						minimum, maximum := cover_instance_box(instance)
+						base := cover_instance_base(instance)
+						right := [3]f32{instance[0, 0], instance[1, 0], instance[2, 0]}
+						instance_up := [3]f32{instance[0, 1], instance[1, 1], instance[2, 1]}
+						forward := [3]f32{instance[0, 2], instance[1, 2], instance[2, 2]}
+						for vertex in vertices {
+							for lean in leans {
+								local := vertex.position
+								if foliage {
+									local.x += lean.x * part_lean * local.y
+									local.z += lean.y * part_lean * local.y
+								}
+								world := base + right * local.x + instance_up * local.y + forward * local.z
+								for axis in 0 ..< 3 {
+									outside += world[axis] < minimum[axis] - 1e-3 || world[axis] > maximum[axis] + 1e-3 ? 1 : 0
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		testing.expectf(t, outside == 0, "%v: %d coordinates lie outside their instance's box", entry.shape, outside)
+	}
+}
+
 // Every shape at its shipped parts: its vertices in the unit box (the
 // stones within 0.6 sideways for their jitter), unit normals, a part's
 // vertices times the parts for foliage, and every closed stone face

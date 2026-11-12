@@ -414,3 +414,10 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The profiler stands both players of a two viewport run on one spot. A second stand beside the first would time what a split screen of two players apart draws, each other's body included.
 - A pure helper deciding which player indices a camera draws would let a test cover the wiring in `draw_field_players`, which needs GL today.
 - The planet preview never fills `crouch_progress`, so a crouched walking preview player is drawn standing (before this item too).
+
+## Suggestions from the globe's order and the culling boxes (0349, 2026-11-13)
+
+- Past a view distance of about 3.2 km (4096 is allowed, 1024 ships) the depth step at the far nodes passes the 8 m between the lowest relief and the globe, and a tie now shows the globe where it showed the ground. A clamp of the view distance or a deeper globe margin would close it.
+- A pit or a cave mouth dug below the globe's sphere (83 m under the radius at the home) shows the globe as its floor from outside, before this item and after. Drawing the globe only beyond the loaded nodes would end it.
+- `draw_field_cover` measures a node's cover distance from its cube; the cover's own box is tighter. To measure before changing.
+- The header of `render_field.odin` says the water is drawn after every node's terrain, which is true and leaves out that the globe now comes between.

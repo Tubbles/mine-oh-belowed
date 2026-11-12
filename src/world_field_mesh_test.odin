@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:testing"
@@ -327,4 +328,55 @@ test_the_depth_hash_reads_positions_and_indices_only :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_mesh_depth_hash(mesh), start)
 	mesh.indices[0], mesh.indices[1] = 1, 0
 	testing.expect(t, field_mesh_depth_hash(mesh) != start, "a changed index changes it")
+}
+
+// Ground under the large sphere's top (y 26 to 30 in a grid at the
+// origin) with a buried pocket of air 4 samples round y 12, as a cave's
+// walls are terrain positions (0327).
+test_buried_pocket_density :: proc(sample: [3]i64) -> i8 {
+	return min(test_large_sphere_density(sample), -test_sphere_density(sample, {16, 12, 16}, 4 * DENSITY_STEPS_PER_SAMPLE))
+}
+
+// Every position lies in the mesh's bounds, and each bound is some
+// position's.
+expect_mesh_bounds_are_the_extremes :: proc(t: ^testing.T, data: Field_Mesh_Data, label: string) {
+	outside := 0
+	touched_minimum, touched_maximum: [3]bool
+	for position in data.positions {
+		for axis in 0 ..< 3 {
+			outside += position[axis] < data.minimum[axis] || position[axis] > data.maximum[axis] ? 1 : 0
+			touched_minimum[axis] ||= position[axis] == data.minimum[axis]
+			touched_maximum[axis] ||= position[axis] == data.maximum[axis]
+		}
+	}
+	testing.expectf(t, outside == 0, "%s: %d coordinates lie outside %v to %v", label, outside, data.minimum, data.maximum)
+	testing.expectf(t, touched_minimum == {true, true, true} && touched_maximum == {true, true, true}, "%s: %v to %v are not the extremes", label, data.minimum, data.maximum)
+}
+
+// Work item 0349: a mesh's bounds, which a node's culling boxes take, are
+// the extremes of its positions with the flaps, the cut, the curtains and
+// a buried cave's walls; an air grid's are zero.
+@(test)
+test_the_mesh_bounds_hold_every_vertex_with_its_skirts :: proc(t: ^testing.T) {
+	skirts := [3]Field_Seam_Faces{{}, {flaps = EVERY_FIELD_FACE}, {flaps = {.Negative_X, .Negative_Z}, curtains = {.Positive_X, .Positive_Z}}}
+	for step in ([2]i32{1, 8}) {
+		grid := fill_test_plane_grid({0, 0, 0}, step, {38, 14})
+		meshes: [3]Field_Mesh_Data
+		for faces, index in skirts {
+			meshes[index] = mesh_field_grid(grid, TEST_FIELD_PALETTE[:], 1000, faces, context.temp_allocator)
+			testing.expectf(t, len(meshes[index].indices) > 0, "step %d, skirts %v: the plane meshes", step, faces)
+			expect_mesh_bounds_are_the_extremes(t, meshes[index], fmt.tprintf("step %d, skirts %v", step, faces))
+		}
+		plain, flapped := meshes[0], meshes[1]
+		testing.expectf(t, flapped.minimum.x < plain.minimum.x && flapped.minimum.z < plain.minimum.z, "step %d: the flaps reach below %v: %v", step, plain.minimum, flapped.minimum)
+		testing.expectf(t, flapped.maximum.x > plain.maximum.x && flapped.maximum.z > plain.maximum.z, "step %d: the flaps reach above %v: %v", step, plain.maximum, flapped.maximum)
+	}
+	pocket := mesh_field_grid(fill_test_field_grid({0, 0, 0}, 1, test_buried_pocket_density), TEST_FIELD_PALETTE[:], 1000, {}, context.temp_allocator)
+	ground := mesh_field_grid(fill_test_field_grid({0, 0, 0}, 1, test_large_sphere_density), TEST_FIELD_PALETTE[:], 1000, {}, context.temp_allocator)
+	expect_mesh_bounds_are_the_extremes(t, pocket, "the buried pocket")
+	testing.expectf(t, pocket.minimum.y <= ground.minimum.y - 10, "the pocket's walls reach %v under the ground's %v", pocket.minimum.y, ground.minimum.y)
+	air := mesh_field_grid(fill_test_field_grid({0, 0, 0}, 1, proc(sample: [3]i64) -> i8 {return -MAXIMUM_DENSITY}), TEST_FIELD_PALETTE[:], 1000, {}, context.temp_allocator)
+	testing.expect_value(t, len(air.positions), 0)
+	testing.expect_value(t, air.minimum, [3]f32{})
+	testing.expect_value(t, air.maximum, [3]f32{})
 }

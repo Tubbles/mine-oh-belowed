@@ -14,7 +14,10 @@ import "render_frustum"
 // the relief can make, so the meshed nodes cover it where they exist and
 // it fills the planet's silhouette beyond the last distance; it draws
 // through the model shader's lit material (draw_field_globe), lit and
-// hazed as the terrain is.
+// hazed as the terrain is, after the terrain and the cover, so the depth
+// test rejects its pixels they cover before they shade (0349,
+// FIELD_PASS_ORDER). A node is culled by its meshes' own box
+// (field_node_draw_box, 0349).
 // Each node also carries the water's mesh (0172), drawn after every
 // node's terrain through the same shader with water_color set:
 // translucent, alpha blended and without depth writes, so the terrain
@@ -25,7 +28,7 @@ import "render_frustum"
 // (0297, render_point_lights.odin) are set per draw
 // (set_field_frame_lights), since each viewer's up turns the sun. The
 // finest nodes also carry the ground cover's instances (0311,
-// render_field_cover.odin), drawn between the terrain and the water.
+// render_field_cover.odin), drawn between the terrain and the globe.
 
 FIELD_VERTEX_SHADER_PATH :: "shaders/field.vs"
 FIELD_FRAGMENT_SHADER_PATH :: "shaders/field.fs"
@@ -53,16 +56,37 @@ FIELD_SUN_SHADOW_UNIFORM :: "sun_shadow_strength"
 // has_water false and no water mesh. cover holds a finest node's ground
 // cover per kind (0311). terrain_hash is the terrain mesh's depth hash
 // (field_mesh_depth_hash, the sun's kept shadow maps' fingerprint, 0348).
+// minimum and maximum are the draw box in world metres, which the frustum
+// tests (field_node_draw_box); terrain_minimum and terrain_maximum the
+// terrain mesh's box in world metres, zero without one, which the sun's
+// casters test (sun_shadow_node_casts). Both are set with the meshes they
+// bound (apply_field_mesh, 0349).
 Field_Node_Render :: struct {
-	mesh:         rl.Mesh,
-	water:        rl.Mesh,
-	has_mesh:     bool,
-	has_water:    bool,
-	origin:       [3]f32,
-	vertex_count: int,
-	cover:        [MAXIMUM_COVER_KINDS]Field_Cover_Node_Draw,
-	terrain_hash: u64,
+	mesh:            rl.Mesh,
+	water:           rl.Mesh,
+	has_mesh:        bool,
+	has_water:       bool,
+	origin:          [3]f32,
+	vertex_count:    int,
+	cover:           [MAXIMUM_COVER_KINDS]Field_Cover_Node_Draw,
+	terrain_hash:    u64,
+	minimum:         [3]f32,
+	maximum:         [3]f32,
+	terrain_minimum: [3]f32,
+	terrain_maximum: [3]f32,
 }
+
+// The field's passes inside the viewport's BeginMode3D (0349): the opaque
+// terrain and cover first, so the globe after them shades only what they
+// leave; the water last, blended without depth writes over all three.
+Field_Pass :: enum u8 {
+	Terrain,
+	Cover,
+	Globe,
+	Water,
+}
+
+FIELD_PASS_ORDER :: [len(Field_Pass)]Field_Pass{.Terrain, .Cover, .Globe, .Water}
 
 Field_Renderer :: struct {
 	material:                 rl.Material,
@@ -270,8 +294,9 @@ field_node_origin_metres :: proc(node: Field_Node, spacing_millimetres: int) -> 
 
 // Replaces the node's meshes and its cover (0311) and moves the mesh
 // revision. Two empty meshes only remove the old ones. terrain_hash is
-// the terrain mesh's (field_mesh_depth_hash, 0348). The data stays the
-// caller's.
+// the terrain mesh's (field_mesh_depth_hash, 0348). The draw box and the
+// terrain box (0349) are replaced with the meshes they bound. The data
+// stays the caller's.
 apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, water: Field_Mesh_Data, terrain_hash: u64, cover: Field_Cover_Data = {}) {
 	unload_field_node(renderer, node)
 	renderer.mesh_revision += 1
@@ -283,8 +308,10 @@ apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, wate
 		vertex_count = len(data.positions) + len(water.positions),
 		terrain_hash = terrain_hash,
 	}
+	render.minimum, render.maximum, _ = field_node_draw_box(render.origin, data, water, cover)
 	if len(data.indices) > 0 {
 		render.mesh, render.has_mesh = upload_field_mesh(data), true
+		render.terrain_minimum, render.terrain_maximum = render.origin + data.minimum, render.origin + data.maximum
 	}
 	if len(water.indices) > 0 {
 		render.water, render.has_water = upload_field_mesh(water), true
@@ -308,17 +335,38 @@ upload_streamed_field_meshes :: proc(renderer: ^Field_Renderer, streaming: ^Fiel
 	}
 }
 
-// A node's box in metres: its cube from the origin, widened by the cells
-// below the origin and the skirts, which reach three cells past it.
-field_node_box_metres :: proc(render: Field_Node_Render, node: Field_Node, spacing_millimetres: int) -> (minimum, maximum: [3]f32) {
-	size := f32(f64(field_node_samples(node.level)) * f64(spacing_millimetres) / MILLIMETRES_PER_METRE)
-	margin := size / FIELD_GRID_CELLS * 4
-	return render.origin - margin, render.origin + size + margin
+// A node's draw box in world metres (0349): the origin plus the terrain
+// mesh's bounds when it has triangles, the origin plus the water's when
+// it has triangles (as apply_field_mesh uploads them), and the cover's
+// box when a kind holds an instance. found is false when none counts.
+field_node_draw_box :: proc(origin: [3]f32, mesh, water: Field_Mesh_Data, cover: Field_Cover_Data) -> (minimum, maximum: [3]f32, found: bool) {
+	box: Box
+	if len(mesh.indices) > 0 {
+		box, found = Box{origin + mesh.minimum, origin + mesh.maximum}, true
+	}
+	if len(water.indices) > 0 {
+		water_box := Box{origin + water.minimum, origin + water.maximum}
+		box, found = found ? box_union(box, water_box) : water_box, true
+	}
+	if field_cover_holds_instances(cover) {
+		cover_box := Box{cover.minimum, cover.maximum}
+		box, found = found ? box_union(box, cover_box) : cover_box, true
+	}
+	return box.minimum, box.maximum, found
 }
 
-field_node_in_frustum :: proc(frustum: render_frustum.Frustum, render: Field_Node_Render, node: Field_Node, spacing_millimetres: int) -> bool {
-	minimum, maximum := field_node_box_metres(render, node, spacing_millimetres)
-	return render_frustum.frustum_contains_box(frustum, minimum, maximum)
+field_cover_holds_instances :: proc(cover: Field_Cover_Data) -> bool {
+	for kind in cover.kinds {
+		if len(kind.instances) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Whether the node's draw box meets the frustum.
+field_node_in_frustum :: proc(frustum: render_frustum.Frustum, render: Field_Node_Render) -> bool {
+	return render_frustum.frustum_contains_box(frustum, render.minimum, render.maximum)
 }
 
 set_field_water_color :: proc(renderer: ^Field_Renderer, color: [4]f32) {
@@ -326,9 +374,10 @@ set_field_water_color :: proc(renderer: ^Field_Renderer, color: [4]f32) {
 	rl.SetShaderValue(renderer.material.shader, renderer.water_color_location, &color, .VEC4)
 }
 
-// The water pass: after all terrain, alpha blended (raylib's default
-// blend), without depth writes; the back faces stay culled, so the
-// water's faces against the ground, which face into it, are not drawn.
+// The water pass: after the terrain, the cover and the globe (0349,
+// FIELD_PASS_ORDER), alpha blended (raylib's default blend), without
+// depth writes; the back faces stay culled, so the water's faces against
+// the ground, which face into it, are not drawn.
 draw_field_water :: proc(renderer: ^Field_Renderer, visible: []Field_Node_Render) {
 	set_field_water_color(renderer, FIELD_WATER_COLOR)
 	rlgl.DrawRenderBatchActive()
@@ -445,7 +494,10 @@ set_field_frame_lights :: proc(renderer: ^Field_Renderer, lights: Field_Frame_Li
 // hazed as an open sky model: its albedo times the flat light the CPU
 // gives a model (daylight_tint), which the shader divides out again.
 // GenMeshSphere has normals and no colours, which default to white. The
-// model shader's open sky must be set first (set_model_open_sky).
+// model shader's open sky must be set first (set_model_open_sky). Drawn
+// after the terrain and the cover with depth writes (0349,
+// FIELD_PASS_ORDER), so the depth test rejects what they cover before it
+// shades, and the water and everything after meet its depth as before.
 draw_field_globe :: proc(renderer: ^Field_Renderer, models: Model_Renderer, daylight_tint: [3]f32) {
 	material := model_layer_material(models, .Lit)
 	material.maps[rl.MaterialMapIndex.ALBEDO].color = brightness_color(renderer.globe_color * daylight_tint)
@@ -453,11 +505,12 @@ draw_field_globe :: proc(renderer: ^Field_Renderer, models: Model_Renderer, dayl
 	count_draw_call()
 }
 
-// Must run between BeginMode3D and EndMode3D, after the globe. The
-// selected nodes' terrain, then the cover on the visible ones (0311),
-// then their water, lit by the frame's open sky and torchlight. A frame
-// profile (0342) gets the Cover and Water marks and the counts.
-draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights, profile: ^Frame_Profile = nil) {
+// Must run between BeginMode3D and EndMode3D, first of FIELD_PASS_ORDER
+// (0349): the selected nodes' terrain whose draw box the frustum meets,
+// lit by the frame's open sky and torchlight. Returns those nodes (temp
+// allocator), over which the cover and the water draw. A frame profile
+// (0342) gets the terrain's and the water's counts.
+draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node, lights: Field_Frame_Lights, profile: ^Frame_Profile = nil) -> []Field_Node_Render {
 	renderer.drawn_node_count = 0
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
 	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
@@ -469,7 +522,7 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	triangles, water_nodes := 0, 0
 	for node in selection {
 		render, found := renderer.meshes[node]
-		if !found || !field_node_in_frustum(frustum, render, node, renderer.spacing_millimetres) {
+		if !found || !field_node_in_frustum(frustum, render) {
 			continue
 		}
 		append(&visible, render)
@@ -484,11 +537,7 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	count_frame(profile, .Terrain_Nodes, renderer.drawn_node_count)
 	count_frame(profile, .Terrain_Triangles, triangles)
 	count_frame(profile, .Water_Nodes, water_nodes)
-	profile_mark(profile, .Cover)
-	draw_field_cover(renderer, camera, visible[:], lights.sun_shadow.texture)
-	count_frame(profile, .Cover_Instances, renderer.cover.drawn_count)
-	profile_mark(profile, .Water)
-	draw_field_water(renderer, visible[:])
+	return visible[:]
 }
 
 // The selected nodes not yet drawable (0342, profile settle): a node is

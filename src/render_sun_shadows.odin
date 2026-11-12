@@ -360,15 +360,17 @@ sun_shadow_selection_hash :: proc(selection: []Field_Node) -> u64 {
 }
 
 // The node's render, when it has a terrain mesh whose box casts in the
-// cascade.
+// cascade. The box is the node's terrain box (0349, terrain_minimum and
+// terrain_maximum), the extremes of the positions its term hashes, so
+// its casting follows only what its term hashes and a wave's or a
+// cover's remesh never adds or drops a caster.
 sun_shadow_node_casts :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, node: Field_Node) -> (render: Field_Node_Render, casts: bool) {
 	found: bool
 	render, found = renderer.meshes[node]
 	if !found || !render.has_mesh {
 		return {}, false
 	}
-	minimum, maximum := field_node_box_metres(render, node, renderer.spacing_millimetres)
-	return render, sun_shadow_box_casts(cascade, minimum, maximum)
+	return render, sun_shadow_box_casts(cascade, render.terrain_minimum, render.terrain_maximum)
 }
 
 // A casting node's share of the terrain's fingerprint: the node and the

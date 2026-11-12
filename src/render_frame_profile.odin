@@ -29,8 +29,10 @@ GL_TIMESTAMP :: 0x8E28
 GL_QUERY_RESULT :: 0x8866
 GL_QUERY_RESULT_AVAILABLE :: 0x8867
 
-// In frame order; the mark that opens each is in doc/architecture.md,
-// Performance. Prepare to Composite are the GPU's sections as well.
+// In frame order, but Globe, drawn after Cover since 0349 and kept in its
+// place so the tables before and after keep their columns; the mark that
+// opens each is in doc/architecture.md, Performance. Prepare to Composite
+// are the GPU's sections as well.
 Frame_Section :: enum u8 {
 	Input,
 	Ticks,
