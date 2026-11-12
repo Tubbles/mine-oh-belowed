@@ -73,7 +73,9 @@ Field_Scene :: struct {
 	// planet preview.
 	profile:      ^Frame_Profile,
 	// The viewport's index in the frame's viewports, the tree cache's view
-	// it draws with (0346, Tree_View), 0 in the planet preview.
+	// it draws with (0346, Tree_View) and the slot of its kept sun shadow
+	// map (0348, draw_field_sun_shadows), 0 in the planet preview, which
+	// keeps no map.
 	tree_view:    int,
 }
 
@@ -674,17 +676,25 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	pop_pod_transform(scene.pod_transform)
 }
 
+#assert(SUN_SHADOW_KEPT_MAPS == MAXIMUM_VIEWPORTS, "a kept sun shadow map per viewport")
+
 // The sun's shadow map for the viewport (0328, render_sun_shadows.odin),
 // before its 3D pass: nothing while the setting is off or the sun gives
 // no light; the map made when none is (a failure leaves the field without
-// shadows); the cascade round the camera; then the casters depth only:
-// the selected nodes' terrain and the standing trees (instanced) in the
-// casters' box, the foundations, the machines in it (Model_Frame.casters)
-// and every player's body, the viewer's in first person too, under the
-// pod's transform as the scene draws them, the batch's own draws through
-// the depth shader as well so they are pressed onto the near plane too.
-// The frame the receivers read, zero for none.
-draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node, inputs: Sun_Shadow_Inputs) -> Sun_Shadow_Frame {
+// shadows). With the viewport's kept map (0348, slot, the viewport's
+// index): the kept map of the still casters refreshed when its step asks
+// (refresh_kept_sun_shadow_map), copied into the shared map, and the
+// moving casters drawn over the copy on its cascade. Without one (the
+// pod's descent, the planet preview at SUN_SHADOW_NO_KEPT_MAP, a kept map
+// that did not load): the whole pass into the shared map on the cascade
+// round the camera, anchored at the world's origin. The casters draw
+// depth only: the selected nodes' terrain and the standing trees
+// (instanced) in the casters' box, the foundations, the machines in it
+// (Model_Frame.casters) and every player's body, the viewer's in first
+// person too, under the pod's transform as the scene draws them, the
+// batch's own draws through the depth shader as well so they are pressed
+// onto the near plane too. The frame the receivers read, zero for none.
+draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node, inputs: Sun_Shadow_Inputs, slot: int) -> Sun_Shadow_Frame {
 	if !inputs.on || scene.lights.sun_color == {} {
 		return {}
 	}
@@ -697,53 +707,189 @@ draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selectio
 		return {}
 	}
 	profile_mark(scene.profile, .Shadow_Terrain)
-	cascade := sun_shadow_cascade(camera.position, scene.lights.sun_direction, field_sun_path_world_axis(camera.up), inputs.row)
-	begin_sun_shadow_map(shadows^, cascade)
-	count_frame(scene.profile, .Shadow_Nodes, draw_sun_shadow_terrain(scene.renderer, cascade, selection, shadows.material))
-	profile_mark(scene.profile, .Shadow_Trees)
-	if inputs.row.tree_limit > 0 && scene.models.trees.ready {
-		view := &scene.renderer.trees.views[scene.tree_view]
-		update_shadow_trees(&scene.renderer.trees, view, cascade, camera.position, field_tree_model_extent(scene), scene.state.field.felled_trees, inputs.row.tree_limit, len(scene.content.field.tree_species))
-		set_sun_shadow_instanced(shadows^, true)
-		draw_tree_pass(scene.models, scene.content.field.tree_species, &view.shadow, shadows.material)
-		set_sun_shadow_instanced(shadows^, false)
-		count_frame(scene.profile, .Shadow_Trees, len(view.shadow.selected))
+	kept := usable_sun_shadow_kept(shadows, slot, scene.pod_transform != nil)
+	if kept == nil {
+		cascade := sun_shadow_cascade(camera.position, scene.lights.sun_direction, field_sun_path_world_axis(camera.up), inputs.row)
+		begin_sun_shadow_target(shadows.framebuffer, shadows.depth_texture, shadows.texels, cascade, true)
+		nodes, _ := draw_sun_shadow_terrain(scene.renderer, cascade, selection, shadows.material)
+		count_frame(scene.profile, .Shadow_Nodes, nodes)
+		profile_mark(scene.profile, .Shadow_Trees)
+		trees, _ := draw_sun_shadow_trees(scene, cascade, shadows^, inputs.row)
+		count_frame(scene.profile, .Shadow_Trees, trees)
+		profile_mark(scene.profile, .Shadow_Models)
+		draw_sun_shadow_models(scene, cascade, shadows.material, .All)
+		end_sun_shadow_map()
+		return sun_shadow_frame(cascade, inputs.strength_percent, inputs.row.map_texels, shadows.depth_texture)
 	}
-	casters := scene
-	casters.models.material = shadows.material
-	casters.models.emissive_material = shadows.material
-	casters.viewer_body_shown = true
-	cull := Sun_Shadow_Casters{cascade = cascade, transform = scene.pod_transform.? or_else linalg.MATRIX4F32_IDENTITY}
-	casters.frame.casters = &cull
-	world := &scene.state.world
-	profile_mark(scene.profile, .Shadow_Models)
-	rl.BeginShaderMode(shadows.material.shader)
-	push_pod_transform(scene.pod_transform)
-	draw_frames(&world.entities, scene.content.machines)
-	draw_entities(world, scene.content.machines, casters.models, scene.content.items, casters.frame)
-	draw_field_players(casters)
-	pop_pod_transform(scene.pod_transform)
-	rl.EndShaderMode()
+	cascade := refresh_kept_sun_shadow_map(scene, camera, selection, inputs, kept)
+	copy_sun_shadow_depth(kept.framebuffer, shadows.framebuffer, shadows.texels)
+	begin_sun_shadow_target(shadows.framebuffer, shadows.depth_texture, shadows.texels, cascade, false)
+	draw_sun_shadow_models(scene, cascade, shadows.material, .Moving)
 	end_sun_shadow_map()
 	return sun_shadow_frame(cascade, inputs.strength_percent, inputs.row.map_texels, shadows.depth_texture)
 }
 
-// The selected nodes' terrain whose box casts, with the depth material.
-// Returns how many it drew.
-draw_sun_shadow_terrain :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, selection: []Field_Node, material: rl.Material) -> (drawn: int) {
-	for node in selection {
-		render, found := renderer.meshes[node]
-		if !found || !render.has_mesh {
-			continue
-		}
-		minimum, maximum := field_node_box_metres(render, node, renderer.spacing_millimetres)
-		if sun_shadow_box_casts(cascade, minimum, maximum) {
-			rl.DrawMesh(render.mesh, material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
-			count_draw_call()
-			drawn += 1
+// Whether the standing trees cast this frame: the row casts some and the
+// tree shader loaded.
+sun_shadow_trees_cast :: proc(scene: Field_Scene, row: Sun_Shadows_Row) -> bool {
+	return row.tree_limit > 0 && scene.models.trees.ready
+}
+
+// What this frame offers the viewport's kept map (0348): the camera's
+// position and up, the frame's sun and the sun path's axis for that up,
+// the row, whether the trees cast, and the change counters of what the
+// still casters draw from.
+sun_shadow_view :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node, row: Sun_Shadows_Row) -> Sun_Shadow_View {
+	return Sun_Shadow_View {
+		eye = camera.position,
+		toward_sun = scene.lights.sun_direction,
+		path_axis = field_sun_path_world_axis(camera.up),
+		up = camera.up,
+		row = row,
+		trees_drawn = sun_shadow_trees_cast(scene, row),
+		revisions = {
+			meshes = scene.renderer.mesh_revision,
+			selection = sun_shadow_selection_hash(selection),
+			trees = scene.renderer.trees.revision,
+			frames = scene.state.world.entities.frames.revision,
+			models = scene.models.revision,
+		},
+	}
+}
+
+// Decision 2's Compare: the kept map's still casters hold when the
+// terrain casting in its box fingerprints as when it was drawn, and, when
+// trees cast and the tree cache changed, the viewport's casting trees
+// updated on its cascade gathered nothing since (0346: on a held cascade
+// the cut's other inputs are the key's, so only a gather changes what it
+// draws).
+kept_sun_shadow_casters_hold :: proc(scene: Field_Scene, selection: []Field_Node, row: Sun_Shadows_Row, key: Sun_Shadow_Kept_Key, revisions: Sun_Shadow_Revisions) -> bool {
+	terrain_moved := revisions.meshes != key.revisions.meshes || revisions.selection != key.revisions.selection
+	if terrain_moved && sun_shadow_terrain_fingerprint(scene.renderer, key.cascade, selection) != key.terrain_fingerprint {
+		return false
+	}
+	if key.trees_drawn && revisions.trees != key.revisions.trees {
+		return update_sun_shadow_trees(scene, key.cascade, row).shadow.gathers == key.tree_gathers
+	}
+	return true
+}
+
+// The viewport's kept map brought up to this frame (decision 2): kept, or
+// drawn again with the terrain, the trees and the still machines and
+// foundations (draw_sun_shadow_models, .Still) on the cascade
+// sun_shadow_kept_cascade gives, and what it was drawn from stored. The
+// profile's tree and model marks fall in both paths. Returns the cascade
+// the map holds.
+refresh_kept_sun_shadow_map :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node, inputs: Sun_Shadow_Inputs, kept: ^Sun_Shadow_Kept) -> Sun_Shadow_Cascade {
+	view := sun_shadow_view(scene, camera, selection, inputs.row)
+	step := sun_shadow_kept_step(kept^, view)
+	if step == .Compare {
+		if kept_sun_shadow_casters_hold(scene, selection, inputs.row, kept.key, view.revisions) {
+			kept.key.revisions = view.revisions
+			step = .Keep
+		} else {
+			step = .Recentre
 		}
 	}
-	return drawn
+	if step == .Keep {
+		profile_mark(scene.profile, .Shadow_Trees)
+		profile_mark(scene.profile, .Shadow_Models)
+		return kept.key.cascade
+	}
+	cascade := sun_shadow_kept_cascade(kept^, view, step)
+	shadows := &scene.renderer.sun_shadows
+	begin_sun_shadow_target(kept.framebuffer, kept.depth_texture, shadows.texels, cascade, true)
+	nodes, terrain_fingerprint := draw_sun_shadow_terrain(scene.renderer, cascade, selection, shadows.material)
+	count_frame(scene.profile, .Shadow_Nodes, nodes)
+	profile_mark(scene.profile, .Shadow_Trees)
+	trees, tree_gathers := draw_sun_shadow_trees(scene, cascade, shadows^, inputs.row)
+	count_frame(scene.profile, .Shadow_Trees, trees)
+	profile_mark(scene.profile, .Shadow_Models)
+	draw_sun_shadow_models(scene, cascade, shadows.material, .Still)
+	end_sun_shadow_map()
+	held := step == .Recentre
+	kept.key = Sun_Shadow_Kept_Key {
+		cascade             = cascade,
+		toward_sun          = held ? kept.key.toward_sun : view.toward_sun,
+		path_axis           = held ? kept.key.path_axis : view.path_axis,
+		row                 = view.row,
+		trees_drawn         = view.trees_drawn,
+		revisions           = view.revisions,
+		terrain_fingerprint = terrain_fingerprint,
+		tree_gathers        = tree_gathers,
+	}
+	kept.drawn = true
+	return cascade
+}
+
+// The selected nodes' terrain whose box casts (sun_shadow_node_casts),
+// with the depth material. Returns how many it drew and their
+// fingerprint (sun_shadow_terrain_fingerprint's sum).
+draw_sun_shadow_terrain :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, selection: []Field_Node, material: rl.Material) -> (drawn: int, fingerprint: u64) {
+	for node in selection {
+		render, casts := sun_shadow_node_casts(renderer, cascade, node)
+		if !casts {
+			continue
+		}
+		rl.DrawMesh(render.mesh, material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+		count_draw_call()
+		drawn += 1
+		fingerprint += sun_shadow_node_term(node, render)
+	}
+	return drawn, fingerprint
+}
+
+// The viewport's casting trees for the cascade (0346, update_shadow_trees),
+// cut round the cascade's centre in place of the camera, so a map depends
+// on its cascade and not on where the eye stands in its step.
+update_sun_shadow_trees :: proc(scene: Field_Scene, cascade: Sun_Shadow_Cascade, row: Sun_Shadows_Row) -> ^Tree_View {
+	view := &scene.renderer.trees.views[scene.tree_view]
+	update_shadow_trees(&scene.renderer.trees, view, cascade, cascade.centre, field_tree_model_extent(scene), scene.state.field.felled_trees, row.tree_limit, len(scene.content.field.tree_species))
+	return view
+}
+
+// The casting trees instanced with the depth material, nothing unless
+// trees cast. Returns how many it drew and the gathers count of the
+// view's pass they came from.
+draw_sun_shadow_trees :: proc(scene: Field_Scene, cascade: Sun_Shadow_Cascade, shadows: Sun_Shadow_Renderer, row: Sun_Shadows_Row) -> (drawn, gathers: int) {
+	if !sun_shadow_trees_cast(scene, row) {
+		return 0, 0
+	}
+	view := update_sun_shadow_trees(scene, cascade, row)
+	set_sun_shadow_instanced(shadows, true)
+	draw_tree_pass(scene.models, scene.content.field.tree_species, &view.shadow, shadows.material)
+	set_sun_shadow_instanced(shadows, false)
+	return len(view.shadow.selected), view.shadow.gathers
+}
+
+// The foundations, the machines in the casters' box of the part
+// (Model_Frame.casters) and every player's body under the depth shader
+// and the pod's transform: the foundations unless only the moving
+// casters draw, the players unless only the still ones do.
+draw_sun_shadow_models :: proc(scene: Field_Scene, cascade: Sun_Shadow_Cascade, material: rl.Material, part: Sun_Shadow_Part) {
+	casters := scene
+	casters.models.material = material
+	casters.models.emissive_material = material
+	casters.viewer_body_shown = true
+	cull := Sun_Shadow_Casters {
+		cascade   = cascade,
+		transform = scene.pod_transform.? or_else linalg.MATRIX4F32_IDENTITY,
+		machines  = scene.content.machines,
+		part      = part,
+	}
+	casters.frame.casters = &cull
+	world := &scene.state.world
+	rl.BeginShaderMode(material.shader)
+	push_pod_transform(scene.pod_transform)
+	if part != .Moving {
+		draw_frames(&world.entities, scene.content.machines)
+	}
+	draw_entities(world, scene.content.machines, casters.models, scene.content.items, casters.frame)
+	if part != .Still {
+		draw_field_players(casters)
+	}
+	pop_pod_transform(scene.pod_transform)
+	rl.EndShaderMode()
 }
 
 // The split screen viewport's target bound again after the shadow map's
@@ -898,7 +1044,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		profile      = profile,
 		tree_view    = viewport_index(state, viewport),
 	}
-	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, frame_field_selection(state), sun_shadow_inputs(state.settings, state.config.sun_shadows, state.data_directory))
+	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, frame_field_selection(state), sun_shadow_inputs(state.settings, state.config.sun_shadows, state.data_directory), scene.tree_view)
 	resume_viewport_target(viewport)
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
@@ -940,7 +1086,8 @@ field_arrival_debris_site :: proc(simulation: ^Simulation_State, content: Simula
 // Before the viewports draw, at the frame's view distance (0343, the
 // distances frame_field_selection stored): the sun's shadow map released
 // when the setting turned it off or its size changed (0328,
-// serve_sun_shadows), the haze's end, the finished meshes up and those of
+// serve_sun_shadows) and the kept maps of the viewports removed (0348),
+// the haze's end, the finished meshes up and those of
 // the nodes that left the selection unloaded, the trees' tiles round the
 // eyes out to the view (update_field_tree_cache, upload_field_tree_tiles)
 // and each player's crouch progress (0218), read by value by the draws.
@@ -954,7 +1101,7 @@ prepare_field_frame :: proc(state: ^Frame_State) {
 	last := state.presentation.field_level_distances[FIELD_COARSEST_LEVEL]
 	receivers := sun_shadow_receivers(&state.presentation.field_renderer, state.presentation.model_renderer)
 	row := sun_shadows_row(state.config.sun_shadows)
-	serve_sun_shadows(&state.presentation.field_renderer.sun_shadows, receivers[:], sun_shadows_enabled(state.settings.sun_shadows, row.on), row.map_texels)
+	serve_sun_shadows(&state.presentation.field_renderer.sun_shadows, receivers[:], sun_shadows_enabled(state.settings.sun_shadows, row.on), row.map_texels, state.viewport_count)
 	state.presentation.field_renderer.last_distance_metres = f32(last)
 	// Every result taken lowers the pending jobs by one.
 	pending_before_upload := session.field_streaming.pending_jobs

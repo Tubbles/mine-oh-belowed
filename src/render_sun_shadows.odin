@@ -1,7 +1,9 @@
 package game
 
+import "core:hash/xxhash"
 import "core:math"
 import "core:math/linalg"
+import "core:slice"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
 import "platform"
@@ -11,13 +13,16 @@ import "platform"
 // frustum, so turning the camera redraws nothing: the receivers are the
 // sphere of radius_metres round the camera, the shadow fading out over its
 // last SUN_SHADOW_FADE_SHARE so no edge shows; the map's half size is the
-// radius plus SUN_SHADOW_MARGIN_TEXELS texels, so the normal offset and
-// the taps stay inside it. The light's axes are the sun and the sun
-// path's axis turned to the world as the sun is
-// (field_sun_path_world_axis): the sun is always square to it, so the
-// basis never degenerates. The centre is the eye moved in the light's
-// plane to the nearest whole texel along both axes (in f64), not along
-// the sun, so a walk inside one texel draws the same map. The ortho box
+// radius plus SUN_SHADOW_MARGIN_TEXELS texels and half a step, so the
+// normal offset and the taps stay inside it wherever the eye stands in
+// its step. The light's axes are the sun and the sun path's axis turned
+// to the world as the sun is (field_sun_path_world_axis): the sun is
+// always square to it, so the basis never degenerates. The centre is an
+// anchor moved by whole steps of SUN_SHADOW_SNAP_TEXELS texels along the
+// three axes, the sun's included, to the step that holds the eye (in
+// f64). A kept map anchors at its previous centre, so a walk shifts it by
+// whole texels and no edge changes. The whole pass anchors at the
+// world's origin. The ortho box
 // runs from the sphere's sun side to its far side, so the depth's bits
 // cover only the receivers; a caster up to caster_reach_metres beyond
 // the near plane towards the sun is drawn and pressed onto that plane by
@@ -37,6 +42,21 @@ import "platform"
 // by the first pass that wants it and freed or replaced only between
 // frames (serve_sun_shadows) or with the field renderer
 // (destroy_field_renderer), the receivers' slots cleared first.
+//
+// Each viewport keeps a map of its still casters (work item 0348,
+// Sun_Shadow_Kept): the terrain, the trees, the foundations and the
+// machines whose parts never move. Every frame it is copied into the map
+// the receivers read (copy_sun_shadow_depth) and the moving casters (the
+// arms, the drills, the launch pads, the hatches, the machines whose
+// motion moves a part, the players) are drawn over the copy. The kept map
+// is drawn again only when sun_shadow_kept_step asks: the sun turned past
+// sun_shadow_turn_limit (the tip of a 10 m caster's shadow moved a
+// quarter texel, a twelfth of the edge's width), the row changed, the eye
+// left its step, the trees started or stopped casting, the frame table or
+// the models changed, or the terrain's fingerprint or a gather of the
+// trees in its box did. While the pod's transform is set, in the planet
+// preview and for a viewport whose kept map did not load, the whole pass
+// draws into the shared map every frame.
 
 SUN_SHADOW_VERTEX_SHADER_PATH :: "shaders/sun_shadow.vs"
 SUN_SHADOW_FRAGMENT_SHADER_PATH :: "shaders/sun_shadow.fs"
@@ -56,6 +76,22 @@ SUN_SHADOW_SAMPLER_LOCATION :: int(rl.ShaderLocationIndex.MAP_ALBEDO) + int(SUN_
 // Cells each way an entity's cast box (sun_shadow_entity_box) reaches
 // past its footprint, for the parts that leave it (an arm, a door).
 SUN_SHADOW_ENTITY_MARGIN_CELLS :: 1
+// The centre's step along each light axis in texels (0348): the margin
+// grows by half of it.
+SUN_SHADOW_SNAP_TEXELS :: 32
+// How far the tip of a SUN_SHADOW_STEP_CASTER_METRES caster's shadow may
+// move in texels before a kept map turns with the sun
+// (sun_shadow_turn_limit).
+SUN_SHADOW_STEP_TEXELS :: 0.25
+SUN_SHADOW_STEP_CASTER_METRES :: 10.0
+// Float noise allowed in the step test (sun_shadow_eye_in_step).
+SUN_SHADOW_STEP_TOLERANCE_METRES :: 1e-4
+// A kept map per viewport (the loop asserts MAXIMUM_VIEWPORTS), and the
+// slot of a pass that keeps none (the planet preview).
+SUN_SHADOW_KEPT_MAPS :: 4
+SUN_SHADOW_NO_KEPT_MAP :: -1
+// GL_DEPTH_BUFFER_BIT, the copy's mask.
+SUN_SHADOW_DEPTH_BUFFER_BIT :: 0x00000100
 
 Sun_Shadow_State :: enum u8 {
 	Unloaded,
@@ -65,7 +101,8 @@ Sun_Shadow_State :: enum u8 {
 
 // The map on the GPU: the framebuffer, its depth texture and the size it
 // holds or failed at; the depth only material the casters draw with and
-// its instanced_on uniform.
+// its instanced_on uniform. kept holds each viewport's kept map of the
+// still casters by the viewport's index (0348).
 Sun_Shadow_Renderer :: struct {
 	state:              Sun_Shadow_State,
 	framebuffer:        u32,
@@ -73,16 +110,80 @@ Sun_Shadow_Renderer :: struct {
 	texels:             int,
 	material:           rl.Material,
 	instanced_location: i32,
+	kept:               [SUN_SHADOW_KEPT_MAPS]Sun_Shadow_Kept,
 }
 
 // One frame's cascade: the light's view, projection and their product;
-// the snapped centre and the light's axes (right, up and towards the
-// sun); the map's half size and a texel in metres, the receivers' radius
-// and how far beyond the near plane towards the sun casters reach.
+// the stepped centre (in f32 and in f64, the step test's and the next
+// anchor's) and the light's axes (right, up and towards the sun); the
+// map's half size and a texel in metres, the receivers' radius and how
+// far beyond the near plane towards the sun casters reach.
 Sun_Shadow_Cascade :: struct {
 	view, projection, view_projection:                    matrix[4, 4]f32,
 	centre, right, up, toward_sun:                        [3]f32,
+	precise_centre:                                       [3]f64,
 	half_size, texel_metres, radius_metres, reach_metres: f32,
+}
+
+// The change counters a kept map was drawn at (0348): the field
+// renderer's meshes, the hash of the frame's node selection, the tree
+// cache's tiles (0346), the frame table and the models.
+Sun_Shadow_Revisions :: struct {
+	meshes, selection, trees, frames, models: u64,
+}
+
+// What a kept map was drawn from: its cascade, the sun and the path's
+// axis the cascade was built on (as the frame gave them, so a Recentre
+// builds the same axes bit for bit), the row, whether the trees cast, the
+// revisions, the fingerprint of the terrain it drew and the gathers count
+// of the view's casting trees it drew (0346, Tree_Pass.gathers).
+Sun_Shadow_Kept_Key :: struct {
+	cascade:             Sun_Shadow_Cascade,
+	toward_sun:          [3]f32,
+	path_axis:           [3]f32,
+	row:                 Sun_Shadows_Row,
+	trees_drawn:         bool,
+	revisions:           Sun_Shadow_Revisions,
+	terrain_fingerprint: u64,
+	tree_gathers:        int,
+}
+
+// A viewport's kept map of the still casters: its own framebuffer and
+// depth texture at the shared map's size, whether it holds a drawing and
+// what it was drawn from.
+Sun_Shadow_Kept :: struct {
+	state:         Sun_Shadow_State,
+	framebuffer:   u32,
+	depth_texture: u32,
+	drawn:         bool,
+	key:           Sun_Shadow_Kept_Key,
+}
+
+// What a frame offers a kept map: the eye, the sun, the path's axis and
+// the up, the row, whether the trees cast and the revisions.
+Sun_Shadow_View :: struct {
+	eye, toward_sun, path_axis, up: [3]f32,
+	row:                            Sun_Shadows_Row,
+	trees_drawn:                    bool,
+	revisions:                      Sun_Shadow_Revisions,
+}
+
+// What a kept map does this frame (sun_shadow_kept_step): kept as is,
+// kept after the fingerprints agree, drawn again on the sun it holds, or
+// drawn again on the frame's sun.
+Sun_Shadow_Kept_Step :: enum u8 {
+	Keep,
+	Compare,
+	Recentre,
+	Turn,
+}
+
+// Which machines and players a cast pass draws: every one (the whole
+// pass), the still ones (a kept map) or the moving ones (over its copy).
+Sun_Shadow_Part :: enum u8 {
+	All,
+	Still,
+	Moving,
 }
 
 // What the receiving shaders read: the light's view projection, the
@@ -130,18 +231,26 @@ SUN_SHADOW_UNIFORM_NAMES :: [Sun_Shadow_Uniform]cstring {
 
 // The cascade for the eye and the sun (both in the world's metres, the
 // sun and the axis unit): a texel covers the radius's diameter over the
-// map less its margins; the light looks down -toward_sun from half a box
-// sunward of the centre, its right square to the sun and the path's axis.
-sun_shadow_cascade :: proc(eye, toward_sun, path_axis: [3]f32, row: Sun_Shadows_Row) -> Sun_Shadow_Cascade {
+// map less its margins and a step. The centre is the anchor moved along
+// right, up and toward_sun by the whole steps (SUN_SHADOW_SNAP_TEXELS
+// texels) nearest the eye. The light looks down -toward_sun from half a
+// box sunward of the centre, its right square to the sun and the path's
+// axis. The default anchor, the world's origin, is the whole pass's.
+sun_shadow_cascade :: proc(eye, toward_sun, path_axis: [3]f32, row: Sun_Shadows_Row, anchor: [3]f64 = {}) -> Sun_Shadow_Cascade {
 	radius := f64(row.radius_metres)
-	texel := 2 * radius / f64(row.map_texels - 2 * SUN_SHADOW_MARGIN_TEXELS)
+	texel := 2 * radius / f64(row.map_texels - 2 * SUN_SHADOW_MARGIN_TEXELS - SUN_SHADOW_SNAP_TEXELS)
 	half := f64(row.map_texels) * texel / 2
+	step := SUN_SHADOW_SNAP_TEXELS * texel
 	sun := linalg.normalize(linalg.array_cast(toward_sun, f64))
 	right := linalg.normalize(linalg.cross(-sun, linalg.array_cast(path_axis, f64)))
 	up := linalg.cross(right, -sun)
-	eye_metres := linalg.array_cast(eye, f64)
-	centre := right * (math.round(linalg.dot(eye_metres, right) / texel) * texel) + up * (math.round(linalg.dot(eye_metres, up) / texel) * texel) + sun * linalg.dot(eye_metres, sun)
+	offset := linalg.array_cast(eye, f64) - anchor
+	centre := anchor
+	for axis in ([3][3]f64{right, up, sun}) {
+		centre += axis * (math.round(linalg.dot(offset, axis) / step) * step)
+	}
 	cascade := Sun_Shadow_Cascade {
+		precise_centre = centre,
 		centre        = linalg.array_cast(centre, f32),
 		right         = linalg.array_cast(right, f32),
 		up            = linalg.array_cast(up, f32),
@@ -155,6 +264,130 @@ sun_shadow_cascade :: proc(eye, toward_sun, path_axis: [3]f32, row: Sun_Shadows_
 	cascade.projection = linalg.matrix_ortho3d_f32(-cascade.half_size, cascade.half_size, -cascade.half_size, cascade.half_size, 0, 2 * cascade.half_size)
 	cascade.view_projection = cascade.projection * cascade.view
 	return cascade
+}
+
+// Whether the eye lies within half a step of the cascade's centre along
+// each of its three axes (in f64, with SUN_SHADOW_STEP_TOLERANCE_METRES
+// for float noise): a kept map drawn round that centre still covers it.
+sun_shadow_eye_in_step :: proc(cascade: Sun_Shadow_Cascade, eye: [3]f32) -> bool {
+	offset := linalg.array_cast(eye, f64) - cascade.precise_centre
+	reach := SUN_SHADOW_SNAP_TEXELS * f64(cascade.texel_metres) / 2 + SUN_SHADOW_STEP_TOLERANCE_METRES
+	for axis in ([3][3]f32{cascade.right, cascade.up, cascade.toward_sun}) {
+		if abs(linalg.dot(offset, linalg.array_cast(axis, f64))) > reach {
+			return false
+		}
+	}
+	return true
+}
+
+// The angle in radians between the sun a kept map holds and the frame's,
+// both normalised in f64.
+sun_shadow_turn_angle :: proc(held, current: [3]f32) -> f64 {
+	first := linalg.normalize(linalg.array_cast(held, f64))
+	second := linalg.normalize(linalg.array_cast(current, f64))
+	return math.atan2(linalg.length(linalg.cross(first, second)), linalg.dot(first, second))
+}
+
+// How far the sun may turn from the one a kept map holds: a caster
+// SUN_SHADOW_STEP_CASTER_METRES tall on flat ground casts its tip from
+// its height over the sine of the sun's elevation up the ray, so a turn of
+// this many radians moves the tip SUN_SHADOW_STEP_TEXELS texels. 0 with
+// the sun at or under the horizon of the up.
+sun_shadow_turn_limit :: proc(toward_sun, up: [3]f32, texel_metres: f32) -> f64 {
+	sine := linalg.dot(linalg.normalize(linalg.array_cast(toward_sun, f64)), linalg.normalize(linalg.array_cast(up, f64)))
+	return SUN_SHADOW_STEP_TEXELS * f64(texel_metres) * max(sine, 0) / SUN_SHADOW_STEP_CASTER_METRES
+}
+
+// What the kept map does this frame (0348, decision 2), in order. Turn
+// when it holds no drawing, the row changed or the sun turned past the
+// limit. Recentre when the eye left its step, the trees started or
+// stopped casting, or the frame table or the models changed. Compare when
+// the meshes, the node selection or the tree cache changed, which only a
+// fingerprint over its own box can tell from a change it does not see.
+// Keep otherwise.
+sun_shadow_kept_step :: proc(kept: Sun_Shadow_Kept, view: Sun_Shadow_View) -> Sun_Shadow_Kept_Step {
+	key := kept.key
+	if !kept.drawn || key.row != view.row || sun_shadow_turn_angle(key.toward_sun, view.toward_sun) > sun_shadow_turn_limit(view.toward_sun, view.up, key.cascade.texel_metres) {
+		return .Turn
+	}
+	if !sun_shadow_eye_in_step(key.cascade, view.eye) || key.trees_drawn != view.trees_drawn {
+		return .Recentre
+	}
+	if key.revisions.frames != view.revisions.frames || key.revisions.models != view.revisions.models {
+		return .Recentre
+	}
+	if key.revisions.meshes != view.revisions.meshes || key.revisions.selection != view.revisions.selection || key.revisions.trees != view.revisions.trees {
+		return .Compare
+	}
+	return .Keep
+}
+
+// The cascade a kept map is drawn on again, at the frame's row: anchored
+// at the centre it holds (at the eye when it holds none), on the sun and
+// the path's axis it holds for a Recentre, so the map moves by whole
+// texels, and on the frame's for a Turn.
+sun_shadow_kept_cascade :: proc(kept: Sun_Shadow_Kept, view: Sun_Shadow_View, step: Sun_Shadow_Kept_Step) -> Sun_Shadow_Cascade {
+	anchor := kept.drawn ? kept.key.cascade.precise_centre : linalg.array_cast(view.eye, f64)
+	if step == .Recentre {
+		return sun_shadow_cascade(view.eye, kept.key.toward_sun, kept.key.path_axis, view.row, anchor)
+	}
+	return sun_shadow_cascade(view.eye, view.toward_sun, view.path_axis, view.row, anchor)
+}
+
+// The words mixed into one value: each xored into the running value and
+// then mixed by splitmix64's finalizer, so the order of the words counts.
+sun_shadow_fingerprint :: proc(words: ..u64) -> u64 {
+	value: u64 = 0
+	for word in words {
+		value ~= word
+		value ~= value >> 30
+		value *= 0xBF58476D1CE4E5B9
+		value ~= value >> 27
+		value *= 0x94D049BB133111EB
+		value ~= value >> 31
+	}
+	return value
+}
+
+// The frame's node selection hashed whole (Field_Node is four i32, no
+// padding), its order included: a moved hash asks for the fingerprints.
+// 0 for none (xxhash refuses an empty slice's nil data).
+sun_shadow_selection_hash :: proc(selection: []Field_Node) -> u64 {
+	if len(selection) == 0 {
+		return 0
+	}
+	return xxhash.XXH3_64_default(slice.to_bytes(selection))
+}
+
+// The node's render, when it has a terrain mesh whose box casts in the
+// cascade.
+sun_shadow_node_casts :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, node: Field_Node) -> (render: Field_Node_Render, casts: bool) {
+	found: bool
+	render, found = renderer.meshes[node]
+	if !found || !render.has_mesh {
+		return {}, false
+	}
+	minimum, maximum := field_node_box_metres(render, node, renderer.spacing_millimetres)
+	return render, sun_shadow_box_casts(cascade, minimum, maximum)
+}
+
+// A casting node's share of the terrain's fingerprint: the node and the
+// hash of what its depth reads (Field_Node_Render.terrain_hash).
+sun_shadow_node_term :: proc(node: Field_Node, render: Field_Node_Render) -> u64 {
+	return sun_shadow_fingerprint(u64(u32(node.level)), u64(u32(node.coordinate.x)), u64(u32(node.coordinate.y)), u64(u32(node.coordinate.z)), render.terrain_hash)
+}
+
+// The terrain the cascade's casters draw, as a wrapping sum of the
+// casting nodes' terms: the selection's order does not count, a node's
+// mesh moved only in its water or its colours does not either.
+sun_shadow_terrain_fingerprint :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_Cascade, selection: []Field_Node) -> u64 {
+	fingerprint: u64 = 0
+	for node in selection {
+		if render, casts := sun_shadow_node_casts(renderer, cascade, node); casts {
+			fingerprint += sun_shadow_node_term(node, render)
+		}
+	}
+	return fingerprint
 }
 
 // A box's half extent along a unit axis.
@@ -346,10 +579,28 @@ update_shadow_trees :: proc(cache: ^Field_Tree_Cache, view: ^Tree_View, cascade:
 
 // What the cast pass hands draw_entities (Model_Frame.casters): the
 // cascade and the transform the entities draw under (the pod's during
-// the descent, else the identity).
+// the descent, else the identity), the machines and which of them the
+// pass draws (0348, zero for every one).
 Sun_Shadow_Casters :: struct {
 	cascade:   Sun_Shadow_Cascade,
 	transform: matrix[4, 4]f32,
+	machines:  Machine_Registry,
+	part:      Sun_Shadow_Part,
+}
+
+// Whether an entity's depth can change while nothing occupies or vacates
+// a cell (0348): an inserter (its arm and held item), a drill (its pump or
+// bar), a launch pad (its rocket), a hatch (its door) and a machine whose
+// motion moves a part. None and Glow leave the part where it is.
+sun_shadow_entity_moves :: proc(kind: Entity_Kind, machine: Machine) -> bool {
+	#partial switch kind {
+	case .Inserter, .Drill, .Launch_Pad:
+		return true
+	}
+	if machine.kind == .Hatch {
+		return true
+	}
+	return machine.motion.kind != .None && machine.motion.kind != .Glow
 }
 
 // The box in the world's metres round an entity's cells (origin and
@@ -369,10 +620,17 @@ sun_shadow_entity_box :: proc(transform: matrix[4, 4]f32, origin, size: [3]i32, 
 }
 
 // Whether draw_entities draws the entity: always, but in the cast pass
-// only when its box (sun_shadow_entity_box, up to its model's top) casts.
+// only when it is of the pass's part (sun_shadow_entity_moves, 0348) and
+// its box (sun_shadow_entity_box, up to its model's top) casts.
 model_frame_draws_entity :: proc(frame: Model_Frame, entities: ^Entities, models: Model_Renderer, common: Entity_Common) -> bool {
 	if frame.casters == nil {
 		return true
+	}
+	if frame.casters.part != .All {
+		moves := sun_shadow_entity_moves(common.handle.kind, frame.casters.machines.machines[common.machine])
+		if moves != (frame.casters.part == .Moving) {
+			return false
+		}
 	}
 	transform := frame.casters.transform * entity_frame_matrix(entities, common.frame)
 	minimum, maximum := sun_shadow_entity_box(transform, cast([3]i32)common.origin, common.size, machine_model_top(models, common))
@@ -403,6 +661,31 @@ fail_sun_shadow_map :: proc(shadows: ^Sun_Shadow_Renderer, texels: int, what: st
 	return false
 }
 
+// A framebuffer with a depth texture of texels a side attached, as
+// rlLoadTextureDepth makes it (the shared map and the kept maps share its
+// format, which a depth copy needs). On a failure what it made is freed
+// and the problem named.
+load_sun_shadow_target :: proc(texels: int) -> (framebuffer, depth_texture: u32, problem: string) {
+	framebuffer = rlgl.LoadFramebuffer()
+	if framebuffer == 0 {
+		return 0, 0, "no framebuffer"
+	}
+	depth_texture = rlgl.LoadTextureDepth(i32(texels), i32(texels), false)
+	if depth_texture == 0 {
+		rlgl.UnloadFramebuffer(framebuffer)
+		return 0, 0, "no depth texture"
+	}
+	rlgl.FramebufferAttach(framebuffer, depth_texture, i32(rlgl.FramebufferAttachType.DEPTH), i32(rlgl.FramebufferAttachTextureType.TEXTURE2D), 0)
+	if !rlgl.FramebufferComplete(framebuffer) {
+		// The framebuffer deletes its attached texture; the second delete
+		// covers an attach that did not take and is ignored otherwise.
+		rlgl.UnloadFramebuffer(framebuffer)
+		rlgl.UnloadTexture(depth_texture)
+		return 0, 0, "an incomplete framebuffer"
+	}
+	return framebuffer, depth_texture, ""
+}
+
 // From the pass when Unloaded: the depth shaders into a default
 // material, the framebuffer and its depth texture of texels a side;
 // everything made so far freed on a failure (fail_sun_shadow_map). Ready
@@ -412,25 +695,10 @@ load_sun_shadow_map :: proc(shadows: ^Sun_Shadow_Renderer, data_directory: strin
 	if !ok {
 		return fail_sun_shadow_map(shadows, texels, "its shaders")
 	}
-	framebuffer := rlgl.LoadFramebuffer()
-	if framebuffer == 0 {
+	framebuffer, depth, problem := load_sun_shadow_target(texels)
+	if problem != "" {
 		rl.UnloadShader(shader)
-		return fail_sun_shadow_map(shadows, texels, "no framebuffer")
-	}
-	depth := rlgl.LoadTextureDepth(i32(texels), i32(texels), false)
-	if depth == 0 {
-		rlgl.UnloadFramebuffer(framebuffer)
-		rl.UnloadShader(shader)
-		return fail_sun_shadow_map(shadows, texels, "no depth texture")
-	}
-	rlgl.FramebufferAttach(framebuffer, depth, i32(rlgl.FramebufferAttachType.DEPTH), i32(rlgl.FramebufferAttachTextureType.TEXTURE2D), 0)
-	if !rlgl.FramebufferComplete(framebuffer) {
-		// The framebuffer deletes its attached texture; the second delete
-		// covers an attach that did not take and is ignored otherwise.
-		rlgl.UnloadFramebuffer(framebuffer)
-		rlgl.UnloadTexture(depth)
-		rl.UnloadShader(shader)
-		return fail_sun_shadow_map(shadows, texels, "an incomplete framebuffer")
+		return fail_sun_shadow_map(shadows, texels, problem)
 	}
 	material := rl.LoadMaterialDefault()
 	material.shader = shader
@@ -455,10 +723,36 @@ set_sun_shadow_instanced :: proc(shadows: Sun_Shadow_Renderer, instanced: bool) 
 	rl.SetShaderValue(shadows.material.shader, shadows.instanced_location, &value, .FLOAT)
 }
 
-// Between frames: the receivers' slot cleared, then the framebuffer
-// (raylib 6.2 deletes its depth texture with it) and the depth material.
-// A Failed map freed what it made and only returns to Unloaded.
+// From the pass when a viewport's kept map is Unloaded: its target at the
+// shared map's size, Ready. A failure logs one line and leaves it Failed,
+// so its viewport draws the whole pass every frame until it is released.
+load_sun_shadow_kept :: proc(kept: ^Sun_Shadow_Kept, texels: int) -> bool {
+	framebuffer, depth, problem := load_sun_shadow_target(texels)
+	if problem != "" {
+		platform.log_printf("error: a viewport's kept sun shadow map did not load (%s), its shadow is drawn whole every frame", problem)
+		kept^ = {state = .Failed}
+		return false
+	}
+	kept^ = {state = .Ready, framebuffer = framebuffer, depth_texture = depth}
+	return true
+}
+
+// Between frames: the kept map's framebuffer (raylib 6.2 deletes its depth
+// texture with it) when it holds one, then nothing kept.
+release_sun_shadow_kept :: proc(kept: ^Sun_Shadow_Kept) {
+	if kept.state == .Ready {
+		rlgl.UnloadFramebuffer(kept.framebuffer)
+	}
+	kept^ = {}
+}
+
+// Between frames: every kept map, the receivers' slot cleared, then the
+// framebuffer (raylib 6.2 deletes its depth texture with it) and the depth
+// material. A Failed map freed what it made and only returns to Unloaded.
 release_sun_shadow_map :: proc(shadows: ^Sun_Shadow_Renderer, receivers: []rl.Material) {
+	for &kept in shadows.kept {
+		release_sun_shadow_kept(&kept)
+	}
 	if shadows.state == .Ready {
 		set_sun_shadow_map_slot(receivers, {})
 		rlgl.UnloadFramebuffer(shadows.framebuffer)
@@ -473,12 +767,36 @@ sun_shadow_map_stale :: proc(shadows: Sun_Shadow_Renderer, on: bool, texels: int
 	return shadows.state != .Unloaded && (!on || shadows.texels != texels)
 }
 
-// Between frames (prepare_field_frame): a stale map released, so the next
-// pass that wants one makes it at the row's size.
-serve_sun_shadows :: proc(shadows: ^Sun_Shadow_Renderer, receivers: []rl.Material, on: bool, texels: int) {
+// Between frames (prepare_field_frame): a stale map released with every
+// kept map, so the next pass that wants one makes it at the row's size;
+// else the kept maps of the viewports removed (from viewport_count up).
+serve_sun_shadows :: proc(shadows: ^Sun_Shadow_Renderer, receivers: []rl.Material, on: bool, texels, viewport_count: int) {
 	if sun_shadow_map_stale(shadows^, on, texels) {
 		release_sun_shadow_map(shadows, receivers)
+		return
 	}
+	for slot in max(viewport_count, 0) ..< SUN_SHADOW_KEPT_MAPS {
+		release_sun_shadow_kept(&shadows.kept[slot])
+	}
+}
+
+// The viewport's kept map to draw on, or nil for the whole pass: a slot
+// outside the kept maps (the planet preview), a frame whose casters move
+// (the pod's descent, which also forgets what the map holds), a map that
+// does not load. An Unloaded one is loaded at the shared map's size.
+usable_sun_shadow_kept :: proc(shadows: ^Sun_Shadow_Renderer, slot: int, moving_frame: bool) -> ^Sun_Shadow_Kept {
+	if slot < 0 || slot >= SUN_SHADOW_KEPT_MAPS {
+		return nil
+	}
+	kept := &shadows.kept[slot]
+	if moving_frame {
+		kept.drawn = false
+		return nil
+	}
+	if kept.state == .Unloaded {
+		load_sun_shadow_kept(kept, shadows.texels)
+	}
+	return kept.state == .Ready ? kept : nil
 }
 
 // A receiving shader's map sampler where DrawMesh and
@@ -524,13 +842,16 @@ unbind_sun_shadow_texture :: proc(texture: u32) {
 	rlgl.ActiveTextureSlot(0)
 }
 
-// The map bound as the target with the cascade's matrices: its depth
-// cleared (the mask on first), depth test on, both faces drawn.
-begin_sun_shadow_map :: proc(shadows: Sun_Shadow_Renderer, cascade: Sun_Shadow_Cascade) {
-	side := i32(shadows.texels)
-	rl.BeginTextureMode(rl.RenderTexture2D{id = shadows.framebuffer, texture = {width = side, height = side}, depth = {id = shadows.depth_texture}})
+// A map (the shared one or a kept one) bound as the target with the
+// cascade's matrices: the depth mask on, its depth cleared when asked (not
+// over a kept map's copy), depth test on, both faces drawn.
+begin_sun_shadow_target :: proc(framebuffer, depth_texture: u32, texels: int, cascade: Sun_Shadow_Cascade, clear: bool) {
+	side := i32(texels)
+	rl.BeginTextureMode(rl.RenderTexture2D{id = framebuffer, texture = {width = side, height = side}, depth = {id = depth_texture}})
 	rlgl.EnableDepthMask()
-	rlgl.ClearScreenBuffers()
+	if clear {
+		rlgl.ClearScreenBuffers()
+	}
 	rlgl.SetMatrixProjection(cast(rl.Matrix)cascade.projection)
 	rlgl.SetMatrixModelview(cast(rl.Matrix)cascade.view)
 	rlgl.EnableDepthTest()
@@ -544,4 +865,20 @@ end_sun_shadow_map :: proc() {
 	rlgl.EnableBackfaceCulling()
 	rlgl.DisableDepthTest()
 	rl.EndTextureMode()
+}
+
+// The kept map's depth copied into the shared map (0348): one depth blit,
+// nearest, between two framebuffers whose textures one
+// rlLoadTextureDepth call made at one size (GL 3.0 and GLES 3.0 core),
+// the batch flushed, the scissor test off and the depth mask on first;
+// nothing bound after.
+copy_sun_shadow_depth :: proc(source, destination: u32, texels: int) {
+	side := i32(texels)
+	rlgl.DrawRenderBatchActive()
+	rlgl.DisableScissorTest()
+	rlgl.EnableDepthMask()
+	rl.rlBindFramebuffer(rl.RL_READ_FRAMEBUFFER, source)
+	rl.rlBindFramebuffer(rl.RL_DRAW_FRAMEBUFFER, destination)
+	rlgl.BlitFramebuffer(0, 0, side, side, 0, 0, side, side, SUN_SHADOW_DEPTH_BUFFER_BIT)
+	rlgl.DisableFramebuffer()
 }

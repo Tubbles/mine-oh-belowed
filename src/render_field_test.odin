@@ -53,3 +53,22 @@ test_a_view_counts_the_selected_nodes_without_a_mesh :: proc(t: ^testing.T) {
 	every := [?]Field_Node{never_submitted, in_flight_bare, in_flight_drawn, meshed_empty}
 	testing.expect_value(t, field_view_unmeshed_nodes(&streaming, &renderer, every[:]), 2)
 }
+
+// Work item 0348: every change of the renderer's meshes moves its
+// revision, which asks the sun's kept shadow maps for the terrain's
+// fingerprint.
+@(test)
+test_mesh_changes_move_the_renderer_revision :: proc(t: ^testing.T) {
+	renderer := Field_Renderer{spacing_millimetres = 1000}
+	defer delete(renderer.meshes)
+	node := Field_Node{level = 0, coordinate = {0, 250, 0}}
+	renderer.meshes[node] = Field_Node_Render{}
+	unload_field_node(&renderer, node)
+	testing.expect_value(t, renderer.mesh_revision, u64(1))
+	testing.expect(t, node not_in renderer.meshes, "the node is gone")
+	unload_field_node(&renderer, node)
+	testing.expect_value(t, renderer.mesh_revision, u64(1))
+	apply_field_mesh(&renderer, node, {}, {}, 0)
+	testing.expect_value(t, renderer.mesh_revision, u64(2))
+	testing.expect(t, node not_in renderer.meshes, "two empty meshes store nothing")
+}

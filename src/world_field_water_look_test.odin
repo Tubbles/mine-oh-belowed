@@ -591,3 +591,39 @@ test_still_water_of_a_dead_owner_draws_as_the_front :: proc(t: ^testing.T) {
 	testing.expect(t, with_owner.water_exact == without.water_exact)
 	free_all(context.temp_allocator)
 }
+
+// Work item 0348: the waves move the water's mesh and leave what the sun's
+// shadow reads of the terrain's (its depth hash), so a pump's waves never
+// draw a kept shadow map again.
+@(test)
+test_waves_leave_the_terrain_hash :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := settled_body_test_lake(t, 10, &tick)
+	defer destroy_field_world(&world)
+	waves := Field_Waves {
+		tuning    = make_field_wave_tuning(SHIPPED_WATER_LOOK),
+		last_tick = tick,
+	}
+	defer destroy_field_waves(&waves)
+	terrain_hash := proc(world: ^Field_World, waves: Field_Wave_Heights) -> u64 {
+		grid := gather_field_grid(world, LOOK_TEST_CHUNK, waves, context.temp_allocator)
+		return field_mesh_depth_hash(mesh_field_grid(grid, TEST_FIELD_PALETTE[:], 1000, {flaps = EVERY_FIELD_FACE}, context.temp_allocator))
+	}
+	still_water := look_test_mesh(&world, LOOK_TEST_CHUNK)
+	still := terrain_hash(&world, nil)
+	centre, found := look_test_surface_sample(&world, 7, 7)
+	testing.expect(t, found, "the lake has a surface")
+	clear(&world.water_events)
+	push_field_water_event(&world, .Impact, centre, FIELD_WATER_FULL)
+	moved := false
+	for _ in 0 ..< 20 {
+		tick += 1
+		advance_field_waves(&waves, &world, tick)
+		if !mesh_data_equal(look_test_mesh(&world, LOOK_TEST_CHUNK, waves.heights), still_water) {
+			moved = true
+			break
+		}
+	}
+	testing.expect(t, moved, "the waves move the water's mesh")
+	testing.expect_value(t, terrain_hash(&world, waves.heights), still)
+}

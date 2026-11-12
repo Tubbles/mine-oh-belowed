@@ -93,13 +93,15 @@ Field_Job :: struct {
 // the terrain it lies on and one revision covers both. Trees results
 // (0310) carry the tile's standing and felled trees' keys and instances
 // (tree_instance), in the workers' allocator. A finest Mesh result with
-// the cover on carries the node's cover (0311).
+// the cover on carries the node's cover (0311). A Mesh result carries its
+// terrain mesh's depth hash (field_mesh_depth_hash, 0348).
 Field_Job_Result :: struct {
 	kind:       Field_Job_Kind,
 	node:       Field_Node,
 	revision:   u64,
 	chunk:      ^Field_Chunk,
 	mesh:       Field_Mesh_Data,
+	terrain_hash: u64,
 	water_mesh: Field_Mesh_Data,
 	tree_tile:  Field_Tree_Tile,
 	tree_keys:  []Tree_Key,
@@ -295,6 +297,7 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		}
 		measure_cuts := job.grid != nil || job.node.level == 0
 		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces, look = shared.look, measure_cuts = measure_cuts, cover = cover, cover_table = shared.cover, cover_frames = job.cover_frames)
+		result.terrain_hash = field_mesh_depth_hash(result.mesh)
 		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
 		free(job.grid)
 		free_field_job_frames(job)

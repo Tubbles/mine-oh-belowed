@@ -63,6 +63,10 @@ Model_Renderer :: struct {
 	// The field's trees (0310, render_field_trees.odin): their shader,
 	// the cards' atlas and the cards by Machine_Id.
 	trees:                 Tree_Draw,
+	// Counts the unloads of the meshes (unload_model_meshes, so every
+	// model and content reload), so the sun's kept shadow maps draw again
+	// (0348).
+	revision:              u64,
 }
 
 // What every model drawn this frame shares: the world for the light, the
@@ -237,6 +241,7 @@ unload_model_meshes :: proc(renderer: ^Model_Renderer) {
 	}
 	delete(renderer.models)
 	renderer.models = nil
+	renderer.revision += 1
 }
 
 // Loads every machine's model from the files and replaces the meshes. On

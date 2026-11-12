@@ -18,26 +18,38 @@ package raylib
 // raylib loads GL itself, so the game reads glGetString without linking
 // libGL or opengl32 (work item 0104, the gl line in the log). Call it after
 // InitWindow.
+//
+// rlBindFramebuffer: rlgl's, which the binding lacks, on every platform
+// (work item 0348): binds a framebuffer to RL_READ_FRAMEBUFFER or
+// RL_DRAW_FRAMEBUFFER alone, so rlgl's BlitFramebuffer copies the sun
+// shadow's kept depth into the shared map.
 
-// require: on Android nothing in this file uses core:c or the foreign
-// import below, and -vet refuses an unused import.
-@(require) import "core:c"
+import "core:c"
 
 // GLFW is inside raylib's static library on both desktop systems. On
 // Windows (work item 0102) the MSVC build from raylib's release, see
 // README.md. The Android archive (work item 0113) has no GLFW, so the
-// procedures below are declared only off Android: a call from the game
-// fails at compile time there, not at link time.
+// GLFW procedures below are declared only off Android: a call from the
+// game fails at compile time there, not at link time.
 when ODIN_OS == .Windows {
 	foreign import lib "windows/raylib.lib"
 } else when ODIN_OS == .Linux && ODIN_PLATFORM_SUBTARGET == .Android {
-	@(require) foreign import lib "android/libraylib.a"
+	foreign import lib "android/libraylib.a"
 } else {
 	foreign import lib "linux/libraylib.a"
 }
 
 GLFW_PLATFORM_WAYLAND :: 0x00060003
 GLFW_PLATFORM_X11 :: 0x00060004
+
+// GL_READ_FRAMEBUFFER and GL_DRAW_FRAMEBUFFER, as rlgl.h names them.
+RL_READ_FRAMEBUFFER :: 0x8CA8
+RL_DRAW_FRAMEBUFFER :: 0x8CA9
+
+@(default_calling_convention = "c")
+foreign lib {
+	rlBindFramebuffer :: proc(target, framebuffer: c.uint) ---
+}
 
 when ODIN_PLATFORM_SUBTARGET != .Android {
 	@(default_calling_convention = "c")

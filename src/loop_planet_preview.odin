@@ -618,7 +618,7 @@ planet_preview_scene :: proc(preview: ^Planet_Preview, camera: rl.Camera3D, alph
 draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, capture: bool, alpha: f32) -> (saved: bool) {
 	camera, body_shown := planet_preview_raylib_camera(preview, alpha)
 	scene := planet_preview_scene(preview, camera, alpha, body_shown)
-	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, selection, preview.sun_shadows)
+	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, selection, preview.sun_shadows, SUN_SHADOW_NO_KEPT_MAP)
 	rl.BeginDrawing()
 	rl.ClearBackground(preview.field_light.sky.colors.horizon)
 	rl.BeginMode3D(camera)

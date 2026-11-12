@@ -447,6 +447,30 @@ test_tree_changes_name_what_reaches_a_view :: proc(t: ^testing.T) {
 	testing.expect(t, near_tree_candidates_stale(&cache, gather, camera, 48, 3), "every tile gone gathers again")
 }
 
+// Work item 0348: the sun's kept shadow maps compare their trees when the
+// cache's revision moved, so every felling of a cached tree moves it.
+@(test)
+test_tree_cache_changes_move_its_revision :: proc(t: ^testing.T) {
+	cache: Field_Tree_Cache
+	defer destroy_field_tree_cache(&cache)
+	cache.cells = 1000
+	camera := [3]f32{0, 8000, 0}
+	near := [3]f32{1, 2, 3}
+	cache.tiles[{0, 0, 0}] = tree_draw_test_tile(camera, near[:], 0)
+	revision := cache.revision
+	testing.expect(t, drop_field_tree_key(&cache, {0, 0, 0}), "the key drops")
+	testing.expect_value(t, cache.revision, revision + 1)
+	felled := make(map[Tree_Key]struct{}, context.temp_allocator)
+	felled[{1, 0, 0}] = {}
+	apply_felled_field_trees(&cache, felled)
+	testing.expect_value(t, cache.revision, revision + 2)
+	felled[{5000, 0, 0}] = {}
+	apply_felled_field_trees(&cache, felled)
+	testing.expect_value(t, cache.revision, revision + 2)
+	clear_field_tree_tiles(&cache)
+	testing.expect_value(t, cache.revision, revision + 3)
+}
+
 @(test)
 test_the_far_tiles_stop_at_the_card_limit :: proc(t: ^testing.T) {
 	cache: Field_Tree_Cache
@@ -492,6 +516,7 @@ test_a_felled_tree_rebuilds_its_tile :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(cache.tiles), 0)
 	// No worker threads: run the queued jobs here, as a worker would.
 	run_queued_field_tree_jobs(&streaming)
+	revision := cache.revision
 	update_field_tree_cache(&cache, &streaming, &generation, eyes[:], felled, config, 500)
 	testing.expect(t, len(cache.tiles) > 0 && len(cache.tiles) <= FIELD_TREE_UPLOADS_PER_FRAME, "at most the uploads a frame are taken")
 	tile: Field_Tree_Tile
@@ -504,6 +529,7 @@ test_a_felled_tree_rebuilds_its_tile :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, found, "a tile with trees")
+	testing.expect(t, cache.revision > revision, "the update that takes tiles moves the cache's revision")
 	before := len(cache.tiles[tile].keys)
 	cache.tiles[tile] = mark_field_tree_tile_uploaded(cache.tiles[tile])
 	felled[key] = {}

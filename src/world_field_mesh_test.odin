@@ -298,3 +298,33 @@ test_the_packed_bytes_unpack_exactly :: proc(t: ^testing.T) {
 		testing.expectf(t, round_trips(bytes), "%v", bytes)
 	}
 }
+
+// Work item 0348: the depth hash a kept sun shadow map fingerprints the
+// terrain by reads the positions and the indices, what the depth shader
+// reads, and nothing the waves or the looks move.
+@(test)
+test_the_depth_hash_reads_positions_and_indices_only :: proc(t: ^testing.T) {
+	mesh: Field_Mesh_Data
+	defer destroy_field_mesh_data(mesh)
+	testing.expect_value(t, field_mesh_depth_hash(mesh), 0)
+	append(&mesh.positions, [3]f32{0, 0, 0}, [3]f32{1, 0, 0}, [3]f32{0, 1, 0})
+	append(&mesh.normals, [3]f32{0, 0, 1}, [3]f32{0, 0, 1}, [3]f32{0, 0, 1})
+	append(&mesh.colors, [4]u8{1, 2, 3, 4}, [4]u8{1, 2, 3, 4}, [4]u8{1, 2, 3, 4})
+	append(&mesh.lights, [2]f32{1, 1}, [2]f32{1, 1}, [2]f32{1, 1})
+	append(&mesh.weights, [4]f32{1, 0, 0, 0}, [4]f32{1, 0, 0, 0}, [4]f32{1, 0, 0, 0})
+	append(&mesh.looks, [2]f32{0, 0}, [2]f32{0, 0}, [2]f32{0, 0})
+	append(&mesh.indices, 0, 1, 2)
+	start := field_mesh_depth_hash(mesh)
+	mesh.normals[0] = {0, 1, 0}
+	mesh.colors[1] = {9, 9, 9, 9}
+	mesh.lights[2] = {0.5, 0.25}
+	mesh.weights[0] = {0, 1, 0, 0}
+	mesh.looks[1] = {0.5, 0.5}
+	testing.expect_value(t, field_mesh_depth_hash(mesh), start)
+	mesh.positions[1].x = 1.5
+	testing.expect(t, field_mesh_depth_hash(mesh) != start, "a moved position changes it")
+	mesh.positions[1].x = 1
+	testing.expect_value(t, field_mesh_depth_hash(mesh), start)
+	mesh.indices[0], mesh.indices[1] = 1, 0
+	testing.expect(t, field_mesh_depth_hash(mesh) != start, "a changed index changes it")
+}

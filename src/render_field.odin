@@ -51,7 +51,8 @@ FIELD_SUN_SHADOW_UNIFORM :: "sun_shadow_strength"
 
 // origin is the node's first sample in metres. A node with no water has
 // has_water false and no water mesh. cover holds a finest node's ground
-// cover per kind (0311).
+// cover per kind (0311). terrain_hash is the terrain mesh's depth hash
+// (field_mesh_depth_hash, the sun's kept shadow maps' fingerprint, 0348).
 Field_Node_Render :: struct {
 	mesh:         rl.Mesh,
 	water:        rl.Mesh,
@@ -60,6 +61,7 @@ Field_Node_Render :: struct {
 	origin:       [3]f32,
 	vertex_count: int,
 	cover:        [MAXIMUM_COVER_KINDS]Field_Cover_Node_Draw,
+	terrain_hash: u64,
 }
 
 Field_Renderer :: struct {
@@ -84,6 +86,10 @@ Field_Renderer :: struct {
 	last_distance_metres:     f32,
 	spacing_millimetres:      int,
 	meshes:                   map[Field_Node]Field_Node_Render,
+	// Counts every change of meshes (apply_field_mesh, unload_field_node),
+	// so the sun's kept shadow maps know when to fingerprint the terrain
+	// (0348).
+	mesh_revision:            u64,
 	vertex_count:             int,
 	drawn_node_count:         int,
 	// The trees round the eyes (0197, render_field_trees.odin).
@@ -242,6 +248,7 @@ unload_field_node :: proc(renderer: ^Field_Renderer, node: Field_Node) {
 		renderer.vertex_count -= previous.vertex_count
 		unload_field_node_render(previous)
 		delete_key(&renderer.meshes, node)
+		renderer.mesh_revision += 1
 	}
 }
 
@@ -251,16 +258,20 @@ field_node_origin_metres :: proc(node: Field_Node, spacing_millimetres: int) -> 
 	return {f32(f64(origin.x) * metres_per_sample), f32(f64(origin.y) * metres_per_sample), f32(f64(origin.z) * metres_per_sample)}
 }
 
-// Replaces the node's meshes and its cover (0311); two empty meshes only
-// remove the old ones. The data stays the caller's.
-apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, water: Field_Mesh_Data, cover: Field_Cover_Data = {}) {
+// Replaces the node's meshes and its cover (0311) and moves the mesh
+// revision. Two empty meshes only remove the old ones. terrain_hash is
+// the terrain mesh's (field_mesh_depth_hash, 0348). The data stays the
+// caller's.
+apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, water: Field_Mesh_Data, terrain_hash: u64, cover: Field_Cover_Data = {}) {
 	unload_field_node(renderer, node)
+	renderer.mesh_revision += 1
 	if len(data.indices) == 0 && len(water.indices) == 0 {
 		return
 	}
 	render := Field_Node_Render {
 		origin       = field_node_origin_metres(node, renderer.spacing_millimetres),
 		vertex_count = len(data.positions) + len(water.positions),
+		terrain_hash = terrain_hash,
 	}
 	if len(data.indices) > 0 {
 		render.mesh, render.has_mesh = upload_field_mesh(data), true
@@ -280,7 +291,7 @@ upload_streamed_field_meshes :: proc(renderer: ^Field_Renderer, streaming: ^Fiel
 		unload_field_node(renderer, node)
 	}
 	for result in take_current_field_meshes(streaming, context.temp_allocator) {
-		apply_field_mesh(renderer, result.node, result.mesh, result.water_mesh, result.cover)
+		apply_field_mesh(renderer, result.node, result.mesh, result.water_mesh, result.terrain_hash, result.cover)
 		destroy_field_mesh_data(result.mesh)
 		destroy_field_mesh_data(result.water_mesh)
 		destroy_field_cover_data(result.cover)

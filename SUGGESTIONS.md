@@ -376,3 +376,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 
 - After an edit `field_sky_is_open` marches by the nearest sample and can call open air at an overhang's lip shut, where the generation lit it at the full sky light (2 of 509 samples at the nearest gorge notch, 5 of 823 at the mesa notch, a review probe). Such a face dims and now also greys a little once an edit marches its column again. Older than 0380 and only at a lip.
 - The grass share assertion in `test_the_fill_lights_a_cave_from_its_mouth` cannot fail (a face that far down is past the rock's full steepness). A check that every vertex under the full sky light has a roofed air corner would pin that open ground is unchanged.
+
+## Suggestions from the kept shadow map (0348, 2026-11-12)
+
+- A driver that refuses the depth blit is not noticed: still casters lose their shadows and moving ones leave trails. Reading the GL error once after a kept map's first copy and marking the map failed would fall back to the whole pass. Decide after the hand check on the phone and under Winlator: if either shows it, this is a fix, not a suggestion.
+- A driven vessel moves its frame's pose every tick and so redraws its kept map every frame. Right, and no saving there. Drawing a moving frame's occupants in the moving pass would keep the map.
+- A gather that leaves the casting trees the same (a felling past the cap) redraws once. A hash of the selected keys, free of their order, would skip it.

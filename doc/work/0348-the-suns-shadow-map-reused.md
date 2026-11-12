@@ -1,6 +1,6 @@
 # 0348: The sun's shadow map reused
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-12)
 
 The sun's shadow map is drawn every frame for every viewport: 0328 estimated 0.3 to 0.7 ms on the GPU and 0.4 to 1.2 ms on the CPU a viewport (`work/performance_research_0340.md`, 2.3). While the eye stands still nothing in it changes for many frames.
 
@@ -166,3 +166,11 @@ Elsewhere:
 1. The blit under Winlator's Gladio is checked after the landing, by the user's hand check of the Windows build on the phone, named in the reply at the landing.
 2. Implemented after 0342 has landed and its first table is read: if the shadow pass is not among what costs in the still views and in split screen, the item waits behind the others.
 3. The finding that today's snap re-phases every tick while the sun moves goes into the landing's log section.
+
+### Deviations (implementation, 2026-11-12)
+
+- On 0346: the trees' signal is the viewport's `Tree_View` instead of a tile fingerprint. `Sun_Shadow_Kept_Key.tree_gathers` holds the casting pass's `gathers` at the drawing. A Compare with the tree cache's revision moved updates the casting trees on the key's cascade (`update_sun_shadow_trees`, shared with the draw) and keeps the map only while nothing was gathered. On a held cascade the cut's other inputs are the key's (the extent moves with the models' revision, the limit with the row), so only a gather changes the drawn set. A gather that keeps the set (a felling past the cap) redraws once. Not written: `sun_shadow_tree_fingerprint` and `Field_Tree_Tile_Draw.revision`. `Field_Tree_Cache.revision` is 0346's. `draw_sun_shadow_trees` returns `(drawn, gathers)`. The tree fingerprint test is `test_the_kept_trees_gather_again_only_for_a_change_in_the_casters_box` with the specified cases, and `test_tree_cache_changes_move_its_revision` checks the cache's revision only.
+- On 0346: the kept slot is `Field_Scene.tree_view` (`viewport_index`), so `draw_viewport_world` and `draw_field_viewport_world` take no index and `src/loop.odin` is unchanged.
+- `sun_shadow_fingerprint` mixes after each word: one final mix of xored words is symmetric, so two flat nodes with swapped coordinates and equal terrain hashes would cancel.
+- The Compare fingerprints the terrain only when the meshes or the selection moved and updates the trees only when the tree cache moved (`kept_sun_shadow_casters_hold`).
+- `platform.odin` drops `@(require)` from `core:c` and the Android import, both used on every platform now.

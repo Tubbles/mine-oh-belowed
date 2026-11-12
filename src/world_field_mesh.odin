@@ -1,6 +1,8 @@
 package game
 
+import "core:hash/xxhash"
 import "core:math/linalg"
+import "core:slice"
 
 // The field mesher (work item 0169, doc/presentation.md, Chunk meshes):
 // naive surface nets over a grid of samples. A cell is the cube between
@@ -114,6 +116,22 @@ Field_Mesh_Data :: struct {
 }
 
 #assert(FIELD_TEXTURED_MATERIAL_COUNT == 7, "the material weights travel in the tangent and three bytes of the texture coordinate's second component")
+
+// A hash of what the sun shadow's depth shader reads of a terrain mesh
+// (work item 0348): its positions, then its indices seeded with that, so
+// a remesh that moved only the normals, the colours, the light, the
+// weights or the looks (the water's waves) keeps it. 0 for an empty mesh
+// (xxhash refuses an empty slice's nil data).
+field_mesh_depth_hash :: proc(mesh: Field_Mesh_Data) -> u64 {
+	if len(mesh.positions) == 0 {
+		return 0
+	}
+	positions := xxhash.XXH3_64_default(slice.to_bytes(mesh.positions[:]))
+	if len(mesh.indices) == 0 {
+		return positions
+	}
+	return xxhash.XXH3_64_with_seed(slice.to_bytes(mesh.indices[:]), positions)
+}
 
 // Local from -1 to FIELD_GRID_CELLS on every axis.
 field_grid_index :: proc(local: [3]i32) -> int {

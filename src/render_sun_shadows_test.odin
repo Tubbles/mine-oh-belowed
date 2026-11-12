@@ -20,29 +20,61 @@ sun_shadow_test_clip :: proc(cascade: Sun_Shadow_Cascade, point: [3]f32) -> [3]f
 	return (cascade.view_projection * [4]f32{point.x, point.y, point.z, 1}).xyz
 }
 
-// The offset's parts across the right and the up.
-sun_shadow_test_in_plane :: proc(cascade: Sun_Shadow_Cascade, offset: [3]f32) -> [2]f32 {
-	return {linalg.dot(offset, cascade.right), linalg.dot(offset, cascade.up)}
+// The centre's step in metres as sun_shadow_cascade works it out in f64
+// (the cascade's texel_metres is its f32 rounding).
+sun_shadow_test_step :: proc(row: Sun_Shadows_Row) -> f64 {
+	return SUN_SHADOW_SNAP_TEXELS * 2 * f64(row.radius_metres) / f64(row.map_texels - 2 * SUN_SHADOW_MARGIN_TEXELS - SUN_SHADOW_SNAP_TEXELS)
 }
 
+// The light's axes as sun_shadow_cascade builds them in f64: right, up
+// and towards the sun.
+sun_shadow_test_axes :: proc(toward_sun, path_axis: [3]f32) -> [3][3]f64 {
+	sun := linalg.normalize(linalg.array_cast(toward_sun, f64))
+	right := linalg.normalize(linalg.cross(-sun, linalg.array_cast(path_axis, f64)))
+	return {right, linalg.cross(right, -sun), sun}
+}
+
+// The point moved by the distances along the three axes, in f32.
+sun_shadow_test_moved :: proc(point: [3]f64, axes: [3][3]f64, distances: [3]f64) -> [3]f32 {
+	moved := point
+	for axis, index in axes {
+		moved += axis * distances[index]
+	}
+	return linalg.array_cast(moved, f32)
+}
+
+// Work item 0348: the eye anywhere in its step, half a step off the
+// centre along all three axes at once, keeps the sphere of the radius
+// round it SUN_SHADOW_MARGIN_TEXELS texels inside the map, the centre
+// stepped from the origin or from an anchor off the lattice.
 @(test)
 test_the_cascade_covers_the_radius :: proc(t: ^testing.T) {
 	row := sun_shadows_test_row()
-	texel := 2 * f32(row.radius_metres) / f32(row.map_texels - 2 * SUN_SHADOW_MARGIN_TEXELS)
-	// The eye lies up to half a texel off the snapped centre along each
-	// axis, so at least the margin less one texel stays clear.
-	clear_share := f32(SUN_SHADOW_MARGIN_TEXELS - 1) / (f32(row.map_texels) / 2)
+	texel := 2 * f32(row.radius_metres) / f32(row.map_texels - 2 * SUN_SHADOW_MARGIN_TEXELS - SUN_SHADOW_SNAP_TEXELS)
+	step := sun_shadow_test_step(row)
+	// A twentieth of a texel, 3 mm, for f32 at 8 km.
+	clear_share := (f32(SUN_SHADOW_MARGIN_TEXELS) - 0.05) / (f32(row.map_texels) / 2)
 	for up in ([2][3]f32{{0, 1, 0}, linalg.normalize([3]f32{1, 2, 3})}) {
 		for fraction in ([3]f64{0.1, 0.25, 0.4}) {
-			eye := up * 8000
-			cascade := sun_shadow_cascade(eye, field_sun_world_direction(fraction, up), field_sun_path_world_axis(up), row)
-			testing.expectf(t, abs(cascade.texel_metres - texel) < 1e-6, "texel %v, expected %v", cascade.texel_metres, texel)
-			testing.expectf(t, abs(cascade.half_size - f32(row.map_texels) * texel / 2) < 1e-4, "half size %v", cascade.half_size)
-			for axis in ([3][3]f32{cascade.right, cascade.up, cascade.toward_sun}) {
-				for side in ([2]f32{-1, 1}) {
-					clip := sun_shadow_test_clip(cascade, eye + axis * (side * f32(row.radius_metres)))
-					for component in 0 ..< 3 {
-						testing.expectf(t, abs(clip[component]) <= 1 - clear_share, "up %v fraction %v: %v lands at %v", up, fraction, axis * side, clip)
+			sun, path := field_sun_world_direction(fraction, up), field_sun_path_world_axis(up)
+			axes := sun_shadow_test_axes(sun, path)
+			start := up * 8000
+			for anchor in ([2][3]f64{{}, linalg.array_cast(start + {0.3, -0.7, 1.1}, f64)}) {
+				lattice := sun_shadow_cascade(start, sun, path, row, anchor).precise_centre
+				for corner in 0 ..< 8 {
+					sides := [3]f64{corner & 1 == 0 ? -1 : 1, corner & 2 == 0 ? -1 : 1, corner & 4 == 0 ? -1 : 1}
+					eye := sun_shadow_test_moved(lattice, axes, sides * 0.499 * step)
+					cascade := sun_shadow_cascade(eye, sun, path, row, anchor)
+					testing.expectf(t, abs(cascade.texel_metres - texel) < 1e-6, "texel %v, expected %v", cascade.texel_metres, texel)
+					testing.expectf(t, abs(cascade.half_size - f32(row.map_texels) * texel / 2) < 1e-4, "half size %v", cascade.half_size)
+					testing.expectf(t, linalg.length(cascade.precise_centre - lattice) < 1e-9, "the eye's step moved off the lattice point by %v", cascade.precise_centre - lattice)
+					for axis in ([3][3]f32{cascade.right, cascade.up, cascade.toward_sun}) {
+						for side in ([2]f32{-1, 1}) {
+							clip := sun_shadow_test_clip(cascade, eye + axis * (side * f32(row.radius_metres)))
+							for component in 0 ..< 3 {
+								testing.expectf(t, abs(clip[component]) <= 1 - clear_share, "up %v fraction %v corner %d: %v lands at %v", up, fraction, corner, axis * side, clip)
+							}
+						}
 					}
 				}
 			}
@@ -51,34 +83,249 @@ test_the_cascade_covers_the_radius :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_the_cascade_snaps_to_whole_texels :: proc(t: ^testing.T) {
+test_the_cascade_moves_in_whole_steps_from_its_anchor :: proc(t: ^testing.T) {
 	row := sun_shadows_test_row()
 	up := linalg.normalize([3]f32{1, 2, 3})
-	sun, axis := field_sun_world_direction(0.15, up), field_sun_path_world_axis(up)
-	first := sun_shadow_cascade(up * 8000, sun, axis, row)
-	texel := first.texel_metres
-	// f32 at 8 km holds a point to about a millimetre, a sixtieth of a
-	// texel.
-	tolerance := 0.05 * texel
-	probe := first.centre + first.right * 3 + first.up * 5
-	nudged := sun_shadow_cascade(first.centre + first.right * (0.25 * texel), sun, axis, row)
-	kept := sun_shadow_test_in_plane(first, nudged.centre - first.centre)
-	testing.expectf(t, abs(kept.x) < tolerance && abs(kept.y) < tolerance, "a quarter texel moved the centre by %v", kept)
-	drift := sun_shadow_test_clip(nudged, probe).xy - sun_shadow_test_clip(first, probe).xy
-	testing.expectf(t, abs(drift.x) < 1e-5 && abs(drift.y) < 1e-5, "a quarter texel moved the map's grid by %v", drift)
-	stepped := sun_shadow_cascade(first.centre + first.right * texel, sun, axis, row)
-	moved := sun_shadow_test_in_plane(first, stepped.centre - first.centre)
-	testing.expectf(t, abs(moved.x - texel) < tolerance && abs(moved.y) < tolerance, "a texel moved the centre by %v", moved)
-	along := sun_shadow_cascade(up * 8000 + sun * 5, sun, axis, row)
-	sideways := sun_shadow_test_in_plane(first, along.centre - first.centre)
-	testing.expectf(t, abs(sideways.x) < tolerance && abs(sideways.y) < tolerance, "5 m along the sun moved the centre across by %v", sideways)
-	testing.expectf(t, abs(linalg.dot(along.centre - first.centre, sun) - 5) < 0.01, "5 m along the sun moved the centre %v along it", linalg.dot(along.centre - first.centre, sun))
-	for step in 0 ..< 50 {
-		eye := up * 8000 + first.right * (0.137 * f32(step)) + first.up * (0.291 * f32(step))
-		cascade := sun_shadow_cascade(eye, sun, axis, row)
-		offset := sun_shadow_test_in_plane(cascade, eye - cascade.centre)
-		testing.expectf(t, linalg.length(offset) <= 0.71 * texel, "the eye %v texels off the centre", linalg.length(offset) / texel)
+	sun, path := field_sun_world_direction(0.15, up), field_sun_path_world_axis(up)
+	axes := sun_shadow_test_axes(sun, path)
+	start := up * 8000
+	for anchor in ([2][3]f64{linalg.array_cast(start, f64), {}}) {
+		first := sun_shadow_cascade(start, sun, path, row, anchor)
+		centre := first.precise_centre
+		step := sun_shadow_test_step(row)
+		nudged := sun_shadow_cascade(sun_shadow_test_moved(centre, axes, {0.4 * step, 0, 0}), sun, path, row, anchor)
+		testing.expectf(t, linalg.length(nudged.precise_centre - centre) < 1e-9, "0.4 step moved the centre by %v", nudged.precise_centre - centre)
+		for column in 0 ..< 4 {
+			for line in 0 ..< 4 {
+				testing.expectf(t, abs(nudged.view_projection[line, column] - first.view_projection[line, column]) < 1e-5, "0.4 step moved the view projection")
+			}
+		}
+		stepped := sun_shadow_cascade(sun_shadow_test_moved(centre, axes, {0.6 * step, 0, 0}), sun, path, row, anchor)
+		testing.expectf(t, linalg.length(stepped.precise_centre - (centre + axes[0] * step)) < 1e-9, "0.6 step moved the centre by %v", stepped.precise_centre - centre)
+		along := sun_shadow_cascade(sun_shadow_test_moved(centre, axes, {0, 0, 5}), sun, path, row, anchor)
+		expected := centre + axes[2] * (math.round(5 / step) * step)
+		testing.expectf(t, linalg.length(along.precise_centre - expected) < 1e-9, "5 m along the sun moved the centre by %v", along.precise_centre - centre)
+		for index in 0 ..< 100 {
+			// A fixed spread of eyes within 50 m of the start.
+			offset := [3]f32{f32((index * 37) % 101) - 50, f32((index * 61) % 97) - 48, f32((index * 13) % 89) - 44} * 0.5
+			eye := start + offset
+			cascade := sun_shadow_cascade(eye, sun, path, row, anchor)
+			for axis in axes {
+				along_axis := linalg.dot(cascade.precise_centre - anchor, axis)
+				testing.expectf(t, abs(along_axis - math.round(along_axis / step) * step) < 1e-9, "eye %v: %v m from the anchor along an axis is no whole step", eye, along_axis)
+			}
+			testing.expectf(t, sun_shadow_eye_in_step(cascade, eye), "eye %v is outside its step", eye)
+		}
 	}
+}
+
+@(test)
+test_a_turn_keeps_the_texel_corner_at_the_anchor :: proc(t: ^testing.T) {
+	row := sun_shadows_test_row()
+	up := [3]f32{0, 1, 0}
+	eye := [3]f32{3.25, 8001.5, -2.75}
+	anchor := linalg.array_cast(eye, f64)
+	sun, path := field_sun_world_direction(0.15, up), field_sun_path_world_axis(up)
+	turned := sun_shadow_test_turned(sun, path, 1.5e-3 * math.DEG_PER_RAD)
+	before := sun_shadow_cascade(eye, sun, path, row, anchor)
+	after := sun_shadow_cascade(eye, turned, path, row, anchor)
+	testing.expectf(t, linalg.length(before.precise_centre - anchor) < 1e-9, "the centre left the anchor by %v", before.precise_centre - anchor)
+	testing.expectf(t, linalg.length(after.precise_centre - anchor) < 1e-9, "the turned centre left the anchor by %v", after.precise_centre - anchor)
+	testing.expect(t, after.toward_sun != before.toward_sun, "the turn turned the light")
+}
+
+@(test)
+test_the_turn_limit_holds_a_steps_hop_to_a_quarter_texel :: proc(t: ^testing.T) {
+	row := sun_shadows_test_row()
+	up := [3]f32{0, 1, 0}
+	texel := sun_shadow_cascade({0, 8000, 0}, up, {0, 0, 1}, row).texel_metres
+	for degrees in 1 ..= 89 {
+		elevation := f64(degrees) * math.RAD_PER_DEG
+		sun := [3]f32{f32(math.cos(elevation)), f32(math.sin(elevation)), 0}
+		sine := f64(sun.y) / linalg.length(linalg.array_cast(sun, f64))
+		hop := SUN_SHADOW_STEP_CASTER_METRES / sine * sun_shadow_turn_limit(sun, up, texel)
+		testing.expectf(t, abs(hop - SUN_SHADOW_STEP_TEXELS * f64(texel)) < 1e-9, "%d degrees: a step's hop is %v m", degrees, hop)
+	}
+	testing.expect_value(t, sun_shadow_turn_limit({1, 0, 0}, up, texel), 0)
+	below := f64(-5) * math.RAD_PER_DEG
+	testing.expect_value(t, sun_shadow_turn_limit({f32(math.cos(below)), f32(math.sin(below)), 0}, up, texel), 0)
+	tick := math.TAU / 72000
+	noon := sun_shadow_turn_limit(sun_direction(NOON_FRACTION), up, texel) / tick
+	testing.expectf(t, noon > 17 && noon < 18, "noon turns the map every %v ticks", noon)
+	low := f64(10) * math.RAD_PER_DEG
+	evening := sun_shadow_turn_limit({f32(math.cos(low)), f32(math.sin(low)), 0}, up, texel) / tick
+	testing.expectf(t, evening > 3 && evening < 4, "a 10 degree sun turns the map every %v ticks", evening)
+}
+
+@(test)
+test_the_turn_angle_measures_small_turns :: proc(t: ^testing.T) {
+	for angle in ([4]f64{1e-5, 1e-4, 1.5e-3, 0.1}) {
+		turned := [3]f32{f32(math.cos(angle)), f32(math.sin(angle)), 0}
+		measured := sun_shadow_turn_angle({1, 0, 0}, turned)
+		testing.expectf(t, abs(measured - angle) < 2e-7, "a turn of %v measures %v", angle, measured)
+	}
+	same := linalg.normalize([3]f32{1, 2, 3})
+	testing.expect_value(t, sun_shadow_turn_angle(same, same), 0)
+}
+
+// A kept map drawn at noon round an eye 8 km up, and a view that offers
+// it nothing new.
+sun_shadow_test_kept :: proc() -> (kept: Sun_Shadow_Kept, view: Sun_Shadow_View) {
+	row := sun_shadows_test_row()
+	up := [3]f32{0, 1, 0}
+	view = Sun_Shadow_View {
+		eye         = {0.5, 8001.7, -0.25},
+		toward_sun  = field_sun_world_direction(0.15, up),
+		path_axis   = field_sun_path_world_axis(up),
+		up          = up,
+		row         = row,
+		trees_drawn = true,
+		revisions   = {meshes = 3, selection = 5, trees = 7, frames = 11, models = 13},
+	}
+	key := Sun_Shadow_Kept_Key {
+		cascade     = sun_shadow_cascade(view.eye, view.toward_sun, view.path_axis, row, linalg.array_cast(view.eye, f64)),
+		toward_sun  = view.toward_sun,
+		path_axis   = view.path_axis,
+		row         = row,
+		trees_drawn = true,
+		revisions   = view.revisions,
+	}
+	return Sun_Shadow_Kept{state = .Ready, drawn = true, key = key}, view
+}
+
+// The view's eye moved along the kept cascade's axes by the steps.
+sun_shadow_test_eye_in_steps :: proc(kept: Sun_Shadow_Kept, steps: [3]f64) -> [3]f32 {
+	step := sun_shadow_test_step(kept.key.row)
+	return sun_shadow_test_moved(kept.key.cascade.precise_centre, sun_shadow_test_axes(kept.key.toward_sun, kept.key.path_axis), steps * step)
+}
+
+@(test)
+test_a_kept_map_is_kept_while_nothing_changed :: proc(t: ^testing.T) {
+	kept, view := sun_shadow_test_kept()
+	testing.expect_value(t, sun_shadow_kept_step(kept, view), Sun_Shadow_Kept_Step.Keep)
+	limit := sun_shadow_turn_limit(view.toward_sun, view.up, kept.key.cascade.texel_metres)
+	view.toward_sun = sun_shadow_test_turned(view.toward_sun, view.path_axis, f32(0.9 * limit * math.DEG_PER_RAD))
+	view.eye = sun_shadow_test_eye_in_steps(kept, {0.45, -0.45, 0.45})
+	testing.expect_value(t, sun_shadow_kept_step(kept, view), Sun_Shadow_Kept_Step.Keep)
+}
+
+@(test)
+test_a_kept_map_never_drawn_is_turned :: proc(t: ^testing.T) {
+	kept, view := sun_shadow_test_kept()
+	kept.drawn = false
+	testing.expect_value(t, sun_shadow_kept_step(kept, view), Sun_Shadow_Kept_Step.Turn)
+}
+
+@(test)
+test_a_changed_row_turns_the_kept_map :: proc(t: ^testing.T) {
+	changes := [4]proc(row: ^Sun_Shadows_Row) {
+		proc(row: ^Sun_Shadows_Row) {row.map_texels = 1024},
+		proc(row: ^Sun_Shadows_Row) {row.radius_metres = 48},
+		proc(row: ^Sun_Shadows_Row) {row.caster_reach_metres = 64},
+		proc(row: ^Sun_Shadows_Row) {row.tree_limit = 512},
+	}
+	for change, index in changes {
+		kept, view := sun_shadow_test_kept()
+		change(&view.row)
+		testing.expectf(t, sun_shadow_kept_step(kept, view) == .Turn, "change %d did not turn the map", index)
+	}
+}
+
+@(test)
+test_the_sun_past_the_turn_limit_turns_the_kept_map :: proc(t: ^testing.T) {
+	kept, view := sun_shadow_test_kept()
+	limit := sun_shadow_turn_limit(view.toward_sun, view.up, kept.key.cascade.texel_metres)
+	turned := view
+	turned.toward_sun = sun_shadow_test_turned(view.toward_sun, view.path_axis, f32(1.1 * limit * math.DEG_PER_RAD))
+	testing.expect_value(t, sun_shadow_kept_step(kept, turned), Sun_Shadow_Kept_Step.Turn)
+	// A walk across the planet turns the up, and the sky with it, about an
+	// axis square to the up and the sun, so the world's sun turns as much.
+	pivot := linalg.normalize(linalg.cross(view.up, view.toward_sun))
+	walked := view
+	walked.up = sun_shadow_test_turned(view.up, pivot, f32(1.1 * limit * math.DEG_PER_RAD))
+	walked.toward_sun = field_sun_world_direction(0.15, walked.up)
+	walked.path_axis = field_sun_path_world_axis(walked.up)
+	turn := sun_shadow_turn_angle(view.toward_sun, walked.toward_sun)
+	testing.expectf(t, abs(turn / limit - 1.1) < 0.01, "the walk turned the sun %v limits", turn / limit)
+	testing.expect_value(t, sun_shadow_kept_step(kept, walked), Sun_Shadow_Kept_Step.Turn)
+}
+
+@(test)
+test_an_eye_past_half_a_step_recentres_the_kept_map :: proc(t: ^testing.T) {
+	for axis in 0 ..< 3 {
+		kept, view := sun_shadow_test_kept()
+		steps: [3]f64
+		steps[axis] = 0.51
+		view.eye = sun_shadow_test_eye_in_steps(kept, steps)
+		testing.expectf(t, sun_shadow_kept_step(kept, view) == .Recentre, "0.51 step along axis %d did not recentre the map", axis)
+	}
+}
+
+@(test)
+test_a_frame_table_change_recentres_the_kept_map :: proc(t: ^testing.T) {
+	kept, view := sun_shadow_test_kept()
+	view.revisions.frames += 1
+	testing.expect_value(t, sun_shadow_kept_step(kept, view), Sun_Shadow_Kept_Step.Recentre)
+}
+
+@(test)
+test_a_model_reload_recentres_the_kept_map :: proc(t: ^testing.T) {
+	kept, view := sun_shadow_test_kept()
+	view.revisions.models += 1
+	testing.expect_value(t, sun_shadow_kept_step(kept, view), Sun_Shadow_Kept_Step.Recentre)
+}
+
+@(test)
+test_trees_turned_on_or_off_recentre_the_kept_map :: proc(t: ^testing.T) {
+	kept, view := sun_shadow_test_kept()
+	view.trees_drawn = false
+	testing.expect_value(t, sun_shadow_kept_step(kept, view), Sun_Shadow_Kept_Step.Recentre)
+	kept.key.trees_drawn = false
+	view.trees_drawn = true
+	testing.expect_value(t, sun_shadow_kept_step(kept, view), Sun_Shadow_Kept_Step.Recentre)
+}
+
+@(test)
+test_moved_meshes_selection_or_trees_compare_the_fingerprints :: proc(t: ^testing.T) {
+	for counter in 0 ..< 3 {
+		kept, view := sun_shadow_test_kept()
+		switch counter {
+		case 0:
+			view.revisions.meshes += 1
+		case 1:
+			view.revisions.selection ~= 0xFFFF
+		case 2:
+			view.revisions.trees += 1
+		}
+		testing.expectf(t, sun_shadow_kept_step(kept, view) == .Compare, "counter %d did not ask for the fingerprints", counter)
+	}
+}
+
+@(test)
+test_the_kept_cascade_turns_on_the_view_and_recentres_on_the_held :: proc(t: ^testing.T) {
+	kept, view := sun_shadow_test_kept()
+	step := sun_shadow_test_step(view.row)
+	limit := sun_shadow_turn_limit(view.toward_sun, view.up, kept.key.cascade.texel_metres)
+	view.toward_sun = sun_shadow_test_turned(view.toward_sun, view.path_axis, f32(2 * limit * math.DEG_PER_RAD))
+	view.eye = sun_shadow_test_eye_in_steps(kept, {1.6, -0.2, 2.7})
+	turned := sun_shadow_kept_cascade(kept, view, .Turn)
+	fresh := sun_shadow_cascade(view.eye, view.toward_sun, view.path_axis, view.row, kept.key.cascade.precise_centre)
+	testing.expect_value(t, turned.toward_sun, fresh.toward_sun)
+	testing.expect(t, turned.toward_sun != kept.key.cascade.toward_sun, "a Turn takes the frame's sun")
+	recentred := sun_shadow_kept_cascade(kept, view, .Recentre)
+	testing.expect_value(t, recentred.right, kept.key.cascade.right)
+	testing.expect_value(t, recentred.up, kept.key.cascade.up)
+	testing.expect_value(t, recentred.toward_sun, kept.key.cascade.toward_sun)
+	axes := sun_shadow_test_axes(kept.key.toward_sun, kept.key.path_axis)
+	moved := recentred.precise_centre - kept.key.cascade.precise_centre
+	for axis, index in axes {
+		along := linalg.dot(moved, axis) / step
+		testing.expectf(t, abs(along - math.round(along)) < 1e-9, "the recentre moved %v steps along axis %d", along, index)
+	}
+	testing.expectf(t, abs(linalg.dot(moved, axes[0]) / step - 2) < 1e-9, "the recentre moved %v steps along the right", linalg.dot(moved, axes[0]) / step)
+	kept.drawn = false
+	undrawn := sun_shadow_kept_cascade(kept, view, .Turn)
+	testing.expect_value(t, undrawn.precise_centre, linalg.array_cast(view.eye, f64))
 }
 
 @(test)
@@ -405,4 +652,155 @@ test_the_cast_pass_leaves_out_entities_outside_the_casters_box :: proc(t: ^testi
 	testing.expect(t, model_frame_draws_entity(frame, &entities, {}, common), "the cast pass draws an entity straddling the map's side")
 	common.origin = {67, 0, 0}
 	testing.expect(t, !model_frame_draws_entity(frame, &entities, {}, common), "the cast pass leaves out an entity past the map's side")
+}
+
+// A node's render as the renderer would hold it, without meshes.
+sun_shadow_test_render :: proc(node: Field_Node, terrain_hash: u64, has_mesh := true) -> Field_Node_Render {
+	return Field_Node_Render{has_mesh = has_mesh, origin = field_node_origin_metres(node, 1000), terrain_hash = terrain_hash}
+}
+
+// Work item 0348: the terrain's fingerprint moves with what the cascade's
+// casters draw and with nothing else.
+@(test)
+test_the_terrain_fingerprint_follows_the_casting_nodes :: proc(t: ^testing.T) {
+	renderer := Field_Renderer{spacing_millimetres = 1000}
+	defer delete(renderer.meshes)
+	// A holds the eye 8 km up y, B lies 2 km along x, W beside A has no
+	// terrain mesh.
+	a := Field_Node{level = 0, coordinate = {0, 250, 0}}
+	b := Field_Node{level = 0, coordinate = {62, 250, 0}}
+	w := Field_Node{level = 0, coordinate = {1, 250, 0}}
+	renderer.meshes[a] = sun_shadow_test_render(a, 101)
+	renderer.meshes[b] = sun_shadow_test_render(b, 202)
+	renderer.meshes[w] = sun_shadow_test_render(w, 303, false)
+	up := [3]f32{0, 1, 0}
+	cascade := sun_shadow_cascade({16, 8016, 16}, field_sun_world_direction(NOON_FRACTION, up), field_sun_path_world_axis(up), sun_shadows_test_row())
+	selection := [3]Field_Node{a, b, w}
+	start := sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:])
+	reordered := [3]Field_Node{w, b, a}
+	testing.expect_value(t, sun_shadow_selection_hash(nil), 0)
+	testing.expect(t, sun_shadow_selection_hash(reordered[:]) != sun_shadow_selection_hash(selection[:]), "a reordered selection asks for the fingerprint")
+	testing.expect_value(t, sun_shadow_terrain_fingerprint(&renderer, cascade, reordered[:]), start)
+	renderer.meshes[b] = sun_shadow_test_render(b, 999)
+	testing.expect_value(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]), start)
+	delete_key(&renderer.meshes, b)
+	testing.expect_value(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]), start)
+	renderer.meshes[w] = sun_shadow_test_render(w, 404, false)
+	testing.expect_value(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]), start)
+	// A wave remesh: the node set again with the same terrain hash.
+	renderer.meshes[a] = sun_shadow_test_render(a, 101)
+	testing.expect_value(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]), start)
+	renderer.meshes[a] = sun_shadow_test_render(a, 102)
+	testing.expect(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]) != start, "an edit of the eye's node changes it")
+	renderer.meshes[a] = sun_shadow_test_render(a, 101)
+	without := [2]Field_Node{b, w}
+	testing.expect(t, sun_shadow_terrain_fingerprint(&renderer, cascade, without[:]) != start, "the eye's node out of the selection changes it")
+	delete_key(&renderer.meshes, a)
+	testing.expect(t, sun_shadow_terrain_fingerprint(&renderer, cascade, selection[:]) != start, "the eye's node unloaded changes it")
+}
+
+// Work item 0348 on 0346's views: the casting trees updated on a held
+// cascade (as a kept map's Compare updates them) gather again, which asks
+// the kept map to be drawn again, only for a change of the tiles in the
+// casters' box grown by the margin.
+@(test)
+test_the_kept_trees_gather_again_only_for_a_change_in_the_casters_box :: proc(t: ^testing.T) {
+	cache: Field_Tree_Cache
+	defer destroy_field_tree_cache(&cache)
+	cache.cells = 1000
+	cache.config = Field_Trees_Row{near_metres = 48}
+	camera := [3]f32{0, 8000, 0}
+	near := make([]f32, 40, context.temp_allocator)
+	for &offset, index in near {
+		offset = f32(index + 1)
+	}
+	far := [1]f32{3000}
+	cache.tiles[{0, 0, 0}] = tree_draw_test_tile(camera, near, 0)
+	cache.tiles[{1, 0, 0}] = tree_draw_test_tile(camera, far[:], 1000)
+	up := [3]f32{0, 1, 0}
+	cascade := sun_shadow_cascade(camera, field_sun_world_direction(NOON_FRACTION, up), field_sun_path_world_axis(up), sun_shadows_test_row())
+	update := proc(cache: ^Field_Tree_Cache, cascade: Sun_Shadow_Cascade) -> int {
+		update_shadow_trees(cache, &cache.views[0], cascade, cascade.centre, 4, nil, 2048, 1)
+		return cache.views[0].shadow.gathers
+	}
+	gathers := update(&cache, cascade)
+	testing.expect_value(t, len(cache.views[0].shadow.selected), 40)
+	revision := cache.revision
+	testing.expect(t, drop_field_tree_key(&cache, {1000, 0, 0}), "the far key drops")
+	testing.expect(t, cache.revision != revision, "a drop moves the cache's revision")
+	testing.expect_value(t, update(&cache, cascade), gathers)
+	insert_field_tree_tile(&cache, {3, 0, 0}, tree_draw_test_tile(camera, far[:], 3000))
+	testing.expect_value(t, update(&cache, cascade), gathers)
+	revision = cache.revision
+	insert_field_tree_tile(&cache, {0, 0, 1}, tree_draw_test_tile(camera, nil, 4000))
+	testing.expect_value(t, cache.revision, revision)
+	testing.expect_value(t, update(&cache, cascade), gathers)
+	testing.expect(t, drop_field_tree_key(&cache, {5, 0, 0}), "a key 6 m off drops")
+	dropped := update(&cache, cascade)
+	testing.expect(t, dropped > gathers, "a felled tree in the box gathers again")
+	testing.expect_value(t, len(cache.views[0].shadow.selected), 39)
+	evict_field_tree_tile(&cache, {0, 0, 0})
+	testing.expect(t, update(&cache, cascade) > dropped, "the eye's tile leaving gathers again")
+	testing.expect_value(t, len(cache.views[0].shadow.selected), 0)
+}
+
+@(test)
+test_machines_split_into_still_and_moving_casters :: proc(t: ^testing.T) {
+	chest := Machine{kind = .Chest}
+	furnace := Machine{kind = .Furnace}
+	furnace.motion.kind = .Glow
+	assembler := Machine{kind = .Crafting_Machine}
+	assembler.motion.kind = .Spin
+	hatch := Machine{kind = .Hatch}
+	hatch.motion.kind = .Slide
+	testing.expect(t, !sun_shadow_entity_moves(.Chest, chest), "a chest stands still")
+	testing.expect(t, !sun_shadow_entity_moves(.Furnace, furnace), "a furnace's glow moves nothing")
+	testing.expect(t, sun_shadow_entity_moves(.Assembler, assembler), "a spinning part moves")
+	testing.expect(t, sun_shadow_entity_moves(.Foundation, hatch), "a hatch's door moves")
+	for kind in ([3]Entity_Kind{.Inserter, .Drill, .Launch_Pad}) {
+		testing.expectf(t, sun_shadow_entity_moves(kind, chest), "%v moves whatever its motion", kind)
+	}
+	machines := [2]Machine{chest, Machine{kind = .Inserter}}
+	eye := [3]f32{0, 8000, 0}
+	casters := Sun_Shadow_Casters {
+		cascade   = sun_shadow_cascade(eye, {0, 1, 0}, {0, 0, 1}, sun_shadows_test_row()),
+		transform = linalg.matrix4_translate_f32(eye),
+		machines  = Machine_Registry{machines = machines[:]},
+	}
+	entities: Entities
+	still := Entity_Common{handle = {kind = .Chest}, machine = 0, frame = BLOCK_FRAME, size = {1, 1, 1}}
+	moving := Entity_Common{handle = {kind = .Inserter}, machine = 1, frame = BLOCK_FRAME, size = {1, 1, 1}}
+	frame := Model_Frame{casters = &casters}
+	for part in Sun_Shadow_Part {
+		casters.part = part
+		testing.expectf(t, model_frame_draws_entity(frame, &entities, {}, still) == (part != .Moving), "%v: the chest", part)
+		testing.expectf(t, model_frame_draws_entity(frame, &entities, {}, moving) == (part != .Still), "%v: the inserter", part)
+	}
+}
+
+@(test)
+test_kept_maps_past_the_viewports_are_released :: proc(t: ^testing.T) {
+	shadows: Sun_Shadow_Renderer
+	for slot in 0 ..< 3 {
+		shadows.kept[slot].state = .Failed
+	}
+	serve_sun_shadows(&shadows, nil, true, 2048, 1)
+	testing.expect_value(t, shadows.kept[0].state, Sun_Shadow_State.Failed)
+	testing.expect_value(t, shadows.kept[1].state, Sun_Shadow_State.Unloaded)
+	testing.expect_value(t, shadows.kept[2].state, Sun_Shadow_State.Unloaded)
+	shadows.state = .Failed
+	shadows.texels = 2048
+	shadows.kept[2].state = .Failed
+	serve_sun_shadows(&shadows, nil, false, 2048, 4)
+	testing.expect_value(t, shadows.state, Sun_Shadow_State.Unloaded)
+	for kept in shadows.kept {
+		testing.expect_value(t, kept.state, Sun_Shadow_State.Unloaded)
+	}
+}
+
+@(test)
+test_unloading_the_models_moves_their_revision :: proc(t: ^testing.T) {
+	renderer: Model_Renderer
+	unload_model_meshes(&renderer)
+	testing.expect_value(t, renderer.revision, u64(1))
 }
