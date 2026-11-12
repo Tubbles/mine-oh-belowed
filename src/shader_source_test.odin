@@ -539,6 +539,35 @@ test_the_end_fade_is_full_on_shaded_ground :: proc(t: ^testing.T) {
 	testing.expect(t, !strings.contains(haze, "mix(color, hazed, sky_share)"), "field.fs's apply_haze still scales the end fade by the sky share")
 }
 
+// Work item 0380: field.fs greys the bounce by the vertex's sky light,
+// wholly at the sky light a metre into the shade and not at all at the
+// open sky's full light, so the open ground is lit as before, and
+// outdoor_light takes the bounce from its caller.
+@(test)
+test_the_field_shader_greys_the_bounce_under_a_roof :: proc(t: ^testing.T) {
+	field, _ := read_lit_shaders(t)
+	lines := [?]string {
+		"\n    float roofed = 1.0 - smoothstep(roof_sky_light_shut, roof_sky_light_open, fragment_color.a * 255.0);\n",
+		"\n    vec3 roof_bounce = mix(bounce_color, vec3(dot(bounce_color, luminance_weights)), roofed);\n",
+		"\n    vec3 outdoor = fragment_color.a * outdoor_light(normal, normalize(fragment_world_position), sunlit, roof_bounce);\n",
+	}
+	for line in lines {
+		testing.expectf(t, strings.contains(field, line), "field.fs does not hold %s", strings.trim_space(line))
+	}
+	light := shader_function_text(field, "vec3 outdoor_light(")
+	testing.expect(t, strings.has_prefix(light, "vec3 outdoor_light(vec3 normal, vec3 up, float sunlit, vec3 bounce)\n"), "field.fs's outdoor_light does not take the bounce")
+	testing.expect(t, strings.contains(light, "mix(bounce, sky_color, upward)"), "field.fs's outdoor_light does not mix the bounce it is given")
+	testing.expect(t, !strings.contains(light, "bounce_color"), "field.fs's outdoor_light still reads the planet's bounce")
+	shut, shut_found := shader_float_constant(field, "roof_sky_light_shut")
+	open, open_found := shader_float_constant(field, "roof_sky_light_open")
+	testing.expect(t, shut_found && open_found, "field.fs does not hold the roof's sky light bounds")
+	shade := make_field_light_tuning(test_lighting_file(), 1000).spread[FIELD_LIGHT_FULL]
+	testing.expectf(t, shut == f32(shade), "the bounce is wholly grey at %v, a metre into the shade is %v", shut, shade)
+	testing.expectf(t, open > f32(FIELD_LIGHT_FULL - 1) && open <= f32(FIELD_LIGHT_FULL) - 0.5, "the bounce is wholly the planet's from %v", open)
+	testing.expect_value(t, 1 - math.smoothstep(shut, open, f32(FIELD_LIGHT_FULL)), 0)
+	testing.expect_value(t, 1 - math.smoothstep(shut, open, shut), 1)
+}
+
 // Work item 0328: the four lit shaders take the same sun's shadow, its
 // uniforms and sun_shadow_light and sun_shadow_tap_weight line for line,
 // with the offset and the bias render_sun_shadows.odin names.

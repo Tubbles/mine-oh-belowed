@@ -2,6 +2,7 @@ package game
 
 import "core:log"
 import "core:math"
+import "core:math/linalg"
 import "core:mem"
 import "core:slice"
 import "core:strings"
@@ -907,7 +908,8 @@ test_the_walls_overhang :: proc(t: ^testing.T) {
 
 // The spring's mouth: its chunk generates the same bytes and light twice,
 // the roofed sample without sky; the fill over the chunks round it lights
-// it dimmer than the open sky.
+// it dimmer than the open sky, and its node's faces pointing down take no
+// grass and less than the open sky's light (0380).
 @(test) // slow
 test_the_fill_lights_a_cave_from_its_mouth :: proc(t: ^testing.T) {
 	planet := design_caves_test_planet(8000)
@@ -939,6 +941,41 @@ test_the_fill_lights_a_cave_from_its_mouth :: proc(t: ^testing.T) {
 	run_test_light(&world, make_field_light_tuning(test_lighting_file(), 1000))
 	sky := field_world_get_light(&world, roofed, .Sky)
 	testing.expectf(t, sky >= 1 && sky < FIELD_LIGHT_FULL, "the sky in the cave is %d", sky)
+	// Work item 0380: the node meshed as the finest level does. Its open
+	// ground holds the full sky light, so field.fs lights it as before;
+	// the faces pointing down under the roof take no grass and hold less,
+	// so field.fs greys their bounce, wholly at roof_sky_light_shut.
+	shut, shut_found := shader_float_constant(#load("../data/shaders/field.fs", string), "roof_sky_light_shut")
+	testing.expect(t, shut_found, "field.fs holds roof_sky_light_shut")
+	grid := gather_field_grid(&world, coordinate, nil, context.temp_allocator)
+	mesh := mesh_field_grid(grid, planet.palette, 1000, {}, context.temp_allocator, make_field_ground_look(generation, planet), true)
+	origin_position := sample_to_world_position(field_chunk_origin(coordinate), 1000)
+	origin := [3]f64{f64(origin_position.x), f64(origin_position.y), f64(origin_position.z)} / POSITION_UNITS_PER_METRE
+	open, downward, grassy, shaded := 0, 0, 0, 0
+	for position, vertex in mesh.positions {
+		sky_light := mesh.colors[vertex].a
+		open += int(sky_light == FIELD_LIGHT_FULL)
+		up := linalg.normalize(origin + linalg.to_f64(position))
+		facing := linalg.dot(linalg.to_f64(mesh.normals[vertex]), up)
+		if facing >= -0.5 {
+			continue
+		}
+		downward += 1
+		testing.expectf(t, sky_light < FIELD_LIGHT_FULL, "a face pointing down holds the open sky's light at %v", position)
+		shaded += int(sky_light >= 1 && f32(sky_light) <= shut)
+		weights: [FIELD_TEXTURED_MATERIAL_COUNT]f32
+		for slot in 0 ..< 4 {
+			weights[slot] = mesh.weights[vertex][slot]
+		}
+		ores := unpack_test_bytes(mesh.lights[vertex][1])
+		weights[4], weights[5], weights[6] = ores.x, ores.y, ores.z
+		look := unpack_test_bytes(mesh.looks[vertex][1])
+		grassy += int(cover_ground_shares(weights, look.x, look.y, f32(1 - facing))[.Grass] > 0)
+	}
+	testing.expect(t, open > 0, "the node holds open ground")
+	testing.expect(t, downward > 0, "the node holds faces pointing down")
+	testing.expect_value(t, grassy, 0)
+	testing.expect(t, shaded > 0, "a face pointing down holds a sky light from 1 to roof_sky_light_shut")
 }
 
 // The grids coarser than 2 m have no caves.

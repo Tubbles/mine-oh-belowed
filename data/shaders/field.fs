@@ -22,8 +22,10 @@
 // 0313: the sun's on a face turned to sun_direction, the day clock's sun
 // in the world's frame, 0297, and the sky's from above and the ground's
 // bounce from below) times the vertex's sky light (work item 0173), so
-// a cave's samples, with no sky light, take neither; then the point
-// lights and the torchlight (spot_light, 0297) add on top, and the
+// a cave's samples, with no sky light, take neither; where the sky light
+// falls short of the open sky's the bounce turns grey at its luminance,
+// so a cave's roof lit from its mouth takes no grass colour (0380); then
+// the point lights and the torchlight (spot_light, 0297) add on top, and the
 // aerial haze (apply_haze, 0313) brings the far surface to the sky's
 // colour. With water_color's alpha above 0 (the water pass, work item
 // 0172) the surface takes water_color's colour instead of the materials
@@ -104,6 +106,14 @@ const float rock_start_steepness = 0.234;
 const float rock_full_steepness = 0.357;
 const float sand_start_steepness = 0.134;
 const float sand_end_steepness = 0.234;
+// Under a roof (0380): the vertex's sky light in bytes where the bounce
+// is wholly grey (a metre into the shade at the shipped falloff) and from
+// where it is wholly the planet's (only air open to the sky holds 255,
+// so the open ground is lit exactly as before), and the weights of a
+// colour's luminance (Rec. 709).
+const float roof_sky_light_shut = 249.0;
+const float roof_sky_light_open = 254.5;
+const vec3 luminance_weights = vec3(0.2126, 0.7152, 0.0722);
 // The sun on the water (0297): the glint's sharpness and its brightness.
 const float water_glint_power = 48.0;
 const float water_glint_strength = 0.6;
@@ -160,17 +170,18 @@ vec3 tile_tint(uint tile)
 // above and the ground's bounce from below, shared by the normal's facing
 // of the local up, and the sun's by its facing of sun_direction (the day
 // clock's sun in the world's frame, 0297). The colours carry the time of
-// day; the sun's is zero once it has set. outdoor_light is model.fs's
-// line for line (shader_source_test.odin).
+// day; the sun's is zero once it has set. The bounce is the caller's
+// (0380): main greys it under a roof. outdoor_light is model.fs's line
+// for line (shader_source_test.odin).
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
 uniform vec3 sky_color;
 uniform vec3 bounce_color;
 
-vec3 outdoor_light(vec3 normal, vec3 up, float sunlit)
+vec3 outdoor_light(vec3 normal, vec3 up, float sunlit, vec3 bounce)
 {
     float upward = 0.5 + 0.5 * dot(normal, up);
-    return mix(bounce_color, sky_color, upward) + sun_color * (sunlit * max(dot(normal, sun_direction), 0.0));
+    return mix(bounce, sky_color, upward) + sun_color * (sunlit * max(dot(normal, sun_direction), 0.0));
 }
 
 // The sun's shadow (0328, render_sun_shadows.odin): the casters' depth
@@ -280,7 +291,7 @@ vec3 apply_haze(vec3 color, vec3 position, vec3 eye, float sky_share)
     float toward_sun = max(dot(offset, sun_direction) / max(reach, smallest_weight_sum), 0.0);
     vec3 sky = min(haze_color + haze_sun_color * pow(toward_sun, haze_sun_exponent), vec3(1.0));
     vec3 up = position / max(length(position), smallest_weight_sum);
-    vec3 globe = min(globe_color * outdoor_light(up, up, 1.0), vec3(1.0));
+    vec3 globe = min(globe_color * outdoor_light(up, up, 1.0, bounce_color), vec3(1.0));
     vec3 end_color = mix(globe, sky, haze_end_share);
     vec3 hazed = mix(color, sky, aerial * sky_share);
     return mix(hazed, end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
@@ -432,7 +443,12 @@ void main()
     // the brighter per channel, never added, so a torch-lit wall keeps its
     // light whichever way it faces.
     float sunlit = sun_shadow_light(fragment_world_position, normal, camera_position);
-    vec3 outdoor = fragment_color.a * outdoor_light(normal, normalize(fragment_world_position), sunlit);
+    // The light from below a roof is the cave's own floor, not the
+    // planet's grass: the bounce turns grey at its luminance as the sky
+    // light falls from the open sky's (0380).
+    float roofed = 1.0 - smoothstep(roof_sky_light_shut, roof_sky_light_open, fragment_color.a * 255.0);
+    vec3 roof_bounce = mix(bounce_color, vec3(dot(bounce_color, luminance_weights)), roofed);
+    vec3 outdoor = fragment_color.a * outdoor_light(normal, normalize(fragment_world_position), sunlit, roof_bounce);
     vec3 light = max(vec3(fragment_block_light), outdoor);
     vec3 lit = albedo * light;
     lit += albedo * point_light_sum(fragment_world_position, normal);

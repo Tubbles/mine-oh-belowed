@@ -64,17 +64,18 @@ uniform vec3 camera_position;
 // above and the ground's bounce from below, shared by the normal's facing
 // of the local up, and the sun's by its facing of sun_direction (the day
 // clock's sun in the world's frame, 0297). The colours carry the time of
-// day; the sun's is zero once it has set. outdoor_light is field.fs's
-// line for line (shader_source_test.odin).
+// day; the sun's is zero once it has set. The bounce is the caller's
+// (0380): a model takes the planet's. outdoor_light is field.fs's line
+// for line (shader_source_test.odin).
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
 uniform vec3 sky_color;
 uniform vec3 bounce_color;
 
-vec3 outdoor_light(vec3 normal, vec3 up, float sunlit)
+vec3 outdoor_light(vec3 normal, vec3 up, float sunlit, vec3 bounce)
 {
     float upward = 0.5 + 0.5 * dot(normal, up);
-    return mix(bounce_color, sky_color, upward) + sun_color * (sunlit * max(dot(normal, sun_direction), 0.0));
+    return mix(bounce, sky_color, upward) + sun_color * (sunlit * max(dot(normal, sun_direction), 0.0));
 }
 
 // The sun's shadow (0328, render_sun_shadows.odin): the casters' depth
@@ -184,7 +185,7 @@ vec3 apply_haze(vec3 color, vec3 position, vec3 eye, float sky_share)
     float toward_sun = max(dot(offset, sun_direction) / max(reach, smallest_weight_sum), 0.0);
     vec3 sky = min(haze_color + haze_sun_color * pow(toward_sun, haze_sun_exponent), vec3(1.0));
     vec3 up = position / max(length(position), smallest_weight_sum);
-    vec3 globe = min(globe_color * outdoor_light(up, up, 1.0), vec3(1.0));
+    vec3 globe = min(globe_color * outdoor_light(up, up, 1.0, bounce_color), vec3(1.0));
     vec3 end_color = mix(globe, sky, haze_end_share);
     vec3 hazed = mix(color, sky, aerial * sky_share);
     return mix(hazed, end_color, smoothstep(fog_start, max(fog_end, fog_start + 1.0), reach));
@@ -259,7 +260,7 @@ void main()
     // until a field session sets them, and the haze of zero uniforms is
     // not a number, which a mix by 0 would keep.
     bool outdoor = outdoor_on > 0.5;
-    vec3 light = outdoor ? outdoor_light(normal, normalize(fragment_world_position), sun_shadow_light(fragment_world_position, normal, camera_position)) / max(daylight_tint, vec3(smallest_weight_sum)) : vec3(1.0);
+    vec3 light = outdoor ? outdoor_light(normal, normalize(fragment_world_position), sun_shadow_light(fragment_world_position, normal, camera_position), bounce_color) / max(daylight_tint, vec3(smallest_weight_sum)) : vec3(1.0);
     vec3 lit = min(base.rgb * light + fragment_color.rgb * (point_light_sum(fragment_world_position, normal) + spot_light(fragment_world_position, normal)), vec3(1.0));
     finalColor = vec4(outdoor ? apply_haze(lit, fragment_world_position, camera_position, 1.0) : lit, base.a);
 }

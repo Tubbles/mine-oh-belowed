@@ -371,3 +371,8 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The trees draw once per species. While several species share one model (all five the pine today) that is up to four draws more a pass than before. Merging groups by model at pack time would take them back, at the price of a gather when a reload changes a species' machine. Moot once the species have models of their own (0329 to 0333).
 - `select_far_tiles` still runs every frame (decision 3). Measure it in the next table before touching it.
 - A viewport that split screen no longer uses keeps its candidates and buffers until the session ends, about 1.4 MB and 200 KB in the forest. Releasing them when the viewport goes would be a few lines.
+
+## Suggestions from the bounce under a roof (0380, 2026-11-12)
+
+- After an edit `field_sky_is_open` marches by the nearest sample and can call open air at an overhang's lip shut, where the generation lit it at the full sky light (2 of 509 samples at the nearest gorge notch, 5 of 823 at the mesa notch, a review probe). Such a face dims and now also greys a little once an edit marches its column again. Older than 0380 and only at a lip.
+- The grass share assertion in `test_the_fill_lights_a_cave_from_its_mouth` cannot fail (a face that far down is past the rock's full steepness). A check that every vertex under the full sky light has a roofed air corner would pin that open ground is unchanged.
