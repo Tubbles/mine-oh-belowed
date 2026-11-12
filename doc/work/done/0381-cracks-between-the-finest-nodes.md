@@ -1,6 +1,6 @@
 # 0381: Cracks between the finest nodes
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 20f2bc0)
 
 Found in 0327's landing capture and traced by 0380's design (2026-11-12): single pixels of the globe's colour show through the ground along the border between two level 0 nodes, where no skirt hangs. Each node is drawn with its own translation (`render_field.odin`, `rl.MatrixTranslate(origin)`; `field.vs`, `mvp * vertexPosition`), so at 8 km from the planet's centre a vertex two nodes share comes out a fraction of a millimetre apart in each, and a few pixel centres fall between the two edges. The cracks are on every such border and show only against a dark floor, as in a cave. The mechanism is read from the matrix path; no capture of the camera matrices confirmed it.
 
