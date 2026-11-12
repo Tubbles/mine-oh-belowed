@@ -1,6 +1,6 @@
 # 0339: Caves up to the lakes' water
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, d06585c)
 
 0327 keeps its caves and notches out of every lake's bound sphere plus 4 m (`cave_lake_fade`). The sphere is sized from 0312's refine window, not from the water: about 300 m round each pit (`bound_radius`, `find_planet_lakes`). With 0326's lakes over the whole planet (1.6 a square kilometre at 8 km) that leaves no cave under roughly half the land, as 0327's fix round reported for the 1500 m round the home. After 0327, on its tree.
 

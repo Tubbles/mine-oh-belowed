@@ -1,6 +1,6 @@
 # 0337: The tree tiles' relief cost
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, c9a4d35)
 
 From 0314's design. 0310's tree tiles read the relief once per candidate tree: 1.27 million reads for the home's 1,024 m view at 8 km, about a third of that view's generation cost once 0314 has bounded the chunks and grids. They came after the pre-0306 baseline 0314 measures against, so 0314 left them out.
 

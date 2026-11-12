@@ -1,6 +1,6 @@
 # 0327: Noise caves and overhangs along the walls
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 82d2e38)
 
 0324 carves its arches, grottos and mushroom rocks as shapes under 0323's sites and left out the rest of its scope: Minecraft's noise caves (cheese, spaghetti, noodle) and overhangs along the gorge walls and the mesas' tier edges. Each needs a three-dimensional noise at every sample of the shell near the surface, on a relief 0306 made three times as costly, and air under ground that the generated light of 0324 shades everywhere instead of in a few chunks. After 0314 (the generation's cost).
 

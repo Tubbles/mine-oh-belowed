@@ -1,6 +1,6 @@
 # 0338: A cache of the noises' cells
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 14d81ee)
 
 From 0337's design (its part B) and 0314's (its next lever). A relief read in the home's view is 83 lattice hashes, 82 of them the 8 corners of its 10.3 noise evaluations, and neighbouring reads fall in the same cells: a simulated cache of 256 cells served 94 to 95 percent of the tree tiles' reads' noise evaluations (0337, The counts that decided it).
 
