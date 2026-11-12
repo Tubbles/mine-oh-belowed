@@ -15,9 +15,11 @@ import "core:thread"
 // to the tick as Field_Chunk_Ready_Command, so only the tick inserts and
 // unloads chunks. Workers never touch the Field_World: a mesh job of the
 // finest level whose chunk and shell are simulated carries a private copy
-// of them (gather_field_grid); any other node, a finest one beyond the set
-// included, generates its grid on the worker (generate_field_grid), from
-// the samples of the loaded chunks it reads, copied on the main thread
+// of them (gather_field_grid) and of the water's look's reach
+// (gather_field_look_samples, 0344), from which the worker writes the
+// water; any other node, a finest one beyond the set included, generates
+// its grid on the worker (generate_field_grid), from the samples of the
+// loaded chunks it reads and their water, copied on the main thread
 // (gather_coarse_field_grid), and the seed for the rest. A finest node
 // meshed so stays drawn when its chunks leave the set, and meshes again
 // from its chunks once they and their shell are simulated. Each mesh job
@@ -74,7 +76,11 @@ field_tree_tile_box :: proc(tile: Field_Tree_Tile, edge: i64) -> (minimum, maxim
 // job (0310) carries its tile, the tile's edge in tree cubes and the
 // pitch the instances scale the models by. A finest Mesh job with the
 // cover on carries copies of the frames over its node (cover_frames,
-// 0311), freed by the worker after the job.
+// 0311), freed by the worker after the job. The water's look (0344): a
+// finest job meshed from its chunks carries the copy of the look's reach
+// (look), one whose grid holds loaded samples to generate around carries
+// their water (coarse_water); the worker writes the water from them and
+// frees them with the grid (free_field_job_copies).
 Field_Job :: struct {
 	kind:        Field_Job_Kind,
 	node:        Field_Node,
@@ -86,6 +92,8 @@ Field_Job :: struct {
 	tree_cells:  i64,
 	tree_pitch_millimetres: int,
 	cover_frames: []Cover_Frame,
+	look:         ^Field_Look_Samples,
+	coarse_water: ^Field_Coarse_Water,
 }
 
 // Generate results carry chunk, Mesh results the terrain's mesh and the
@@ -252,6 +260,15 @@ free_field_job_frames :: proc(job: Field_Job) {
 	delete(job.cover_frames)
 }
 
+// Everything a mesh job carries: the grid, the water's copies (0344) and
+// the frames.
+free_field_job_copies :: proc(job: Field_Job) {
+	free(job.grid)
+	destroy_field_look_samples(job.look)
+	destroy_field_coarse_water(job.coarse_water)
+	free_field_job_frames(job)
+}
+
 // The tile's trees (planet_trees_in_box, with the tile's sea boxes, 0337),
 // their keys and instances in the allocator.
 generate_field_tree_tile :: proc(generation: ^Planet_Generation, tile: Field_Tree_Tile, cells: i64, pitch_millimetres: int, allocator := context.allocator) -> (keys: []Tree_Key, instances: []matrix[4, 4]f32) {
@@ -283,7 +300,10 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 			grid = new(Field_Grid, context.temp_allocator)
 		}
 		if job.generate {
-			generate_field_grid(shared.generation, job.node, grid)
+			generate_field_grid(shared.generation, job.node, grid, job.coarse_water)
+		}
+		if job.look != nil {
+			write_field_water_look(grid, job.look)
 		}
 		// A job's own grid holds loaded samples, which an edit can have
 		// moved off the generated surface (field_natural_share). The
@@ -299,8 +319,7 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces, look = shared.look, measure_cuts = measure_cuts, cover = cover, cover_table = shared.cover, cover_frames = job.cover_frames)
 		result.terrain_hash = field_mesh_depth_hash(result.mesh)
 		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
-		free(job.grid)
-		free_field_job_frames(job)
+		free_field_job_copies(job)
 	case .Trees:
 		result.tree_tile = job.tree_tile
 		result.tree_keys, result.tree_instances = generate_field_tree_tile(&shared.generation, job.tree_tile, job.tree_cells, job.tree_pitch_millimetres)
@@ -355,9 +374,7 @@ stop_field_streaming :: proc(streaming: ^Field_Streaming) {
 		thread.destroy(worker)
 	}
 	for queue.len(shared.jobs) > 0 {
-		job := queue.pop_front(&shared.jobs)
-		free(job.grid)
-		free_field_job_frames(job)
+		free_field_job_copies(queue.pop_front(&shared.jobs))
 	}
 	for queue.len(shared.generated) > 0 {
 		free_field_job_result(queue.pop_front(&shared.generated))
@@ -470,8 +487,9 @@ field_chunk_neighbours_loaded :: proc(world: ^Field_World, coordinate: Field_Chu
 }
 
 // A finest node's job with the cover on carries the frames over the node
-// (0311).
-submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, generate: bool, skirt_faces: Field_Seam_Faces) {
+// (0311). look and coarse_water are the water's copies (0344), handed to
+// the job with the grid.
+submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, generate: bool, skirt_faces: Field_Seam_Faces, look: ^Field_Look_Samples = nil, coarse_water: ^Field_Coarse_Water = nil) {
 	streaming.next_revision += 1
 	streaming.mesh_revisions[node] = streaming.next_revision
 	streaming.in_flight[node] = streaming.next_revision
@@ -481,7 +499,7 @@ submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, gri
 		minimum, maximum := field_cover_node_box(node, streaming.shared.generation.spacing_millimetres, COVER_FRAME_MARGIN_METRES)
 		cover_frames = cover_frames_meeting(streaming.cover_frames[:], minimum, maximum)
 	}
-	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid, generate = generate, skirt_faces = skirt_faces, cover_frames = cover_frames})
+	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid, generate = generate, skirt_faces = skirt_faces, cover_frames = cover_frames, look = look, coarse_water = coarse_water})
 	streaming.pending_jobs += 1
 }
 
@@ -498,8 +516,8 @@ field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node,
 // reads (finest_generated), again when an edit beside it marks it or its
 // skirt faces change, and from its chunks once they are all simulated; a
 // node meshed from its chunks keeps that mesh when they leave the set.
-// The surface waves' heights go into the grid at the gather (0294); a
-// chunk the waves alone marked (wave_dirty) waits for
+// The surface waves' baked offsets go into the look's copy at the gather
+// (0294, 0344); a chunk the waves alone marked (wave_dirty) waits for
 // schedule_field_wave_remeshes. Returns whether a job went out.
 schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node, faces: Field_Seam_Faces, waves: Field_Wave_Heights = nil) -> bool {
 	if node in streaming.in_flight {
@@ -513,7 +531,7 @@ schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_Wo
 		if !chunk.dirty && meshed && node not_in streaming.finest_generated && !faces_changed && node not_in streaming.remesh {
 			return false
 		}
-		submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate, waves), false, faces)
+		submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate), false, faces, look = gather_field_look_samples(world, coordinate, waves))
 		chunk.dirty, chunk.wave_dirty = false, false
 		delete_key(&streaming.finest_generated, node)
 		delete_key(&streaming.remesh, node)
@@ -524,7 +542,8 @@ schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_Wo
 	}
 	delete_key(&streaming.remesh, node)
 	streaming.finest_generated[node] = {}
-	submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), true, faces)
+	grid, coarse_water := gather_coarse_field_grid(world, node)
+	submit_field_mesh_job(streaming, node, grid, true, faces, coarse_water = coarse_water)
 	// The generated grid read the loaded chunk's samples, so its changes
 	// are in this mesh; a later edit marks the node again (remesh).
 	if chunk != nil {
@@ -579,7 +598,7 @@ schedule_field_wave_remeshes :: proc(streaming: ^Field_Streaming, world: ^Field_
 		}
 		node := selection[remesh.position]
 		chunk := world.chunks[field_node_chunk(node)]
-		submit_field_mesh_job(streaming, node, gather_field_grid(world, chunk.coordinate, waves), false, field_node_skirt_faces(index, node))
+		submit_field_mesh_job(streaming, node, gather_field_grid(world, chunk.coordinate), false, field_node_skirt_faces(index, node), look = gather_field_look_samples(world, chunk.coordinate, waves))
 		chunk.dirty, chunk.wave_dirty = false, false
 		sent += 1
 	}
@@ -621,7 +640,8 @@ schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, se
 			faces := field_node_skirt_faces(index, node)
 			if node not_in streaming.mesh_revisions || node in streaming.remesh || field_skirt_faces_changed(streaming, node, faces) {
 				delete_key(&streaming.remesh, node)
-				submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), true, faces)
+				grid, coarse_water := gather_coarse_field_grid(world, node)
+				submit_field_mesh_job(streaming, node, grid, true, faces, coarse_water = coarse_water)
 				submissions += 1
 			}
 		}

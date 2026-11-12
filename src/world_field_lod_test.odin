@@ -835,8 +835,8 @@ test_a_coarse_grid_reads_the_light_of_the_loaded_chunks :: proc(t: ^testing.T) {
 	}
 	field_world_insert_chunk(&world, chunk)
 	node := Field_Node{1, {0, 124, 0}}
-	grid := gather_coarse_field_grid(&world, node, context.temp_allocator)
-	generate_field_grid(generation, node, grid)
+	grid, water := gather_coarse_field_grid(&world, node, context.temp_allocator)
+	generate_field_grid(generation, node, grid, water)
 	loaded_air, generated_air := 0, 0
 	for index in 0 ..< FIELD_GRID_SAMPLE_COUNT {
 		switch {
@@ -975,7 +975,7 @@ test_the_seas_surface_residual_is_small_at_every_latitude_and_level :: proc(t: ^
 						}
 					}
 				}
-				grid = gather_field_grid(&world, finest, nil, context.temp_allocator)
+				grid = look_test_grid(&world, finest)
 			} else {
 				width := i32(1) << uint(level)
 				node := Field_Node{level, {floor_divide(finest.x, width), floor_divide(finest.y, width), floor_divide(finest.z, width)}}
@@ -986,8 +986,9 @@ test_the_seas_surface_residual_is_small_at_every_latitude_and_level :: proc(t: ^
 						}
 					}
 				}
-				grid = gather_coarse_field_grid(&world, node, context.temp_allocator)
-				generate_field_grid(generation, node, grid)
+				coarse_water: ^Field_Coarse_Water
+				grid, coarse_water = gather_coarse_field_grid(&world, node, context.temp_allocator)
+				generate_field_grid(generation, node, grid, coarse_water)
 			}
 			water := new(Field_Grid, context.temp_allocator)
 			water.origin, water.step, water.density = grid.origin, grid.step, grid.water

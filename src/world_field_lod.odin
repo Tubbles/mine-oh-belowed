@@ -425,9 +425,11 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // coarse_field_sample. The water of a sample not loaded is the sea level
 // rule (planet_sea_density) and the lakes' (0312, planet_lake_density,
 // the lakes meeting the grid's box listed once from the features or the
-// tiles, 0326, carved air left dry as the chunks leave it), of a loaded one its owner's plane as the
-// gather wrote it (water_exact, 0294) or its fill through
-// coarse_field_water_density, so the sea shows at every level. The light
+// tiles, 0326, carved air left dry as the chunks leave it), of a loaded one its owner's plane
+// (water_exact, 0294) or its fill through coarse_field_water_density, so
+// the sea shows at every level; the base of a loaded sample is written here
+// from the gather's copy when one is given (coarse_water,
+// field_coarse_water_base, 0344), else a hand built grid's is kept. The light
 // of a loaded sample is its own; a sample not loaded is generated air
 // under the sky or ground, so it has full sky light in air and none in
 // ground (0173) or in carved air under a roof (0324, 0327,
@@ -435,7 +437,7 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // afar. The samples read the lakes meeting the grid's box widened by the
 // caves' fade, as a chunk's do (cave_lakes_generation). Safe on any
 // thread.
-generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, grid: ^Field_Grid) {
+generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, grid: ^Field_Grid, coarse_water: ^Field_Coarse_Water = nil) {
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
 	low := cast([3]i64)sample_to_world_position(grid.origin - grid.step, generation.spacing_millimetres)
@@ -465,6 +467,9 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 					water = max(water, planet_lake_density(density_generation, lakes, position, value.density))
 				}
 				if grid.loaded[index] {
+					if coarse_water != nil {
+						grid.water[index], grid.water_exact[index] = field_coarse_water_base(coarse_water, index, grid.density[index], sample, grid.step)
+					}
 					value = coarse_field_sample({grid.density[index], grid.material[index], grid.tint[index]}, value, grid.step)
 					water = grid.water_exact[index] ? grid.water[index] : coarse_field_water_density(grid.water[index], water, grid.step)
 				} else {
@@ -498,17 +503,24 @@ field_node_touches_loaded_chunks :: proc(world: ^Field_World, node: Field_Node) 
 
 // A coarser node's grid with the samples of the loaded chunks it reads,
 // copied on the main thread (loaded set), for generate_field_grid to
-// complete on a worker; nil when it reads no loaded chunk, so the worker
-// generates it whole. The edits then show at every level of detail. The
-// water is the look's base in the grid's spacing (field_water_look_base,
-// 0294): no sheet and no waves, which lie under a coarse cell.
-gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocator := context.allocator) -> ^Field_Grid {
+// complete on a worker; both nil when it reads no loaded chunk, so the
+// worker generates it whole. The edits then show at every level of
+// detail. The water is the look's base in the grid's spacing (0294): no
+// sheet and no waves, which lie under a coarse cell. The grid's water is
+// left zero; water holds each loaded sample's fill and, unless it is
+// front water, its owner, with the owners' levels
+// (note_field_look_owner), from which the worker writes the base
+// (field_coarse_water_base, 0344).
+gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocator := context.allocator) -> (grid: ^Field_Grid, water: ^Field_Coarse_Water) {
 	if !field_node_touches_loaded_chunks(world, node) {
-		return nil
+		return nil, nil
 	}
-	grid := new(Field_Grid, allocator)
+	grid = new(Field_Grid, allocator)
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
+	water = new(Field_Coarse_Water, allocator)
+	water.owners.list = make([dynamic]Field_Look_Owner, 0, 8, allocator)
+	last_owner := WATER_OWNER_NONE
 	// The chunk of the previous sample, so a run of samples in one chunk
 	// looks it up once.
 	cached_coordinate := Field_Chunk_Coordinate{max(i32), max(i32), max(i32)}
@@ -527,13 +539,21 @@ gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocato
 				index := field_grid_index({x, y, z})
 				source := sample_to_field_index(sample)
 				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
-				grid.water[index], grid.water_exact[index] = field_water_look_base(world, chunk, source, sample, grid.step)
+				water.fill[index] = chunk.water[source]
+				if !field_water_is_front(chunk, source) {
+					owner := chunk.water_owner[source]
+					water.still_owner[index] = owner
+					if owner != last_owner {
+						note_field_look_owner(&water.owners, world, owner)
+						last_owner = owner
+					}
+				}
 				grid.block_light[index], grid.sky_light[index] = chunk.block_light[source], chunk.sky_light[source]
 				grid.loaded[index] = true
 			}
 		}
 	}
-	return grid
+	return grid, water
 }
 
 // The six faces of a node, the axis's negative side first.

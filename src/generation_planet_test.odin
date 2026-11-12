@@ -412,12 +412,12 @@ test_the_coarse_levels_read_topsoil_at_the_surface :: proc(t: ^testing.T) {
 	site, _ := field_home_site(generation, planet)
 	for level in i32(1) ..= 2 {
 		node := test_surface_node(site, 1000, level)
-		grid := gather_coarse_field_grid(&world, node, context.temp_allocator)
+		grid, water := gather_coarse_field_grid(&world, node, context.temp_allocator)
 		testing.expectf(t, grid != nil, "level %d reads the loaded chunks", level)
 		if grid == nil {
 			continue
 		}
-		generate_field_grid(generation, node, grid)
+		generate_field_grid(generation, node, grid, water)
 		ground, stone := coarse_grid_stone_corners(generation, grid)
 		testing.expectf(t, ground >= 1000 && stone * 100 <= ground, "loaded, level %d: %d of %d ground corners are stone", level, stone, ground)
 	}

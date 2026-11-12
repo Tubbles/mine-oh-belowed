@@ -947,7 +947,7 @@ test_the_fill_lights_a_cave_from_its_mouth :: proc(t: ^testing.T) {
 	// so field.fs greys their bounce, wholly at roof_sky_light_shut.
 	shut, shut_found := shader_float_constant(#load("../data/shaders/field.fs", string), "roof_sky_light_shut")
 	testing.expect(t, shut_found, "field.fs holds roof_sky_light_shut")
-	grid := gather_field_grid(&world, coordinate, nil, context.temp_allocator)
+	grid := look_test_grid(&world, coordinate)
 	mesh := mesh_field_grid(grid, planet.palette, 1000, {}, context.temp_allocator, make_field_ground_look(generation, planet), true)
 	origin_position := sample_to_world_position(field_chunk_origin(coordinate), 1000)
 	origin := [3]f64{f64(origin_position.x), f64(origin_position.y), f64(origin_position.z)} / POSITION_UNITS_PER_METRE

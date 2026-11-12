@@ -45,7 +45,8 @@ FIELD_TEXTURED_MATERIAL_COUNT :: len(Field_Material) - 1
 // mesh_field_water_grid): since 0294 the water's look
 // (world_field_water_look.odin), still water a body or the sea owns as its
 // level's plane, the front as its slab (field_water_density), and at full
-// resolution the sheet and the surface waves over them.
+// resolution the sheet and the surface waves over them, written by the
+// worker from the job's copies since 0344.
 Field_Grid :: struct {
 	origin:   Sample_Coordinate,
 	step:     i32,
@@ -165,7 +166,8 @@ field_shell_range :: proc(offset: i32) -> (first, last: i32) {
 
 // One chunk's part of the grid's terrain and light; a missing chunk reads
 // as air under the sky, as field_world_get_sample and the generation make
-// it. The water follows from every part at once (write_field_water_look).
+// it. The worker writes the water from the look's copy
+// (write_field_water_look).
 copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]i32) {
 	first, last: [3]i32
 	for axis in 0 ..< 3 {
@@ -188,12 +190,14 @@ copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]
 	}
 }
 
-// The chunk and a one sample shell from its 26 neighbours, copied on the
-// main thread as the block mesher's border is (world_mesh_border.odin), so
-// a worker never reads the Field_World or the waves; then the water's look
-// (write_field_water_look, 0294), which reads up to FIELD_LOOK_REACH
-// samples beyond the node.
-gather_field_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, waves: Field_Wave_Heights = nil, allocator := context.allocator) -> ^Field_Grid {
+// The chunk's terrain and light and a one sample shell from its 26
+// neighbours, copied on the main thread as the block mesher's border is
+// (world_mesh_border.odin), so a worker never reads the Field_World. The
+// water is left zero: the job carries the look's copy
+// (gather_field_look_samples, 0344), which reads up to FIELD_LOOK_REACH
+// samples beyond the node, and the worker writes it
+// (write_field_water_look).
+gather_field_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, allocator := context.allocator) -> ^Field_Grid {
 	grid := new(Field_Grid, allocator)
 	grid.origin = field_chunk_origin(coordinate)
 	grid.step = 1
@@ -204,7 +208,6 @@ gather_field_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinat
 			}
 		}
 	}
-	write_field_water_look(grid, world, waves)
 	return grid
 }
 

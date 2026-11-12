@@ -1,6 +1,6 @@
 # 0344: The water's look on the workers
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-12)
 
 `gather_field_grid` runs `write_field_water_look` on the main thread for every mesh job it gathers: 2.8 ms for a lake's chunk and 5.5 ms for a sea chunk in the test build, up to 8 jobs a frame (`work/performance_research_0340.md`, 2.1). It is there because the workers never read `Field_World`.
 
@@ -283,3 +283,10 @@ Tests adapted, same assertions:
 2. Golden digests are accepted, recorded by the implementer at the base commit before any edit and named in the report with the commit they were taken at.
 3. Implemented after 0342 has landed, so the before run is `main` without it.
 4. The peak of 23.1 MB of pending jobs (10.1 MB today) is accepted on the desktop. The phone's cap on pending jobs is the same number: if the phone's memory shows it, the cap falls there, a value in data.
+
+### Deviations (implementation, 2026-11-12)
+
+- 0367 and 0370 left the seam as specified: 0367 moved the moving stamp's expiry mark to the step's end and split `schedule_field_jobs` into two rounds, 0370 touched neither the look nor the streaming. The call sites changed inside the two rounds, nothing else.
+- The test lines drifted. Four sites the specification did not list take the same change: `world_field_water_test.odin` `water_look_digest` (0367) and `world_field_lod_test.odin`'s finest and coarse grids use `look_test_grid` and the coarse water, and `generation_planet_caves_test.odin` (0380) uses `look_test_grid`, so its grid keeps its water.
+- `test_the_gathers_leave_the_water_to_the_worker` also asserts that the shore's reach holds sea samples, so the shore case covers the sea's plane.
+- The goldens were taken at 7bac58d.

@@ -382,3 +382,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - A driver that refuses the depth blit is not noticed: still casters lose their shadows and moving ones leave trails. Reading the GL error once after a kept map's first copy and marking the map failed would fall back to the whole pass. Decide after the hand check on the phone and under Winlator: if either shows it, this is a fix, not a suggestion.
 - A driven vessel moves its frame's pose every tick and so redraws its kept map every frame. Right, and no saving there. Drawing a moving frame's occupants in the moving pass would keep the map.
 - A gather that leaves the casting trees the same (a felling past the cap) redraws once. A hash of the selected keys, free of their order, would skip it.
+
+## Suggestions from the water's look on the workers (0344, 2026-11-12)
+
+- No suite test runs the look on a real worker thread: every streaming test starts with 0 workers. The review's probe (two workers, the main thread rewriting the world under them) could become one.
+- `gather_field_look_samples` zeroes its 407 KB and then overwrites the loaded runs. Only the unloaded runs need the zeroes. Measure the streaming section in the next table first.
+- The coarse jobs' per sample chunk lookups stay on the main thread. If the next table still shows the spring's streaming over the settled views', they are the next place to look.

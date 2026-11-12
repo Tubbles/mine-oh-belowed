@@ -212,9 +212,9 @@ test_a_coarse_grid_over_an_edited_chunk_shows_the_edit :: proc(t: ^testing.T) {
 	node := Field_Node{1, {0, 124, 0}}
 	pure := new(Field_Grid, context.temp_allocator)
 	generate_field_grid(generation, node, pure)
-	edited := gather_coarse_field_grid(&world, node, context.temp_allocator)
+	edited, edited_water := gather_coarse_field_grid(&world, node, context.temp_allocator)
 	testing.expect(t, edited != nil, "the node reads the loaded chunk")
-	generate_field_grid(generation, node, edited)
+	generate_field_grid(generation, node, edited, edited_water)
 	dug := 0
 	for index in 0 ..< FIELD_GRID_SAMPLE_COUNT {
 		if pure.density[index] > 0 && edited.density[index] <= 0 {
@@ -222,7 +222,8 @@ test_a_coarse_grid_over_an_edited_chunk_shows_the_edit :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, dug > 0, "the cavity shows at the coarser level")
-	testing.expect(t, gather_coarse_field_grid(&world, Field_Node{1, {40, 124, 0}}, context.temp_allocator) == nil, "a node over no loaded chunk is generated whole")
+	far_grid, _ := gather_coarse_field_grid(&world, Field_Node{1, {40, 124, 0}}, context.temp_allocator)
+	testing.expect(t, far_grid == nil, "a node over no loaded chunk is generated whole")
 
 	streaming: Field_Streaming
 	defer delete(streaming.mesh_revisions)
@@ -257,8 +258,8 @@ test_an_unedited_loaded_coarse_grid_matches_the_generation :: proc(t: ^testing.T
 	node := Field_Node{1, {0, 124, 0}}
 	pure := new(Field_Grid, context.temp_allocator)
 	generate_field_grid(generation, node, pure)
-	loaded := gather_coarse_field_grid(&world, node, context.temp_allocator)
-	generate_field_grid(generation, node, loaded)
+	loaded, loaded_water := gather_coarse_field_grid(&world, node, context.temp_allocator)
+	generate_field_grid(generation, node, loaded, loaded_water)
 	compared, apart := 0, 0
 	for index in 0 ..< FIELD_GRID_SAMPLE_COUNT {
 		if !loaded.loaded[index] {

@@ -12,9 +12,10 @@ package game
 // under FIELD_WAVE_REST is set to exactly zero and leaves the set, so
 // every wave dies out and the mesh is the water's bytes' again. The step
 // follows the simulation's ticks (at most MAXIMUM_FIELD_WAVE_STEPS_PER_FRAME
-// a frame), never the frame time or the cheat speed. The gather adds the
-// heights, rounded to density steps (field_wave_offset), to the water
-// grid, so a mesh job carries them baked in; a chunk meshes again only
+// a frame), never the frame time or the cheat speed. The gather copies the
+// heights as rounded to density steps (Field_Wave_Chunk.baked) into the
+// mesh job, and the worker adds them to the water grid
+// (field_look_wave_offset); a chunk meshes again only
 // when the rounded heights it reads changed, at most
 // MAXIMUM_FIELD_WAVE_REMESHES_PER_FRAME a frame after every other mesh
 // (Field_Chunk.wave_dirty, schedule_field_jobs).

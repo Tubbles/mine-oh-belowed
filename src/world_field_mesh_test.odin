@@ -135,7 +135,7 @@ test_a_sphere_across_chunks_meshes_watertight :: proc(t: ^testing.T) {
 	welded := make(map[[3]i32]int, context.temp_allocator)
 	edges := make(map[[2]int]int, context.temp_allocator)
 	for coordinate in coordinates {
-		grid := gather_field_grid(&world, coordinate, nil, context.temp_allocator)
+		grid := gather_field_grid(&world, coordinate, context.temp_allocator)
 		surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
 		testing.expectf(t, len(surface.vertices) > 0, "chunk %v holds part of the sphere", coordinate)
 		ids := make([]int, len(surface.vertices), context.temp_allocator)

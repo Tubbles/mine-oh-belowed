@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:hash"
 import "core:math"
 import "core:slice"
 import "core:testing"
@@ -11,10 +12,50 @@ import "core:testing"
 
 LOOK_TEST_CHUNK :: Field_Chunk_Coordinate{0, WATER_TEST_CHUNK_Y, 0}
 
+// The chunk's full resolution grid with its water, as a mesh job holds it
+// when the worker meshes it: the gather's grid, the water written from the
+// look's copy (in the temp allocator).
+look_test_grid :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, waves: Field_Wave_Heights = nil, allocator := context.temp_allocator) -> ^Field_Grid {
+	grid := gather_field_grid(world, coordinate, allocator)
+	write_field_water_look(grid, gather_field_look_samples(world, coordinate, waves, context.temp_allocator))
+	return grid
+}
+
 // The water mesh of the chunk, gathered as the streaming gathers it.
 look_test_mesh :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, waves: Field_Wave_Heights = nil) -> Field_Mesh_Data {
-	grid := gather_field_grid(world, coordinate, waves, context.temp_allocator)
-	return mesh_field_water_grid(grid, TEST_FIELD_PALETTE[:], 1000, context.temp_allocator)
+	return mesh_field_water_grid(look_test_grid(world, coordinate, waves), TEST_FIELD_PALETTE[:], 1000, context.temp_allocator)
+}
+
+// The grid's water bytes and exact flags hashed, chained from seed. The
+// mesher is a pure function of the grid and the look writes only these
+// two arrays, so equal digests are equal water meshes.
+look_test_digest :: proc(grid: ^Field_Grid, seed := u64(0xcbf29ce484222325)) -> u64 {
+	digest := hash.fnv64a(slice.to_bytes(grid.water[:]), seed)
+	return hash.fnv64a(slice.to_bytes(grid.water_exact[:]), digest)
+}
+
+// A 1000 m planet whose sea lies at the relief of the +x axis, so its
+// shore runs through the chunk there (finest), with the chunks of
+// finest + {-2 ..= 1} on every axis generated and loaded.
+make_shore_look_test_world :: proc() -> (world: Field_World, planet: Planet, generation: Planet_Generation, finest: Field_Chunk_Coordinate) {
+	planet = make_test_planet()
+	planet.radius_metres = 1000
+	radius := metres_to_position_units(1000)
+	relief := uncratered_relief(make_planet_generation(TEST_PLANET_SEED, planet, 1000), {radius, 0, 0})
+	planet.sea_level_metres = int(relief / POSITION_UNITS_PER_METRE)
+	generation = make_planet_generation(TEST_PLANET_SEED, planet, 1000)
+	world.water_planet = make_field_water_planet(TEST_PLANET_SEED, planet, 1000)
+	finest = sample_to_field_chunk_coordinate(world_position_to_sample(World_Position{radius + relief, 0, 0}, 1000))
+	for z in i32(-2) ..= 1 {
+		for y in i32(-2) ..= 1 {
+			for x in i32(-2) ..= 1 {
+				chunk := new(Field_Chunk)
+				generate_field_chunk(TEST_PLANET_SEED, planet, 1000, finest + {x, y, z}, chunk)
+				field_world_insert_chunk(&world, chunk)
+			}
+		}
+	}
+	return world, planet, generation, finest
 }
 
 nearest_water_vertex_distance :: proc(mesh: Field_Mesh_Data, local: [3]f32) -> f32 {
@@ -383,10 +424,10 @@ test_a_change_within_three_samples_of_a_border_marks_the_neighbour :: proc(t: ^t
 		sample := water_test_sample({x, 3, 7})
 		// Poured, then taken again, so each probe starts from a dry tunnel.
 		for fill in ([2]i32{200, 0}) {
-			before := gather_field_grid(&world, second_coordinate, nil, context.temp_allocator)
+			before := look_test_grid(&world, second_coordinate)
 			first.dirty, second.dirty = false, false
 			set_field_water(&world, first, sample_to_field_index(sample), sample, fill)
-			after := gather_field_grid(&world, second_coordinate, nil, context.temp_allocator)
+			after := look_test_grid(&world, second_coordinate)
 			testing.expectf(t, first.dirty, "x %d: the sample's own chunk is marked", x)
 			if before.water != after.water {
 				changed += 1
@@ -399,10 +440,10 @@ test_a_change_within_three_samples_of_a_border_marks_the_neighbour :: proc(t: ^t
 	fmt.printfln("0294: %d of the 12 water probes changed the neighbour's grid", changed)
 	// The terrain: ground set back under the water at local x 29.
 	ground := water_test_sample({29, 4, 6})
-	before := gather_field_grid(&world, second_coordinate, nil, context.temp_allocator)
+	before := look_test_grid(&world, second_coordinate)
 	second.dirty = false
 	testing.expect(t, field_world_set_sample(&world, ground, {MAXIMUM_DENSITY, .Stone, 0}))
-	after := gather_field_grid(&world, second_coordinate, nil, context.temp_allocator)
+	after := look_test_grid(&world, second_coordinate)
 	testing.expect(t, second.dirty, "a terrain change within reach marks the neighbour")
 	fmt.printfln("0294: the terrain at local x 29 changed the neighbour's water grid: %v", before.water != after.water)
 	free_all(context.temp_allocator)
@@ -457,8 +498,8 @@ test_a_wave_at_a_border_remeshes_both_nodes :: proc(t: ^testing.T) {
 	coordinates := [2]Field_Chunk_Coordinate{LOOK_TEST_CHUNK, LOOK_TEST_CHUNK + {1, 0, 0}}
 	still, kept: [2]^Field_Grid
 	for coordinate, slot in coordinates {
-		still[slot] = gather_field_grid(&world, coordinate)
-		kept[slot] = gather_field_grid(&world, coordinate)
+		still[slot] = look_test_grid(&world, coordinate, allocator = context.allocator)
+		kept[slot] = look_test_grid(&world, coordinate, allocator = context.allocator)
 	}
 	defer {
 		for slot in 0 ..< 2 {
@@ -490,7 +531,7 @@ test_a_wave_at_a_border_remeshes_both_nodes :: proc(t: ^testing.T) {
 		advance_field_waves(&waves, &world, tick)
 		clear(&world.water_events)
 		for coordinate, slot in coordinates {
-			now := gather_field_grid(&world, coordinate, waves.heights, context.temp_allocator)
+			now := look_test_grid(&world, coordinate, waves.heights)
 			if world.chunks[coordinate].wave_dirty {
 				marks[slot] += 1
 				unchanged += kept[slot].water == now.water ? 1 : 0
@@ -558,7 +599,8 @@ test_waves_mark_a_chunk_only_when_its_baked_offsets_change :: proc(t: ^testing.T
 
 // An owner with no live body (0294's second fix round): its still water
 // draws as front water, sheet and all, so the gather is the one with no
-// owner, and none of it counts as a body's interior.
+// owner, and none of it counts as a body's interior. The copy lists the
+// owner once, not owned (0344).
 @(test)
 test_still_water_of_a_dead_owner_draws_as_the_front :: proc(t: ^testing.T) {
 	world := make_body_test_world()
@@ -578,18 +620,198 @@ test_still_water_of_a_dead_owner_draws_as_the_front :: proc(t: ^testing.T) {
 	}
 	_, owned := water_owner_body(&world, dead)
 	testing.expect(t, !owned, "the owner has no live body")
-	samples := make_field_look_samples(&world, LOOK_TEST_CHUNK)
+	samples := gather_field_look_samples(&world, LOOK_TEST_CHUNK, allocator = context.temp_allocator)
+	finish_field_look_samples(samples)
 	inside := field_look_index({7, 6, 7})
 	testing.expect_value(t, samples.still_owner[inside], WATER_OWNER_NONE)
 	testing.expect_value(t, samples.interior[6 + FIELD_LOOK_REACH + FIELD_LOOK_SIZE * (7 + FIELD_LOOK_REACH)] >> uint(7 + FIELD_LOOK_REACH) & 1, 0)
-	with_owner := gather_field_grid(&world, LOOK_TEST_CHUNK, nil, context.temp_allocator)
+	testing.expect_value(t, len(samples.owners.list), 1)
+	if len(samples.owners.list) == 1 {
+		testing.expect_value(t, samples.owners.list[0], Field_Look_Owner{owner = dead})
+	}
+	with_owner := look_test_grid(&world, LOOK_TEST_CHUNK)
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		chunk.water_owner[index] = WATER_OWNER_NONE
 	}
-	without := gather_field_grid(&world, LOOK_TEST_CHUNK, nil, context.temp_allocator)
+	without := look_test_grid(&world, LOOK_TEST_CHUNK)
 	testing.expect(t, with_owner.water == without.water, "the dead owner's water draws as the front")
 	testing.expect(t, with_owner.water_exact == without.water_exact)
 	free_all(context.temp_allocator)
+}
+
+// Work item 0344: the look moved from the main thread's gather to the
+// workers with the same bytes. These digests were taken at 7bac58d
+// ("Start 0344"), where the gather still wrote the look; a deliberate
+// change to the look or to the test worlds records them again.
+LOOK_TEST_SETTLED_LAKE_DIGEST :: u64(0x927fcbac1a5ddae5)
+LOOK_TEST_STRUCK_LAKE_DIGEST :: u64(0x0ee6cdde2f642d00)
+LOOK_TEST_STREAM_DIGEST :: u64(0x5e18ab40ae6d3f19)
+LOOK_TEST_BORDER_WAVE_DIGEST :: u64(0xe63d3d9a51ef42d9)
+LOOK_TEST_SHORE_DIGESTS :: [FIELD_LEVEL_COUNT]u64{0xdd0a8c7dd2d186e2, 0x663487eb0ea170b9, 0x9a58e690d167d899, 0xeb189705ff7428db}
+
+// The digest of a settled lake (a), the same lake struck at its centre
+// over 10 frames of waves (b), a stream running into a lake over 20 ticks
+// (c), and a lake across a chunk border struck at the border over 10
+// frames, both chunks (d).
+@(test)
+test_the_lakes_water_look_keeps_its_recorded_bytes :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	world := settled_body_test_lake(t, 10, &tick)
+	defer destroy_field_world(&world)
+	settled := look_test_digest(look_test_grid(&world, LOOK_TEST_CHUNK))
+	testing.expectf(t, settled == LOOK_TEST_SETTLED_LAKE_DIGEST, "the settled lake's digest is %x", settled)
+	waves := Field_Waves {
+		tuning    = make_field_wave_tuning(SHIPPED_WATER_LOOK),
+		last_tick = tick,
+	}
+	defer destroy_field_waves(&waves)
+	centre, found := look_test_surface_sample(&world, 7, 7)
+	testing.expect(t, found, "the lake has a surface")
+	clear(&world.water_events)
+	push_field_water_event(&world, .Impact, centre, FIELD_WATER_FULL)
+	struck := u64(0xcbf29ce484222325)
+	for _ in 0 ..< 10 {
+		tick += 1
+		advance_field_waves(&waves, &world, tick)
+		clear(&world.water_events)
+		testing.expect(t, len(waves.active) > 0, "the lake carries waves")
+		struck = look_test_digest(look_test_grid(&world, LOOK_TEST_CHUNK, waves.heights), struck)
+	}
+	testing.expectf(t, struck == LOOK_TEST_STRUCK_LAKE_DIGEST, "the struck lake's digest is %x", struck)
+	free_all(context.temp_allocator)
+
+	stream := make_body_test_world()
+	defer destroy_field_world(&stream)
+	carve_trough_test_lakes(&stream, 0)
+	tuning := water_body_test_tuning()
+	tick = 0
+	testing.expect(t, settle_body_test_water(&stream, tuning, &tick, 300) < 300)
+	dig_test_trough(&stream, 0)
+	for _ in 0 ..< 100 {
+		tick += 1
+		step_field_water(&stream, tuning, tick)
+		if water_fill_at(&stream, water_test_sample({11, 9, 7})) > 0 {
+			break
+		}
+	}
+	testing.expect(t, water_fill_at(&stream, water_test_sample({11, 9, 7})) > 0, "the trough holds water")
+	running := u64(0xcbf29ce484222325)
+	for _ in 0 ..< 20 {
+		tick += 1
+		step_field_water(&stream, tuning, tick)
+		running = look_test_digest(look_test_grid(&stream, LOOK_TEST_CHUNK), running)
+	}
+	testing.expectf(t, running == LOOK_TEST_STREAM_DIGEST, "the stream's digest is %x", running)
+	free_all(context.temp_allocator)
+
+	border := make_two_chunk_water_world({0, 1})
+	defer destroy_field_world(&border)
+	make_bodies_world(&border)
+	pour_test_water(&border, water_test_sample(TWO_CHUNK_BASIN_LOW), water_test_sample({TWO_CHUNK_BASIN_HIGH.x, 8, TWO_CHUNK_BASIN_HIGH.z}), FIELD_WATER_FULL)
+	tick = 0
+	testing.expect(t, settle_body_test_water(&border, water_body_test_tuning(), &tick, 200) < 200)
+	border_waves := Field_Waves {
+		tuning    = make_field_wave_tuning(SHIPPED_WATER_LOOK),
+		last_tick = tick,
+	}
+	defer destroy_field_waves(&border_waves)
+	surface: Sample_Coordinate
+	found = false
+	for y := i32(FIELD_CHUNK_SIZE - 1); y >= 0 && !found; y -= 1 {
+		surface = water_test_sample({FIELD_CHUNK_SIZE - 1, y, 7})
+		found = field_wave_surface_sample(&border, surface)
+	}
+	testing.expect(t, found, "the lake has a surface at the border")
+	clear(&border.water_events)
+	push_field_water_event(&border, .Impact, surface, FIELD_WATER_FULL)
+	crossing := u64(0xcbf29ce484222325)
+	for _ in 0 ..< 10 {
+		tick += 1
+		advance_field_waves(&border_waves, &border, tick)
+		clear(&border.water_events)
+		for coordinate in ([2]Field_Chunk_Coordinate{LOOK_TEST_CHUNK, LOOK_TEST_CHUNK + {1, 0, 0}}) {
+			crossing = look_test_digest(look_test_grid(&border, coordinate, border_waves.heights), crossing)
+		}
+	}
+	testing.expectf(t, crossing == LOOK_TEST_BORDER_WAVE_DIGEST, "the border wave's digest is %x", crossing)
+	free_all(context.temp_allocator)
+}
+
+// The shore world's water at every level: the finest node with its 26
+// neighbours loaded, and the coarser nodes over it from the loaded chunks
+// and the generation.
+@(test)
+test_the_shores_water_look_keeps_its_recorded_bytes_at_every_level :: proc(t: ^testing.T) {
+	world, _, generation, finest := make_shore_look_test_world()
+	defer destroy_field_world(&world)
+	digests: [FIELD_LEVEL_COUNT]u64
+	digests[0] = look_test_digest(look_test_grid(&world, finest))
+	for level in i32(1) ..< FIELD_LEVEL_COUNT {
+		width := i32(1) << uint(level)
+		node := Field_Node{level, {floor_divide(finest.x, width), floor_divide(finest.y, width), floor_divide(finest.z, width)}}
+		grid, water := gather_coarse_field_grid(&world, node, context.temp_allocator)
+		testing.expectf(t, grid != nil, "level %d reads the loaded chunks", level)
+		if grid == nil {
+			continue
+		}
+		generate_field_grid(generation, node, grid, water)
+		digests[level] = look_test_digest(grid)
+	}
+	testing.expectf(t, digests == LOOK_TEST_SHORE_DIGESTS, "the shore's digests are %x", digests)
+	free_all(context.temp_allocator)
+}
+
+// The main thread's gathers leave the water to the worker: the finest
+// grid's and the level 1 grid's water is zero and not exact, the look's
+// copy holds every loaded sample's owner as the chunk holds it and no
+// interior, so nothing is derived per sample there; the worker's write
+// gives the recorded bytes. The settled lake and the shore world.
+@(test)
+test_the_gathers_leave_the_water_to_the_worker :: proc(t: ^testing.T) {
+	tick: u64 = 0
+	lake := settled_body_test_lake(t, 10, &tick)
+	defer destroy_field_world(&lake)
+	shore, _, _, finest := make_shore_look_test_world()
+	defer destroy_field_world(&shore)
+	Case :: struct {
+		world:      ^Field_World,
+		coordinate: Field_Chunk_Coordinate,
+		digest:     u64,
+	}
+	for entry in ([2]Case{{&lake, LOOK_TEST_CHUNK, LOOK_TEST_SETTLED_LAKE_DIGEST}, {&shore, finest, LOOK_TEST_SHORE_DIGESTS[0]}}) {
+		grid := gather_field_grid(entry.world, entry.coordinate, context.temp_allocator)
+		testing.expectf(t, slice.all_of(grid.water[:], 0) && slice.all_of(grid.water_exact[:], false), "%v: the finest gather writes no water", entry.coordinate)
+		node := Field_Node{1, {floor_divide(entry.coordinate.x, 2), floor_divide(entry.coordinate.y, 2), floor_divide(entry.coordinate.z, 2)}}
+		coarse, coarse_water := gather_coarse_field_grid(entry.world, node, context.temp_allocator)
+		testing.expectf(t, coarse != nil && coarse_water != nil, "%v: the level 1 node reads the loaded chunk", entry.coordinate)
+		if coarse != nil {
+			testing.expectf(t, slice.all_of(coarse.water[:], 0) && slice.all_of(coarse.water_exact[:], false), "%v: the coarse gather writes no water", entry.coordinate)
+		}
+		samples := gather_field_look_samples(entry.world, entry.coordinate, allocator = context.temp_allocator)
+		testing.expectf(t, slice.all_of(samples.interior[:], 0), "%v: the gather derives no interior", entry.coordinate)
+		origin := field_chunk_origin(entry.coordinate)
+		differing, sea := 0, 0
+		for z in i32(-FIELD_LOOK_REACH) ..< FIELD_GRID_CELLS + FIELD_LOOK_REACH {
+			for y in i32(-FIELD_LOOK_REACH) ..< FIELD_GRID_CELLS + FIELD_LOOK_REACH {
+				for x in i32(-FIELD_LOOK_REACH) ..< FIELD_GRID_CELLS + FIELD_LOOK_REACH {
+					look := field_look_index({x, y, z})
+					if !samples.loaded[look] {
+						continue
+					}
+					chunk, index := field_world_cell(entry.world, origin + Sample_Coordinate([3]i32{x, y, z}))
+					differing += samples.still_owner[look] != chunk.water_owner[index] ? 1 : 0
+					sea += samples.still_owner[look] == WATER_OWNER_SEA ? 1 : 0
+				}
+			}
+		}
+		testing.expectf(t, differing == 0, "%v: %d copied owners differ from the chunks'", entry.coordinate, differing)
+		if entry.world == &shore {
+			testing.expectf(t, sea > 0, "the shore's reach holds the sea (%d samples)", sea)
+		}
+		write_field_water_look(grid, samples)
+		testing.expectf(t, look_test_digest(grid) == entry.digest, "%v: the worker's water differs from the recorded bytes", entry.coordinate)
+		free_all(context.temp_allocator)
+	}
 }
 
 // Work item 0348: the waves move the water's mesh and leave what the sun's
@@ -606,7 +828,7 @@ test_waves_leave_the_terrain_hash :: proc(t: ^testing.T) {
 	}
 	defer destroy_field_waves(&waves)
 	terrain_hash := proc(world: ^Field_World, waves: Field_Wave_Heights) -> u64 {
-		grid := gather_field_grid(world, LOOK_TEST_CHUNK, waves, context.temp_allocator)
+		grid := look_test_grid(world, LOOK_TEST_CHUNK, waves)
 		return field_mesh_depth_hash(mesh_field_grid(grid, TEST_FIELD_PALETTE[:], 1000, {flaps = EVERY_FIELD_FACE}, context.temp_allocator))
 	}
 	still_water := look_test_mesh(&world, LOOK_TEST_CHUNK)

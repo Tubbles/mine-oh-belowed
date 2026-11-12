@@ -581,7 +581,7 @@ test_a_carved_node_gives_the_same_cover_from_either_grid :: proc(t: ^testing.T) 
 			}
 		}
 	}
-	gathered := run_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, grid = gather_field_grid(&world, coordinate)})
+	gathered := run_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, grid = gather_field_grid(&world, coordinate), look = gather_field_look_samples(&world, coordinate)})
 	defer free_field_job_result(gathered)
 	for kind, index in planet.cover.kinds {
 		from_grid, from_chunks := generated.cover.kinds[index].instances[:], gathered.cover.kinds[index].instances[:]
@@ -641,4 +641,38 @@ test_a_never_meshed_node_goes_before_a_remesh :: proc(t: ^testing.T) {
 	if len(sent) == MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME + 1 {
 		testing.expect_value(t, sent[MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME], waiting)
 	}
+}
+
+// Work item 0344, the shore world: a finest node meshed from its chunks
+// sends the look's copy with a grid whose water is left zero, and the
+// worker's water mesh is the one the look gives on the main thread; a
+// finest node whose +x neighbour is not loaded sends the coarse water
+// instead; a job left queued is freed with its copies when the streaming
+// stops.
+@(test)
+test_a_finest_mesh_job_carries_the_look_to_the_worker :: proc(t: ^testing.T) {
+	world, planet, _, finest := make_shore_look_test_world()
+	defer destroy_field_world(&world)
+	streaming := start_field_streaming(TEST_PLANET_SEED, planet, 1000, 0)
+	defer stop_field_streaming(&streaming)
+	shared := streaming.shared
+	testing.expect(t, schedule_finest_field_mesh(&streaming, &world, field_chunk_node(finest), {}), "the shore node is sent")
+	testing.expect_value(t, queue.len(shared.jobs), 1)
+	if queue.len(shared.jobs) == 1 {
+		job := queue.pop_front(&shared.jobs)
+		testing.expect(t, job.look != nil && job.coarse_water == nil, "the job carries the look's copy")
+		testing.expect(t, slice.all_of(job.grid.water[:], 0), "the gather leaves the water zero")
+		result := run_field_job(shared, job)
+		defer free_field_job_result(result)
+		testing.expect(t, mesh_data_equal(result.water_mesh, mesh_field_water_grid(look_test_grid(&world, finest), planet.palette, 1000, context.temp_allocator)), "the worker's water mesh is the look's")
+	}
+	testing.expect(t, schedule_finest_field_mesh(&streaming, &world, field_chunk_node(finest + {1, 0, 0}), {}), "the node beside the set's edge is sent")
+	testing.expect_value(t, queue.len(shared.jobs), 1)
+	if queue.len(shared.jobs) == 1 {
+		job := queue.pop_front(&shared.jobs)
+		testing.expect(t, job.coarse_water != nil && job.look == nil, "the job carries the coarse water")
+		free_field_job_copies(job)
+	}
+	testing.expect(t, schedule_finest_field_mesh(&streaming, &world, field_chunk_node(finest - {1, 0, 0}), {}), "the node left queued is sent")
+	testing.expect_value(t, queue.len(shared.jobs), 1)
 }

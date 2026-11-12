@@ -731,7 +731,7 @@ test_a_settled_lake_off_the_axis_meshes_at_one_radius :: proc(t: ^testing.T) {
 	tick: u64 = 0
 	testing.expect(t, settle_test_water(&world, tuning, &tick, 20000) < 20000)
 
-	grid := gather_field_grid(&world, coordinate, nil, context.temp_allocator)
+	grid := look_test_grid(&world, coordinate)
 	water := new(Field_Grid, context.temp_allocator)
 	water.origin, water.step, water.density = grid.origin, grid.step, grid.water
 	surface := mesh_field_surface(water, make_test_planet().palette, context.temp_allocator)
@@ -835,8 +835,8 @@ test_a_coarse_water_grid_follows_the_sea_level_where_unloaded :: proc(t: ^testin
 		chunk.water[index] = FIELD_WATER_FULL
 	}
 	field_world_insert_chunk(&world, chunk)
-	coarse := gather_coarse_field_grid(&world, high, context.temp_allocator)
-	generate_field_grid(generation, high, coarse)
+	coarse, coarse_water := gather_coarse_field_grid(&world, high, context.temp_allocator)
+	generate_field_grid(generation, high, coarse, coarse_water)
 	testing.expect(t, coarse.water[field_grid_index({0, 0, 0})] > 0)
 	testing.expect_value(t, coarse.water[field_grid_index({FIELD_GRID_CELLS - 1, FIELD_GRID_CELLS - 1, FIELD_GRID_CELLS - 1})], -MAXIMUM_DENSITY)
 }
@@ -1105,10 +1105,10 @@ test_a_write_the_step_undoes_marks_no_chunk :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(world.water_touches.list), 0)
 }
 
-// The look a chunk's finest mesh reads: its gathered grid's water and
-// water_exact.
+// The look a chunk's finest mesh reads: its grid's water and water_exact
+// as the worker writes them.
 water_look_digest :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) -> u64 {
-	grid := gather_field_grid(world, coordinate, nil, context.temp_allocator)
+	grid := look_test_grid(world, coordinate)
 	digest := fingerprint_bytes(FINGERPRINT_START, transmute([]u8)grid.water[:])
 	return fingerprint_bytes(digest, transmute([]u8)grid.water_exact[:])
 }

@@ -1,12 +1,13 @@
 package game
 
 import "core:math"
+import "core:slice"
 
 // The water's look (work item 0294, doc/presentation.md, The water's
 // look): what the mesher's water grid holds. A sample a body or the sea
 // owns as still water draws its owner's level as a plane, a signed
-// distance in the grid's spacing at every level of detail
-// (field_water_look_base); the front (awake water no body owns yet) draws
+// distance in the grid's spacing at every level of detail (field_look_base,
+// field_coarse_water_base); the front (awake water no body owns yet) draws
 // its slab level as before (field_water_density). Over that, at full
 // resolution, every wet sample stamps a sheet onto itself and its 26
 // neighbours reached through open space (stamp_field_water_sheet): the
@@ -17,8 +18,11 @@ import "core:math"
 // thin as it is and no water shows through a one-sample wall. Moving is
 // derived from the simulation: a fill changed within the last
 // FIELD_WATER_MOVED_TICKS awake ticks (Field_Chunk.water_moved). The
-// surface waves' heights (Field_Wave_Heights, render_field_waves.odin) are
-// added at the gather, so the worker reads no table. Nothing here is
+// main thread copies the arrays the look reads, the surface waves' baked
+// offsets (Field_Wave_Heights, render_field_waves.odin) and the levels of
+// the owners they name into the mesh job (gather_field_look_samples,
+// gather_coarse_field_grid, 0344), and the worker writes the look from
+// those copies, so it reads no Field_World and no table. Nothing here is
 // saved or hashed.
 
 // The ticks a changed sample counts as moving (set_field_water).
@@ -65,7 +69,8 @@ MAXIMUM_FIELD_WATER_EVENTS :: 1024
 // One chunk's surface waves: a height offset and a velocity per sample
 // in samples (frame side floats, never in the simulation), the samples
 // the wave equation runs on and their count. The presentation owns them
-// (Field_Waves); the gather reads the baked offsets (field_wave_offset).
+// (Field_Waves); the gather copies the baked offsets
+// (gather_field_look_samples), which the worker adds (field_look_wave_offset).
 // baked holds each sample's baked offset as the chunks it reaches were
 // last marked (zero off the active set), changed_reach the reach bits
 // (field_look_reach_bits) of the samples whose baked offset changed since
@@ -202,25 +207,34 @@ field_radial_axis :: proc(sample: Sample_Coordinate) -> (axis: int, sign: i32) {
 	return axis, sample[axis] < 0 ? -1 : 1
 }
 
-// The face neighbour along the radial axis towards the centre: its
-// chunk (nil when not loaded) and index.
-field_radial_down_neighbour :: proc(world: ^Field_World, chunk: ^Field_Chunk, sample: Sample_Coordinate) -> (neighbour: ^Field_Chunk, index: int, down: Sample_Coordinate) {
-	axis, sign := field_radial_axis(sample)
-	offset: [3]i32
-	offset[axis] = -sign
-	neighbour, index = field_water_cell(world, chunk, sample, offset)
-	return neighbour, index, sample + Sample_Coordinate(offset)
+// A level over a sample's middle as the mesher's value in a grid of step
+// samples: a signed distance, clamped.
+field_water_plane_value :: proc(level, middle: i64, step: i32) -> i8 {
+	return i8(clamp(floor_divide_i64((level - middle) * DENSITY_STEPS_PER_SAMPLE, FIELD_WATER_FULL * i64(step)), -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
 }
 
-// The level of the still water a body or the sea owns at the sample, in
-// fill units from the centre; false for the front (no owner, or awake
-// water in a body's air that is no spring) and an owner with no live
-// body.
-field_water_look_level :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int) -> (level: i64, owned: bool) {
-	owner := chunk.water_owner[index]
-	if owner == WATER_OWNER_NONE || (field_sample_bit(&chunk.water_awake, index) && !field_sample_bit(&chunk.water_source, index)) {
-		return 0, false
-	}
+// One owner's level in fill units from the centre and whether it names
+// the sea or a live body.
+Field_Look_Owner :: struct {
+	owner: Water_Owner,
+	owned: bool,
+	level: i64,
+}
+
+// Every owner a job's copies name, each once with its level as the gather
+// found it (note_field_look_owner), and the last one looked up on the
+// worker (field_look_owner_level). The zero cached entry names no owner,
+// which the lookup answers before the cache.
+Field_Look_Owners :: struct {
+	list:   [dynamic]Field_Look_Owner,
+	cached: Field_Look_Owner,
+}
+
+// The level of the still water an owner names: the sea's, or a live
+// body's (water_owner_body, which reads the pending flood for the
+// released samples); false for none and an owner with no live body. Main
+// thread.
+field_water_owner_level :: proc(world: ^Field_World, owner: Water_Owner) -> (level: i64, owned: bool) {
 	if owner == WATER_OWNER_SEA {
 		return world.water_planet.sea_level, true
 	}
@@ -231,51 +245,66 @@ field_water_look_level :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: 
 	return world.water_bodies[id].level, true
 }
 
-// A level over a sample's middle as the mesher's value in a grid of step
-// samples: a signed distance, clamped.
-field_water_plane_value :: proc(level, middle: i64, step: i32) -> i8 {
-	return i8(clamp(floor_divide_i64((level - middle) * DENSITY_STEPS_PER_SAMPLE, FIELD_WATER_FULL * i64(step)), -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
+// Lists an owner with its level unless it is none or listed already. Main
+// thread.
+note_field_look_owner :: proc(owners: ^Field_Look_Owners, world: ^Field_World, owner: Water_Owner) {
+	if owner == WATER_OWNER_NONE {
+		return
+	}
+	for entry in owners.list {
+		if entry.owner == owner {
+			return
+		}
+	}
+	level, owned := field_water_owner_level(world, owner)
+	append(&owners.list, Field_Look_Owner{owner = owner, owned = owned, level = level})
 }
 
-// The mesher's water value of a sample before the sheet and the waves:
-// ground and a missing chunk -MAXIMUM_DENSITY, still water a body or the
-// sea owns (its dry air above the level too) the owner's plane in the
-// grid's spacing (plane true), the front the slab level
-// (field_water_density, which a coarse grid then scales,
-// coarse_field_water_density).
-field_water_look_base :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, step: i32) -> (value: i8, plane: bool) {
-	if chunk == nil || chunk.density[index] > 0 {
-		return -MAXIMUM_DENSITY, false
+// The level of an owner's still water from the list, the last one kept,
+// since a grid holds few owners; an owner the list lacks reads as not
+// owned. Worker.
+field_look_owner_level :: proc(owners: ^Field_Look_Owners, owner: Water_Owner) -> (level: i64, owned: bool) {
+	if owner == WATER_OWNER_NONE {
+		return 0, false
 	}
-	if level, owned := field_water_look_level(world, chunk, index); owned {
-		return field_water_plane_value(level, field_water_span(sample).middle, step), true
+	if owner != owners.cached.owner {
+		owners.cached = {owner = owner}
+		for entry in owners.list {
+			if entry.owner == owner {
+				owners.cached = entry
+				break
+			}
+		}
 	}
-	return field_water_density(chunk.density[index], chunk.water[index], sample), false
+	return owners.cached.level, owners.cached.owned
 }
 
 // How a wet sample's sheet is drawn, from simulation facts only: at rest
-// when it has not moved for FIELD_WATER_MOVED_TICKS or a body owns it;
-// falling when the water under it lies a fall gap below its bottom; at
-// rest when it stands on water or touches no ground (the top of a body,
-// free water); else moving.
-field_water_sheet_mode :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, span: Field_Water_Span) -> Field_Water_Sheet_Mode {
-	if chunk.water_moved[index] == 0 {
+// when it has not moved for FIELD_WATER_MOVED_TICKS; falling when the
+// loaded water under it lies a fall gap below its bottom; at rest when it
+// stands on water or touches no ground (the top of a body, free water);
+// else moving. Only a sample no owner holds as still water is asked, so
+// a body's sample never reaches here.
+field_look_sheet_mode :: proc(samples: ^Field_Look_Samples, look: int, sample: Sample_Coordinate, span: Field_Water_Span) -> Field_Water_Sheet_Mode {
+	if samples.moved[look] == 0 {
 		return .Resting
 	}
-	if _, owned := field_water_look_level(world, chunk, index); owned {
-		return .Resting
-	}
-	if down, down_index, down_sample := field_radial_down_neighbour(world, chunk, sample); down != nil && down.density[down_index] <= 0 {
-		down_fill := i32(down.water[down_index])
-		if down_fill < FIELD_WATER_FULL && field_water_level(field_water_span(down_sample), down_fill) + FIELD_WATER_FALL_GAP <= field_water_bottom(span) {
+	axis, sign := field_radial_axis(sample)
+	offset: [3]i32
+	offset[axis] = -sign
+	down := look + field_look_step(offset)
+	if samples.loaded[down] && samples.density[down] <= 0 {
+		down_fill := i32(samples.water[down])
+		if down_fill < FIELD_WATER_FULL && field_water_level(field_water_span(sample + Sample_Coordinate(offset)), down_fill) + FIELD_WATER_FALL_GAP <= field_water_bottom(span) {
 			return .Falling
 		}
 		if down_fill > 0 {
 			return .Resting
 		}
 	}
-	for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
-		if neighbour, neighbour_index := field_water_cell(world, chunk, sample, offset); neighbour != nil && neighbour.density[neighbour_index] > 0 {
+	// A sample not loaded reads -MAXIMUM_DENSITY, no ground.
+	for neighbour in FIELD_WATER_NEIGHBOUR_OFFSETS {
+		if samples.density[look + field_look_step(neighbour)] > 0 {
 			return .Moving
 		}
 	}
@@ -292,23 +321,42 @@ FIELD_LOOK_REACH :: 3
 FIELD_LOOK_SIZE :: FIELD_GRID_CELLS + 2 * FIELD_LOOK_REACH
 FIELD_LOOK_SAMPLE_COUNT :: FIELD_LOOK_SIZE * FIELD_LOOK_SIZE * FIELD_LOOK_SIZE
 
-// still_owner is the owner of still water a body or the sea owns
-// (field_water_look_level's rule on the owner plane), WATER_OWNER_NONE
-// for the front, plain air and ground. interior holds a bit a row (bit x
-// of row y + FIELD_LOOK_SIZE * z) for still water whose 26 neighbours are
-// all its owner's still water: it stamps nothing, so the sheet pass skips
-// it without visiting them.
+// A finest mesh job's copy of the look's reach (gather_field_look_samples,
+// main thread), finished and read by the worker. density, water,
+// still_owner and moved (Field_Chunk.water_moved) are the chunks' arrays
+// as copied, a missing chunk's samples -MAXIMUM_DENSITY, nothing and
+// unloaded. wave holds the waves' baked offsets of every sample whose
+// chunk has waves, loaded or not, zero elsewhere, and wavy is set when any
+// of the 27 chunks has. awake_front holds a bit a row (bit x of row
+// y + FIELD_LOOK_SIZE * z) for awake water that is no spring, the front in
+// a body's air. finish_field_look_samples then clears still_owner to
+// WATER_OWNER_NONE for the front and an owner with no live body, so it
+// names the owner of still water a body or the sea owns, and fills
+// interior, a bit a row like awake_front, for still water whose 26
+// neighbours are all its owner's still water: it stamps nothing, so the
+// sheet pass skips it without visiting them.
 Field_Look_Samples :: struct {
-	chunks:      [27]^Field_Chunk,
 	loaded:      [FIELD_LOOK_SAMPLE_COUNT]bool,
 	density:     [FIELD_LOOK_SAMPLE_COUNT]i8,
 	water:       [FIELD_LOOK_SAMPLE_COUNT]u8,
 	still_owner: [FIELD_LOOK_SAMPLE_COUNT]Water_Owner,
+	moved:       [FIELD_LOOK_SAMPLE_COUNT]u8,
+	wave:        [FIELD_LOOK_SAMPLE_COUNT]i8,
+	awake_front: [FIELD_LOOK_SIZE * FIELD_LOOK_SIZE]u64,
 	interior:    [FIELD_LOOK_SIZE * FIELD_LOOK_SIZE]u64,
-	// The last owner's level looked up (field_look_owner_level).
-	cached_owner: Water_Owner,
-	cached_level: i64,
-	cached_owned: bool,
+	wavy:        bool,
+	owners:      Field_Look_Owners,
+}
+
+// A coarse mesh job's water of the loaded samples it read
+// (gather_coarse_field_grid, main thread), by grid index: the fill, and
+// the owner unless the sample is front water (field_water_is_front).
+// generate_field_grid writes the base from it on the worker
+// (field_coarse_water_base).
+Field_Coarse_Water :: struct {
+	fill:        [FIELD_GRID_SAMPLE_COUNT]u8,
+	still_owner: [FIELD_GRID_SAMPLE_COUNT]Water_Owner,
+	owners:      Field_Look_Owners,
 }
 
 // Local -FIELD_LOOK_REACH to FIELD_GRID_CELLS - 1 + FIELD_LOOK_REACH on
@@ -317,30 +365,23 @@ field_look_index :: proc(local: [3]i32) -> int {
 	return int(local.x + FIELD_LOOK_REACH) + FIELD_LOOK_SIZE * (int(local.y + FIELD_LOOK_REACH) + FIELD_LOOK_SIZE * int(local.z + FIELD_LOOK_REACH))
 }
 
-// The chunk (nil when not loaded) and index of a local sample from
-// -FIELD_CHUNK_SIZE to 2 * FIELD_CHUNK_SIZE - 1 on every axis.
-field_look_cell :: proc(samples: ^Field_Look_Samples, local: [3]i32) -> (chunk: ^Field_Chunk, index: int) {
-	slot := 0
-	inner: [3]i32
-	scale := 1
-	for axis in 0 ..< 3 {
-		slot += int(floor_divide(local[axis], FIELD_CHUNK_SIZE) + 1) * scale
-		inner[axis] = local[axis] %% FIELD_CHUNK_SIZE
-		scale *= 3
-	}
-	return samples.chunks[slot], field_local_to_index(inner)
-}
-
-// The arrays are filled a run at a time: each row crosses three chunks
-// (FIELD_LOOK_REACH samples of the one before, the node's, FIELD_LOOK_REACH
-// of the one after), whose terrain and water are copied whole.
-make_field_look_samples :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate) -> ^Field_Look_Samples {
-	samples := new(Field_Look_Samples, context.temp_allocator)
-	for z in i32(-1) ..= 1 {
-		for y in i32(-1) ..= 1 {
-			for x in i32(-1) ..= 1 {
-				samples.chunks[(x + 1) + 3 * ((y + 1) + 3 * (z + 1))] = world.chunks[coordinate + {x, y, z}] or_else nil
-			}
+// The look's copy of a node's reach, for the worker. The arrays are filled
+// a run at a time: each row crosses three chunks (FIELD_LOOK_REACH samples
+// of the one before, the node's, FIELD_LOOK_REACH of the one after), whose
+// arrays and baked wave offsets are copied whole; then every owner the
+// copy names is listed with its level (note_field_look_owner). Main
+// thread; nothing is derived per sample here.
+gather_field_look_samples :: proc(world: ^Field_World, coordinate: Field_Chunk_Coordinate, waves: Field_Wave_Heights = nil, allocator := context.allocator) -> ^Field_Look_Samples {
+	samples := new(Field_Look_Samples, allocator)
+	samples.owners.list = make([dynamic]Field_Look_Owner, 0, 8, allocator)
+	chunks: [27]^Field_Chunk
+	wave_chunks: [27]^Field_Wave_Chunk
+	for slot in 0 ..< 27 {
+		neighbour := coordinate + Field_Chunk_Coordinate{i32(slot % 3) - 1, i32(slot / 3 % 3) - 1, i32(slot / 9) - 1}
+		chunks[slot] = world.chunks[neighbour] or_else nil
+		if len(waves) > 0 {
+			wave_chunks[slot] = waves[neighbour] or_else nil
+			samples.wavy ||= wave_chunks[slot] != nil
 		}
 	}
 	// The chunk slot and the coordinate inside it of each local value.
@@ -351,9 +392,6 @@ make_field_look_samples :: proc(world: ^Field_World, coordinate: Field_Chunk_Coo
 		inners[position] = int(local %% FIELD_CHUNK_SIZE)
 	}
 	RUNS :: [3][2]int{{0, FIELD_LOOK_REACH}, {FIELD_LOOK_REACH, FIELD_LOOK_REACH + FIELD_CHUNK_SIZE}, {FIELD_LOOK_REACH + FIELD_CHUNK_SIZE, FIELD_LOOK_SIZE}}
-	// The still water of each row's first owner, a bit a sample.
-	still_rows := new([FIELD_LOOK_SIZE * FIELD_LOOK_SIZE]u64, context.temp_allocator)
-	row_owners := new([FIELD_LOOK_SIZE * FIELD_LOOK_SIZE]Water_Owner, context.temp_allocator)
 	for z in 0 ..< FIELD_LOOK_SIZE {
 		for y in 0 ..< FIELD_LOOK_SIZE {
 			row := y + FIELD_LOOK_SIZE * z
@@ -362,75 +400,83 @@ make_field_look_samples :: proc(world: ^Field_World, coordinate: Field_Chunk_Coo
 			for run, slot in RUNS {
 				look := run[0] + FIELD_LOOK_SIZE * row
 				count := run[1] - run[0]
-				chunk := samples.chunks[slot + row_slot]
+				first := inners[run[0]] + row_index
+				if entry := wave_chunks[slot + row_slot]; entry != nil {
+					copy(samples.wave[look:look + count], entry.baked[first:first + count])
+				}
+				chunk := chunks[slot + row_slot]
 				if chunk == nil {
-					for offset in 0 ..< count {
-						samples.density[look + offset] = -MAXIMUM_DENSITY
-					}
+					slice.fill(samples.density[look:look + count], -MAXIMUM_DENSITY)
 					continue
 				}
-				first := inners[run[0]] + row_index
 				copy(samples.density[look:look + count], chunk.density[first:first + count])
 				copy(samples.water[look:look + count], chunk.water[first:first + count])
+				copy(samples.still_owner[look:look + count], chunk.water_owner[first:first + count])
+				copy(samples.moved[look:look + count], chunk.water_moved[first:first + count])
+				slice.fill(samples.loaded[look:look + count], true)
 				// A chunk row is 32 samples, half of one bit word.
 				word := first >> 6
-				moving := (chunk.water_awake[word] & ~chunk.water_source[word]) >> uint(first & 63)
-				for offset in 0 ..< count {
-					samples.loaded[look + offset] = true
-					owner := chunk.water_owner[first + offset]
-					if owner == WATER_OWNER_NONE || (moving >> uint(offset)) & 1 != 0 {
-						continue
-					}
-					// An owner with no live body draws as the front.
-					if _, owned := field_look_owner_level(samples, world, owner); !owned {
-						continue
-					}
-					samples.still_owner[look + offset] = owner
-					if row_owners[row] == WATER_OWNER_NONE {
-						row_owners[row] = owner
-					}
-					if owner == row_owners[row] && samples.density[look + offset] <= 0 {
-						still_rows[row] |= u64(1) << uint(run[0] + offset)
-					}
-				}
+				front := (chunk.water_awake[word] & ~chunk.water_source[word]) >> uint(first & 63)
+				samples.awake_front[row] |= (front & (u64(1) << uint(count) - 1)) << uint(run[0])
+			}
+		}
+	}
+	last := WATER_OWNER_NONE
+	for owner in samples.still_owner {
+		if owner != last {
+			note_field_look_owner(&samples.owners, world, owner)
+			last = owner
+		}
+	}
+	return samples
+}
+
+// The worker's part of the copy: a sample of the front (its awake_front
+// bit) or of an owner with no live body draws no owner's plane, so its
+// still_owner becomes WATER_OWNER_NONE; the still water of each row's
+// first owner is collected, a bit a sample, for the interior
+// (mark_field_look_interior). Idempotent.
+finish_field_look_samples :: proc(samples: ^Field_Look_Samples) {
+	still_rows := new([FIELD_LOOK_SIZE * FIELD_LOOK_SIZE]u64, context.temp_allocator)
+	row_owners := new([FIELD_LOOK_SIZE * FIELD_LOOK_SIZE]Water_Owner, context.temp_allocator)
+	for row in 0 ..< FIELD_LOOK_SIZE * FIELD_LOOK_SIZE {
+		front := samples.awake_front[row]
+		look := FIELD_LOOK_SIZE * row
+		for x in 0 ..< FIELD_LOOK_SIZE {
+			owner := samples.still_owner[look + x]
+			if owner == WATER_OWNER_NONE {
+				continue
+			}
+			if (front >> uint(x)) & 1 != 0 {
+				samples.still_owner[look + x] = WATER_OWNER_NONE
+				continue
+			}
+			if _, owned := field_look_owner_level(&samples.owners, owner); !owned {
+				samples.still_owner[look + x] = WATER_OWNER_NONE
+				continue
+			}
+			if row_owners[row] == WATER_OWNER_NONE {
+				row_owners[row] = owner
+			}
+			if owner == row_owners[row] && samples.density[look + x] <= 0 {
+				still_rows[row] |= u64(1) << uint(x)
 			}
 		}
 	}
 	mark_field_look_interior(samples, still_rows, row_owners)
-	return samples
 }
 
-// The level of an owner's still water (field_water_look_level by owner),
-// the last one kept, since a grid holds few owners.
-field_look_owner_level :: proc(samples: ^Field_Look_Samples, world: ^Field_World, owner: Water_Owner) -> (level: i64, owned: bool) {
-	if owner == WATER_OWNER_NONE {
-		return 0, false
-	}
-	if owner != samples.cached_owner {
-		samples.cached_owner = owner
-		if owner == WATER_OWNER_SEA {
-			samples.cached_level, samples.cached_owned = world.water_planet.sea_level, true
-		} else if id, ok := water_owner_body(world, owner); ok {
-			samples.cached_level, samples.cached_owned = world.water_bodies[id].level, true
-		} else {
-			samples.cached_level, samples.cached_owned = 0, false
-		}
-	}
-	return samples.cached_level, samples.cached_owned
-}
-
-// The full resolution base of a sample of the arrays
-// (field_water_look_base at step 1): ground and a missing sample
-// -MAXIMUM_DENSITY, still water its owner's plane (plane true), the
-// front its slab; and a dry sample no one owns beside still water takes
-// the lower of its slab and the owner's plane, so the air just above the
-// sea's surface (which the sea does not own) is a signed distance too and
-// every crossing edge has both ends on the plane.
-field_look_base :: proc(samples: ^Field_Look_Samples, world: ^Field_World, look: int, span: Field_Water_Span) -> (value: i8, plane: bool) {
+// The full resolution base of a sample of the arrays: ground and a
+// missing sample -MAXIMUM_DENSITY, still water its owner's plane (plane
+// true), the front its slab; and a dry sample no one owns beside still
+// water takes the lower of its slab and the owner's plane, so the air just
+// above the sea's surface (which the sea does not own) is a signed
+// distance too and every crossing edge has both ends on the plane.
+field_look_base :: proc(samples: ^Field_Look_Samples, look: int, span: Field_Water_Span) -> (value: i8, plane: bool) {
 	if !samples.loaded[look] || samples.density[look] > 0 {
 		return -MAXIMUM_DENSITY, false
 	}
-	if level, owned := field_look_owner_level(samples, world, samples.still_owner[look]); owned {
+	if level, owned := field_look_owner_level(&samples.owners, samples.still_owner[look]); owned {
 		return field_water_plane_value(level, span.middle, 1), true
 	}
 	fill := samples.water[look]
@@ -443,7 +489,7 @@ field_look_base :: proc(samples: ^Field_Look_Samples, world: ^Field_World, look:
 		if samples.density[beside] > 0 {
 			continue
 		}
-		if level, owned := field_look_owner_level(samples, world, samples.still_owner[beside]); owned {
+		if level, owned := field_look_owner_level(&samples.owners, samples.still_owner[beside]); owned {
 			return min(value, field_water_plane_value(level, span.middle, 1)), false
 		}
 	}
@@ -530,16 +576,16 @@ field_look_in_grid :: proc(local: [3]i32) -> bool {
 	return true
 }
 
-// The water of a full resolution grid (gather_field_grid, after the
-// terrain): every sample's base (field_look_base) with the surface waves'
-// offset added where it is not ground (field_wave_offset), then the sheet
+// The water of a full resolution grid (the worker, after the terrain the
+// gather copied, run_field_job): the copy finished
+// (finish_field_look_samples), every sample's base (field_look_base) with
+// the surface waves' offset added where it is not ground
+// (field_look_wave_shifted_value), then the sheet
 // (stamp_field_water_sheet). The spans of the grid's samples are taken
-// once and shared by both.
-write_field_water_look :: proc(grid: ^Field_Grid, world: ^Field_World, waves: Field_Wave_Heights) {
-	coordinate := sample_to_field_chunk_coordinate(grid.origin)
-	samples := make_field_look_samples(world, coordinate)
+// once and shared by both. Its temporaries go on the temp allocator.
+write_field_water_look :: proc(grid: ^Field_Grid, samples: ^Field_Look_Samples) {
+	finish_field_look_samples(samples)
 	spans := new([FIELD_GRID_SAMPLE_COUNT]Field_Water_Span, context.temp_allocator)
-	wavy := field_waves_near_node(waves, coordinate)
 	index := 0
 	for z in i32(-1) ..= FIELD_GRID_CELLS {
 		for y in i32(-1) ..= FIELD_GRID_CELLS {
@@ -548,9 +594,9 @@ write_field_water_look :: proc(grid: ^Field_Grid, world: ^Field_World, waves: Fi
 				sample := grid.origin + Sample_Coordinate([3]i32{x, y, z})
 				span := field_water_span(sample)
 				spans[index] = span
-				value, plane := field_look_base(samples, world, look, span)
-				if wavy && samples.loaded[look] && samples.density[look] <= 0 {
-					value = i8(field_wave_shifted_value(value, waves, sample))
+				value, plane := field_look_base(samples, look, span)
+				if samples.wavy && samples.loaded[look] && samples.density[look] <= 0 {
+					value = i8(field_look_wave_shifted_value(samples, value, look, sample))
 				}
 				grid.water[index], grid.water_exact[index] = value, plane
 				index += 1
@@ -558,7 +604,7 @@ write_field_water_look :: proc(grid: ^Field_Grid, world: ^Field_World, waves: Fi
 			}
 		}
 	}
-	stamp_field_water_sheet(grid, world, samples, spans, waves)
+	stamp_field_water_sheet(grid, samples, spans)
 }
 
 // The wall guard of a ground target: over its face neighbours that are
@@ -567,7 +613,7 @@ write_field_water_look :: proc(grid: ^Field_Grid, world: ^Field_World, waves: Fi
 // water's crossing on the edge to them at 60 percent of the way to the
 // terrain's crossing, inside the wall. The base values beyond the grid
 // are taken from the arrays on the fly.
-field_water_wall_limit :: proc(world: ^Field_World, samples: ^Field_Look_Samples, base: ^[FIELD_GRID_SAMPLE_COUNT]i8, origin: Sample_Coordinate, waves: Field_Wave_Heights, target, wet: [3]i32, target_density: i32) -> i32 {
+field_water_wall_limit :: proc(samples: ^Field_Look_Samples, base: ^[FIELD_GRID_SAMPLE_COUNT]i8, origin: Sample_Coordinate, target, wet: [3]i32, target_density: i32) -> i32 {
 	limit := i32(MAXIMUM_DENSITY)
 	for offset in FIELD_WATER_NEIGHBOUR_OFFSETS {
 		beside := target + offset
@@ -584,8 +630,8 @@ field_water_wall_limit :: proc(world: ^Field_World, samples: ^Field_Look_Samples
 			value = i32(base[field_grid_index(beside)])
 		} else {
 			sample := origin + Sample_Coordinate(beside)
-			fine, _ := field_look_base(samples, world, look, field_water_span(sample))
-			value = samples.loaded[look] ? field_wave_shifted_value(fine, waves, sample) : i32(fine)
+			fine, _ := field_look_base(samples, look, field_water_span(sample))
+			value = samples.loaded[look] ? field_look_wave_shifted_value(samples, fine, look, sample) : i32(fine)
 		}
 		if value > 0 {
 			continue
@@ -601,7 +647,7 @@ field_water_wall_limit :: proc(world: ^Field_World, samples: ^Field_Look_Samples
 // guard reads the base values as they stood before the first stamp, so
 // the order never matters, and two neighbouring nodes compute their
 // shared samples from the same values.
-stamp_field_water_sheet :: proc(grid: ^Field_Grid, world: ^Field_World, samples: ^Field_Look_Samples, spans: ^[FIELD_GRID_SAMPLE_COUNT]Field_Water_Span, waves: Field_Wave_Heights) {
+stamp_field_water_sheet :: proc(grid: ^Field_Grid, samples: ^Field_Look_Samples, spans: ^[FIELD_GRID_SAMPLE_COUNT]Field_Water_Span) {
 	base := new([FIELD_GRID_SAMPLE_COUNT]i8, context.temp_allocator)
 	base^ = grid.water
 	for z in i32(-2) ..= FIELD_GRID_CELLS + 1 {
@@ -610,7 +656,7 @@ stamp_field_water_sheet :: proc(grid: ^Field_Grid, world: ^Field_World, samples:
 			interior := samples.interior[int(y + FIELD_LOOK_REACH) + FIELD_LOOK_SIZE * int(z + FIELD_LOOK_REACH)] >> uint(FIELD_LOOK_REACH - 2)
 			for x in i32(-2) ..= FIELD_GRID_CELLS + 1 {
 				if samples.density[look] <= 0 && samples.water[look] > 0 && interior & 1 == 0 {
-					stamp_field_water_sheet_sample(grid, world, samples, spans, base, waves, {x, y, z}, look)
+					stamp_field_water_sheet_sample(grid, samples, spans, base, {x, y, z}, look)
 				}
 				look += 1
 				interior >>= 1
@@ -624,18 +670,17 @@ stamp_field_water_sheet :: proc(grid: ^Field_Grid, world: ^Field_World, samples:
 // the sample's level (plus the floor while it moves) or its column's
 // top (falling), the wall guard on a ground target. Still water a body
 // owns skips the samples its body owns, whose plane is its own already.
-stamp_field_water_sheet_sample :: proc(grid: ^Field_Grid, world: ^Field_World, samples: ^Field_Look_Samples, spans: ^[FIELD_GRID_SAMPLE_COUNT]Field_Water_Span, base: ^[FIELD_GRID_SAMPLE_COUNT]i8, waves: Field_Wave_Heights, wet: [3]i32, look: int) {
+stamp_field_water_sheet_sample :: proc(grid: ^Field_Grid, samples: ^Field_Look_Samples, spans: ^[FIELD_GRID_SAMPLE_COUNT]Field_Water_Span, base: ^[FIELD_GRID_SAMPLE_COUNT]i8, wet: [3]i32, look: int) {
 	fill := i32(samples.water[look])
 	owner := samples.still_owner[look]
-	level, owned := field_look_owner_level(samples, world, owner)
+	level, owned := field_look_owner_level(&samples.owners, owner)
 	mode := Field_Water_Sheet_Mode.Resting
 	column_top: i64
 	if !owned {
-		chunk, index := field_look_cell(samples, wet)
 		sample := grid.origin + Sample_Coordinate(wet)
 		span := field_water_span(sample)
 		level = field_water_level(span, fill)
-		mode = field_water_sheet_mode(world, chunk, index, sample, span)
+		mode = field_look_sheet_mode(samples, look, sample, span)
 		column_top = field_water_bottom(span) + span.height
 	}
 	thickness := fill * DENSITY_STEPS_PER_SAMPLE / FIELD_WATER_FULL
@@ -675,7 +720,7 @@ stamp_field_water_sheet_sample :: proc(grid: ^Field_Grid, world: ^Field_World, s
 				}
 				stamp := i32(clamp(min(i64(target_density + thickness), clip), -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
 				if ground {
-					guarded := field_water_wall_limit(world, samples, base, grid.origin, waves, target, wet, target_density)
+					guarded := field_water_wall_limit(samples, base, grid.origin, target, wet, target_density)
 					if guarded < stamp {
 						if mode != .Resting && field_look_in_grid(wet) {
 							// The crossing on the edge from the wet sample to the
@@ -698,66 +743,73 @@ stamp_field_water_sheet_sample :: proc(grid: ^Field_Grid, world: ^Field_World, s
 	}
 }
 
-// A wave height in density steps, as the gather adds it.
+// A wave height in density steps, as Field_Wave_Chunk.baked keeps it
+// (mark_field_wave_changes).
 field_wave_baked :: proc(height: f32) -> i32 {
 	return i32(math.round(height * DENSITY_STEPS_PER_SAMPLE))
 }
 
-// The baked offset of a wave sample; 0 for any other.
-field_wave_baked_at :: proc(waves: Field_Wave_Heights, sample: Sample_Coordinate) -> i32 {
-	entry := waves[sample_to_field_chunk_coordinate(sample)] or_else nil
-	if entry == nil {
-		return 0
-	}
-	index := sample_to_field_index(sample)
-	if !field_sample_bit(&entry.active, index) {
-		return 0
-	}
-	return field_wave_baked(entry.height[index])
-}
-
-// The wave offset the gather adds to a non-ground sample, in density
+// The wave offset the worker adds to a non-ground sample, in density
 // steps: the sample's own baked offset when it is not zero, else its
 // radial up neighbour's (the water under a surface sample), else its
 // radial down neighbour's (the air over it), so the band shifts together;
-// 0 without waves. It reads the samples' baked offsets only, so a chunk
-// whose baked offsets did not change draws the same (advance_field_waves).
-field_wave_offset :: proc(waves: Field_Wave_Heights, sample: Sample_Coordinate) -> i32 {
-	if len(waves) == 0 {
+// 0 when no chunk of the node has waves. It reads the copied baked
+// offsets only, so a chunk whose baked offsets did not change draws the
+// same (advance_field_waves). The callers' samples lie from two beyond the
+// grid to two beyond its far side, so both neighbours are in the copy.
+field_look_wave_offset :: proc(samples: ^Field_Look_Samples, look: int, sample: Sample_Coordinate) -> i32 {
+	if !samples.wavy {
 		return 0
 	}
-	if baked := field_wave_baked_at(waves, sample); baked != 0 {
-		return baked
+	if own := samples.wave[look]; own != 0 {
+		return i32(own)
 	}
 	axis, sign := field_radial_axis(sample)
-	up, down := sample, sample
-	up[axis] += sign
-	down[axis] -= sign
-	if baked := field_wave_baked_at(waves, up); baked != 0 {
-		return baked
+	step: [3]i32
+	step[axis] = sign
+	up := look + field_look_step(step)
+	if baked := samples.wave[up]; baked != 0 {
+		return i32(baked)
 	}
-	return field_wave_baked_at(waves, down)
+	return i32(samples.wave[look - field_look_step(step)])
 }
 
 // A non-ground water value with the wave offset added, in density steps.
-field_wave_shifted_value :: proc(value: i8, waves: Field_Wave_Heights, sample: Sample_Coordinate) -> i32 {
-	return clamp(i32(value) + field_wave_offset(waves, sample), -MAXIMUM_DENSITY, MAXIMUM_DENSITY)
+field_look_wave_shifted_value :: proc(samples: ^Field_Look_Samples, value: i8, look: int, sample: Sample_Coordinate) -> i32 {
+	return clamp(i32(value) + field_look_wave_offset(samples, look, sample), -MAXIMUM_DENSITY, MAXIMUM_DENSITY)
 }
 
-// Whether any chunk a node's grid reads (the chunk and its 26
-// neighbours) carries waves: the gather adds no offsets where none does.
-field_waves_near_node :: proc(waves: Field_Wave_Heights, coordinate: Field_Chunk_Coordinate) -> bool {
-	if len(waves) == 0 {
-		return false
+// A coarse grid's water base of a loaded sample (gather_coarse_field_grid
+// copied its fill and still owner): ground -MAXIMUM_DENSITY, still water
+// a body or the sea owns (its dry air above the level too) the owner's
+// plane in the grid's spacing (plane true), the front the slab level
+// (field_water_density, which generate_field_grid then scales,
+// coarse_field_water_density). density is the loaded sample's own.
+// Worker.
+field_coarse_water_base :: proc(water: ^Field_Coarse_Water, index: int, density: i8, sample: Sample_Coordinate, step: i32) -> (value: i8, plane: bool) {
+	if density > 0 {
+		return -MAXIMUM_DENSITY, false
 	}
-	for z in i32(-1) ..= 1 {
-		for y in i32(-1) ..= 1 {
-			for x in i32(-1) ..= 1 {
-				if coordinate + {x, y, z} in waves {
-					return true
-				}
-			}
-		}
+	if level, owned := field_look_owner_level(&water.owners, water.still_owner[index]); owned {
+		return field_water_plane_value(level, field_water_span(sample).middle, step), true
 	}
-	return false
+	return field_water_density(density, water.fill[index], sample), false
+}
+
+// A job's copies freed (nil safe) with the context's allocator, which on a
+// worker is the one the main thread made them in (field_worker).
+destroy_field_look_samples :: proc(samples: ^Field_Look_Samples) {
+	if samples == nil {
+		return
+	}
+	delete(samples.owners.list)
+	free(samples)
+}
+
+destroy_field_coarse_water :: proc(water: ^Field_Coarse_Water) {
+	if water == nil {
+		return
+	}
+	delete(water.owners.list)
+	free(water)
 }
