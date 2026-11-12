@@ -72,14 +72,15 @@ Field_Scene :: struct {
 	// The frame profile the passes mark and count into (0342); nil in the
 	// planet preview.
 	profile:      ^Frame_Profile,
-	// The viewport's index in the frame's viewports, the tree cache's view
-	// it draws with (0346, Tree_View) and the slot of its kept sun shadow
-	// map (0348, draw_field_sun_shadows), 0 in the planet preview, which
+	// The viewport's index in the frame's viewports: the tree cache's view
+	// it draws with (0346, Tree_View), the slot of its kept sun shadow map
+	// (0348, draw_field_sun_shadows) and of its instance buffers (0347,
+	// Field_Renderer.instance_buffers), 0 in the planet preview, which
 	// keeps no map.
-	tree_view:    int,
+	view_slot:    int,
 }
 
-#assert(FIELD_TREE_VIEWS >= MAXIMUM_VIEWPORTS)
+#assert(FIELD_VIEW_SLOTS >= MAXIMUM_VIEWPORTS)
 
 // What field_frame_lights reads for a field drawn by the renderer: the
 // clock's sky at the ground, the daylight share, the globe's colour as
@@ -639,10 +640,17 @@ draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_
 
 // Inside BeginMode3D with the field camera. The lit models up to the
 // players take the open sky (set_model_open_sky), the ghosts their own
-// colour.
+// colour. The frames' matrices come from one table (0347,
+// frame_matrix_table); the foundations, the machines, the runs, the poles
+// and the belt items are culled by the camera's frustum and the haze's
+// end (Model_View), the machines drawn instanced after draw_entities
+// (draw_scene_model_instances) with the model shader's instancing, the
+// pod alone.
 draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node) {
 	profile_mark(scene.profile, .Lights)
 	scene := scene
+	frames := frame_matrix_table(&scene.state.world.entities.frames)
+	scene.frame.frames = &frames
 	scene.frame.interiors = gather_interior_lights(&scene.state.world.entities, scene.content.machines)
 	set_field_scene_point_lights(scene, camera)
 	set_model_spot_light(scene.models, scene.lights.spot)
@@ -653,16 +661,35 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	profile_mark(scene.profile, .Terrain)
 	draw_field(scene.renderer, camera, selection, scene.lights, scene.profile)
 	world := &scene.state.world
+	view := Model_View {
+		frustum         = camera_frustum(camera),
+		eye             = camera.position,
+		distance_metres = scene.lights.haze.fog_end,
+		transform       = scene.pod_transform.? or_else linalg.MATRIX4F32_IDENTITY,
+	}
+	machines_frame := scene.frame
+	machines_frame.view = &view
+	instances: [dynamic]Model_Instance
+	if scene.models.instancing_ready {
+		instances = make([dynamic]Model_Instance, context.temp_allocator)
+		machines_frame.instances = &instances
+	}
+	buffers := &scene.renderer.instance_buffers[scene.view_slot]
 	profile_mark(scene.profile, .Foundations)
 	push_pod_transform(scene.pod_transform)
-	draw_frames(&world.entities, scene.content.machines)
+	draw_field_foundations(&scene.renderer.foundations, scene.models, machines_frame, &world.entities, nil)
 	profile_mark(scene.profile, .Machines)
-	draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
+	draw_entities(world, scene.content.machines, scene.models, scene.content.items, machines_frame)
+	draw_scene_model_instances(scene.models, instances[:], &buffers.models)
 	pop_pod_transform(scene.pod_transform)
 	profile_mark(scene.profile, .Trees)
 	draw_field_trees(scene, camera)
 	profile_mark(scene.profile, .Runs)
-	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate)
+	// The runs draw outside the pod's transform.
+	run_view := view
+	run_view.transform = linalg.MATRIX4F32_IDENTITY
+	runs := Belt_Run_Draw{view = &run_view, frames = &frames, models = scene.models, items = &buffers.items}
+	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate, runs)
 	profile_mark(scene.profile, .Effects)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
 	push_pod_transform(scene.pod_transform)
@@ -707,6 +734,9 @@ draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selectio
 		return {}
 	}
 	profile_mark(scene.profile, .Shadow_Terrain)
+	scene := scene
+	frames := frame_matrix_table(&scene.state.world.entities.frames)
+	scene.frame.frames = &frames
 	kept := usable_sun_shadow_kept(shadows, slot, scene.pod_transform != nil)
 	if kept == nil {
 		cascade := sun_shadow_cascade(camera.position, scene.lights.sun_direction, field_sun_path_world_axis(camera.up), inputs.row)
@@ -843,7 +873,7 @@ draw_sun_shadow_terrain :: proc(renderer: ^Field_Renderer, cascade: Sun_Shadow_C
 // cut round the cascade's centre in place of the camera, so a map depends
 // on its cascade and not on where the eye stands in its step.
 update_sun_shadow_trees :: proc(scene: Field_Scene, cascade: Sun_Shadow_Cascade, row: Sun_Shadows_Row) -> ^Tree_View {
-	view := &scene.renderer.trees.views[scene.tree_view]
+	view := &scene.renderer.trees.views[scene.view_slot]
 	update_shadow_trees(&scene.renderer.trees, view, cascade, cascade.centre, field_tree_model_extent(scene), scene.state.field.felled_trees, row.tree_limit, len(scene.content.field.tree_species))
 	return view
 }
@@ -862,10 +892,14 @@ draw_sun_shadow_trees :: proc(scene: Field_Scene, cascade: Sun_Shadow_Cascade, s
 	return len(view.shadow.selected), view.shadow.gathers
 }
 
-// The foundations, the machines in the casters' box of the part
-// (Model_Frame.casters) and every player's body under the depth shader
-// and the pod's transform: the foundations unless only the moving
-// casters draw, the players unless only the still ones do.
+// The foundations' bricks, the machines in the casters' box of the part
+// (Model_Frame.casters, each also by its posed box) and every player's
+// body under the depth shader and the pod's transform: the foundations
+// unless only the moving casters draw, the players unless only the still
+// ones do. The machines draw instanced after draw_entities (0347,
+// draw_cast_model_instances) from the viewport's buffer of the part: the
+// kept map's still casters from their own, so no buffer is written twice
+// in a frame.
 draw_sun_shadow_models :: proc(scene: Field_Scene, cascade: Sun_Shadow_Cascade, material: rl.Material, part: Sun_Shadow_Part) {
 	casters := scene
 	casters.models.material = material
@@ -878,13 +912,21 @@ draw_sun_shadow_models :: proc(scene: Field_Scene, cascade: Sun_Shadow_Cascade, 
 		part      = part,
 	}
 	casters.frame.casters = &cull
+	shadows := &scene.renderer.sun_shadows
+	instances: [dynamic]Model_Instance
+	if shadows.instanced_location != -1 {
+		instances = make([dynamic]Model_Instance, context.temp_allocator)
+		casters.frame.instances = &instances
+	}
+	buffers := &scene.renderer.instance_buffers[scene.view_slot]
 	world := &scene.state.world
 	rl.BeginShaderMode(material.shader)
 	push_pod_transform(scene.pod_transform)
 	if part != .Moving {
-		draw_frames(&world.entities, scene.content.machines)
+		draw_field_foundations(&scene.renderer.foundations, scene.models, casters.frame, &world.entities, shadows)
 	}
 	draw_entities(world, scene.content.machines, casters.models, scene.content.items, casters.frame)
+	draw_cast_model_instances(scene.models, instances[:], part == .Still ? &buffers.kept_cast_models : &buffers.cast_models, shadows^)
 	if part != .Still {
 		draw_field_players(casters)
 	}
@@ -1042,9 +1084,9 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		placement_editor = viewport.interaction.placement_editor,
 		lights       = lights,
 		profile      = profile,
-		tree_view    = viewport_index(state, viewport),
+		view_slot    = viewport_index(state, viewport),
 	}
-	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, frame_field_selection(state), sun_shadow_inputs(state.settings, state.config.sun_shadows, state.data_directory), scene.tree_view)
+	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, frame_field_selection(state), sun_shadow_inputs(state.settings, state.config.sun_shadows, state.data_directory), scene.view_slot)
 	resume_viewport_target(viewport)
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
@@ -1088,7 +1130,9 @@ field_arrival_debris_site :: proc(simulation: ^Simulation_State, content: Simula
 // when the setting turned it off or its size changed (0328,
 // serve_sun_shadows) and the kept maps of the viewports removed (0348),
 // the haze's end, the finished meshes up and those of
-// the nodes that left the selection unloaded, the trees' tiles round the
+// the nodes that left the selection unloaded, the foundations' bricks
+// built again when the frame table or the models changed (0347,
+// update_field_foundations), the trees' tiles round the
 // eyes out to the view (update_field_tree_cache, upload_field_tree_tiles)
 // and each player's crouch progress (0218), read by value by the draws.
 prepare_field_frame :: proc(state: ^Frame_State) {
@@ -1107,6 +1151,7 @@ prepare_field_frame :: proc(state: ^Frame_State) {
 	pending_before_upload := session.field_streaming.pending_jobs
 	upload_streamed_field_meshes(&state.presentation.field_renderer, &session.field_streaming)
 	count_frame(profile, .Mesh_Uploads, pending_before_upload - session.field_streaming.pending_jobs)
+	update_field_foundations(&state.presentation.field_renderer.foundations, &session.simulation.world.entities, frame_simulation_content(state).machines, state.presentation.model_renderer.revision)
 	trees := &state.presentation.field_renderer.trees
 	update_field_tree_cache(trees, &session.field_streaming, field_tree_generation(&session.simulation.field), field_viewport_eyes(state), session.simulation.field.felled_trees, field_trees_view_row(field_trees_row(state.config.field_trees), last), session.field_content.foundation_pitch_millimetres)
 	upload_field_tree_tiles(trees)

@@ -30,7 +30,7 @@ import "render_frustum"
 // Floats are made here only.
 //
 // The near models and the sun's casting trees (0346): each viewport has a
-// view of the cache (Tree_View, FIELD_TREE_VIEWS) with a pass for each.
+// view of the cache (Tree_View, FIELD_VIEW_SLOTS) with a pass for each.
 // A pass holds its candidates, the standing trees a scan of the tiles
 // found within a margin round where it was made (an eighth of
 // near_metres), grouped by species, while the eye stays within the
@@ -48,9 +48,6 @@ FIELD_TREE_UPLOADS_PER_FRAME :: 4
 FIELD_TREE_TILES_PENDING_LIMIT :: 8
 // Tiles are kept this many tile edges past the far distance.
 FIELD_TREE_KEEP_TILES :: 2
-// The views of the cache, one a viewport (the loop's MAXIMUM_VIEWPORTS,
-// asserted there).
-FIELD_TREE_VIEWS :: 4
 // The changes of the cache's tiles a view can look back over.
 FIELD_TREE_CHANGE_RING :: 64
 // A pass's candidates hold while the eye stays within near_metres over
@@ -92,7 +89,7 @@ Field_Tree_Change :: struct {
 // (made with the first upload). revision counts the changes of the tiles,
 // the last FIELD_TREE_CHANGE_RING of them kept at revision modulo the
 // ring, cleared_at the revision of the last time every tile went, and the
-// views by the viewport's index (Field_Scene.tree_view).
+// views by the viewport's slot (Field_Scene.view_slot).
 Field_Tree_Cache :: struct {
 	tiles:       map[Field_Tree_Tile]Field_Tree_Tile_Draw,
 	pending:     map[Field_Tree_Tile]struct{},
@@ -103,7 +100,7 @@ Field_Tree_Cache :: struct {
 	revision:    u64,
 	cleared_at:  u64,
 	changes:     [FIELD_TREE_CHANGE_RING]Field_Tree_Change,
-	views:       [FIELD_TREE_VIEWS]Tree_View,
+	views:       [FIELD_VIEW_SLOTS]Tree_View,
 }
 
 // A standing tree a pass may draw: its instance and its key.
@@ -1029,7 +1026,7 @@ draw_field_trees :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
 	extent := field_tree_model_extent(scene)
 	species := scene.content.field.tree_species
-	view := &cache.views[scene.tree_view]
+	view := &cache.views[scene.view_slot]
 	near_distance := update_near_trees(cache, view, camera.position, frustum, extent, scene.state.field.felled_trees, len(species))
 	far, far_distance := select_far_tiles(cache, camera.position, frustum, extent, config)
 	sky := model_light_tint(with_light_level(0, .Sky, MAXIMUM_LIGHT), scene.frame.day_factor, scene.frame.sky_tint)

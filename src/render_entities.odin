@@ -91,17 +91,29 @@ box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
 	return {f32(minimum.x) + f32(size.x) / 2, f32(minimum.y) + f32(size.y) / 2, f32(minimum.z) + f32(size.z) / 2}
 }
 
+// The footprint's box in its frame's cells.
+entity_cell_box :: proc(origin: World_Coordinate, size: [3]i32) -> (minimum, maximum: [3]f32) {
+	minimum = {f32(origin.x), f32(origin.y), f32(origin.z)}
+	return minimum, minimum + {f32(size.x), f32(size.y), f32(size.z)}
+}
+
 // The machine's model (render_models.odin) when it has one, posed for
 // working, and true; else a cube per footprint cell in the colours with an
-// edge frame, and false.
+// edge frame, and false. The cubes are left out when the pass does not
+// show their footprint (0347).
 draw_entity_cells :: proc(common: Entity_Common, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame, working: bool, color, top_color: rl.Color) -> bool {
 	if draw_machine_model(models, machines, common, frame, working) {
 		return true
 	}
+	transform := model_frame_entity_matrix(frame, &frame.world.entities, common.frame)
+	low, high := entity_cell_box(common.origin, common.size)
+	if !model_frame_shows_cells(frame, transform, low, high) {
+		return false
+	}
 	// On a frame the cubes go under its matrix, as the model's do
 	// (draw_posed_model); the block frame's is the identity and is skipped.
 	if common.frame != BLOCK_FRAME {
-		flat := transmute([16]f32)entity_frame_matrix(&frame.world.entities, common.frame)
+		flat := transmute([16]f32)transform
 		rlgl.PushMatrix()
 		rlgl.MultMatrixf(raw_data(flat[:]))
 	}
@@ -142,12 +154,31 @@ draw_held_item :: proc(position: [3]f32, items: Item_Registry, item: Item_Id) {
 	rl.DrawCube(position - {0, size / 2, 0}, size, size, size, item_cube_color(items, item))
 }
 
-// The arm (render_arm.odin) posed from the cycle, lit like a model.
+// The arm (render_arm.odin) posed from the cycle, lit like a model; the
+// held item hangs at the hand between the grab and the release. Left out
+// when the pass does not show the posed arm with its held item (0347);
+// true whenever the machine has an arm.
 draw_inserter_model :: proc(inserter: Inserter, machine: Machine, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) -> bool {
-	arm := machine_arm_model(models, inserter.machine) or_return
-	light_tint := model_light_tint(model_frame_light(frame, model_light_cell(inserter.common)), frame.day_factor, frame.sky_tint)
+	if _, found := machine_arm_model(models, inserter.machine); !found {
+		return false
+	}
 	placement := model_frame_arm_placement(frame, inserter, machine)
-	draw_placed_arm(models, arm, placement, light_tint, inserter.held, items)
+	posed, angles := pose_arm(models, inserter.machine, placement)
+	holds := !stack_is_empty(inserter.held) && arm_shows_held_item(placement.fraction)
+	hand := transform_point(placement.transform, arm_hand_point(placement.dimensions, angles))
+	if holds {
+		minimum, maximum := held_item_box(hand)
+		grow_posed_box(&posed, minimum, maximum)
+	}
+	if !model_frame_shows_box(frame, posed.minimum, posed.maximum) {
+		return true
+	}
+	light_tint := model_light_tint(model_frame_light(frame, model_light_cell(inserter.common)), frame.day_factor, frame.sky_tint)
+	glow := emissive_brightness(.Arm, 0, placement.working, light_tint)
+	emit_posed_model(models, frame, inserter.machine, machine.kind, posed, {.Lit = brightness_color(light_tint), .Emissive = brightness_color(glow)})
+	if holds {
+		draw_held_item(hand, items, inserter.held.item)
+	}
 	return true
 }
 
@@ -155,8 +186,15 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, models: Model_Render
 	if draw_inserter_model(inserter, machine, models, items, frame) {
 		return
 	}
-	// The box fallback is in the cells of the inserter's frame.
-	flat := transmute([16]f32)entity_frame_matrix(&frame.world.entities, inserter.frame)
+	// The box fallback is in the cells of the inserter's frame, its arm
+	// reaching up to its reach each way across.
+	transform := model_frame_entity_matrix(frame, &frame.world.entities, inserter.frame)
+	reach := f32(max(inserter.reach, 1))
+	low, high := entity_cell_box(inserter.origin, {1, 1, 1})
+	if !model_frame_shows_cells(frame, transform, low - {reach, 0, reach}, high + {reach, 0, reach}) {
+		return
+	}
+	flat := transmute([16]f32)transform
 	rlgl.PushMatrix()
 	defer rlgl.PopMatrix()
 	rlgl.MultMatrixf(raw_data(flat[:]))
@@ -184,6 +222,12 @@ draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, m
 		color, top_color = ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR
 	}
 	has_model := draw_entity_cells(drill.common, machines, models, frame, working, color, top_color)
+	// The bar and the arrow are drawn in raw cells, without the frame's
+	// matrix (0362), and culled where they are drawn.
+	low, high := entity_cell_box(drill.origin, drill.size)
+	if !model_frame_shows_box(frame, low - 0.1, high + {0.1, 0.2, 0.1}) {
+		return
+	}
 	centre := box_centre(drill.origin, drill.size)
 	top := centre + {0, f32(drill.size.y) / 2 + 0.02, 0}
 	if !has_model {
@@ -383,9 +427,9 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 	}
 	// The pod, its hatches, its crafting bench and its charge controller
 	// and the crafting stations ride in the foundations' pool
-	// (entity_pod.odin); the foundations themselves are draw_frames'
-	// boxes. A hatch's door follows its state (draw_hatch); the others
-	// work as foundation_model_working says.
+	// (entity_pod.odin); the foundations themselves are
+	// draw_field_foundations' slabs. A hatch's door follows its state
+	// (draw_hatch); the others work as foundation_model_working says.
 	for foundation in world.entities.foundations.entries {
 		if !foundation.alive || !model_frame_draws_entity(frame, &world.entities, models, foundation.common) {
 			continue
@@ -416,7 +460,12 @@ draw_vessel_part :: proc(part: Vessel_Part, machines: Machine_Registry, models: 
 		return
 	}
 	machine := machines.machines[part.machine]
-	flat := transmute([16]f32)entity_frame_matrix(&frame.world.entities, part.frame)
+	transform := model_frame_entity_matrix(frame, &frame.world.entities, part.frame)
+	low, high := entity_cell_box(part.origin, part.size)
+	if !model_frame_shows_cells(frame, transform, low, high) {
+		return
+	}
+	flat := transmute([16]f32)transform
 	rlgl.PushMatrix()
 	defer rlgl.PopMatrix()
 	rlgl.MultMatrixf(raw_data(flat[:]))
@@ -428,8 +477,8 @@ draw_vessel_part :: proc(part: Vessel_Part, machines: Machine_Registry, models: 
 // A hatch of the pod (0198): its door posed from its state (hatch_pose),
 // or the box without a model.
 draw_hatch :: proc(hatch: Foundation, machine: Machine, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
-	if model, found := machine_model(models, hatch.machine); found {
-		draw_posed_model(models, model, hatch.common, machine, frame, hatch_pose(frame, hatch, machine))
+	if _, found := machine_model(models, hatch.machine); found {
+		draw_posed_model(models, hatch.common, machine, frame, hatch_pose(frame, hatch, machine))
 		return
 	}
 	draw_entity_cells(hatch.common, machines, models, frame, false, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
@@ -446,7 +495,15 @@ draw_launch_pad :: proc(pad: Launch_Pad, machines: Machine_Registry, models: Mod
 	tick_rate := frame.tick_rate
 	centre := box_centre(pad.origin, pad.size)
 	bottom := f32(pad.origin.y)
-	if !draw_machine_model(models, machines, pad.common, frame, launch_pad_is_working(pad)) {
+	has_model := draw_machine_model(models, machines, pad.common, frame, launch_pad_is_working(pad))
+	// The fallback platform, the tower and the rocket are drawn in raw
+	// cells (0362), culled where they are drawn up to the rocket's ascent.
+	low, high := entity_cell_box(pad.origin, pad.size)
+	high.y = low.y + LAUNCH_PAD_PLATFORM_HEIGHT + ROCKET_HEIGHT + ROCKET_ASCENT_HEIGHT
+	if !model_frame_shows_box(frame, low, high) {
+		return
+	}
+	if !has_model {
 		platform := [3]f32{f32(pad.size.x), LAUNCH_PAD_PLATFORM_HEIGHT, f32(pad.size.z)}
 		rl.DrawCubeV({centre.x, bottom + platform.y / 2, centre.z}, platform, LAUNCH_PAD_COLOR)
 		rl.DrawCubeWiresV({centre.x, bottom + platform.y / 2, centre.z}, platform, ENTITY_EDGE_COLOR)

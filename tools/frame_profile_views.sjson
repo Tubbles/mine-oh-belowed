@@ -110,3 +110,19 @@ factory = {
 		{machine = "lamp", cell = [24, 1, 16]}
 	]
 }
+
+// The large factory (0347), built after the factory's runs and run in one
+// viewport: copies[0] by copies[1] copies of the factory, the factory the
+// first, each pad 2 cells from the next (FACTORY_COPY_GAP_CELLS), against
+// the frame's right (along it the leaning pad sinks under the ground) and
+// along its forward. A copy holds only the factory's machines named here,
+// the ones the field session draws (no fluid or power machine, 0362).
+// The camera stands back_metres back along the frame's forward and
+// up_metres up along its up from the middle of the copies one row over
+// the pads, looking at it.
+factory_large = {
+	copies = [11, 7]
+	back_metres = 45
+	up_metres = 25
+	machines = ["stone_furnace", "burner_inserter", "wooden_chest", "assembler_1", "lab"]
+}

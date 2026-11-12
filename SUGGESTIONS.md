@@ -230,7 +230,6 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 ## Suggestions from the sun shadows (0328, 2026-11-07)
 
-- The cast pass draws every foundation cell of every frame (`draw_frames` in `draw_field_sun_shadows`), where the machines are culled to its box; a base of thousands of cells doubles that batch work, twice in split screen. A box test per frame or per cell run would bound it.
 - The map is snapped as the eye moves but not as the sun turns, so shadow edges in the outer ring may shimmer slowly through the day; stepping the sun direction the cascade uses is the usual remedy. The captures at dusk would show whether it is visible.
 - The Windows build under Winlator on the phone takes the desktop row, so shadows are on there by default; an Android-like row for Winlator would need a way to tell it apart.
 - Belts, runs and torches neither cast nor receive (as specified), so they stay lit under a tree.
@@ -388,3 +387,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - No suite test runs the look on a real worker thread: every streaming test starts with 0 workers. The review's probe (two workers, the main thread rewriting the world under them) could become one.
 - `gather_field_look_samples` zeroes its 407 KB and then overwrites the loaded runs. Only the unloaded runs need the zeroes. Measure the streaming section in the next table first.
 - The coarse jobs' per sample chunk lookups stay on the main thread. If the next table still shows the spring's streaming over the settled views', they are the next place to look.
+
+## Suggestions from the factory's draws (0347, 2026-11-12)
+
+- `refresh_field_foundations` walks every occupant, sorts every foundation cell and compares three arrays on any change of the frame table, a placed inserter or a hatch toggle included, and a change of the foundations sends the whole buffer. At 36,000 cells every placement pays it. Rebuilding only the bricks a change touches is the fix. Measure a placement in the large factory first.
+- `./build.sh frame-profile --check` now also builds `factory_large`, 36,480 socket lines at the capped rate, about 20 minutes by the implementer's count (not run). The check could skip the view unless it is named, or the setup could send several lines a frame.
+- The profile's guard of 40 minutes and the 25 minutes `doc/build.md` gives for a run understate it with `factory_large`. Time one whole run in the window and correct both.

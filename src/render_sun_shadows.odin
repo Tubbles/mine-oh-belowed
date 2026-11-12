@@ -632,7 +632,7 @@ model_frame_draws_entity :: proc(frame: Model_Frame, entities: ^Entities, models
 			return false
 		}
 	}
-	transform := frame.casters.transform * entity_frame_matrix(entities, common.frame)
+	transform := frame.casters.transform * model_frame_entity_matrix(frame, entities, common.frame)
 	minimum, maximum := sun_shadow_entity_box(transform, cast([3]i32)common.origin, common.size, machine_model_top(models, common))
 	return sun_shadow_box_casts(frame.casters.cascade, minimum, maximum)
 }
@@ -716,8 +716,9 @@ load_sun_shadow_map :: proc(shadows: ^Sun_Shadow_Renderer, data_directory: strin
 	return true
 }
 
-// The depth shader reads each vertex through instanceTransform
-// (draw_tree_pass) or not.
+// The depth shader reads each vertex through instanceTransform (the
+// trees, draw_tree_pass; the machines, draw_cast_model_instances; the
+// foundations' slabs, draw_field_foundations, 0347) or not.
 set_sun_shadow_instanced :: proc(shadows: Sun_Shadow_Renderer, instanced: bool) {
 	value: f32 = instanced ? 1 : 0
 	rl.SetShaderValue(shadows.material.shader, shadows.instanced_location, &value, .FLOAT)

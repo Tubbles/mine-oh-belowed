@@ -71,6 +71,9 @@ foreign import gles "system:GLESv3"
 @(default_calling_convention = "c")
 foreign gles {
 	glGetString :: proc(name: u32) -> cstring ---
+	// The foundations' edges as instanced lines (0347,
+	// load_draw_arrays_instanced).
+	glDrawArraysInstanced :: proc(mode: u32, first, count, instance_count: i32) ---
 }
 
 // The app's private directory and its folder under Android/data, as the

@@ -686,13 +686,15 @@ lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 }
 
 // The frame's streaming: the session's field streaming round the
-// viewpoint (stream_field_session), then the finished meshes up.
+// viewpoint (stream_field_session), then the finished meshes up and the
+// foundations' bricks (0347, update_field_foundations).
 stream_planet_preview :: proc(preview: ^Planet_Preview) -> []Field_Node {
 	spacing := preview.session.simulation.field.spacing_millimetres
 	view := make_field_view(planet_preview_viewpoint(preview), preview.session.planet, spacing, preview.level_distances)
 	selection := select_field_nodes(view, context.temp_allocator)
 	stream_field_session(preview.session, selection)
 	upload_streamed_field_meshes(&preview.renderer, &preview.session.field_streaming)
+	update_field_foundations(&preview.renderer.foundations, &preview.session.simulation.world.entities, planet_preview_content(preview).machines, preview.models.revision)
 	eyes := [1]World_Position{planet_preview_viewpoint(preview)}
 	simulation := &preview.session.simulation
 	update_field_tree_cache(&preview.renderer.trees, &preview.session.field_streaming, field_tree_generation(&simulation.field), eyes[:], simulation.field.felled_trees, preview.field_trees, preview.session.field_content.foundation_pitch_millimetres)

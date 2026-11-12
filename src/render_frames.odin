@@ -1,12 +1,14 @@
 package game
 
+import "core:slice"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
 
 // The foundation frames' placeholder look (work item 0174): every
 // foundation cell of a frame other than the block frame is drawn as a
 // box at its frame's transform, in the flat colour of its record (the
-// tier's, work item 0196, foundation_slab_color). The machines on the
+// tier's, work item 0196, foundation_slab_color), instanced in bricks
+// since 0347 (draw_field_foundations, below). The machines on the
 // frames, the pod and the crafting stations among them (they ride in the
 // foundations' pool, 0179 and 0196), are drawn
 // by draw_entities under the same matrices (draw_entity_cells: the
@@ -62,30 +64,257 @@ draw_frame_cell :: proc(cell: World_Coordinate, color: rl.Color) {
 	rl.DrawCubeWiresV(centre, FRAME_CELL_FILL, FRAME_EDGE_COLOR)
 }
 
-// Inside BeginMode3D. One pass over the occupied cells, each foundation
-// under its frame's matrix (made once per frame), so the cost follows the
-// cells and not the cells times the frames.
-draw_frames :: proc(entities: ^Entities, machines: Machine_Registry) {
-	matrices := make(map[Frame_Id][16]f32, len(entities.frames.frames), context.temp_allocator)
-	for frame in entities.frames.frames {
-		matrices[frame.id] = transmute([16]f32)frame_render_matrix(frame)
+// The foundations' cells, instanced in bricks (work item 0347): every
+// foundation cell of a frame other than the block frame is an instance of
+// the unit cube scaled by FRAME_CELL_FILL at the cell's centre, in its
+// frame's cells, its slab colour in the matrix's bottom row
+// (instance_matrix_with_color). The cells are grouped per frame into
+// bricks of FOUNDATION_BRICK_CELLS a side, each a range of one buffer with
+// its box in cells. A pass tests each brick's box under its frame's
+// matrix and draws a shown brick in one instanced draw under that matrix
+// (draw_field_foundations): the sun's through the depth shader, the
+// scene's through the model shader unlit (begin_flat_instances), then the
+// edges as instanced lines over the same instances (the lines
+// DrawCubeWiresV draws). The bricks are built again only when the frame
+// table's revision (occupancy and pose) or the models' revision (a tier's
+// new colour) moved, in prepare_field_frame before any pass, and go up
+// only when their bytes changed (refresh_field_foundations). Without the
+// model shader's instancing, the depth shader's or before the first
+// upload, a brick's cells draw one by one (draw_frame_cell).
+FOUNDATION_BRICK_CELLS :: 32
+
+// A drawn foundation cell: its frame, its cell and its slab colour.
+Foundation_Cell :: struct {
+	frame: Frame_Id,
+	cell:  World_Coordinate,
+	color: rl.Color,
+}
+
+// A frame's cells in one brick: their range of the instances and their
+// box in cells, from the lowest cell to the highest plus 1.
+Foundation_Brick :: struct {
+	frame:            Frame_Id,
+	brick:            [3]i32,
+	minimum, maximum: [3]f32,
+	first, count:     int,
+}
+
+// The bricks of the frame table's revision and the models' revision they
+// were built at, the cells and instances they range over, and the buffer
+// those went up into (uploaded once they did).
+Field_Foundations :: struct {
+	built, uploaded:           bool,
+	revision, models_revision: u64,
+	cells:                     [dynamic]Foundation_Cell,
+	bricks:                    [dynamic]Foundation_Brick,
+	instances:                 [dynamic]matrix[4, 4]f32,
+	buffer:                    Instance_Buffer,
+}
+
+// The unit cube to the cell's centre, scaled by FRAME_CELL_FILL, the
+// colour in the bottom row.
+foundation_cell_instance :: proc(cell: World_Coordinate, color: rl.Color) -> matrix[4, 4]f32 {
+	centre := [3]f32{f32(cell.x) + 0.5, f32(cell.y) + 0.5, f32(cell.z) + 0.5}
+	transform := matrix[4, 4]f32{
+		FRAME_CELL_FILL, 0, 0, centre.x,
+		0, FRAME_CELL_FILL, 0, centre.y,
+		0, 0, FRAME_CELL_FILL, centre.z,
+		0, 0, 0, 1,
 	}
+	return instance_matrix_with_color(transform, color)
+}
+
+foundation_brick_of :: proc(cell: World_Coordinate) -> [3]i32 {
+	return {floor_divide(cell.x, FOUNDATION_BRICK_CELLS), floor_divide(cell.y, FOUNDATION_BRICK_CELLS), floor_divide(cell.z, FOUNDATION_BRICK_CELLS)}
+}
+
+// By frame, then brick (z, y, x), then cell (z, y, x).
+foundation_cell_before :: proc(first, second: Foundation_Cell) -> bool {
+	if first.frame != second.frame {
+		return first.frame < second.frame
+	}
+	first_brick, second_brick := foundation_brick_of(first.cell), foundation_brick_of(second.cell)
+	for axis in ([3]int{2, 1, 0}) {
+		if first_brick[axis] != second_brick[axis] {
+			return first_brick[axis] < second_brick[axis]
+		}
+	}
+	for axis in ([3]int{2, 1, 0}) {
+		if first.cell[axis] != second.cell[axis] {
+			return first.cell[axis] < second.cell[axis]
+		}
+	}
+	return false
+}
+
+// Every foundation cell on a frame of the table's records (the block
+// frame's are not drawn) whose occupant is a foundation of a foundation
+// machine, the pod's and the stations' cells being their models'
+// (draw_entities), sorted (foundation_cell_before), a brick per run of one
+// frame and brick, and an instance per cell.
+build_foundation_bricks :: proc(entities: ^Entities, machines: Machine_Registry, allocator := context.temp_allocator) -> (cells: []Foundation_Cell, bricks: []Foundation_Brick, instances: []matrix[4, 4]f32) {
+	known := make(map[Frame_Id]struct{}, len(entities.frames.frames), context.temp_allocator)
+	for frame in entities.frames.frames {
+		known[frame.id] = {}
+	}
+	list := make([dynamic]Foundation_Cell, allocator)
 	for key, occupant in entities.frames.occupants {
-		flat, found := matrices[key.frame]
 		handle := entity_from_occupant(occupant.handle)
-		if !found || handle.kind != .Foundation {
+		if key.frame not_in known || handle.kind != .Foundation {
 			continue
 		}
-		// The pod's and the stations' cells are their models' (draw_entities).
 		common := entity_common(entities, handle)
 		if common == nil || machines.machines[common.machine].kind != .Foundation {
 			continue
 		}
-		rlgl.PushMatrix()
-		rlgl.MultMatrixf(raw_data(flat[:]))
-		draw_frame_cell(key.cell, foundation_slab_color(machines.machines[common.machine]))
-		rlgl.PopMatrix()
+		append(&list, Foundation_Cell{frame = key.frame, cell = key.cell, color = foundation_slab_color(machines.machines[common.machine])})
 	}
+	slice.sort_by(list[:], foundation_cell_before)
+	brick_list := make([dynamic]Foundation_Brick, allocator)
+	instances = make([]matrix[4, 4]f32, len(list), allocator)
+	for cell, index in list {
+		instances[index] = foundation_cell_instance(cell.cell, cell.color)
+		brick := foundation_brick_of(cell.cell)
+		low := [3]f32{f32(cell.cell.x), f32(cell.cell.y), f32(cell.cell.z)}
+		last := len(brick_list) > 0 ? &brick_list[len(brick_list) - 1] : nil
+		if last == nil || last.frame != cell.frame || last.brick != brick {
+			append(&brick_list, Foundation_Brick{frame = cell.frame, brick = brick, minimum = low, maximum = low + 1, first = index, count = 1})
+			continue
+		}
+		for axis in 0 ..< 3 {
+			last.minimum[axis] = min(last.minimum[axis], low[axis])
+			last.maximum[axis] = max(last.maximum[axis], low[axis] + 1)
+		}
+		last.count += 1
+	}
+	return list[:], brick_list[:], instances
+}
+
+same_bytes :: proc(first, second: $T/[]$E) -> bool {
+	return slice.simple_equal(slice.to_bytes(first), slice.to_bytes(second))
+}
+
+// False while built at the frame table's revision and the models'.
+// Otherwise built again: when the cells, bricks or instances differ
+// bytewise from the stored ones they replace them, uploaded clears and the
+// result is true; the revisions are stored either way, so a pose's change
+// (the cells are in the frames' cells) uploads nothing.
+refresh_field_foundations :: proc(foundations: ^Field_Foundations, entities: ^Entities, machines: Machine_Registry, models_revision: u64) -> (changed: bool) {
+	if foundations.built && foundations.revision == entities.frames.revision && foundations.models_revision == models_revision {
+		return false
+	}
+	cells, bricks, instances := build_foundation_bricks(entities, machines)
+	changed = !same_bytes(cells, foundations.cells[:]) || !same_bytes(bricks, foundations.bricks[:]) || !same_bytes(instances, foundations.instances[:])
+	if changed {
+		clear(&foundations.cells)
+		clear(&foundations.bricks)
+		clear(&foundations.instances)
+		append(&foundations.cells, ..cells)
+		append(&foundations.bricks, ..bricks)
+		append(&foundations.instances, ..instances)
+		foundations.uploaded = false
+	}
+	foundations.built = true
+	foundations.revision = entities.frames.revision
+	foundations.models_revision = models_revision
+	return changed
+}
+
+// Between frames, before any pass (prepare_field_frame,
+// stream_planet_preview): refreshed, then up into the buffer while not
+// uploaded.
+update_field_foundations :: proc(foundations: ^Field_Foundations, entities: ^Entities, machines: Machine_Registry, models_revision: u64) {
+	refresh_field_foundations(foundations, entities, machines, models_revision)
+	if !foundations.uploaded {
+		upload_instances_in_place(&foundations.buffer.buffer, &foundations.buffer.capacity, foundations.instances[:])
+		foundations.uploaded = true
+	}
+}
+
+// Inside BeginMode3D (or the sun's pass, shadows set): per frame, the bricks
+// whose box under the frame's matrix the pass shows
+// (model_frame_shows_cells), drawn under that matrix.
+draw_field_foundations :: proc(foundations: ^Field_Foundations, models: Model_Renderer, frame: Model_Frame, entities: ^Entities, shadows: ^Sun_Shadow_Renderer) {
+	shown := make([dynamic]Foundation_Brick, context.temp_allocator)
+	start := 0
+	for start < len(foundations.bricks) {
+		frame_id := foundations.bricks[start].frame
+		end := start + 1
+		for end < len(foundations.bricks) && foundations.bricks[end].frame == frame_id {
+			end += 1
+		}
+		transform := model_frame_entity_matrix(frame, entities, frame_id)
+		clear(&shown)
+		for brick in foundations.bricks[start:end] {
+			if model_frame_shows_cells(frame, transform, brick.minimum, brick.maximum) {
+				append(&shown, brick)
+			}
+		}
+		if len(shown) > 0 {
+			draw_foundation_bricks(foundations, models, transform, shown[:], shadows)
+		}
+		start = end
+	}
+}
+
+// The bricks under the frame's matrix: instanced through the depth shader
+// in the sun's pass, through the model shader unlit with their edges in
+// the scene's, or their cells one by one.
+draw_foundation_bricks :: proc(foundations: ^Field_Foundations, models: Model_Renderer, transform: matrix[4, 4]f32, bricks: []Foundation_Brick, shadows: ^Sun_Shadow_Renderer) {
+	flat := transmute([16]f32)transform
+	rlgl.PushMatrix()
+	defer rlgl.PopMatrix()
+	rlgl.MultMatrixf(raw_data(flat[:]))
+	switch {
+	case foundations.uploaded && shadows != nil && shadows.instanced_location != -1:
+		set_sun_shadow_instanced(shadows^, true)
+		begin_instanced_material(shadows.material)
+		for brick in bricks {
+			draw_mesh_instances(models.unit_cube, foundations.buffer.buffer, brick.first, brick.count)
+		}
+		end_instanced_material(shadows.material)
+		set_sun_shadow_instanced(shadows^, false)
+	case foundations.uploaded && shadows == nil && models.instancing_ready:
+		begin_flat_instances(models, true)
+		for brick in bricks {
+			draw_mesh_instances(models.unit_cube, foundations.buffer.buffer, brick.first, brick.count)
+		}
+		end_flat_instances(models)
+		draw_foundation_edges(foundations, models, bricks)
+	case:
+		for brick in bricks {
+			for cell in foundations.cells[brick.first:][:brick.count] {
+				draw_frame_cell(cell.cell, cell.color)
+			}
+		}
+	}
+}
+
+// The scene's slabs' edges as instanced lines, or each cell's
+// DrawCubeWiresV without glDrawArraysInstanced.
+draw_foundation_edges :: proc(foundations: ^Field_Foundations, models: Model_Renderer, bricks: []Foundation_Brick) {
+	if models.draw_lines_instanced == nil {
+		for brick in bricks {
+			for cell in foundations.cells[brick.first:][:brick.count] {
+				rl.DrawCubeWiresV({f32(cell.cell.x) + 0.5, f32(cell.cell.y) + 0.5, f32(cell.cell.z) + 0.5}, FRAME_CELL_FILL, FRAME_EDGE_COLOR)
+			}
+		}
+		return
+	}
+	begin_flat_instances(models, false)
+	for brick in bricks {
+		draw_mesh_line_instances(models.cube_edges, foundations.buffer.buffer, brick.first, brick.count, models.draw_lines_instanced)
+	}
+	end_flat_instances(models)
+}
+
+// With the field renderer, between frames.
+release_field_foundations :: proc(foundations: ^Field_Foundations) {
+	delete(foundations.cells)
+	delete(foundations.bricks)
+	delete(foundations.instances)
+	release_instance_buffer(&foundations.buffer)
+	foundations^ = {}
 }
 
 // A foundation's slab in its record's colour, opaque.

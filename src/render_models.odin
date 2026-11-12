@@ -18,7 +18,11 @@ import "platform"
 // the normal in place of the CPU's flat light, and the haze (0313,
 // set_model_open_sky); the emissive layer draws with
 // raylib's default material, so it never takes them. A model shader that
-// fails to load leaves the lit layer on the default material too. The
+// fails to load leaves the lit layer on the default material too. On the
+// field (0347) both layers draw instanced through the model shader, the
+// emissive one in its flat mode, which is the default shader's colour
+// (render_model_instances.odin); the pod, the ghosts and the workbench
+// still draw one by one. The
 // field's trees draw with a shader of their own (0310, Tree_Draw,
 // render_field_trees.odin), which takes the same lights; their far cards
 // are baked from the tree models whenever the models load.
@@ -28,11 +32,14 @@ MODEL_FRAGMENT_SHADER_PATH :: "shaders/model.fs"
 
 Uploaded_Layers :: [Model_Layer]rl.Mesh
 
+// bounds holds each slot's mesh box from the CPU meshes, which the
+// instanced draws' cull reads (0347, render_model_instances.odin).
 Uploaded_Machine_Model :: struct {
-	body: Uploaded_Layers,
-	part: Uploaded_Layers,
-	arm:  [Arm_Part]Uploaded_Layers,
-	top:  f32,
+	body:   Uploaded_Layers,
+	part:   Uploaded_Layers,
+	arm:    [Arm_Part]Uploaded_Layers,
+	top:    f32,
+	bounds: [Model_Mesh_Slot]Model_Bounds,
 }
 
 Model_Renderer :: struct {
@@ -65,8 +72,23 @@ Model_Renderer :: struct {
 	trees:                 Tree_Draw,
 	// Counts the unloads of the meshes (unload_model_meshes, so every
 	// model and content reload), so the sun's kept shadow maps draw again
-	// (0348).
+	// (0348) and the foundations' bricks are built again with the tiers'
+	// colours (0347, refresh_field_foundations).
 	revision:              u64,
+	// The model shader's instancing switches (0347,
+	// render_model_instances.odin): ready when the shader loaded with all
+	// three, else every model draws one by one.
+	instanced_location:     i32,
+	instance_tint_location: i32,
+	flat_location:          i32,
+	instancing_ready:       bool,
+	// The foundations' slab and its edges as lines (0347,
+	// draw_field_foundations) and the belt items' cube.
+	unit_cube:              rl.Mesh,
+	cube_edges:             rl.Mesh,
+	// glDrawArraysInstanced, nil without it: the edges then draw one by
+	// one.
+	draw_lines_instanced:   Gl_Draw_Arrays_Instanced,
 }
 
 // What every model drawn this frame shares: the world for the light, the
@@ -81,7 +103,13 @@ Model_Renderer :: struct {
 // the setting: it stills the flames' flicker and the embers' pulse (0274).
 // casters is set by the sun's cast pass (0328, draw_field_sun_shadows):
 // draw_entities leaves out an entity whose box lies outside the casters'
-// box (model_frame_draws_entity); nil draws every one.
+// box (model_frame_draws_entity); nil draws every one. The field's passes
+// set the rest (0347, render_model_instances.odin), each nil for the
+// draws of before:
+// view is the scene's cull by the frustum and the haze's end;
+// instances collects the shown models' pieces, drawn instanced after
+// draw_entities;
+// frames is the pass's table of the frames' matrices.
 Model_Frame :: struct {
 	world:          ^World,
 	tick:           u64,
@@ -94,6 +122,9 @@ Model_Frame :: struct {
 	interiors:      []Interior_Light,
 	reduced_motion: bool,
 	casters:        ^Sun_Shadow_Casters,
+	view:           ^Model_View,
+	instances:      ^[dynamic]Model_Instance,
+	frames:         ^Frame_Matrix_Table,
 }
 
 // The frame's time on the tick clock, so a paused game stills what reads
@@ -257,9 +288,10 @@ replace_machine_models :: proc(renderer: ^Model_Renderer, machines: Machine_Regi
 	renderer.models = make([]Uploaded_Machine_Model, len(meshes))
 	for mesh, index in meshes {
 		renderer.models[index] = {
-			body = upload_model_layers(mesh.body),
-			part = upload_model_layers(mesh.part),
-			top  = mesh.top,
+			body   = upload_model_layers(mesh.body),
+			part   = upload_model_layers(mesh.part),
+			top    = mesh.top,
+			bounds = machine_model_bounds(mesh),
 		}
 		for layers, part in mesh.arm {
 			renderer.models[index].arm[part] = upload_model_layers(layers)
@@ -295,6 +327,13 @@ use_model_shader :: proc(renderer: ^Model_Renderer, data_directory: string) {
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
 	renderer.sun_shadow_locations = use_sun_shadow_sampler(shader)
 	renderer.point_lights_ready = true
+	renderer.instanced_location = rl.GetShaderLocation(shader, "instanced_on")
+	renderer.instance_tint_location = rl.GetShaderLocation(shader, "instance_tint_on")
+	renderer.flat_location = rl.GetShaderLocation(shader, "flat_on")
+	renderer.instancing_ready = renderer.instanced_location != -1 && renderer.instance_tint_location != -1 && renderer.flat_location != -1
+	if !renderer.instancing_ready {
+		platform.log_printf("models: the model shader has no instancing uniforms, machines draw one by one")
+	}
 }
 
 // Needs the window.
@@ -305,6 +344,12 @@ init_model_renderer :: proc(machines: Machine_Registry, data_directory: string) 
 	use_flame_shader(&renderer, data_directory)
 	use_tree_shader(&renderer.trees, data_directory)
 	use_machine_models(&renderer, machines, data_directory)
+	renderer.unit_cube = upload_model_mesh(unit_cube_mesh())
+	renderer.cube_edges = upload_model_mesh(cube_edge_mesh(FRAME_EDGE_COLOR))
+	renderer.draw_lines_instanced = load_draw_arrays_instanced()
+	if renderer.draw_lines_instanced == nil {
+		platform.log_printf("models: no glDrawArraysInstanced, the foundations' edges draw one by one")
+	}
 	return renderer
 }
 
@@ -312,6 +357,12 @@ init_model_renderer :: proc(machines: Machine_Registry, data_directory: string) 
 // raylib's default shader and texture.
 destroy_model_renderer :: proc(renderer: ^Model_Renderer) {
 	unload_model_meshes(renderer)
+	for mesh in ([2]rl.Mesh{renderer.unit_cube, renderer.cube_edges}) {
+		if mesh.vertexCount > 0 {
+			rl.UnloadMesh(mesh)
+		}
+	}
+	renderer.unit_cube, renderer.cube_edges = {}, {}
 	rl.UnloadMaterial(renderer.material)
 	rl.UnloadMaterial(renderer.emissive_material)
 	if renderer.flame.ready {
@@ -520,15 +571,18 @@ posed_model_light :: proc(frame: Model_Frame, common: Entity_Common, machine: Ma
 // The entity's model at the pose, lit by the cell model_light_cell names,
 // at its pod's interior light share inside a pod's box (0225), darkened
 // while broken. The part once per pose of motion_part_transforms: an
-// iris's every blade (0231).
-draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
-	light_tint, glow := posed_model_light(frame, common, machine, pose)
-	body := entity_body_matrix(&frame.world.entities, common)
-	draw_model_layers(renderer, model.body, body, light_tint, glow)
-	poses := motion_part_transforms(machine.motion, machine.footprint, pose.phase)
-	for transform in poses.transforms[:poses.count] {
-		draw_model_layers(renderer, model.part, body * transform, light_tint, glow)
+// iris's every blade (0231). Posed first and left out when the pass does
+// not show its posed box (0347, model_frame_shows_box), which shown says;
+// then drawn or appended to the pass's instances (emit_posed_model).
+draw_posed_model :: proc(renderer: Model_Renderer, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) -> (shown: bool) {
+	body := model_frame_entity_matrix(frame, &frame.world.entities, common.frame) * model_transform(common.origin, common.size, common.rotation)
+	posed := pose_machine_model(renderer, common.machine, body, machine, pose.phase)
+	if !model_frame_shows_box(frame, posed.minimum, posed.maximum) {
+		return false
 	}
+	light_tint, glow := posed_model_light(frame, common, machine, pose)
+	emit_posed_model(renderer, frame, common.machine, machine.kind, posed, {.Lit = brightness_color(light_tint), .Emissive = brightness_color(glow)})
+	return true
 }
 
 // The pose of a machine whose part runs on the clock while it works, at
@@ -544,10 +598,13 @@ hatch_pose :: proc(frame: Model_Frame, hatch: Foundation, machine: Machine) -> M
 	return {phase = hatch_open_fraction(hatch.hatch_open, hatch.hatch_toggle_tick, frame.tick, frame.alpha, frame.tick_rate, machine.motion.period_seconds), working = hatch.hatch_open}
 }
 
-// False when the machine has no model, so the caller draws the box.
+// False when the machine has no model, so the caller draws the box; true
+// for a model the pass left out too.
 draw_machine_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, common: Entity_Common, frame: Model_Frame, working: bool) -> bool {
-	model := machine_model(renderer, common.machine) or_return
+	if _, found := machine_model(renderer, common.machine); !found {
+		return false
+	}
 	machine := machines.machines[common.machine]
-	draw_posed_model(renderer, model, common, machine, frame, clock_pose(frame, common, machine, working))
+	draw_posed_model(renderer, common, machine, frame, clock_pose(frame, common, machine, working))
 	return true
 }

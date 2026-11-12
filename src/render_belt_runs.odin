@@ -12,7 +12,9 @@ import "shared:raylib/rlgl"
 // meshes do. Items stand at their distance along the line through
 // belt_run_point_at, offset across the run to their lane. A pipe run is a
 // tube of the pipe's colour per subdivision; a pole a post from its cell's
-// bottom to its run end. Floats are made here only.
+// bottom to its run end. The field's scene (0347, Belt_Run_Draw) draws a
+// run, a pole and an item only where its view shows the box round it, and
+// the items in one instanced draw. Floats are made here only.
 
 BELT_RUN_POLE_COLOR :: rl.Color{120, 122, 128, 255}
 BELT_RUN_POLE_RADIUS_METRES :: 0.06
@@ -126,60 +128,183 @@ draw_pipe_run :: proc(sections: Belt_Run_Sections, pitch_metres: f32) {
 	}
 }
 
-// The items of every line on its runs' segments, each at its distance
-// through belt_run_point_at and offset to its lane.
-draw_belt_run_items :: proc(entities: ^Entities, items: Item_Registry) {
+// A run's frame facts read once a pass (belt_run_facts) and whether the
+// pass's view shows its box (0347).
+Belt_Run_View :: struct {
+	shown, found: bool,
+	ups:          [2][3]i64,
+	pitch_metres: f32,
+}
+
+// What draw_belt_runs culls and instances with (0347): the scene's view
+// (nil draws everything), the pass's frame table (nil scans the frames),
+// the models (their unit cube and the model shader) and the viewport's
+// items buffer (nil draws the items one by one). Zero is the draw of
+// before.
+Belt_Run_Draw :: struct {
+	view:   ^Model_View,
+	frames: ^Frame_Matrix_Table,
+	models: Model_Renderer,
+	items:  ^Instance_Buffer,
+}
+
+// The polyline's points in metres widened by a pitch: everything drawn
+// lies within 0.71 of a pitch of its section's point (half a pitch across,
+// the tube's top half a pitch up, an item 0.35 across and 0.23 up).
+belt_run_box :: proc(curve: Belt_Run_Curve, pitch_metres: f32) -> (minimum, maximum: [3]f32) {
+	minimum, maximum = world_position_to_metres(curve.polyline[0]), world_position_to_metres(curve.polyline[0])
+	for point in curve.polyline {
+		metres := world_position_to_metres(point)
+		for axis in 0 ..< 3 {
+			minimum[axis] = min(minimum[axis], metres[axis])
+			maximum[axis] = max(maximum[axis], metres[axis])
+		}
+	}
+	return minimum - pitch_metres, maximum + pitch_metres
+}
+
+belt_pole_box :: proc(bottom, top: [3]f32) -> (minimum, maximum: [3]f32) {
+	for axis in 0 ..< 3 {
+		minimum[axis] = min(bottom[axis], top[axis])
+		maximum[axis] = max(bottom[axis], top[axis])
+	}
+	return minimum - BELT_RUN_POLE_RADIUS_METRES, maximum + BELT_RUN_POLE_RADIUS_METRES
+}
+
+// belt_run_frame_facts, through the pass's table when there is one.
+belt_run_facts :: proc(table: ^Frame_Matrix_Table, entities: ^Entities, run: Belt_Run) -> (ups: [2][3]i64, pitch_metres: f32, found: bool) {
+	if table == nil {
+		return belt_run_frame_facts(entities, run)
+	}
+	for endpoint, role in run.endpoints {
+		entry := find_frame_matrix(table^, endpoint.frame) or_return
+		ups[role] = entry.frame.axes[FRAME_UP]
+		if role == BELT_RUN_START {
+			pitch_metres = f32(entry.frame.pitch_millimetres) / MILLIMETRES_PER_METRE
+		}
+	}
+	return ups, pitch_metres, true
+}
+
+// By the runs pool's index: each alive run's facts and whether the view
+// shows its box.
+belt_run_views :: proc(entities: ^Entities, draw: Belt_Run_Draw, allocator := context.temp_allocator) -> []Belt_Run_View {
+	views := make([]Belt_Run_View, len(entities.belt_runs.entries), allocator)
+	for run, index in entities.belt_runs.entries {
+		if !run.alive {
+			continue
+		}
+		view := &views[index]
+		view.ups, view.pitch_metres, view.found = belt_run_facts(draw.frames, entities, run)
+		if view.found {
+			minimum, maximum := belt_run_box(run.curve, view.pitch_metres)
+			view.shown = model_view_shows(draw.view, minimum, maximum)
+		}
+	}
+	return views
+}
+
+// The item's cube at its distance along its run through
+// belt_run_point_at, offset to its lane: its centre, its size and its
+// colour; found false on a run not shown.
+belt_run_item_cube :: proc(entities: ^Entities, items: Item_Registry, views: []Belt_Run_View, line: Belt_Line, lane: Belt_Lane, entry: Lane_Item) -> (centre: [3]f32, size: f32, color: rl.Color, found: bool) {
+	segment := belt_line_segment_at(line, entry.position)
+	handle := line.belts[segment]
+	run := pool_get(&entities.belt_runs, handle)
+	if run == nil || int(handle.index) >= len(views) || !views[handle.index].shown {
+		return
+	}
+	view := views[handle.index]
+	point, step := belt_run_point_at(run^, entry.position - belt_line_segment_start(line, segment))
+	section := belt_run_section(run.curve, view.ups, step)
+	side := lane == .Right ? f32(BELT_LANE_OFFSET) : -f32(BELT_LANE_OFFSET)
+	size = BELT_ITEM_SIZE * view.pitch_metres
+	centre = world_position_to_metres(point) + section.right * side * view.pitch_metres + section.up * (BELT_SURFACE_HEIGHT * view.pitch_metres + size / 2)
+	return centre, size, item_cube_color(items, entry.item), true
+}
+
+// The unit cube to the centre scaled by the size, the colour in the
+// bottom row.
+belt_item_instance :: proc(centre: [3]f32, size: f32, color: rl.Color) -> matrix[4, 4]f32 {
+	transform := matrix[4, 4]f32{
+		size, 0, 0, centre.x,
+		0, size, 0, centre.y,
+		0, 0, size, centre.z,
+		0, 0, 0, 1,
+	}
+	return instance_matrix_with_color(transform, color)
+}
+
+// The items of every line on its shown runs' segments
+// (belt_run_item_cube): one instanced draw of the unit cube unlit, each
+// item's colour its own, with the model shader's instancing and the items
+// buffer; else a cube each.
+draw_belt_run_items :: proc(entities: ^Entities, items: Item_Registry, views: []Belt_Run_View, draw: Belt_Run_Draw) {
+	instanced := draw.models.instancing_ready && draw.items != nil
+	instances := make([dynamic]matrix[4, 4]f32, context.temp_allocator)
 	for line in entities.belt_network.lines {
 		if len(line.segment_starts) == 0 {
 			continue
 		}
 		for lane in Belt_Lane {
 			for entry in line.lanes[lane] {
-				draw_belt_run_item(entities, items, line, lane, entry)
+				centre, size, color, found := belt_run_item_cube(entities, items, views, line, lane, entry)
+				switch {
+				case !found:
+				case instanced:
+					append(&instances, belt_item_instance(centre, size, color))
+				case:
+					rl.DrawCube(centre, size, size, size, color)
+				}
 			}
 		}
 	}
-}
-
-draw_belt_run_item :: proc(entities: ^Entities, items: Item_Registry, line: Belt_Line, lane: Belt_Lane, entry: Lane_Item) {
-	segment := belt_line_segment_at(line, entry.position)
-	run := pool_get(&entities.belt_runs, line.belts[segment])
-	if run == nil {
+	if len(instances) == 0 {
 		return
 	}
-	ups, pitch_metres, found := belt_run_frame_facts(entities, run^)
-	if !found {
-		return
-	}
-	point, step := belt_run_point_at(run^, entry.position - belt_line_segment_start(line, segment))
-	section := belt_run_section(run.curve, ups, step)
-	side := lane == .Right ? f32(BELT_LANE_OFFSET) : -f32(BELT_LANE_OFFSET)
-	size := BELT_ITEM_SIZE * pitch_metres
-	centre := world_position_to_metres(point) + section.right * side * pitch_metres + section.up * (BELT_SURFACE_HEIGHT * pitch_metres + size / 2)
-	rl.DrawCube(centre, size, size, size, item_cube_color(items, entry.item))
+	upload_instances_in_place(&draw.items.buffer, &draw.items.capacity, instances[:])
+	begin_flat_instances(draw.models, true)
+	draw_mesh_instances(draw.models.unit_cube, draw.items.buffer, 0, len(instances))
+	end_flat_instances(draw.models)
 }
 
-draw_belt_poles :: proc(entities: ^Entities, machines: Machine_Registry) {
+// Each alive pole on a known frame whose box the view shows.
+draw_belt_poles :: proc(entities: ^Entities, machines: Machine_Registry, draw: Belt_Run_Draw) {
 	for pole in entities.belt_poles.entries {
-		frame, found := find_frame(&entities.frames, pole.frame)
-		if !pole.alive || !found {
+		if !pole.alive {
+			continue
+		}
+		frame: Frame
+		found: bool
+		if draw.frames != nil {
+			entry: Frame_Matrix_Entry
+			entry, found = find_frame_matrix(draw.frames^, pole.frame)
+			frame = entry.frame
+		} else {
+			frame, found = find_frame(&entities.frames, pole.frame)
+		}
+		if !found {
 			continue
 		}
 		bottom := world_position_to_metres(frame_cell_bottom(frame, pole.origin))
 		top := world_position_to_metres(belt_pole_top(frame, pole.origin, int(machines.machines[pole.machine].height_millimetres)))
-		rl.DrawCylinderEx(bottom, top, BELT_RUN_POLE_RADIUS_METRES, BELT_RUN_POLE_RADIUS_METRES, BELT_RUN_POLE_SIDES, BELT_RUN_POLE_COLOR)
+		if minimum, maximum := belt_pole_box(bottom, top); model_view_shows(draw.view, minimum, maximum) {
+			rl.DrawCylinderEx(bottom, top, BELT_RUN_POLE_RADIUS_METRES, BELT_RUN_POLE_RADIUS_METRES, BELT_RUN_POLE_SIDES, BELT_RUN_POLE_COLOR)
+		}
 	}
 }
 
-// Inside BeginMode3D: the poles, the runs and the items on them. The
-// belts' texture scrolls per run at its belt's speed.
-draw_belt_runs :: proc(renderer: ^Belt_Renderer, entities: ^Entities, machines: Machine_Registry, items: Item_Registry, tick: u64, tick_rate: int) {
-	draw_belt_poles(entities, machines)
-	for run in entities.belt_runs.entries {
-		ups, pitch_metres, found := belt_run_frame_facts(entities, run)
-		if !run.alive || !found {
+// Inside BeginMode3D: the poles, the runs and the items on them, each run
+// and pole only where the view shows its box (0347). The belts' texture
+// scrolls per run at its belt's speed.
+draw_belt_runs :: proc(renderer: ^Belt_Renderer, entities: ^Entities, machines: Machine_Registry, items: Item_Registry, tick: u64, tick_rate: int, draw: Belt_Run_Draw) {
+	views := belt_run_views(entities, draw)
+	draw_belt_poles(entities, machines, draw)
+	for run, index in entities.belt_runs.entries {
+		if !run.alive || !views[index].found || !views[index].shown {
 			continue
 		}
+		ups, pitch_metres := views[index].ups, views[index].pitch_metres
 		sections := belt_run_sections(run.curve, ups)
 		switch run.kind {
 		case .Belt:
@@ -190,7 +315,7 @@ draw_belt_runs :: proc(renderer: ^Belt_Renderer, entities: ^Entities, machines: 
 			draw_pipe_run(sections, pitch_metres)
 		}
 	}
-	draw_belt_run_items(entities, items)
+	draw_belt_run_items(entities, items, views, draw)
 }
 
 // The run Place would lay, see-through, red when it would be refused.

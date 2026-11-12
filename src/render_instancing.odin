@@ -3,6 +3,8 @@ package game
 import "core:math/bits"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
+// Read only on Android (load_draw_arrays_instanced).
+@(require) import "platform"
 
 // Instanced draws through rlgl (work items 0310 and 0311): a vertex array
 // of a shape's vertex buffer, read per vertex, and a buffer of instance
@@ -179,11 +181,9 @@ end_instanced_material :: proc(material: rl.Material) {
 	rlgl.DisableShader()
 }
 
-// Between begin_instanced_material and end_instanced_material: count
-// instances from first on in the buffer, drawn with the mesh through its
-// own vertex array (its element buffer included), the instance attributes
-// pointed at that range. The array keeps pointing at the buffer after.
-draw_mesh_instances :: proc(mesh: rl.Mesh, instance_buffer: u32, first, count: int) {
+// The mesh's own vertex array bound with the instance attributes pointed
+// at the buffer from first on, read once per instance.
+bind_mesh_instances :: proc(mesh: rl.Mesh, instance_buffer: u32, first: int) {
 	rlgl.EnableVertexArray(mesh.vaoId)
 	rlgl.EnableVertexBuffer(instance_buffer)
 	for column in 0 ..< 4 {
@@ -193,11 +193,54 @@ draw_mesh_instances :: proc(mesh: rl.Mesh, instance_buffer: u32, first, count: i
 		rlgl.SetVertexAttributeDivisor(location, 1)
 	}
 	rlgl.DisableVertexBuffer()
+}
+
+// With the array still bound: the instance attributes off, so a DrawMesh
+// of the same mesh (a ghost, the pod, the workbench, 0347) never reads a
+// buffer that may have been grown away, then the array unbound.
+detach_mesh_instances :: proc() {
+	for column in 0 ..< 4 {
+		rlgl.DisableVertexAttribute(u32(INSTANCE_TRANSFORM_LOCATION + column))
+	}
+	rlgl.DisableVertexArray()
+}
+
+// Between begin_instanced_material and end_instanced_material: count
+// instances from first on in the buffer, drawn with the mesh through its
+// own vertex array (its element buffer included), the instance attributes
+// pointed at that range and detached after.
+draw_mesh_instances :: proc(mesh: rl.Mesh, instance_buffer: u32, first, count: int) {
+	bind_mesh_instances(mesh, instance_buffer, first)
 	if mesh.indices != nil {
 		rlgl.DrawVertexArrayElementsInstanced(0, mesh.triangleCount * 3, nil, i32(count))
 	} else {
 		rlgl.DrawVertexArrayInstanced(0, mesh.vertexCount, i32(count))
 	}
 	count_draw_call()
-	rlgl.DisableVertexArray()
+	detach_mesh_instances()
+}
+
+// rlgl draws vertex arrays as triangles only, so the instanced lines (the
+// foundations' edges, 0347) call glDrawArraysInstanced directly.
+GL_LINES :: 0x0001
+Gl_Draw_Arrays_Instanced :: #type proc "c" (mode: u32, first, count, instance_count: i32)
+
+// Through GLFW's loader, as log_gl_info reaches glGetString; on Android
+// from libGLESv3. nil when the driver has none.
+load_draw_arrays_instanced :: proc() -> Gl_Draw_Arrays_Instanced {
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		return platform.glDrawArraysInstanced
+	} else {
+		return cast(Gl_Draw_Arrays_Instanced)rl.glfwGetProcAddress("glDrawArraysInstanced")
+	}
+}
+
+// Between begin_instanced_material and end_instanced_material: the mesh's
+// vertices as lines, two a segment in order, count instances from first
+// on in the buffer.
+draw_mesh_line_instances :: proc(mesh: rl.Mesh, instance_buffer: u32, first, count: int, draw: Gl_Draw_Arrays_Instanced) {
+	bind_mesh_instances(mesh, instance_buffer, first)
+	draw(GL_LINES, 0, mesh.vertexCount, i32(count))
+	count_draw_call()
+	detach_mesh_instances()
 }

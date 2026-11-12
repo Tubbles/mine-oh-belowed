@@ -108,7 +108,17 @@ Field_Renderer :: struct {
 	// shader's uniforms that read it.
 	sun_shadows:              Sun_Shadow_Renderer,
 	sun_shadow_locations:     [Sun_Shadow_Uniform]i32,
+	// The foundations' bricks (0347, render_frames.odin) and each
+	// viewport's instance buffers by its slot (Field_Scene.view_slot,
+	// render_model_instances.odin).
+	foundations:              Field_Foundations,
+	instance_buffers:         [FIELD_VIEW_SLOTS]Field_Instance_Buffers,
 }
+
+// The viewports' slots of what a field keeps per viewport: the tree
+// cache's views (0346, Tree_View), the instance buffers (0347). The loop
+// asserts MAXIMUM_VIEWPORTS fits.
+FIELD_VIEW_SLOTS :: 4
 
 // A tile's mean texel, 0 to 1.
 tile_mean_color :: proc(tile: Tile_Pixels) -> [3]f32 {
@@ -501,6 +511,8 @@ field_view_unmeshed_nodes :: proc(streaming: ^Field_Streaming, renderer: ^Field_
 destroy_field_renderer :: proc(renderer: ^Field_Renderer, models: Model_Renderer) {
 	receivers := sun_shadow_receivers(renderer, models)
 	release_sun_shadow_map(&renderer.sun_shadows, receivers[:])
+	release_field_foundations(&renderer.foundations)
+	release_field_instance_buffers(renderer.instance_buffers[:])
 	for _, render in renderer.meshes {
 		unload_field_node_render(render)
 	}

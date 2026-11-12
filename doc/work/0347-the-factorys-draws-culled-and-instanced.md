@@ -1,6 +1,6 @@
 # 0347: The factory's draws culled and instanced
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-12)
 
 Every machine (up to 4 draw calls each), every foundation cell (twice a frame) and every belt item is drawn every frame wherever it is, with no culling (`work/performance_research_0340.md`, 2.2; `doc/audit/presentation.md`). Small with a handful of machines, the largest CPU item of the frame once factories grow. Builds on 0163 (`doc/work/0163-per-frame-machine-view.md`).
 
@@ -295,3 +295,12 @@ Mark `// slow` what `build/test_times.tsv` shows at 1 s or more. `shader_source_
 4. The field session does not draw the fluid and the power machines at all, and the drill's bar and the launch pad's fallback draw in raw cells: 0362 holds both, not this item. This item's `factory_large` view therefore places only machines the field session draws.
 5. Decision 9's three findings for a moving frame are 0357's to solve; 0361's design was given them.
 6. Implemented after 0342 and 0346 have landed, in their stream.
+
+### Deviations (implementation, 2026-11-12)
+
+1. No `Model_Renderer.generation`: 0348's `Model_Renderer.revision` (moved in `unload_model_meshes`, which `replace_machine_models` and `use_machine_models` call) is decision 8's counter, and `Field_Foundations.models_revision` its stamp. The bricks are rebuilt on the same two counters the kept shadow map's key reads, so a rebuild always falls on a frame whose kept map recentres.
+2. `Field_Instance_Buffers` holds a fourth buffer, `kept_cast_models`, for 0348's still part, drawn only on a kept map's redraw. `cast_models` takes the moving part or the whole pass every frame, so no buffer is written twice in a frame. The foundations draw in the still part and the whole pass, never the moving part.
+3. Names: `Frame_Matrix_Entry.transform` (`matrix` is a keyword), `draw_field_foundations`' parameter `shadows` (`cast` is one), `model_slot_bounds` (`model_layers_bounds` exists in `model_triangle_mesh.odin`).
+4. `render_instancing.odin` imports `platform` with `@(require)`, since only the Android branch of `load_draw_arrays_instanced` reads it.
+5. `draw_vessel_part`'s fallback (0361, landed after the design) is culled as `draw_entity_cells`' is.
+6. Part A: the copies hold only the machines the field session draws (decision 4), named by the views entry's `machines`, so the note reads 621 machines (the factory's 13 and 8 a copy) with the 36036 foundations. The gap the specification left open is `FACTORY_COPY_GAP_CELLS` (2). The copies step against the frame's right, since along it the leaning pad's plane falls 0.26 m a metre (the views file's probe) and the copies would sink under the ground. The target is the middle of the copies' span at the centre of the row over the pads.

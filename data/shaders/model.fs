@@ -15,6 +15,11 @@
 // raylib's default texture is white, so leaving it out changes nothing.
 // On the open sky the sun's shadow (sun_shadow_light, work item 0328)
 // scales the sun's term; the ghosts and the block world never read it.
+// An instance's colour (0347, model.vs's fragment_tint, 1 for a direct
+// draw) multiplies colDiffuse; with flat_on at 1 the colour is the vertex
+// colour times both and nothing else, raylib's default shader on its
+// white texture, for the instanced emissive layer, the slabs and the belt
+// items.
 //
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin), as the point lights' array sizes and loop do.
@@ -22,8 +27,10 @@
 in vec3 fragment_world_position;
 in vec3 fragment_normal;
 in vec4 fragment_color;
+in vec4 fragment_tint;
 
 uniform vec4 colDiffuse;
+uniform float flat_on;
 
 // Point lights of working parts (work items 0175 and 0224,
 // render_point_lights.odin): up to eight, the nearest to the camera, the
@@ -254,8 +261,12 @@ vec3 spot_light(vec3 position, vec3 normal)
 
 void main()
 {
+    vec4 base = fragment_color * colDiffuse * fragment_tint;
+    if (flat_on > 0.5) {
+        finalColor = base;
+        return;
+    }
     vec3 normal = normalize(fragment_normal);
-    vec4 base = fragment_color * colDiffuse;
     // Selected, not mixed by outdoor_on: the open sky's uniforms are zero
     // until a field session sets them, and the haze of zero uniforms is
     // not a number, which a mix by 0 would keep.

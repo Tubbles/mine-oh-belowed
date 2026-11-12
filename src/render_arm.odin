@@ -49,11 +49,11 @@ Arm_Placement :: struct {
 	working:    bool,
 }
 
-// The inserter's arm on its frame at its cycle fraction.
-inserter_arm_placement :: proc(entities: ^Entities, inserter: Inserter, machine: Machine, tick_rate: int) -> Arm_Placement {
-	frame, _ := find_frame(&entities.frames, inserter.frame)
+// The inserter's arm on its frame (its record and its matrix) at its
+// cycle fraction.
+arm_placement_on_frame :: proc(frame: Frame, frame_matrix: matrix[4, 4]f32, inserter: Inserter, machine: Machine, tick_rate: int) -> Arm_Placement {
 	dimensions := arm_dimensions_on_frame(inserter.reach, frame.pitch_millimetres)
-	transform := entity_frame_matrix(entities, inserter.frame) * arm_entity_transform(inserter.common, frame.pitch_millimetres)
+	transform := frame_matrix * arm_entity_transform(inserter.common, frame.pitch_millimetres)
 	return Arm_Placement {
 		transform = transform,
 		dimensions = dimensions,
@@ -62,25 +62,26 @@ inserter_arm_placement :: proc(entities: ^Entities, inserter: Inserter, machine:
 	}
 }
 
-// The inserter's placement this frame, the frame's reaching arm held at
-// its drop.
+// The inserter's arm on its frame at its cycle fraction.
+inserter_arm_placement :: proc(entities: ^Entities, inserter: Inserter, machine: Machine, tick_rate: int) -> Arm_Placement {
+	frame, _ := find_frame(&entities.frames, inserter.frame)
+	return arm_placement_on_frame(frame, entity_frame_matrix(entities, inserter.frame), inserter, machine, tick_rate)
+}
+
+// The inserter's placement this frame, its frame read from the pass's
+// table when it has one (0347), the frame's reaching arm held at its drop.
 model_frame_arm_placement :: proc(frame: Model_Frame, inserter: Inserter, machine: Machine) -> Arm_Placement {
-	placement := inserter_arm_placement(&frame.world.entities, inserter, machine, frame.tick_rate)
+	placement: Arm_Placement
+	if frame.frames != nil {
+		entry, _ := find_frame_matrix(frame.frames^, inserter.frame)
+		placement = arm_placement_on_frame(entry.frame, entry.transform, inserter, machine, frame.tick_rate)
+	} else {
+		placement = inserter_arm_placement(&frame.world.entities, inserter, machine, frame.tick_rate)
+	}
 	if frame.reaching_arm != NO_ENTITY && inserter.handle == frame.reaching_arm {
 		placement.fraction, placement.working = ARM_DROP_FRACTION, true
 	}
 	return placement
-}
-
-// The arm at its placement; the held item hangs at the hand between the
-// grab and the release.
-draw_placed_arm :: proc(renderer: Model_Renderer, arm: [Arm_Part]Uploaded_Layers, placement: Arm_Placement, light_tint: [3]f32, held: Item_Stack, items: Item_Registry) {
-	angles := arm_pose_at(placement.dimensions, placement.fraction)
-	glow := emissive_brightness(.Arm, 0, placement.working, light_tint)
-	draw_arm(renderer, arm, placement.transform, placement.dimensions, angles, light_tint, glow)
-	if !stack_is_empty(held) && arm_shows_held_item(placement.fraction) {
-		draw_held_item(transform_point(placement.transform, arm_hand_point(placement.dimensions, angles)), items, held.item)
-	}
 }
 
 // The lamp's light while the arm moves; found false at rest. With no clip

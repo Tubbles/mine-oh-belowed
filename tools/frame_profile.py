@@ -78,6 +78,11 @@ FACTORY_TOP_SHARE = 0.85
 FACTORY_BOTTOM_SHARE = 0.55
 STAND_STEP_METRES = 0.25
 STAND_MOST_METRES = 200
+# The large factory (0347): the views file's copies on either axis, and
+# the free cells between two copies' pads.
+FACTORY_COPIES_LEAST = 1
+FACTORY_COPIES_MOST = 32
+FACTORY_COPY_GAP_CELLS = 2
 FRAME_BUDGET_MILLISECONDS = 1000 / 60
 HEADROOM_FLAG_MILLISECONDS = 14.0
 TICK_MEAN_FLAG_MILLISECONDS = 2.0
@@ -197,14 +202,17 @@ def view_frames(view, views_file, arguments):
 
 
 def selected_views(views_file, names):
-    """The selected views (all without names) and whether the factory is
-    among them, or a problem naming an unknown view."""
-    known = [view["name"] for view in views_file["views"]] + ["factory"]
+    """The selected views (all without names), whether the factory and the
+    large factory (when the views file has it) are among them, or a
+    problem naming an unknown view."""
+    built = ["factory"] + (["factory_large"] if "factory_large" in views_file else [])
+    known = [view["name"] for view in views_file["views"]] + built
     unknown = [name for name in names if name not in known]
     if unknown:
-        return [], False, f"unknown views {', '.join(unknown)}; the views are {', '.join(known)}"
+        return [], False, False, f"unknown views {', '.join(unknown)}; the views are {', '.join(known)}"
     views = [view for view in views_file["views"] if not names or view["name"] in names]
-    return views, not names or "factory" in names, ""
+    factory_large = "factory_large" in built and (not names or "factory_large" in names)
+    return views, not names or "factory" in names, factory_large, ""
 
 
 def new_run(name, viewports, distance, frames, water_model=None):
@@ -219,6 +227,9 @@ def new_run(name, viewports, distance, frames, water_model=None):
         "unsettled": False,
         # Why an unsettled run has no sample (its settle never answered).
         "reason": "",
+        # What its setup reports in the notes column (the large factory's
+        # placed count).
+        "notes": "",
         "report": None,
         "sampled": None,
     }
@@ -228,13 +239,14 @@ def run_name(run):
     return f"{run['view']}_{run['viewports']}vp_{run['distance']}m"
 
 
-def planned_runs(views_file, views, factory, distances, arguments):
+def planned_runs(views_file, views, factory, distances, arguments, factory_large=False):
     """The runs in the order they are taken, so one extra player is ever
     added: the views in one viewport, then in two, then the factory in two
-    and in one, then the models phase: the views that name a water_model,
-    each model's together in a fresh game started under it (0379), one
-    viewport then two, in the views file's order."""
-    plan = {"views_one": [], "views_two": [], "factory_two": [], "factory_one": [], "models": []}
+    and in one, then the large factory in one (0347), then the models
+    phase: the views that name a water_model, each model's together in a
+    fresh game started under it (0379), one viewport then two, in the views
+    file's order."""
+    plan = {"views_one": [], "views_two": [], "factory_two": [], "factory_one": [], "factory_large": [], "models": []}
     for viewports, phase in ((1, "views_one"), (2, "views_two")):
         for view in views:
             if viewports in view_viewports(view, views_file):
@@ -248,6 +260,9 @@ def planned_runs(views_file, views, factory, distances, arguments):
         for viewports, phase in ((2, "factory_two"), (1, "factory_one")):
             if viewports in views_file["viewports"]:
                 plan[phase] = [new_run("factory", viewports, distance, frames) for distance in distances]
+    if factory_large:
+        frames = view_frames({"name": "factory_large"}, views_file, arguments)
+        plan["factory_large"] = [new_run("factory_large", 1, distance, frames) for distance in distances]
     # A stable sort: the views file's order within a model and a count.
     plan["models"].sort(key=lambda run: (run["water_model"], run["viewports"]))
     return plan
@@ -833,9 +848,8 @@ def player_eye_and_reach_metres(root):
     return game["field_player"]["eye_height_millimetres"] / 1000, game["field_player"]["tool_reach_millimetres"] / 1000
 
 
-def build_factory(connection, factory):
-    """The pad, the machines and their items on the pod's frame; the
-    factory's framing."""
+def factory_site(connection, factory):
+    """The pod's frame id, the frame and the pad's corner cell."""
     expect_ok(connection, "teleport pod")
     pods = parse_entities(expect_ok(connection, "query entities pod 64"))
     if not pods:
@@ -844,17 +858,118 @@ def build_factory(connection, factory):
     frame = parse_frames(expect_ok(connection, "query frames 64")).get(pod["frame"])
     if frame is None:
         raise Setup_Failed("query frames 64", f"frame {pod['frame']} not listed")
-    corner = pad_corner(pod, factory["corner"])
+    return pod["frame"], frame, pad_corner(pod, factory["corner"])
+
+
+def build_factory(connection, factory):
+    """The pad, the machines and their items on the pod's frame; the
+    factory's framing."""
+    frame_id, frame, corner = factory_site(connection, factory)
     expect_ok(connection, "pause")
     try:
-        for line in factory_lines(pod["frame"], corner, factory):
+        for line in factory_lines(frame_id, corner, factory):
             expect_ok(connection, line)
     finally:
         connection.send("resume")
-    boxes = factory_boxes(corner, factory, placed_machines(connection, pod["frame"], corner, factory))
+    boxes = factory_boxes(corner, factory, placed_machines(connection, frame_id, corner, factory))
     eye_height, reach = player_eye_and_reach_metres(repository_root())
     eye, target = factory_stand(frame, boxes, factory, reach)
     return factory_framing(eye, target, eye_height)
+
+
+# The large factory (0347): copies of the factory beside it.
+
+
+def factory_copies_problem(copies):
+    """Why the views file's factory_large copies cannot be built, or ""."""
+    if not isinstance(copies, list) or len(copies) != 2:
+        return f"factory_large copies {copies!r}: two counts, along the frame's x and z"
+    for count in copies:
+        if not isinstance(count, int) or isinstance(count, bool) or not FACTORY_COPIES_LEAST <= count <= FACTORY_COPIES_MOST:
+            return f"factory_large copies {copies!r}: each count {FACTORY_COPIES_LEAST} to {FACTORY_COPIES_MOST}"
+    return ""
+
+
+def factory_copy_strides(factory):
+    """The cells from a copy's corner to the next along the frame's x and z."""
+    width, depth = factory["pad"]
+    return width + FACTORY_COPY_GAP_CELLS, depth + FACTORY_COPY_GAP_CELLS
+
+
+def factory_copy_corners(corner, factory, copies):
+    """The pad corner of each copy (i, j) but the factory's own (0, 0),
+    i steps against the frame's x and j along its z."""
+    stride_x, stride_z = factory_copy_strides(factory)
+    return [
+        (corner[0] - i * stride_x, corner[1], corner[2] + j * stride_z)
+        for i in range(copies[0])
+        for j in range(copies[1])
+        if (i, j) != (0, 0)
+    ]
+
+
+def copied_factory(factory, large):
+    """The factory with only the machines the copies hold."""
+    return dict(factory, machines=[machine for machine in factory["machines"] if machine["machine"] in large["machines"]])
+
+
+def placed_kind(line):
+    """What an ok answer to a factory line places: "foundation",
+    "machine", or "" for an insert."""
+    words = line.split()
+    if words[0] != "place":
+        return ""
+    return "foundation" if words[1] == "wooden_foundation" else "machine"
+
+
+def factory_large_target_cells(corner, factory, copies):
+    """The middle of the copies, in the row above the pads, in cells."""
+    width, depth = factory["pad"]
+    stride_x, stride_z = factory_copy_strides(factory)
+    low_x, high_x = corner[0] - (copies[0] - 1) * stride_x, corner[0] + width
+    low_z, high_z = corner[2], corner[2] + (copies[1] - 1) * stride_z + depth
+    return ((low_x + high_x) / 2, corner[1] + 1.5, (low_z + high_z) / 2)
+
+
+def factory_large_eye(frame, target, large):
+    """The target less back_metres along the frame's forward plus
+    up_metres along its up."""
+    back = vector_scale(frame["forward"], large["back_metres"])
+    return vector_add(vector_subtract(target, back), vector_scale(frame["up"], large["up_metres"]))
+
+
+def factory_large_note(factory, large, placed):
+    """The notes column's count of what stands: the factory's machines and
+    pad (build_factory fails unless all stand) and the copies' placed."""
+    width, depth = factory["pad"]
+    copies = large["copies"][0] * large["copies"][1] - 1
+    machines = len(factory["machines"]) + copies * len(copied_factory(factory, large)["machines"])
+    foundations = (copies + 1) * width * depth
+    return (
+        f"placed {len(factory['machines']) + placed['machine']} of {machines} machines, "
+        f"{width * depth + placed['foundation']} of {foundations} foundations"
+    )
+
+
+def build_factory_copies(connection, factory, large):
+    """The copies, built under pause like the factory, each refused line
+    counted and skipped; the large factory's framing and its note."""
+    frame_id, frame, corner = factory_site(connection, factory)
+    copied = copied_factory(factory, large)
+    placed = {"foundation": 0, "machine": 0}
+    expect_ok(connection, "pause")
+    try:
+        for copy_corner in factory_copy_corners(corner, factory, large["copies"]):
+            for line in factory_lines(frame_id, copy_corner, copied):
+                kind = placed_kind(line)
+                if connection.send(line).startswith("ok") and kind:
+                    placed[kind] += 1
+    finally:
+        connection.send("resume")
+    target = frame_point(frame, factory_large_target_cells(corner, factory, large["copies"]))
+    eye_height, _ = player_eye_and_reach_metres(repository_root())
+    framing = factory_framing(factory_large_eye(frame, target, large), target, eye_height)
+    return framing, factory_large_note(factory, large, placed)
 
 
 # The GPU's clock.
@@ -998,23 +1113,40 @@ def sample_run(connection, run, walk, device, output):
 
 def new_game(water_model=None):
     """A game's process, connection and what the runs set up in it: the
-    second viewport's player, the factory's framing, and a viewport add or
-    factory build that failed, remembered for the game's later runs. The
-    water model it is started under, None for the default."""
+    second viewport's player, the factory's and the large factory's
+    framings and the large factory's note, and a viewport add or factory
+    build that failed, remembered for the game's later runs. The water
+    model it is started under, None for the default."""
     return {
         "water_model": water_model,
         "process": None,
         "connection": None,
         "second": None,
         "factory_framing": None,
+        "factory_large_framing": None,
+        "factory_large_note": "",
         "viewport_failure": "",
         "factory_failure": "",
+        "factory_large_failure": "",
     }
 
 
+def ready_for_large_factory(game, views_file):
+    """The copies built once the factory stands; the failure, or ""."""
+    if game["factory_large_framing"] is None and not game["factory_large_failure"]:
+        try:
+            game["factory_large_framing"], game["factory_large_note"] = build_factory_copies(
+                game["connection"], views_file["factory"], views_file["factory_large"]
+            )
+        except Setup_Failed as failure:
+            game["factory_large_failure"] = f"factory_large: {failure}"
+    return game["factory_large_failure"] if game["factory_large_framing"] is None else ""
+
+
 def ready_for_run(game, run, views_file):
-    """The game's viewports and factory brought to what the run needs; the
-    failure that keeps the run from running, or ""."""
+    """The game's viewports and factory (and its copies for the large
+    factory) brought to what the run needs; the failure that keeps the run
+    from running, or ""."""
     connection = game["connection"]
     if run["viewports"] == 2 and game["second"] is None and not game["viewport_failure"]:
         try:
@@ -1029,13 +1161,18 @@ def ready_for_run(game, run, views_file):
         except Setup_Failed as failure:
             return str(failure)
         game["second"] = None
-    if run["view"] == "factory" and game["factory_framing"] is None and not game["factory_failure"]:
+    on_factory = run["view"] in ("factory", "factory_large")
+    if on_factory and game["factory_framing"] is None and not game["factory_failure"]:
         try:
             game["factory_framing"] = build_factory(connection, views_file["factory"])
         except Setup_Failed as failure:
             game["factory_failure"] = f"factory: {failure}"
-    if run["view"] == "factory" and game["factory_framing"] is None:
+    if on_factory and game["factory_framing"] is None:
         return game["factory_failure"]
+    if run["view"] == "factory_large":
+        failure = ready_for_large_factory(game, views_file)
+        run["notes"] = game["factory_large_note"]
+        return failure
     return ""
 
 
@@ -1045,6 +1182,8 @@ def run_framing(game, run, by_name):
     players = [None] if run["viewports"] == 1 else [None, game["second"]]
     if run["view"] == "factory":
         return (lambda: game["factory_framing"]), players, None
+    if run["view"] == "factory_large":
+        return (lambda: game["factory_large_framing"]), players, None
     view = by_name[run["view"]]
     return (lambda: view_framing(game["connection"], view)), players, view.get("walk")
 
@@ -1182,7 +1321,7 @@ def main_row(run):
     key = [run["view"], run["viewports"], run["distance"]]
     report = run["report"]
     if report is None or run["failure"]:
-        return table_row(key + ["-"] * 11 + [run_verdict(run), ""])
+        return table_row(key + ["-"] * 11 + [run_verdict(run), run["notes"]])
     estimate = run_estimate(report)
     gpu = report["frame"].get("gpu")
     sampled = run["sampled"] or sampled_summary([], [])
@@ -1200,7 +1339,7 @@ def main_row(run):
         clock,
         number(sampled["busy_mean"], 0),
         run_verdict(run),
-        run_notes(report),
+        ", ".join(note for note in (run_notes(report), run["notes"]) if note),
     ])
 
 
@@ -1275,7 +1414,9 @@ def main(arguments):
         print(f"frame profile: {problem}", file=sys.stderr)
         return 2
     views_file = sjson.load(arguments.views)
-    views, factory, problem = selected_views(views_file, arguments.names)
+    views, factory, factory_large, problem = selected_views(views_file, arguments.names)
+    if not problem and factory_large:
+        problem = factory_copies_problem(views_file["factory_large"]["copies"])
     runtime_root = os.environ.get("XDG_RUNTIME_DIR", "")
     if not problem and not os.path.isabs(runtime_root):
         problem = "XDG_RUNTIME_DIR is not set, and gamescope and the game's socket need it"
@@ -1287,8 +1428,8 @@ def main(arguments):
         print(f"frame profile: {problem}", file=sys.stderr)
         return 2
     distances = [JUDGED_DISTANCE] if arguments.check else views_file["distances"]
-    plan = planned_runs(views_file, views, factory, distances, arguments)
-    runs = plan["views_one"] + plan["views_two"] + plan["factory_two"] + plan["factory_one"] + plan["models"]
+    plan = planned_runs(views_file, views, factory, distances, arguments, factory_large)
+    runs = plan["views_one"] + plan["views_two"] + plan["factory_two"] + plan["factory_one"] + plan["factory_large"] + plan["models"]
     output = arguments.output.resolve()
     version = game_version(arguments.binary)
     directories = run_directories(output, runtime_root, os.getpid())
