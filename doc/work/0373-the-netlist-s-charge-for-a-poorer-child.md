@@ -1,6 +1,6 @@
 # 0373: The netlist's charge for a poorer child
 
-Status: designed (2026-11-11)
+Status: implementing (2026-11-13)
 
 Found by 0355's review. In the solve's slow path (`src/netlist/solve.odin`, `add_clamped_response`, `region_levels`) the region that feeds a poorer one across a limiting edge is charged the edge's full capacity, while the poorer region at its whole per mille level takes less. The difference is withheld from the feeding region, and when its demand is small that is tens of per mille with its own generation idle: a box with one 13 kW machine and a 12 kW generator on a light cable that passes on to an overloaded box runs its machine at 92.5 percent where full power is reachable. The main agent had accepted the charge as "a few per mille" before the review measured it; that was wrong. Under the poles it cannot occur (every edge unlimited), so 0355 landed with it named.
 
@@ -130,3 +130,9 @@ Joules stay undelivered only in a region that cannot pass them on: the region at
 3. Question 2 (a child inside a region made poorer than whole joules require, by up to about 1000 / d levels for consumers of d J) is not decided; it is weighed when 0368 is asked for.
 4. Question 3: the corners are folded into `brute_force_netlist`.
 5. The design found the review's proposed charge does not reach the review's own values (940 and 954, not 990 and full): the charge is the whole joules the poorer region takes.
+
+### Decisions (main agent, 2026-11-13)
+
+1. Started: the user queued the power and pipes items on 2026-11-12, and this one goes before 0368, which needs it.
+2. Question 2 stays open here and is weighed in 0368's design pass; this item counts as specified.
+3. `test_netlist_solve_cost` is a report test: the main agent runs it in the night window, the implementer does not.
