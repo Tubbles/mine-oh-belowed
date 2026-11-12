@@ -1,6 +1,6 @@
 # 0362: The field session draws every machine
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 23ca340)
 
 Found by 0347's design: `draw_fluid_entities` and `draw_power_entities` are called only from the block world's pass (`loop.odin`), so on a field world a boiler, a steam engine, a pipe, a pump, a tank, a lamp and a pole are placed and simulated and never drawn. And `draw_drill`'s bar and arrow and `draw_launch_pad`'s fallback platform, tower and rocket draw in raw cells without their frame's matrix, so on a planet they land near its centre.
 
