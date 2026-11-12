@@ -31,8 +31,8 @@ import "core:time"
 // so the reconciliation is the rebuild itself. Only the presentation reads
 // the prediction.
 
-// Every machine of a session that is not alone (session_alone) hashes its
-// state at the ticks that are a multiple of this and the host compares
+// Every machine hashes its state at the ticks that are a multiple of this,
+// on a thread (session_hash.odin), and the host compares
 // (session_network.odin): five seconds at 60 Hz.
 STATE_HASH_INTERVAL_TICKS :: 300
 // A member that never joined, or never left.
@@ -553,6 +553,8 @@ latency_window_ticks :: proc(round_trip_seconds: f64, tick_rate: int) -> int {
 // day_offset_ticks stays out: the wait writes it from the players' seats
 // (finish_field_wait, 0358), which the hash covers, and no tick reads it
 // otherwise; the sky, the weather and the save do.
+// hash_state_snapshot folds the same parts in the same order from a
+// snapshot, and the two change together.
 lockstep_state_hash :: proc(simulation: ^Simulation_State) -> u64 {
 	refresh_loaded_surfaces(&simulation.world, &simulation.records.explored)
 	result := fingerprint_u64(simulation_state_hash(simulation), simulation.cheat_speed ? 1 : 0)
@@ -638,8 +640,9 @@ run_tick_lines_hook :: proc(data: rawptr) {
 // One tick of the driver: the tick, whose hook runs the records' socket
 // lines where the commands apply (after the simulated chunk set is
 // derived, so a teleport moves the set alike on every machine), and the
-// hash when due. A profile (the game's, 0342) gets the tick's sections,
-// the hash and the whole tick's time.
+// hash's snapshot when due (start_state_hash_when_due). A profile (the
+// game's, 0342) gets the tick's sections, the snapshot and the whole
+// tick's time.
 run_session_tick :: proc(session: ^Session, content: Simulation_Content, control: ^Command_Control, answers: ^[dynamic]Line_Answer, profile: ^Tick_Profile = nil) {
 	start := profile_now(profile)
 	inputs, lines := begin_lockstep_tick(&session.lockstep, &session.simulation)
@@ -647,7 +650,7 @@ run_session_tick :: proc(session: ^Session, content: Simulation_Content, control
 	simulation_tick(&session.simulation, content, inputs, profile, Tick_Hook{procedure = run_tick_lines_hook, data = &tick_lines})
 	finish_lockstep_tick(&session.lockstep, session.simulation.tick)
 	clock := profile_now(profile)
-	if report_state_hash(&session.network, &session.simulation) && profile != nil {
+	if start_state_hash_when_due(session) && profile != nil {
 		profile_section(profile, .State_Hash, clock)
 		profile.state_hashes += 1
 	}

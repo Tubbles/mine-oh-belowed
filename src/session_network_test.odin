@@ -721,77 +721,34 @@ run_stalled_server_frame :: proc(server: ^Server_State) {
 	update_host_network(session, content, session.save.location.display_name)
 }
 
-// Work item 0345: a machine alone hashes nothing. A host hashes once a
-// client follows its records, a client always, and only at a due tick.
-@(test)
-test_only_a_machine_with_another_hashes_its_state :: proc(t: ^testing.T) {
-	content := make_save_test_content()
-	generator := make_test_generator(DEFAULT_WORLD_SEED)
-	simulation := make_save_test_simulation(&generator, content)
-	defer destroy_simulation(&simulation)
-	Hash_Case :: struct {
-		role:             Network_Role,
-		peer:             bool,
-		receives_records: bool,
-		hashed:           bool,
-		kept:             int,
-	}
-	cases := [?]Hash_Case {
-		{role = .Offline},
-		{role = .Host},
-		{role = .Host, peer = true},
-		{role = .Host, peer = true, receives_records = true, hashed = true, kept = 1},
-		{role = .Client, hashed = true},
-	}
-	for test_case in cases {
-		// A peer's zero connection sends nothing.
-		network := Session_Network {
-			role = test_case.role,
-		}
-		defer destroy_session_network(&network)
-		if test_case.peer {
-			append(&network.peers, Network_Peer{receives_records = test_case.receives_records})
-		}
-		simulation.tick = STATE_HASH_INTERVAL_TICKS
-		testing.expectf(t, report_state_hash(&network, &simulation) == test_case.hashed, "%v hashed", test_case)
-		testing.expectf(t, len(network.hashes) == test_case.kept, "%v kept %d hashes", test_case, len(network.hashes))
-		if test_case.kept > 0 {
-			testing.expect(t, STATE_HASH_INTERVAL_TICKS in network.hashes)
-			simulation.tick = STATE_HASH_INTERVAL_TICKS + 1
-			testing.expect(t, !report_state_hash(&network, &simulation), "a tick that is not due is not hashed")
-		}
-	}
-}
-
-// Work item 0345: a game hosting alone hashes nothing. Once a client
-// joins, both hash from the first due tick after the snapshot, every
-// report is compared, and a desync on the client is found at its next
-// hash tick on both machines.
+// Work item 0382: a game hosting alone hashes every due tick on the hash's
+// thread and keeps its hashes. Once a client joins, every report is
+// compared, and a divergence on the client is reported on both machines
+// at the due tick after it.
 @(test) // slow
-test_a_host_alone_hashes_nothing_and_a_joiner_finds_a_desync_at_its_first_hash_tick :: proc(t: ^testing.T) {
+test_a_lone_host_hashes_and_a_divergence_is_reported_at_its_due_tick :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	host := make_hosting_test_frame(content)
 	defer destroy_joining_test_frame(host)
 	if !testing.expect(t, run_host_alone_until(host, 2 * STATE_HASH_INTERVAL_TICKS + 1)) {
 		return
 	}
+	finish_state_hash(host.session)
 	network := &host.session.network
-	testing.expect_value(t, len(network.hashes), 0)
+	testing.expect_value(t, len(network.hashes), 2)
+	testing.expect(t, STATE_HASH_INTERVAL_TICKS in network.hashes && 2 * STATE_HASH_INTERVAL_TICKS in network.hashes, "the lone host kept its hashes")
 	address := fmt.tprintf("127.0.0.1:%d", network.listener.port)
 	client := make_joining_test_frame(content, address)
 	defer destroy_joining_test_frame(client)
-	alone_until, sent := send_world_noting_alone_ticks(host, client)
-	if !testing.expect(t, sent) {
+	if !testing.expect(t, run_until_world_sent(host, client)) {
 		return
 	}
 	first_due := next_due_hash_tick(host.session.simulation.tick)
 	if !testing.expect(t, run_hosting_test_frames(host, {client}, first_due + STATE_HASH_INTERVAL_TICKS)) {
 		return
 	}
+	finish_state_hash(host.session)
 	testing.expect(t, first_due in network.hashes, "the host hashed the first due tick after the join")
-	for tick in network.hashes {
-		testing.expectf(t, tick > alone_until, "the host hashed tick %d, run alone", tick)
-	}
 	testing.expect_value(t, len(network.reports), 0)
 	testing.expect_value(t, network.mismatch_count, 0)
 	testing.expect_value(t, client.session.network.mismatch_count, 0)
@@ -802,11 +759,17 @@ test_a_host_alone_hashes_nothing_and_a_joiner_finds_a_desync_at_its_first_hash_t
 	testing.expect_value(t, network.mismatch_count, 0)
 	testing.expect_value(t, client.session.network.mismatch_count, 0)
 	next_due := next_due_hash_tick(flipped)
-	if !testing.expect(t, run_hosting_test_frames(host, {client}, next_due + 60)) {
-		return
+	start := time.tick_now()
+	for (network.mismatch_count == 0 || client.session.network.mismatch_count == 0) && host.session.simulation.tick < next_due + STATE_HASH_INTERVAL_TICKS && time.tick_since(start) < time.Minute {
+		run_client_test_frame(host)
+		run_client_test_frame(client)
+		time.sleep(100 * time.Microsecond)
 	}
 	testing.expect_value(t, network.mismatch_count, 1)
 	testing.expect_value(t, client.session.network.mismatch_count, 1)
+	notice := fmt.tprintf("state hash mismatch at tick %d", next_due)
+	testing.expectf(t, toasts_contain(primary_ui(host), notice), "the host toasts %q", notice)
+	testing.expectf(t, toasts_contain(primary_ui(client), notice), "the client toasts %q", notice)
 }
 
 // The first tick above tick that is hashed.
@@ -814,26 +777,19 @@ next_due_hash_tick :: proc(tick: u64) -> u64 {
 	return (tick / STATE_HASH_INTERVAL_TICKS + 1) * STATE_HASH_INTERVAL_TICKS
 }
 
-// run_until_world_sent, which also gives the host's tick before the frame
-// that sent the world: every tick up to it ran while the host was alone.
-send_world_noting_alone_ticks :: proc(host: ^Frame_State, client: ^Frame_State) -> (alone_until: u64, sent: bool) {
-	network := &host.session.network
-	start := time.tick_now()
-	for time.tick_since(start) < time.Minute {
-		alone_until = host.session.simulation.tick
-		run_client_test_frame(host)
-		if len(network.peers) > 0 && network.peers[len(network.peers) - 1].receives_records {
-			return alone_until, true
+toasts_contain :: proc(ui: ^Ui_State, text: string) -> bool {
+	for toast in ui.toasts {
+		if strings.contains(toast.text, text) {
+			return true
 		}
-		run_client_test_frame(client)
-		time.sleep(100 * time.Microsecond)
 	}
-	return alone_until, false
+	return false
 }
 
 // Work item 0345: a machine joining at a due tick the host ran alone is
 // compared from the next one, and the host's hash of that one is the
-// joiner's.
+// joiner's. Since 0382 the host hashed the join's tick too, alone, and
+// no report names it.
 @(test) // slow
 test_a_join_at_a_hash_tick_is_compared_from_the_next_one :: proc(t: ^testing.T) {
 	content := make_save_test_content()
@@ -851,7 +807,9 @@ test_a_join_at_a_hash_tick_is_compared_from_the_next_one :: proc(t: ^testing.T) 
 	if !testing.expect_value(t, host.simulation.tick, STATE_HASH_INTERVAL_TICKS) {
 		return
 	}
-	testing.expect_value(t, len(host.network.hashes), 0)
+	finish_state_hash(&host.session)
+	testing.expect_value(t, len(host.network.hashes), 1)
+	testing.expect(t, STATE_HASH_INTERVAL_TICKS in host.network.hashes, "the host hashed the join's tick, alone")
 
 	append(&host.network.peers, Network_Peer{receives_records = true})
 	payload := encode_join_snapshot(&host.simulation, &host.lockstep, content, "joined")
@@ -893,7 +851,7 @@ test_a_join_at_a_hash_tick_is_compared_from_the_next_one :: proc(t: ^testing.T) 
 	if !testing.expect_value(t, joiner.simulation.tick, compared) {
 		return
 	}
+	finish_state_hash(&host.session)
 	testing.expect(t, compared in host.network.hashes)
-	testing.expect(t, STATE_HASH_INTERVAL_TICKS not_in host.network.hashes)
 	testing.expect_value(t, host.network.hashes[compared], lockstep_state_hash(&joiner.simulation))
 }

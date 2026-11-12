@@ -679,6 +679,7 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 			ran += run_command_ticks(state, content)
 		}
 	}
+	poll_state_hash(session)
 	send_line_answers(state, answers[:])
 	rebuild_prediction(lockstep, simulation, content)
 	session.stalled_frames = stalled_frames_after(session.stalled_frames, ran, session.chunk_stalled)
@@ -809,6 +810,7 @@ catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, c
 	exchange_session_records(session, content)
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
 	run_ready_ticks(session, content, control, &answers, profile)
+	poll_state_hash(session)
 	if !session.network.own_player_requested && joined_world_caught_up(session) {
 		request_own_player(session)
 	}

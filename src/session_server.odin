@@ -70,6 +70,7 @@ run_server_frame :: proc(server: ^Server_State, frame_seconds: f64) -> int {
 	}
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
 	ran := run_ready_ticks(session, content, &server.control, &answers)
+	poll_state_hash(session)
 	session.ticks_since_save += u64(ran)
 	for notice in session.network.notices {
 		delete(notice)

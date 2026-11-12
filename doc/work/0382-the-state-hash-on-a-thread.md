@@ -1,6 +1,6 @@
 # 0382: The state hash on a thread, alone or not
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-12)
 
 0345 took the state hash off a lone host only (`report_state_hash`, `session_alone`). A session of two or more still hashes on the frame, about 30 ms at a due tick whose loaded chunks are not yet hashed (after a load, a join, a teleport or a walk into new ground) and 1 to 2 ms otherwise, so multiplayer has long frames that single player has not. The user (2026-11-12): "I don't want there to be a difference on single player and multi player except network effects", and of the two ways `SUGGESTIONS.md` held for 0345, "the thread, design and implement".
 
@@ -177,3 +177,8 @@ Test helpers: `run_lockstep_test_ticks` (`lockstep_test.odin`) ends with `poll_s
 2. Question 1: the buffers stay with the session, on the phone too. 26 to 37 MB is held only after a cold hash of a full loaded set, and releasing them buys the page faults back on the frame this item is about.
 3. Question 2: accepted. Every machine pays the warm snapshot every 300 ticks, the lone host again; that is the equality the item asks for. The encode's cost is looked at only if the night table shows it, as a new item.
 4. The implementer measures nothing with a benchmark; the copy's cost is read from the night table's `.State_Hash` section at the next window.
+
+### Deviations
+
+- `test_a_lone_host_hashes_and_a_divergence_is_reported_at_its_due_tick` calls `finish_state_hash` after the run to `first_due + 300` too, before it reads `network.reports`: the host's hash of that tick may still be on its thread when both machines reach it, which would leave the client's report waiting. It sends the world with `run_until_world_sent`; `send_world_noting_alone_ticks`, which only the old test called, is gone.
+- `field_chunks_equal` (`simulation_field_chunk_cache_test.odin`) compares `hash_pending` too, so it still compares every field.

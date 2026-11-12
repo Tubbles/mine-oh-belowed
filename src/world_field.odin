@@ -121,6 +121,11 @@ Field_Chunk :: struct {
 	modified:     bool,
 	hash_current: bool,
 	state_hash:   u64,
+	// A state hash snapshot copied the planes while stale (0382,
+	// session_hash.odin): the thread's hash is kept on the chunk unless a
+	// write clears this first. Never saved (the codec writes the planes by
+	// name) or hashed.
+	hash_pending: bool,
 	// The impact's crater not yet dug into the chunk (0271): the baked
 	// sample wherever it differs from the generated one, in index order;
 	// nil outside the crater's cylinder and once applied or dropped
@@ -297,10 +302,11 @@ field_chunk_set_sample :: proc(chunk: ^Field_Chunk, index: int, sample: Field_Sa
 
 // Every write of the tick into a loaded chunk's terrain, water or light
 // comes through here: the save then writes the chunk, and the state hash
-// of its samples is taken again.
+// of its samples is taken again, a hash in flight not kept (hash_pending).
 note_field_chunk_change :: proc(chunk: ^Field_Chunk) {
 	chunk.modified = true
 	chunk.hash_current = false
+	chunk.hash_pending = false
 }
 
 // Missing chunks read as air.

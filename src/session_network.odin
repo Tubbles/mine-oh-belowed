@@ -29,11 +29,12 @@ import "platform"
 // - Member_Change: a player joined (from the join tick) or left (from the
 //   tick after its last relayed record); every machine changes its
 //   members alike.
-// - Hash_Report and Hash_Mismatch: every STATE_HASH_INTERVAL_TICKS each
-//   client sends its state hash; the host compares it with its own, and a
-//   mismatch is logged with both hashes and the tick, toasted naming the
-//   machine and sent to every client. Play continues. The hash is taken
-//   only while the machine is not alone (report_state_hash, 0345).
+// - Hash_Report and Hash_Mismatch: every machine hashes every
+//   STATE_HASH_INTERVAL_TICKS on a thread (session_hash.odin, 0382), and
+//   a client sends its hash with its tick when the thread ended; the host
+//   compares it with its own, and a mismatch is logged with both hashes
+//   and the tick, toasted naming the machine and sent to every client.
+//   Play continues.
 // - Join_Refused: the joiner's build or content tables differ from the
 //   host's (Join_Request carries both); the reason, then the host drops it.
 // - Add_Local_Player and Local_Player_Added: a client that has the
@@ -891,8 +892,8 @@ Join_Snapshot :: struct {
 // The save, the simulated chunk set, the members and the records after
 // the host's tick, in the temp allocator. The joiner's player comes
 // later (request_own_player). The loaded columns' surfaces are refreshed
-// first, as a save does (lockstep_state_hash does the same on every
-// machine).
+// first, as a save does (the state hash's snapshot does the same on every
+// machine, take_state_hash_snapshot).
 encode_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep, content: Simulation_Content, name: string) -> []byte {
 	refresh_loaded_surfaces(&simulation.world, &simulation.records.explored)
 	files := encode_save_files(simulation, content, name, 0)
@@ -1341,24 +1342,17 @@ send_hash_report :: proc(network: ^Session_Network, tick, hash: u64) {
 	}
 }
 
-// The machine's hash of a due tick: the host keeps its own, a client
-// sends its own. A machine alone (offline, or a host no client follows)
-// hashes nothing, since no comparison can read it: a joiner's first
-// report is of the first due tick after its snapshot, which the host runs
-// after host_join made it not alone (0345). hashed says whether it hashed.
-report_state_hash :: proc(network: ^Session_Network, simulation: ^Simulation_State) -> (hashed: bool) {
-	if session_alone(network^) || !state_hash_due(simulation.tick) {
-		return false
-	}
-	hash := lockstep_state_hash(simulation)
+// A hash job's result by role (0382, session_hash.odin): the host keeps
+// its own, a lone host too, pruned like any (record_host_hash); a client
+// sends its own; offline drops it.
+report_state_hash :: proc(network: ^Session_Network, tick, hash: u64) {
 	switch network.role {
 	case .Host:
-		record_host_hash(network, simulation.tick, hash)
+		record_host_hash(network, tick, hash)
 	case .Client:
-		send_hash_report(network, simulation.tick, hash)
+		send_hash_report(network, tick, hash)
 	case .Offline:
 	}
-	return true
 }
 
 // The joiner's session from the host's snapshot: the world loaded from

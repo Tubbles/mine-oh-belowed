@@ -338,6 +338,9 @@ reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string
 		changes := content_table_changes(content_tables(state.content.simulation_content), content_tables(data.content.simulation_content))
 		summary = content_changes_text(changes)
 		if state.session != nil {
+			// The hash in flight first: its write-back goes into the
+			// simulation the reload replaces.
+			finish_state_hash(state.session)
 			problem = reload_session(state.session, state.content, data, state.config)
 			if problem == "" {
 				for &viewport in active_viewports(state) {

@@ -75,7 +75,7 @@ Frame_Counter :: enum u8 {
 }
 
 Frame_Event :: enum u8 {
-	// The frame's ticks hashed the state.
+	// The frame's ticks took the hash's snapshot.
 	State_Hash,
 	// The frame saved (save_when_due).
 	Save,

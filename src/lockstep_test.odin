@@ -35,6 +35,7 @@ make_lockstep_test_machine :: proc(content: Simulation_Content, generator: ^Gene
 destroy_lockstep_test_machine :: proc(machine: ^Lockstep_Test_Machine) {
 	destroy_lockstep(&machine.lockstep)
 	destroy_session_network(&machine.network)
+	destroy_state_hash_job(&machine.hash_job)
 	destroy_simulation(&machine.simulation)
 	free(machine)
 }
@@ -83,7 +84,7 @@ relay_in_process :: proc(machines: []^Lockstep_Test_Machine) {
 
 // Every tick whose records and chunks are there, through the game's
 // run_session_tick (the socket lines included), while the machine's tick
-// is below below_tick.
+// is below below_tick, then the hash's poll as a frame does.
 run_lockstep_test_ticks :: proc(machine: ^Lockstep_Test_Machine, content: Simulation_Content, below_tick := max(u64)) {
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
 	for machine.simulation.tick < below_tick {
@@ -93,6 +94,7 @@ run_lockstep_test_ticks :: proc(machine: ^Lockstep_Test_Machine, content: Simula
 		}
 		run_session_tick(&machine.session, content, &machine.control, &answers)
 	}
+	poll_state_hash(&machine.session)
 }
 
 // Work item 0358: a frame made from a record is connected, the record's

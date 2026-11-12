@@ -46,13 +46,15 @@ Tick_Section :: enum u8 {
 	Quests,
 	// tick_world: block changes, water and light queues, leaf decay.
 	World,
-	// The lockstep's state hash on a due tick (run_session_tick).
+	// The state hash's snapshot on a due tick (run_session_tick), with a
+	// wait for the previous job and either fallback (0382).
 	State_Hash,
 }
 
 // seconds per section summed over ticks; ticks counts the ticks
 // simulation_tick ran with the profile. longest_seconds is the longest
-// whole tick run_session_tick timed, state_hashes the ticks it hashed.
+// whole tick run_session_tick timed, state_hashes the ticks that took a
+// snapshot.
 Tick_Profile :: struct {
 	seconds:         [Tick_Section]f64,
 	ticks:           int,

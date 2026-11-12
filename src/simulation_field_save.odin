@@ -531,25 +531,47 @@ restore_field_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 
 // The state hash.
 
-// The terrain and the water of a chunk: density, material, fill, still
-// ticks, the awake and the source bits, the water owners (0293) and the
-// pressure pull's failed bits (0292, hashed since 0293); not the tint,
-// the light, the flow or the moving stamp (water_moved, 0294). Kept on the chunk until a write of the tick
-// (note_field_chunk_change) makes it stale.
+// The planes a field chunk's hash covers (field_chunk_hashed_planes) and
+// their bytes laid end to end.
+FIELD_CHUNK_HASHED_PLANE_COUNT :: 8
+FIELD_CHUNK_HASHED_BYTES :: 4 * FIELD_CHUNK_SAMPLE_COUNT + 3 * size_of(Field_Sample_Bits) + FIELD_CHUNK_SAMPLE_COUNT * size_of(Water_Owner)
+
+// A chunk's hash before its planes: its coordinate's two words.
+field_chunk_hash_start :: proc(coordinate: Field_Chunk_Coordinate) -> u64 {
+	result := fingerprint_u64(FINGERPRINT_START, u64(u32(coordinate.x)) | u64(u32(coordinate.z)) << 32)
+	return fingerprint_u64(result, u64(u32(coordinate.y)))
+}
+
+// The terrain and the water of a chunk, in the order the hash folds them:
+// density, material, fill, still ticks, the awake and the source bits,
+// the water owners (0293) and the pressure pull's failed bits (0292,
+// hashed since 0293); not the tint, the light, the flow or the moving
+// stamp (water_moved, 0294). Views into the chunk.
+field_chunk_hashed_planes :: proc(chunk: ^Field_Chunk) -> [FIELD_CHUNK_HASHED_PLANE_COUNT][]byte {
+	return {
+		transmute([]byte)chunk.density[:],
+		transmute([]byte)chunk.material[:],
+		chunk.water[:],
+		chunk.water_still[:],
+		slice.to_bytes(chunk.water_awake[:]),
+		slice.to_bytes(chunk.water_source[:]),
+		slice.to_bytes(chunk.water_owner[:]),
+		slice.to_bytes(chunk.water_pressure_failed[:]),
+	}
+}
+
+// The hash of the chunk's hashed planes (field_chunk_hashed_planes, which
+// the state hash's snapshot also copies, hash_state_snapshot). Kept on the
+// chunk until a write of the tick (note_field_chunk_change) makes it
+// stale.
 field_chunk_state_hash :: proc(chunk: ^Field_Chunk) -> u64 {
 	if chunk.hash_current {
 		return chunk.state_hash
 	}
-	result := fingerprint_u64(FINGERPRINT_START, u64(u32(chunk.coordinate.x)) | u64(u32(chunk.coordinate.z)) << 32)
-	result = fingerprint_u64(result, u64(u32(chunk.coordinate.y)))
-	result = fingerprint_bytes(result, transmute([]byte)chunk.density[:])
-	result = fingerprint_bytes(result, transmute([]byte)chunk.material[:])
-	result = fingerprint_bytes(result, chunk.water[:])
-	result = fingerprint_bytes(result, chunk.water_still[:])
-	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_awake[:]))
-	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_source[:]))
-	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_owner[:]))
-	result = fingerprint_bytes(result, slice.to_bytes(chunk.water_pressure_failed[:]))
+	result := field_chunk_hash_start(chunk.coordinate)
+	for plane in field_chunk_hashed_planes(chunk) {
+		result = fingerprint_bytes(result, plane)
+	}
 	chunk.state_hash, chunk.hash_current = result, true
 	return result
 }

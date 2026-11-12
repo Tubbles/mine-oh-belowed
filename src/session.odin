@@ -34,6 +34,8 @@ Session :: struct {
 	ticks_since_save:   u64,
 	// The save in flight (0345, session_save.odin), nil when none.
 	save_job:           ^Save_Job,
+	// The state hash's snapshot and thread (0382, session_hash.odin).
+	hash_job:           State_Hash_Job,
 	accumulator:        Tick_Accumulator,
 	debug_edit_counter: u64,
 	// The weather command's forced kind (work item 0063), nil for the
@@ -316,10 +318,12 @@ build_session_debug_terrain :: proc(world: ^World, registry: Block_Registry) -> 
 	return ""
 }
 
-// A save in flight is written before the session goes. Workers read the
+// A save in flight is written before the session goes, a state hash in
+// flight is dropped (its connections close here). Workers read the
 // session's generator, so they stop first.
 end_session :: proc(session: ^Session) {
 	finish_session_save(session)
+	destroy_state_hash_job(&session.hash_job)
 	stop_chunk_streaming(&session.streaming)
 	if session.field_streaming.shared != nil {
 		stop_field_streaming(&session.field_streaming)
