@@ -539,6 +539,38 @@ test_the_end_fade_is_full_on_shaded_ground :: proc(t: ^testing.T) {
 	testing.expect(t, !strings.contains(haze, "mix(color, hazed, sky_share)"), "field.fs's apply_haze still scales the end fade by the sky share")
 }
 
+// Work item 0360: the model shader's flat mode samples texture0 at the
+// vertex's texture coordinate and takes the haze on the open sky, and a
+// batch vertex (flat without instancing) is its own world position.
+@(test)
+test_the_flat_mode_takes_the_haze :: proc(t: ^testing.T) {
+	vertex := read_tree_shader(t, "model.vs")
+	vertex_lines := [?]string {
+		"\nin vec2 vertexTexCoord;\n",
+		"\nuniform float flat_on;\n",
+		"\nout vec2 fragment_texcoord;\n",
+		"    fragment_texcoord = vertexTexCoord;\n",
+		"    bool batch_vertex = flat_on > 0.5 && instanced_on < 0.5;\n",
+		"    fragment_world_position = batch_vertex ? local.xyz : (matModel * local).xyz;\n",
+	}
+	for line in vertex_lines {
+		testing.expectf(t, strings.contains(vertex, line), "model.vs does not hold %s", strings.trim_space(line))
+	}
+	_, fragment := read_lit_shaders(t)
+	for line in ([?]string{"\nin vec2 fragment_texcoord;\n", "\nuniform sampler2D texture0;\n"}) {
+		testing.expectf(t, strings.contains(fragment, line), "model.fs does not hold %s", strings.trim_space(line))
+	}
+	main_text := shader_function_text(fragment, "void main(")
+	unlit := "        vec4 unlit = base * texture(texture0, fragment_texcoord);\n"
+	hazed := "        finalColor = vec4(outdoor ? apply_haze(unlit.rgb, fragment_world_position, camera_position, 1.0) : unlit.rgb, unlit.a);\n"
+	testing.expect(t, strings.contains(main_text, unlit), "model.fs's flat mode does not sample texture0")
+	testing.expect(t, strings.contains(main_text, hazed), "model.fs's flat mode does not take the haze")
+	outdoor := strings.index(main_text, "    bool outdoor = outdoor_on > 0.5;\n")
+	flat := strings.index(main_text, "    if (flat_on > 0.5) {\n")
+	testing.expect(t, outdoor >= 0 && flat >= 0 && outdoor < flat, "model.fs does not select outdoor before the flat branch")
+	testing.expect(t, !strings.contains(main_text, "finalColor = base;"), "model.fs's flat mode still returns the bare colour")
+}
+
 // Work item 0380: field.fs greys the bounce by the vertex's sky light,
 // wholly at the sky light a metre into the shade and not at all at the
 // open sky's full light, so the open ground is lit as before, and

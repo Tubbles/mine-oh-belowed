@@ -393,3 +393,10 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `refresh_field_foundations` walks every occupant, sorts every foundation cell and compares three arrays on any change of the frame table, a placed inserter or a hatch toggle included, and a change of the foundations sends the whole buffer. At 36,000 cells every placement pays it. Rebuilding only the bricks a change touches is the fix. Measure a placement in the large factory first.
 - `./build.sh frame-profile --check` now also builds `factory_large`, 36,480 socket lines at the capped rate, about 20 minutes by the implementer's count (not run). The check could skip the view unless it is named, or the setup could send several lines a frame.
 - The profile's guard of 40 minutes and the 25 minutes `doc/build.md` gives for a run understate it with `factory_large`. Time one whole run in the window and correct both.
+
+## Suggestions from the factory's fade (0360, 2026-11-12)
+
+- `flat_batch_ready` reads only the `texture0` location. An overlay's older `model.vs` beside the new `model.fs` fails to link on Mesa and ES and falls back with a log line; a driver that links the pair anyway would draw the belts at an undefined texture coordinate. Also requiring the texcoord attribute's location would cover it.
+- When 0362 moves the launching rocket out of the planet: its translucent body is now flushed at the end of `draw_entities`' first flat region, before the instanced machines and the trees, and would write depth over what stands behind it. Keep translucent draws out of the flat region or flush them later.
+- The torch boxes are never culled; they draw past the view in the end colour. A cull at `fog_end` like the runs' would drop them.
+- Stale since 0347, not touched here: the first header line of `model.fs` ("for the lit layer only") and the Shaders section of `doc/presentation.md` calling the pair "the machine models' lit layer". The header's flat sentence also leaves out the held items, the vessel part boxes and the fallback boxes that go through the batch.

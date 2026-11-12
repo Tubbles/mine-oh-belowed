@@ -22,9 +22,12 @@ import "render_frustum"
 // shader takes the transform with instanced_on and the colour with
 // instance_tint_on, and draws the emissive layer, the slabs and the belt
 // items unlit with flat_on, as raylib's default shader on its white
-// texture does. The pod (model_frame_takes_instances), the ghosts and the
-// workbench keep DrawMesh; a model shader without the three uniforms
-// leaves every model drawn directly (Model_Renderer.instancing_ready). A
+// texture does, hazed on the open sky (0360); rlgl's batch takes the same
+// flat mode between begin_flat_batch and end_flat_batch (the runs, the
+// poles, the torch boxes and the scene's box draws). The pod
+// (model_frame_takes_instances), the ghosts and the workbench keep
+// DrawMesh; a model shader without the three uniforms leaves every model
+// drawn directly (Model_Renderer.instancing_ready). A
 // pass reads the frames' matrices from one table sorted by id
 // (frame_matrix_table) in place of a scan of the frames per entity.
 
@@ -216,6 +219,13 @@ model_frame_shows_cells :: proc(frame: Model_Frame, transform: matrix[4, 4]f32, 
 // draws alone.
 model_frame_takes_instances :: proc(frame: Model_Frame, kind: Machine_Kind) -> bool {
 	return frame.instances != nil && kind != .Pod
+}
+
+// The scene's pass collecting instances, where no model of draw_entities'
+// pools draws by DrawMesh but the pod, so their batch draws may go
+// through the model shader's flat batch (0360, begin_flat_batch).
+model_frame_flat_batch :: proc(frame: Model_Frame) -> bool {
+	return frame.view != nil && frame.instances != nil
 }
 
 model_slot_bounds :: proc(layers: Model_Layers) -> Model_Bounds {
@@ -468,14 +478,45 @@ white_model_material :: proc(renderer: Model_Renderer) -> rl.Material {
 }
 
 // The slabs, their edges and the belt items draw between these: the
-// model shader instanced and flat, the colour per instance with tint.
+// model shader instanced and flat, the colour per instance with tint,
+// matModel the rlgl stack's transform (a frame's matrix for the slabs,
+// the identity for the items) as draw_scene_model_instances sets it, so
+// the haze reads the world position.
 begin_flat_instances :: proc(renderer: Model_Renderer, tint: bool) {
 	set_model_instancing(renderer, true, tint, true)
-	begin_instanced_material(white_model_material(renderer))
+	material := white_model_material(renderer)
+	begin_instanced_material(material)
+	set_material_matrix_uniform(material.shader.locs[int(rl.ShaderLocationIndex.MATRIX_MODEL)], rlgl.GetMatrixTransform())
 }
 
 end_flat_instances :: proc(renderer: Model_Renderer) {
 	end_instanced_material(renderer.material)
+	set_model_instancing(renderer, false, false, false)
+}
+
+// rlgl's batch drawn through the model shader's flat mode, so the runs,
+// the poles, the torch boxes and the scene's box draws take the haze
+// (0360); nothing unless flat_batch_ready, which leaves raylib's default
+// shader. Flat without instanced_on tells model.vs the vertex is a batch
+// vertex: rlgl moves it by the matrix stack on the CPU (rlVertex3f) and
+// writes matModel from the stack's transform at every flush, so a flush
+// inside a frame's push or DrawCube's own would apply a transform twice
+// if matModel were read. Between the two nothing draws through the model
+// shader by DrawMesh or instanced and nothing sets its switches, since
+// the flush at the end reads the program's uniforms as they stand then.
+begin_flat_batch :: proc(renderer: Model_Renderer) {
+	if !renderer.flat_batch_ready {
+		return
+	}
+	rl.BeginShaderMode(renderer.material.shader)
+	set_model_instancing(renderer, false, false, true)
+}
+
+end_flat_batch :: proc(renderer: Model_Renderer) {
+	if !renderer.flat_batch_ready {
+		return
+	}
+	rl.EndShaderMode()
 	set_model_instancing(renderer, false, false, false)
 }
 

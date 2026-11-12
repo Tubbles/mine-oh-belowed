@@ -21,9 +21,9 @@ import "platform"
 // fails to load leaves the lit layer on the default material too. On the
 // field (0347) both layers draw instanced through the model shader, the
 // emissive one in its flat mode, which is the default shader's colour
-// (render_model_instances.odin); the pod, the ghosts and the workbench
-// still draw one by one. The
-// field's trees draw with a shader of their own (0310, Tree_Draw,
+// hazed on the open sky (0360, render_model_instances.odin); the pod,
+// the ghosts and the workbench still draw one by one. The field's trees
+// draw with a shader of their own (0310, Tree_Draw,
 // render_field_trees.odin), which takes the same lights; their far cards
 // are baked from the tree models whenever the models load.
 
@@ -82,6 +82,9 @@ Model_Renderer :: struct {
 	instance_tint_location: i32,
 	flat_location:          i32,
 	instancing_ready:       bool,
+	// rlgl's batch may draw through the flat mode (0360,
+	// begin_flat_batch): the instancing uniforms and texture0 found.
+	flat_batch_ready:       bool,
 	// The foundations' slab and its edges as lines (0347,
 	// draw_field_foundations) and the belt items' cube.
 	unit_cube:              rl.Mesh,
@@ -333,6 +336,10 @@ use_model_shader :: proc(renderer: ^Model_Renderer, data_directory: string) {
 	renderer.instancing_ready = renderer.instanced_location != -1 && renderer.instance_tint_location != -1 && renderer.flat_location != -1
 	if !renderer.instancing_ready {
 		platform.log_printf("models: the model shader has no instancing uniforms, machines draw one by one")
+	}
+	renderer.flat_batch_ready = renderer.instancing_ready && shader.locs[int(rl.ShaderLocationIndex.MAP_ALBEDO)] != -1
+	if renderer.instancing_ready && !renderer.flat_batch_ready {
+		platform.log_printf("models: the model shader samples no texture0, the runs and the torch boxes draw unhazed")
 	}
 }
 

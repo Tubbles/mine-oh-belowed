@@ -14,23 +14,32 @@
 // light's or the camera's times it, as begin_instanced_material sets it.
 // With instance_tint_on also at 1 that row's first three are the tint
 // model.fs multiplies in. A direct draw has both at 0.
+// With flat_on at 1 and instanced_on at 0 the vertex is rlgl's batch
+// drawn through the shader (0360, begin_flat_batch): rlgl moved it by
+// the matrix stack on the CPU, so it is already in the world's metres,
+// and matModel is not read for it, since rlgl writes the stack's
+// transform there at whatever flush draws the batch. The texture
+// coordinate passes to the flat mode's texture0.
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin).
 
 in vec3 vertexPosition;
 in vec3 vertexNormal;
 in vec4 vertexColor;
+in vec2 vertexTexCoord;
 in mat4 instanceTransform;
 
 uniform mat4 mvp;
 uniform mat4 matModel;
 uniform float instanced_on;
 uniform float instance_tint_on;
+uniform float flat_on;
 
 out vec3 fragment_world_position;
 out vec3 fragment_normal;
 out vec4 fragment_color;
 out vec4 fragment_tint;
+out vec2 fragment_texcoord;
 
 void main()
 {
@@ -47,8 +56,10 @@ void main()
         }
     }
     vec4 local = model * vec4(vertexPosition, 1.0);
-    fragment_world_position = (matModel * local).xyz;
+    bool batch_vertex = flat_on > 0.5 && instanced_on < 0.5;
+    fragment_world_position = batch_vertex ? local.xyz : (matModel * local).xyz;
     fragment_normal = mat3(matModel) * (mat3(model) * vertexNormal);
     fragment_color = vertexColor;
+    fragment_texcoord = vertexTexCoord;
     gl_Position = mvp * local;
 }

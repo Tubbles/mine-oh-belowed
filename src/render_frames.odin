@@ -73,8 +73,8 @@ draw_frame_cell :: proc(cell: World_Coordinate, color: rl.Color) {
 // its box in cells. A pass tests each brick's box under its frame's
 // matrix and draws a shown brick in one instanced draw under that matrix
 // (draw_field_foundations): the sun's through the depth shader, the
-// scene's through the model shader unlit (begin_flat_instances), then the
-// edges as instanced lines over the same instances (the lines
+// scene's through the model shader unlit and hazed (begin_flat_instances),
+// then the edges as instanced lines over the same instances (the lines
 // DrawCubeWiresV draws). The bricks are built again only when the frame
 // table's revision (occupancy and pose) or the models' revision (a tier's
 // new colour) moved, in prepare_field_frame before any pass, and go up
@@ -291,14 +291,16 @@ draw_foundation_bricks :: proc(foundations: ^Field_Foundations, models: Model_Re
 }
 
 // The scene's slabs' edges as instanced lines, or each cell's
-// DrawCubeWiresV without glDrawArraysInstanced.
+// DrawCubeWiresV through the flat batch without glDrawArraysInstanced.
 draw_foundation_edges :: proc(foundations: ^Field_Foundations, models: Model_Renderer, bricks: []Foundation_Brick) {
 	if models.draw_lines_instanced == nil {
+		begin_flat_batch(models)
 		for brick in bricks {
 			for cell in foundations.cells[brick.first:][:brick.count] {
 				rl.DrawCubeWiresV({f32(cell.cell.x) + 0.5, f32(cell.cell.y) + 0.5, f32(cell.cell.z) + 0.5}, FRAME_CELL_FILL, FRAME_EDGE_COLOR)
 			}
 		}
+		end_flat_batch(models)
 		return
 	}
 	begin_flat_instances(models, false)

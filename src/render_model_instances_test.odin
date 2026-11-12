@@ -56,6 +56,19 @@ test_the_view_cull_takes_the_frustum_and_the_haze_end :: proc(t: ^testing.T) {
 	testing.expect(t, model_view_shows(nil, model_test_box(eye - {10, 0, 0})), "no view shows everything")
 }
 
+// Work item 0360: only the scene's pass collecting instances draws the
+// pools' batch through the model shader's flat batch.
+@(test)
+test_only_the_scenes_collecting_pass_draws_its_batch_flat :: proc(t: ^testing.T) {
+	view := Model_View{transform = 1}
+	instances: [dynamic]Model_Instance
+	casters: Sun_Shadow_Casters
+	testing.expect(t, model_frame_flat_batch(Model_Frame{view = &view, instances = &instances}), "the scene's collecting pass")
+	testing.expect(t, !model_frame_flat_batch(Model_Frame{view = &view}), "a view alone, whose models draw by DrawMesh")
+	testing.expect(t, !model_frame_flat_batch(Model_Frame{instances = &instances, casters = &casters}), "the sun's pass")
+	testing.expect(t, !model_frame_flat_batch(Model_Frame{}), "the zero frame")
+}
+
 // Layers without GL, each with vertexCount set.
 test_uploaded_layers :: proc(lit, emissive: i32) -> Uploaded_Layers {
 	return {.Lit = {vertexCount = lit}, .Emissive = {vertexCount = emissive}}

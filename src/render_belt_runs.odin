@@ -14,7 +14,9 @@ import "shared:raylib/rlgl"
 // tube of the pipe's colour per subdivision; a pole a post from its cell's
 // bottom to its run end. The field's scene (0347, Belt_Run_Draw) draws a
 // run, a pole and an item only where its view shows the box round it, and
-// the items in one instanced draw. Floats are made here only.
+// the items in one instanced draw; the runs and poles go through the
+// model shader's flat batch, hazed (0360, begin_flat_batch). Floats are
+// made here only.
 
 BELT_RUN_POLE_COLOR :: rl.Color{120, 122, 128, 255}
 BELT_RUN_POLE_RADIUS_METRES :: 0.06
@@ -299,6 +301,7 @@ draw_belt_poles :: proc(entities: ^Entities, machines: Machine_Registry, draw: B
 // scrolls per run at its belt's speed.
 draw_belt_runs :: proc(renderer: ^Belt_Renderer, entities: ^Entities, machines: Machine_Registry, items: Item_Registry, tick: u64, tick_rate: int, draw: Belt_Run_Draw) {
 	views := belt_run_views(entities, draw)
+	begin_flat_batch(draw.models)
 	draw_belt_poles(entities, machines, draw)
 	for run, index in entities.belt_runs.entries {
 		if !run.alive || !views[index].found || !views[index].shown {
@@ -315,6 +318,8 @@ draw_belt_runs :: proc(renderer: ^Belt_Renderer, entities: ^Entities, machines: 
 			draw_pipe_run(sections, pitch_metres)
 		}
 	}
+	// Before the items, whose instanced draw sets the switches itself.
+	end_flat_batch(draw.models)
 	draw_belt_run_items(entities, items, views, draw)
 }
 

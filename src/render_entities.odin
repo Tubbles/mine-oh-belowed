@@ -367,8 +367,17 @@ gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 	}
 }
 
-// Between BeginMode3D and EndMode3D, after the chunks.
+// Between BeginMode3D and EndMode3D, after the chunks. In the scene's
+// pass collecting instances (model_frame_flat_batch) the pools' box
+// draws, the held items and the vessel parts' boxes go through the model
+// shader's flat batch and take the haze (0360); the foundations' pool
+// stays out, since the pod there draws by DrawMesh through the model
+// shader, which would read flat_on at 1.
 draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) {
+	flat := model_frame_flat_batch(frame)
+	if flat {
+		begin_flat_batch(models)
+	}
 	for chest in world.entities.chests.entries {
 		if chest.alive && model_frame_draws_entity(frame, &world.entities, models, chest.common) {
 			draw_entity_cells(chest.common, machines, models, frame, false, CHEST_COLOR, CHEST_COLOR)
@@ -425,6 +434,9 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 			draw_launch_pad(pad, machines, models, frame)
 		}
 	}
+	if flat {
+		end_flat_batch(models)
+	}
 	// The pod, its hatches, its crafting bench and its charge controller
 	// and the crafting stations ride in the foundations' pool
 	// (entity_pod.odin); the foundations themselves are
@@ -446,10 +458,16 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 	}
 	// The vessels' parts (0361) on their frames; the field session draws
 	// them through here like every machine of draw_entities.
+	if flat {
+		begin_flat_batch(models)
+	}
 	for part in world.entities.vessel_parts.entries {
 		if part.alive && model_frame_draws_entity(frame, &world.entities, models, part.common) {
 			draw_vessel_part(part, machines, models, frame)
 		}
+	}
+	if flat {
+		end_flat_batch(models)
 	}
 }
 

@@ -11,15 +11,16 @@
 // cone (spot_light, work item 0297), so a dug-out machine at night shows
 // in the beam. point_light_sum, spot_light, outdoor_light and apply_haze
 // are copied from field.fs: keep them in step (the sum differs in the
-// clip line alone, the others not at all). Without a texture sampler:
-// raylib's default texture is white, so leaving it out changes nothing.
+// clip line alone, the others not at all).
 // On the open sky the sun's shadow (sun_shadow_light, work item 0328)
 // scales the sun's term; the ghosts and the block world never read it.
 // An instance's colour (0347, model.vs's fragment_tint, 1 for a direct
 // draw) multiplies colDiffuse; with flat_on at 1 the colour is the vertex
-// colour times both and nothing else, raylib's default shader on its
-// white texture, for the instanced emissive layer, the slabs and the belt
-// items.
+// colour times colDiffuse, the tint and texture0 (white for the meshes,
+// the belt's texture for a run in rlgl's batch), raylib's default
+// shader, hazed on the open sky as the lit layer (0360): the emissive
+// layer, the slabs and their edges, the belt items and, through the
+// batch, the runs, the poles and the torch boxes.
 //
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin), as the point lights' array sizes and loop do.
@@ -28,9 +29,11 @@ in vec3 fragment_world_position;
 in vec3 fragment_normal;
 in vec4 fragment_color;
 in vec4 fragment_tint;
+in vec2 fragment_texcoord;
 
 uniform vec4 colDiffuse;
 uniform float flat_on;
+uniform sampler2D texture0;
 
 // Point lights of working parts (work items 0175 and 0224,
 // render_point_lights.odin): up to eight, the nearest to the camera, the
@@ -262,15 +265,16 @@ vec3 spot_light(vec3 position, vec3 normal)
 void main()
 {
     vec4 base = fragment_color * colDiffuse * fragment_tint;
-    if (flat_on > 0.5) {
-        finalColor = base;
-        return;
-    }
-    vec3 normal = normalize(fragment_normal);
     // Selected, not mixed by outdoor_on: the open sky's uniforms are zero
     // until a field session sets them, and the haze of zero uniforms is
     // not a number, which a mix by 0 would keep.
     bool outdoor = outdoor_on > 0.5;
+    if (flat_on > 0.5) {
+        vec4 unlit = base * texture(texture0, fragment_texcoord);
+        finalColor = vec4(outdoor ? apply_haze(unlit.rgb, fragment_world_position, camera_position, 1.0) : unlit.rgb, unlit.a);
+        return;
+    }
+    vec3 normal = normalize(fragment_normal);
     vec3 light = outdoor ? outdoor_light(normal, normalize(fragment_world_position), sun_shadow_light(fragment_world_position, normal, camera_position), bounce_color) / max(daylight_tint, vec3(smallest_weight_sum)) : vec3(1.0);
     vec3 lit = min(base.rgb * light + fragment_color.rgb * (point_light_sum(fragment_world_position, normal) + spot_light(fragment_world_position, normal)), vec3(1.0));
     finalColor = vec4(outdoor ? apply_haze(lit, fragment_world_position, camera_position, 1.0) : lit, base.a);

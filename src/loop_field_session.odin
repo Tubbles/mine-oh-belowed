@@ -326,13 +326,15 @@ pop_pod_transform :: proc(transform: Maybe(matrix[4, 4]f32)) {
 	}
 }
 
-// The torch's box; its flame draws after everything opaque
-// (draw_field_flames, 0274).
-draw_field_torches :: proc(torches: []Field_Torch, spacing_millimetres: int) {
+// The torch's box, through the model shader's flat batch (0360); its
+// flame draws after everything opaque (draw_field_flames, 0274).
+draw_field_torches :: proc(torches: []Field_Torch, spacing_millimetres: int, models: Model_Renderer) {
+	begin_flat_batch(models)
 	for torch in torches {
 		centre := world_position_to_metres(sample_to_world_position(torch.sample, spacing_millimetres))
 		rl.DrawCubeV(centre, FIELD_TORCH_SIZE_METRES, FIELD_TORCH_COLOR)
 	}
+	end_flat_batch(models)
 }
 
 // A field torch's flame on its box (draw_field_torches), the planet's up
@@ -645,7 +647,9 @@ draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_
 // and the belt items are culled by the camera's frustum and the haze's
 // end (Model_View), the machines drawn instanced after draw_entities
 // (draw_scene_model_instances) with the model shader's instancing, the
-// pod alone.
+// pod alone. The slabs, the runs, the poles, the belt items, the torch
+// boxes and the emissive layers draw flat through the model shader and
+// are hazed as the machines (0360).
 draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node) {
 	profile_mark(scene.profile, .Lights)
 	scene := scene
@@ -691,7 +695,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	runs := Belt_Run_Draw{view = &run_view, frames = &frames, models = scene.models, items = &buffers.items}
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate, runs)
 	profile_mark(scene.profile, .Effects)
-	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
+	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres, scene.models)
 	push_pod_transform(scene.pod_transform)
 	draw_field_players(scene)
 	pop_pod_transform(scene.pod_transform)
