@@ -2,7 +2,6 @@ package game
 
 import "core:math"
 import "core:math/linalg"
-import "core:slice"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
 import "platform"
@@ -50,8 +49,8 @@ SUN_SHADOW_FADE_SHARE :: 0.25
 SUN_SHADOW_NORMAL_OFFSET_TEXELS :: 2.0
 SUN_SHADOW_DEPTH_BIAS_TEXELS :: 0.5
 // The receivers' material slot that holds the map: DrawMesh and
-// DrawMeshInstanced bind it to texture unit 2 and the sampler at the
-// shader location MAP_ALBEDO + 2 (use_sun_shadow_sampler).
+// begin_instanced_material bind it to texture unit 2 and the sampler at
+// the shader location MAP_ALBEDO + 2 (use_sun_shadow_sampler).
 SUN_SHADOW_MAP_SLOT :: rl.MaterialMapIndex.NORMAL
 SUN_SHADOW_SAMPLER_LOCATION :: int(rl.ShaderLocationIndex.MAP_ALBEDO) + int(SUN_SHADOW_MAP_SLOT)
 // Cells each way an entity's cast box (sun_shadow_entity_box) reaches
@@ -189,35 +188,160 @@ sun_shadow_frame :: proc(cascade: Sun_Shadow_Cascade, strength_percent, texels: 
 	}
 }
 
-// The standing trees in the casters' box (their base and the extent
-// either way), felled ones left out; past limit the nearest the eye
-// (temp allocator); none at limit 0. Every distance band: a tree drawn as
-// a card casts its model.
-select_shadow_trees :: proc(cache: ^Field_Tree_Cache, cascade: Sun_Shadow_Cascade, eye: [3]f32, extent_metres: f32, felled: map[Tree_Key]struct{}, limit: int) -> []Near_Tree {
-	if limit <= 0 {
-		return nil
+// The casting trees of a view (0346, Tree_View): where and for what the
+// candidates were gathered (the cascade grown by the margin and the
+// slack, the cascade's half size and reach, the extent, the margin, the
+// span of shadow_gather_span_metres, the species count and the cache's
+// revision they are current at), and the inputs of the last cut.
+Shadow_Tree_Gather :: struct {
+	built:         bool,
+	grown:         Sun_Shadow_Cascade,
+	half_size:     f32,
+	reach_metres:  f32,
+	extent_metres: f32,
+	margin_metres: f32,
+	span_metres:   f32,
+	species_count: int,
+	revision:      u64,
+}
+
+Shadow_Tree_Cut :: struct {
+	cascade:       Sun_Shadow_Cascade,
+	eye:           [3]f32,
+	extent_metres: f32,
+	limit:         int,
+	gathers:       int,
+}
+
+// The cascade with its half size grown, so its casters' box reaches the
+// growth further on every face, the sun's side too. The rest as is (only
+// the box test reads it).
+grown_sun_shadow_cascade :: proc(cascade: Sun_Shadow_Cascade, growth_metres: f32) -> Sun_Shadow_Cascade {
+	grown := cascade
+	grown.half_size += growth_metres
+	return grown
+}
+
+// How far from the gather's centre a tree the casters' box takes can
+// stand, plus its extent and the margin: the box's corner
+// sqrt(2 (h + e √3)² + (h + r + e √3)²) for the half size h, the reach r
+// and the extent e, then e √3 and the margin.
+shadow_gather_span_metres :: proc(cascade: Sun_Shadow_Cascade, extent_metres, margin_metres: f32) -> f32 {
+	spread := extent_metres * math.SQRT_THREE
+	across := cascade.half_size + spread
+	along := cascade.half_size + cascade.reach_metres + spread
+	return math.sqrt(2 * across * across + along * along) + spread + margin_metres
+}
+
+// The gathered candidates still hold every tree the cascade's box takes:
+// a box test's term moves by at most the centre's move plus the span
+// times the largest move of the light's axes, which must stay within the
+// margin the gather grew the box by.
+shadow_gather_covers :: proc(gather: Shadow_Tree_Gather, cascade: Sun_Shadow_Cascade) -> bool {
+	chord := max(linalg.length(cascade.right - gather.grown.right), linalg.length(cascade.up - gather.grown.up), linalg.length(cascade.toward_sun - gather.grown.toward_sun))
+	return linalg.length(cascade.centre - gather.grown.centre) + gather.span_metres * chord <= gather.margin_metres
+}
+
+// The standing trees whose box (the base and the extent either way)
+// casts in the grown cascade, from the tiles whose bases' box widened by
+// the extent does.
+gather_shadow_tree_candidates :: proc(pass: ^Tree_Pass, cache: ^Field_Tree_Cache, grown: Sun_Shadow_Cascade, extent_metres: f32, felled: map[Tree_Key]struct{}, species_count: int) {
+	groups: [MAXIMUM_TREE_SPECIES][dynamic]Tree_Candidate
+	for &list in groups {
+		list = make([dynamic]Tree_Candidate, context.temp_allocator)
 	}
-	selected := make([dynamic]Near_Tree, context.temp_allocator)
 	for _, tile in cache.tiles {
-		if len(tile.instances) == 0 || !sun_shadow_box_casts(cascade, tile.minimum - extent_metres, tile.maximum + extent_metres) {
+		if len(tile.instances) == 0 || !sun_shadow_box_casts(grown, tile.minimum - extent_metres, tile.maximum + extent_metres) {
 			continue
 		}
 		for instance, index in tile.instances {
 			base := tree_instance_base(instance)
-			if tile.keys[index] in felled || !sun_shadow_box_casts(cascade, base - extent_metres, base + extent_metres) {
+			if !sun_shadow_box_casts(grown, base - extent_metres, base + extent_metres) || tile.keys[index] in felled {
 				continue
 			}
-			offset := base - eye
-			append(&selected, Near_Tree{instance, linalg.dot(offset, offset)})
+			append(&groups[tree_species_group(instance, species_count)], Tree_Candidate{instance, tile.keys[index]})
 		}
 	}
-	if len(selected) <= limit {
-		return selected[:]
+	group_tree_candidates(pass, &groups, species_count)
+}
+
+// The casting candidates must be gathered again: none yet, another half
+// size, reach, extent, margin or species count, a cascade the gather no
+// longer covers (shadow_gather_covers), or a change of the tiles since
+// whose box widened by the extent casts in the grown cascade (or changes
+// the ring no longer holds).
+shadow_tree_candidates_stale :: proc(cache: ^Field_Tree_Cache, gather: Shadow_Tree_Gather, cascade: Sun_Shadow_Cascade, extent_metres, margin_metres: f32, species_count: int) -> bool {
+	if !gather.built || gather.half_size != cascade.half_size || gather.reach_metres != cascade.reach_metres {
+		return true
 	}
-	slice.sort_by(selected[:], proc(first, second: Near_Tree) -> bool {
-		return first.distance_squared < second.distance_squared
-	})
-	return selected[:limit]
+	if gather.extent_metres != extent_metres || gather.margin_metres != margin_metres || gather.species_count != species_count {
+		return true
+	}
+	if !shadow_gather_covers(gather, cascade) {
+		return true
+	}
+	changes, complete := field_tree_changes_since(cache, gather.revision)
+	if !complete {
+		return true
+	}
+	for change in changes {
+		if sun_shadow_box_casts(gather.grown, change.minimum - gather.extent_metres, change.maximum + gather.extent_metres) {
+			return true
+		}
+	}
+	return false
+}
+
+// The candidates whose box casts in the cascade, ranked by their base's
+// squared distance from the eye. Past limit the nearest by distance and
+// then key, none at limit 0. Every distance band: a tree drawn as a card
+// casts its model.
+cut_shadow_trees :: proc(pass: ^Tree_Pass, cascade: Sun_Shadow_Cascade, eye: [3]f32, extent_metres: f32, limit: int) {
+	clear(&pass.ranked)
+	if limit <= 0 {
+		clear(&pass.next)
+		return
+	}
+	for candidate, index in pass.candidates {
+		base := tree_instance_base(candidate.instance)
+		if !sun_shadow_box_casts(cascade, base - extent_metres, base + extent_metres) {
+			continue
+		}
+		append(&pass.ranked, Tree_Ranked{squared_distance_metres(base, eye), candidate.key, u32(index)})
+	}
+	finish_tree_cut(pass, limit)
+}
+
+// The view's casting trees for the cascade, as update_near_trees: the
+// candidates gathered again when stale, in the cascade grown by the
+// margin (the cache's row) and the slack, else current at the cache's
+// revision. The cut and its commit when its inputs changed.
+update_shadow_trees :: proc(cache: ^Field_Tree_Cache, view: ^Tree_View, cascade: Sun_Shadow_Cascade, eye: [3]f32, extent_metres: f32, felled: map[Tree_Key]struct{}, limit, species_count: int) {
+	pass := &view.shadow
+	margin := tree_candidate_margin_metres(cache.config)
+	if shadow_tree_candidates_stale(cache, view.shadow_gather, cascade, extent_metres, margin, species_count) {
+		grown := grown_sun_shadow_cascade(cascade, margin + TREE_CANDIDATE_SLACK_METRES)
+		gather_shadow_tree_candidates(pass, cache, grown, extent_metres, felled, species_count)
+		view.shadow_gather = Shadow_Tree_Gather {
+			built         = true,
+			grown         = grown,
+			half_size     = cascade.half_size,
+			reach_metres  = cascade.reach_metres,
+			extent_metres = extent_metres,
+			margin_metres = margin,
+			span_metres   = shadow_gather_span_metres(cascade, extent_metres, margin),
+			species_count = species_count,
+			revision      = cache.revision,
+		}
+	} else {
+		view.shadow_gather.revision = cache.revision
+	}
+	cut := Shadow_Tree_Cut{cascade, eye, extent_metres, limit, pass.gathers}
+	if cut != view.shadow_cut {
+		cut_shadow_trees(pass, cascade, eye, extent_metres, limit)
+		view.shadow_cut = cut
+		commit_tree_selection(pass)
+	}
 }
 
 // What the cast pass hands draw_entities (Model_Frame.casters): the
@@ -325,7 +449,7 @@ load_sun_shadow_map :: proc(shadows: ^Sun_Shadow_Renderer, data_directory: strin
 }
 
 // The depth shader reads each vertex through instanceTransform
-// (DrawMeshInstanced) or not.
+// (draw_tree_pass) or not.
 set_sun_shadow_instanced :: proc(shadows: Sun_Shadow_Renderer, instanced: bool) {
 	value: f32 = instanced ? 1 : 0
 	rl.SetShaderValue(shadows.material.shader, shadows.instanced_location, &value, .FLOAT)
@@ -357,8 +481,9 @@ serve_sun_shadows :: proc(shadows: ^Sun_Shadow_Renderer, receivers: []rl.Materia
 	}
 }
 
-// A receiving shader's map sampler where DrawMesh and DrawMeshInstanced
-// bind the slot's texture (unit 2), and its three uniforms.
+// A receiving shader's map sampler where DrawMesh and
+// begin_instanced_material bind the slot's texture (unit 2), and its
+// three uniforms.
 use_sun_shadow_sampler :: proc(shader: rl.Shader) -> (locations: [Sun_Shadow_Uniform]i32) {
 	if shader.locs != nil {
 		shader.locs[SUN_SHADOW_SAMPLER_LOCATION] = rl.GetShaderLocation(shader, "sun_shadow_map")

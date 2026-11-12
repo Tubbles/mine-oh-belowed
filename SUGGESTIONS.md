@@ -365,3 +365,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - A save in flight that a second save or a quit waits for loses its toast (the failure is still logged). Keeping the outcome for the next frame's toast would close it.
 - The cluster table of `doc/code_map.md` holds file and line counts far under the measured ones (world 54 files and 18,400 lines against 65 and 27,719, and the other rows likewise). `tools/code_graph.py --check` does not compare them. Either the check should, or the columns should go.
 - `test_a_screen_request_from_the_second_viewport_serves_its_screen` and `test_a_vessel_round_trips_a_save_and_an_older_save_loads_without_vessels` take over 3 s in the unit tier when the field chunk cache is cold and are not marked slow.
+
+## Suggestions from the trees' kept selections (0346, 2026-11-12)
+
+- The trees draw once per species. While several species share one model (all five the pine today) that is up to four draws more a pass than before. Merging groups by model at pack time would take them back, at the price of a gather when a reload changes a species' machine. Moot once the species have models of their own (0329 to 0333).
+- `select_far_tiles` still runs every frame (decision 3). Measure it in the next table before touching it.
+- A viewport that split screen no longer uses keeps its candidates and buffers until the session ends, about 1.4 MB and 200 KB in the forest. Releasing them when the viewport goes would be a few lines.

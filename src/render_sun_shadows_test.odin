@@ -2,6 +2,7 @@ package game
 
 import "core:math"
 import "core:math/linalg"
+import "core:slice"
 import "core:testing"
 import rl "shared:raylib"
 
@@ -98,6 +99,17 @@ test_casters_toward_the_sun_cast_within_the_reach :: proc(t: ^testing.T) {
 	testing.expect(t, box_at(cascade, cascade.centre + cascade.right * half), "a box straddling the side casts")
 }
 
+// A fresh casting selection, as a scan of the tiles each frame would make
+// it: a pass gathered in the cascade itself, then cut. Its keys sorted
+// with their instances (temp allocator), the pass released.
+fresh_shadow_trees :: proc(cache: ^Field_Tree_Cache, cascade: Sun_Shadow_Cascade, eye: [3]f32, extent_metres: f32, felled: map[Tree_Key]struct{}, limit, species_count: int) -> (keys: []Tree_Key, instances: []matrix[4, 4]f32) {
+	pass: Tree_Pass
+	defer release_tree_pass(&pass)
+	gather_shadow_tree_candidates(&pass, cache, grown_sun_shadow_cascade(cascade, 0), extent_metres, felled, species_count)
+	cut_shadow_trees(&pass, cascade, eye, extent_metres, limit)
+	return sorted_tree_selection(pass.candidates[:], pass.next[:])
+}
+
 @(test)
 test_shadow_trees_are_the_nearest_inside_the_casters_box :: proc(t: ^testing.T) {
 	cache: Field_Tree_Cache
@@ -114,20 +126,64 @@ test_shadow_trees_are_the_nearest_inside_the_casters_box :: proc(t: ^testing.T) 
 	felled[{0, 0, 0}] = {}
 	up := [3]f32{0, 1, 0}
 	cascade := sun_shadow_cascade(camera, field_sun_world_direction(0.25, up), field_sun_path_world_axis(up), sun_shadows_test_row())
-	trees := select_shadow_trees(&cache, cascade, camera, 4, felled, 1000)
+	_, trees := fresh_shadow_trees(&cache, cascade, camera, 4, felled, 1000, 1)
 	testing.expect_value(t, len(trees), 39)
 	for tree in trees {
-		offset := tree_instance_base(tree.instance).x - camera.x
+		offset := tree_instance_base(tree).x - camera.x
 		testing.expect(t, offset > 1.5, "the felled tree is left out")
 		testing.expect(t, offset < 100, "no tree past the casters' box")
 	}
-	trees = select_shadow_trees(&cache, cascade, camera, 4, felled, 10)
+	_, trees = fresh_shadow_trees(&cache, cascade, camera, 4, felled, 10, 1)
 	testing.expect_value(t, len(trees), 10)
 	for tree in trees {
-		offset := tree_instance_base(tree.instance).x - camera.x
+		offset := tree_instance_base(tree).x - camera.x
 		testing.expectf(t, offset > 1.5 && offset < 11.5, "the cut keeps the nearest, not %v m", offset)
 	}
-	testing.expect_value(t, len(select_shadow_trees(&cache, cascade, camera, 4, felled, 0)), 0)
+	_, trees = fresh_shadow_trees(&cache, cascade, camera, 4, felled, 0, 1)
+	testing.expect_value(t, len(trees), 0)
+}
+
+// Work item 0346: the view's casting trees, gathered in a grown box and
+// cut each step, equal a fresh selection's at every step of a walk under
+// a sun turning faster than the day's, across a tree felled.
+@(test) // slow
+test_the_cached_shadow_trees_equal_a_fresh_cut_along_a_walk_under_a_turning_sun :: proc(t: ^testing.T) {
+	cache: Field_Tree_Cache
+	defer destroy_field_tree_cache(&cache)
+	start := [3]f32{0, 8000, 0}
+	tree_selection_test_forest(&cache, start, {99, 99, 99})
+	cache.config = Field_Trees_Row{near_metres = 48}
+	row := sun_shadows_test_row()
+	row.tree_limit = 400
+	up := [3]f32{0, 1, 0}
+	axis := field_sun_path_world_axis(up)
+	felled := make(map[Tree_Key]struct{})
+	defer delete(felled)
+	view := &cache.views[0]
+	capped := false
+	for step in 0 ..< 240 {
+		defer free_all(context.temp_allocator)
+		eye := start + {0.25 * f32(step), 0, 0}
+		cascade := sun_shadow_cascade(eye, field_sun_world_direction(0.1 + 0.0004 * f64(step), up), axis, row)
+		felled_key := Tree_Key{-1000, -1000, -1000}
+		if step == 120 {
+			felled_key = view.shadow.candidates[view.shadow.selected[0]].key
+			felled[felled_key] = {}
+			apply_felled_field_trees(&cache, felled)
+		}
+		update_shadow_trees(&cache, view, cascade, eye, 4, felled, row.tree_limit, 3)
+		keys, instances := fresh_shadow_trees(&cache, cascade, eye, 4, felled, row.tree_limit, 3)
+		cached_keys, cached_instances := sorted_tree_selection(view.shadow.candidates[:], view.shadow.selected[:])
+		testing.expectf(t, slice.equal(cached_keys, keys), "step %d: %d cached trees against %d fresh", step, len(cached_keys), len(keys))
+		testing.expectf(t, slice.equal(cached_instances, instances), "step %d: the instances differ", step)
+		capped ||= len(view.shadow.selected) == row.tree_limit
+		if step == 120 {
+			_, still := slice.linear_search(cached_keys, felled_key)
+			testing.expect(t, !still, "the felled tree is left out")
+		}
+	}
+	testing.expect(t, capped, "the cap binds")
+	testing.expectf(t, view.shadow.gathers > 1 && view.shadow.gathers < 40, "%d gathers in 240 steps", view.shadow.gathers)
 }
 
 // A plane the test map is filled from: infinite, or a rectangle of

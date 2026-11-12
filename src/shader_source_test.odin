@@ -292,9 +292,10 @@ read_tree_shader :: proc(t: ^testing.T, name: string) -> string {
 	return string(data)
 }
 
-// Work item 0310: tree.vs reads the instance's transform where raylib's
-// DrawMeshInstanced and the card tiles put it, sizes the species' arrays
-// by MAXIMUM_TREE_SPECIES and holds the atlas's layout.
+// Work item 0310: tree.vs reads the instance's transform where the near
+// models' buffer (draw_mesh_instances) and the card tiles put it, sizes
+// the species' arrays by MAXIMUM_TREE_SPECIES and holds the atlas's
+// layout.
 @(test)
 test_the_tree_shader_reads_the_instance :: proc(t: ^testing.T) {
 	vertex := read_tree_shader(t, "tree.vs")
@@ -568,7 +569,7 @@ test_the_lit_shaders_share_the_sun_shadow :: proc(t: ^testing.T) {
 }
 
 // Work item 0328: the depth shader reads the trees' instances where
-// DrawMeshInstanced puts them and presses a caster nearer the sun than
+// draw_mesh_instances puts them and presses a caster nearer the sun than
 // the map's near plane onto it.
 @(test)
 test_the_sun_shadow_shader_presses_casters_onto_the_near_plane :: proc(t: ^testing.T) {

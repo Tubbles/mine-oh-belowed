@@ -72,7 +72,12 @@ Field_Scene :: struct {
 	// The frame profile the passes mark and count into (0342); nil in the
 	// planet preview.
 	profile:      ^Frame_Profile,
+	// The viewport's index in the frame's viewports, the tree cache's view
+	// it draws with (0346, Tree_View), 0 in the planet preview.
+	tree_view:    int,
 }
+
+#assert(FIELD_TREE_VIEWS >= MAXIMUM_VIEWPORTS)
 
 // What field_frame_lights reads for a field drawn by the renderer: the
 // clock's sky at the ground, the daylight share, the globe's colour as
@@ -697,11 +702,12 @@ draw_field_sun_shadows :: proc(scene: Field_Scene, camera: rl.Camera3D, selectio
 	count_frame(scene.profile, .Shadow_Nodes, draw_sun_shadow_terrain(scene.renderer, cascade, selection, shadows.material))
 	profile_mark(scene.profile, .Shadow_Trees)
 	if inputs.row.tree_limit > 0 && scene.models.trees.ready {
-		trees := select_shadow_trees(&scene.renderer.trees, cascade, camera.position, field_tree_model_extent(scene), scene.state.field.felled_trees, inputs.row.tree_limit)
+		view := &scene.renderer.trees.views[scene.tree_view]
+		update_shadow_trees(&scene.renderer.trees, view, cascade, camera.position, field_tree_model_extent(scene), scene.state.field.felled_trees, inputs.row.tree_limit, len(scene.content.field.tree_species))
 		set_sun_shadow_instanced(shadows^, true)
-		draw_tree_instances(scene.models, scene.content.field.tree_species, trees, shadows.material)
+		draw_tree_pass(scene.models, scene.content.field.tree_species, &view.shadow, shadows.material)
 		set_sun_shadow_instanced(shadows^, false)
-		count_frame(scene.profile, .Shadow_Trees, len(trees))
+		count_frame(scene.profile, .Shadow_Trees, len(view.shadow.selected))
 	}
 	casters := scene
 	casters.models.material = shadows.material
@@ -890,6 +896,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		placement_editor = viewport.interaction.placement_editor,
 		lights       = lights,
 		profile      = profile,
+		tree_view    = viewport_index(state, viewport),
 	}
 	scene.lights.sun_shadow = draw_field_sun_shadows(scene, camera, frame_field_selection(state), sun_shadow_inputs(state.settings, state.config.sun_shadows, state.data_directory))
 	resume_viewport_target(viewport)

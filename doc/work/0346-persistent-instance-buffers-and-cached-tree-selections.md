@@ -1,6 +1,6 @@
 # 0346: Persistent instance buffers and cached tree selections
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-12)
 
 The near trees and the shadow trees are selected by a scan every frame (up to about 35 thousand instances in a dense forest, 0328) and drawn through `DrawMeshInstanced`, which makes and frees a buffer per call (`work/performance_research_0340.md`, 2.2).
 
@@ -187,3 +187,9 @@ Mark `// slow` what `build/test_times.tsv` shows at 1 s or more.
 2. The buffer is updated in place. If the phone or Winlator stalls on it, a ring of buffers is a fix round of its own item, found by 0342's table on the phone, not built ahead.
 3. The far tiles' pass (`select_far_tiles`) is not in this item: a note for `SUGGESTIONS.md` at the landing, weighed against 0342's table.
 4. Implemented after 0342 has landed, so the before run is `main` without it.
+
+### Deviations (implementation, 2026-11-12)
+
+- `select_nearest_ranked` moves the median of three to the front and partitions round it in the classic Hoare form (`partition_ranked`), which keeps the split below the last entry, so every round shrinks the range.
+- `test_tree_changes_name_what_reaches_a_view`: every forest tile lies 0 m or about 63 m and more from the gather, so the tile "40 m away" and the 65 tiles "200 m out" are one tree tiles (`tree_draw_test_tile`) at new tile keys.
+- `shader_source_test.odin`: two comments named `DrawMeshInstanced` and now name `draw_mesh_instances` (comments only).

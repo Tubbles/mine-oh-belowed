@@ -3,12 +3,13 @@
 // The sun's shadow map (work item 0328, render_sun_shadows.odin): the
 // casters' depth seen from the sun. mvp is the light's projection and
 // view times the draw's transform (DrawMesh), or the light's alone for
-// an instanced draw (DrawMeshInstanced), where instanced_on is 1 and each
-// tree's transform comes in instanceTransform with its species and shade
-// in the bottom row (tree_instance), rebuilt to 0, 0, 0, 1 as tree.vs
-// does. A caster nearer the sun than the map's near plane is pressed onto
-// that plane (its depth clamped to it, not clipped), so it shadows every
-// receiver behind it however far towards the sun it stands.
+// an instanced draw (a view's instance buffer, draw_tree_pass), where
+// instanced_on is 1 and each tree's transform comes in instanceTransform
+// with its species and shade in the bottom row (tree_instance), rebuilt
+// to 0, 0, 0, 1 as tree.vs does. A caster nearer the sun than the map's
+// near plane is pressed onto that plane (its depth clamped to it, not
+// clipped), so it shadows every receiver behind it however far towards
+// the sun it stands.
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin).
 

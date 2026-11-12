@@ -2,20 +2,21 @@
 
 // Tree vertex shader (work item 0310, render_field_trees.odin), for the
 // near models and the far cards alike. Each instance's transform comes
-// in instanceTransform (raylib's DrawMeshInstanced for the near models,
-// a tile's buffer at locations 9 to 12 for the cards): the tree's axes
-// scaled by the pitch and its scale, the base as the translation, in the
-// world's metres, with the species and the shade in place of the bottom
-// row (tree_instance), which is rebuilt to 0, 0, 0, 1 here. With card_on
-// at 0 the vertex is the model's; at 1 vertexPosition holds the card,
-// u and v of one of the three crossed quads (along forward, along right,
-// from above), built from the species' card (half width, top, crown,
-// atlas row; species_card) and read from the atlas of card_rows rows.
-// A card instance whose base lies nearer than near_distance less
-// fade_metres, farther than far_distance, or whose species has no card
-// (row -1) puts every vertex outside clip space. The near fade (the
-// model's share leaving over fade_metres before near_distance) and the
-// far fade (the card's over the last far_fade_metres) go to tree.fs.
+// in instanceTransform at locations 9 to 12 (a view's instance buffer
+// for the near models, draw_tree_pass, a tile's for the cards): the
+// tree's axes scaled by the pitch and its scale, the base as the
+// translation, in the world's metres, with the species and the shade in
+// place of the bottom row (tree_instance), which is rebuilt to 0, 0, 0, 1
+// here. With card_on at 0 the vertex is the model's; at 1 vertexPosition
+// holds the card, u and v of one of the three crossed quads (along
+// forward, along right, from above), built from the species' card (half
+// width, top, crown, atlas row; species_card) and read from the atlas of
+// card_rows rows. A card instance whose base lies nearer than
+// near_distance less fade_metres, farther than far_distance, or whose
+// species has no card (row -1) puts every vertex outside clip space. The
+// near fade (the model's share leaving over fade_metres before
+// near_distance) and the far fade (the card's over the last
+// far_fade_metres) go to tree.fs.
 // Every integer literal carries the u suffix (work item 0105,
 // shader_source_test.odin).
 

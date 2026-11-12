@@ -213,6 +213,16 @@ active_viewports :: proc(state: ^Frame_State) -> []Viewport {
 	return state.viewports[:state.viewport_count]
 }
 
+// The viewport's index among the viewports in use, 0 when it is not one.
+viewport_index :: proc(state: ^Frame_State, viewport: ^Viewport) -> int {
+	for &candidate, index in active_viewports(state) {
+		if &candidate == viewport {
+			return index
+		}
+	}
+	return 0
+}
+
 // The first viewport's UI: the toasts of the game (saves, reloads, the
 // network) and the title.
 primary_ui :: proc(state: ^Frame_State) -> ^Ui_State {
