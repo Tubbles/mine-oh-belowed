@@ -1,6 +1,6 @@
 # 0348: The sun's shadow map reused
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 5c7ca7b)
 
 The sun's shadow map is drawn every frame for every viewport: 0328 estimated 0.3 to 0.7 ms on the GPU and 0.4 to 1.2 ms on the CPU a viewport (`work/performance_research_0340.md`, 2.3). While the eye stands still nothing in it changes for many frames.
 
