@@ -1,6 +1,6 @@
 # 0382: The state hash on a thread, alone or not
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 319298b)
 
 0345 took the state hash off a lone host only (`report_state_hash`, `session_alone`). A session of two or more still hashes on the frame, about 30 ms at a due tick whose loaded chunks are not yet hashed (after a load, a join, a teleport or a walk into new ground) and 1 to 2 ms otherwise, so multiplayer has long frames that single player has not. The user (2026-11-12): "I don't want there to be a difference on single player and multi player except network effects", and of the two ways `SUGGESTIONS.md` held for 0345, "the thread, design and implement".
 
