@@ -1,6 +1,6 @@
 # 0372: A blue slab under the view when looking down
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-12)
 
 0342's check captures of the factory view (2026-11-11, `--dev --input=none`, fly on, the look 33 degrees down, the wooden foundation held) show a flat blue trapezoid across the bottom fifth of the picture, behind the hotbar, in one viewport and in both of two. It keeps its place on the screen in every viewport, so it moves with the camera. The spring and the other views, looking level with fly off, do not show it. What it is has not been read in the code: the player's own body seen from its eye is the main agent's guess, and the implementer's reading (the hotbar) does not fit, since the hotbar's slots are drawn over it.
 

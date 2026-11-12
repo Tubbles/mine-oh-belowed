@@ -432,11 +432,25 @@ draw_field_player_capsule :: proc(feet, up: [3]f32, height: f32) {
 	rl.DrawCapsule(bottom, top, 0.3, 4, 8, FIELD_PLAYER_CAPSULE_COLOR)
 }
 
+// The feet between the ticks, at the frame's alpha.
+field_player_feet :: proc(scene: Field_Scene, player: Field_Player) -> [3]f32 {
+	previous := world_position_to_metres(player.previous_position)
+	return previous + (world_position_to_metres(player.position) - previous) * scene.frame.alpha
+}
+
+// Whether the camera lies clear of a standing body (camera_clear_of_body):
+// its axis from the feet between the ticks along its up to its eye at
+// the crouch's progress.
+field_standing_body_clear :: proc(scene: Field_Scene, player: Field_Player, crouch_progress: f32, camera: [3]f32) -> bool {
+	up := unit_vector_to_f32(player.up)
+	eye_height := f32(f64(field_eye_height_units(scene.content.field.tuning, crouch_progress)) / POSITION_UNITS_PER_METRE)
+	return camera_clear_of_body(camera, field_player_feet(scene, player) + up * eye_height, up, eye_height)
+}
+
 // The body standing still, or a capsule without the model; both lowered
 // over the crouch's progress.
 draw_field_player_body :: proc(scene: Field_Scene, player: Field_Player, crouch_progress: f32) {
-	previous := world_position_to_metres(player.previous_position)
-	feet := previous + (world_position_to_metres(player.position) - previous) * scene.frame.alpha
+	feet := field_player_feet(scene, player)
 	tuning := scene.content.field.tuning
 	scale := field_body_up_scale(tuning, crouch_progress)
 	if !scene.player_model.loaded {
@@ -536,14 +550,22 @@ draw_field_player_seated :: proc(scene: Field_Scene, player: Field_Player) {
 	}
 }
 
-// Every player's body in its pose (field_player_body_pose).
-draw_field_players :: proc(scene: Field_Scene) {
+// Every player's body in its pose (field_player_body_pose). With a
+// camera (in the space the bodies are drawn in), a standing body it is
+// not clear of is skipped (field_standing_body_clear, 0372): two players
+// on one spot, the eye in the other's head saw its torso's top as a flat
+// sheet. nil (the sun's shadow pass) draws every body.
+draw_field_players :: proc(scene: Field_Scene, camera: Maybe([3]f32) = nil) {
 	for index in 0 ..< len(scene.state.players) {
 		player := field_scene_player(scene, index)
 		switch field_player_body_pose(scene, index) {
 		case .Hidden:
 		case .Standing:
-			draw_field_player_body(scene, player.field, field_crouch_progress_of(scene.renderer.crouch_progress[:], index))
+			crouch_progress := field_crouch_progress_of(scene.renderer.crouch_progress[:], index)
+			if position, given := camera.?; given && !field_standing_body_clear(scene, player.field, crouch_progress, position) {
+				continue
+			}
+			draw_field_player_body(scene, player.field, crouch_progress)
 		case .Seated:
 			draw_field_player_seated(scene, player.field)
 		}
@@ -697,7 +719,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	profile_mark(scene.profile, .Effects)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres, scene.models)
 	push_pod_transform(scene.pod_transform)
-	draw_field_players(scene)
+	draw_field_players(scene, transform_point(linalg.inverse(view.transform), camera.position))
 	pop_pod_transform(scene.pod_transform)
 	clear_model_open_sky(scene.models)
 	// Before the ghosts, so a ghost cube's depth does not hide them.

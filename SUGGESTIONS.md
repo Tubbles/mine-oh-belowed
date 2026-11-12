@@ -406,3 +406,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - A clean `-sanitize:thread` run of a test proves little here: only accesses close together in time are reported. A probe that keeps the hash thread and the ticks on shared memory in the same moments would be needed for the sanitizer to say anything, for the save's thread (0345) as well.
 - `test_a_snapshot_hashes_to_the_direct_state_hash` takes 3.3 s with a cold field chunk cache and under 1 s warm, so it is not marked slow and the tier filter prints its notice on a cold run.
 - `doc/architecture.md`, Performance: "Every run hashes every 300 ticks" leaves out ticks from the socket's `tick` command without `--input=none`, which take no snapshot (alone only, so before 0382 too).
+
+## Suggestions from the body round the camera (0372, 2026-11-12)
+
+- A split screen player who left keeps a standing body where it left (0178's kept entry). Whether that body should stay drawn is the user's to decide.
+- A seated body is not covered: a standing camera inside the body in the chair would see the same flat sheet, if the walk can bring an eye there (not checked).
+- The profiler stands both players of a two viewport run on one spot. A second stand beside the first would time what a split screen of two players apart draws, each other's body included.
+- A pure helper deciding which player indices a camera draws would let a test cover the wiring in `draw_field_players`, which needs GL today.
+- The planet preview never fills `crouch_progress`, so a crouched walking preview player is drawn standing (before this item too).

@@ -163,6 +163,30 @@ test_the_field_viewers_body_is_hidden_looking_straight_up :: proc(t: ^testing.T)
 	}
 }
 
+// Another standing body is not drawn with the camera within 0261's
+// distance of its axis from the feet to the eye (the frame profile's two
+// players on one spot), standing, crouched and between two ticks (0372).
+@(test)
+test_another_standing_body_round_the_camera_is_not_drawn :: proc(t: ^testing.T) {
+	feet := test_site_point(0, 0, 0)
+	player := Field_Player{position = feet, previous_position = feet, up = {0, UNIT_VECTOR_ONE, 0}}
+	scene: Field_Scene
+	scene.content.field.tuning = test_field_tuning(1000)
+	scene.frame.alpha = 1
+	at := world_position_to_metres(feet)
+	testing.expect(t, !field_standing_body_clear(scene, player, 0, at + {0, 1.6, 0}), "clear with the camera at its eye")
+	testing.expect(t, !field_standing_body_clear(scene, player, 0, at + {0.39, 0.8, 0}), "clear 0.39 m beside its axis")
+	testing.expect(t, !field_standing_body_clear(scene, player, 0, at - {0, 0.39, 0}), "clear 0.39 m under its feet")
+	testing.expect(t, field_standing_body_clear(scene, player, 0, at + {0.41, 0.8, 0}), "not clear 0.41 m beside its axis")
+	testing.expect(t, field_standing_body_clear(scene, player, 0, at + {-4, 1.6 + 0.75, 0}), "not clear 4 m behind its eye")
+	testing.expect(t, !field_standing_body_clear(scene, player, 1, at + {0, 0.7, 0}), "clear at its crouched eye")
+	testing.expect(t, field_standing_body_clear(scene, player, 1, at + {0, 1.6, 0}), "not clear 0.9 m over its crouched eye")
+	player.previous_position = feet - {metres_to_position_units(1), 0, 0}
+	scene.frame.alpha = 0.5
+	testing.expect(t, !field_standing_body_clear(scene, player, 0, at + {-0.5, 1.6, 0}), "clear at the eye over the halfway feet")
+	testing.expect(t, field_standing_body_clear(scene, player, 0, at + {0, 1.6, 0}), "not clear at the eye over its position, 0.5 m from the halfway axis")
+}
+
 // A crouched player deep in the 1 m tunnel: the ray meets the roof at a
 // grazing angle, and the camera stays in the tunnel's air, the margin
 // under the roof along its normal.
