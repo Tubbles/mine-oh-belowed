@@ -32,6 +32,8 @@ Session :: struct {
 	// Set by the pause menu's Save button, handled after the ticks.
 	save_requested:     bool,
 	ticks_since_save:   u64,
+	// The save in flight (0345, session_save.odin), nil when none.
+	save_job:           ^Save_Job,
 	accumulator:        Tick_Accumulator,
 	debug_edit_counter: u64,
 	// The weather command's forced kind (work item 0063), nil for the
@@ -314,8 +316,10 @@ build_session_debug_terrain :: proc(world: ^World, registry: Block_Registry) -> 
 	return ""
 }
 
-// Workers read the session's generator, so they stop first.
+// A save in flight is written before the session goes. Workers read the
+// session's generator, so they stop first.
 end_session :: proc(session: ^Session) {
+	finish_session_save(session)
 	stop_chunk_streaming(&session.streaming)
 	if session.field_streaming.shared != nil {
 		stop_field_streaming(&session.field_streaming)
@@ -332,9 +336,12 @@ end_session :: proc(session: ^Session) {
 	free(session)
 }
 
-// Between ticks, so the simulation stands still while the save is written.
-// Returns the problem, empty on success.
+// The synchronous save (a new world's first, the quit's, the socket's,
+// the server's stop), after the save in flight (0345). Between ticks, so
+// the simulation stands still while the save is written. Returns the
+// problem, empty on success.
 save_session :: proc(session: ^Session, content: Game_Content) -> string {
+	finish_session_save(session)
 	if !session.save.enabled {
 		return "saving is off for this world"
 	}

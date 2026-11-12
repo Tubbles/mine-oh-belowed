@@ -10,7 +10,8 @@ import "platform"
 // runs the same driver as every machine: the clients' records pace the
 // ticks, and while nobody is connected the clock does (run_ready_ticks),
 // except while a joiner restores without a player (0190). It saves on the autosave
-// interval of the settings and when SIGINT or SIGTERM stops it
+// interval of the settings, written off the frame (0345,
+// session_save.odin), and when SIGINT or SIGTERM stops it
 // (platform.install_stop_handlers; not on Windows).
 // The command socket is not served here; the clients' socket lines in
 // their records run like on every machine.
@@ -79,14 +80,15 @@ run_server_frame :: proc(server: ^Server_State, frame_seconds: f64) -> int {
 	clear(&simulation.quests.notices)
 	camera_chunk := len(simulation.players) > 0 ? player_chunk(simulation.players[0]) : Chunk_Coordinate{}
 	stream_session_chunks(session, camera_chunk, nil)
-	if session.save.enabled && autosave_due(session.ticks_since_save, server.autosave_minutes, simulation.tick_rate) {
-		save_server_world(server)
-	}
+	// Off the frame (0345): a failed write is logged when it is joined and
+	// waits for the next interval, which counts from the snapshot.
+	poll_session_save(session)
+	begin_due_session_save(session, server.content, server.autosave_minutes)
 	return ran
 }
 
-// A failed save is logged and waits for the next interval instead of
-// retrying every frame.
+// The stop's save, written before it returns (0345: the autosave goes
+// through begin_due_session_save). A failure is logged.
 save_server_world :: proc(server: ^Server_State) -> string {
 	problem := save_session(server.session, server.content)
 	if problem != "" {

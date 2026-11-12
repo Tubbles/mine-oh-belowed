@@ -382,17 +382,34 @@ read_water_body_table :: proc(reader: ^Byte_Reader, world: ^Field_World) -> bool
 
 // field.bin.
 
-// The header, a u32 count and per chunk its coordinate and its codec
-// bytes (as a length and the bytes, append_string), in coordinate order. In the temp allocator.
+// The field as it stands: the kept chunks' bytes and the loaded chunks a
+// tick changed (assemble_field_file). In the temp allocator.
 encode_field_file :: proc(field: ^Field_Simulation, header: Save_Header) -> []byte {
-	chunks := make(map[Field_Chunk_Coordinate][]byte, context.temp_allocator)
+	kept := make(map[Field_Chunk_Coordinate][]byte, len(field.saved_chunks), context.temp_allocator)
 	for coordinate, saved in field.saved_chunks {
-		chunks[coordinate] = saved.bytes
+		kept[coordinate] = saved.bytes
 	}
-	for coordinate, chunk in field.world.chunks {
+	changed := make([dynamic]^Field_Chunk, context.temp_allocator)
+	for _, chunk in field.world.chunks {
 		if chunk.modified {
-			chunks[coordinate] = encode_field_chunk(chunk, context.temp_allocator)
+			append(&changed, chunk)
 		}
+	}
+	return assemble_field_file(kept, changed[:], header)
+}
+
+// The header, a u32 count and per chunk its coordinate and its codec
+// bytes (as a length and the bytes, append_string), in coordinate order:
+// the kept chunks' bytes, and each changed chunk encoded over them under
+// its own coordinate. The save on the frame passes the live chunks, the
+// save's thread its snapshot's copies (0345). In the temp allocator.
+assemble_field_file :: proc(kept: map[Field_Chunk_Coordinate][]byte, changed: []^Field_Chunk, header: Save_Header) -> []byte {
+	chunks := make(map[Field_Chunk_Coordinate][]byte, context.temp_allocator)
+	for coordinate, bytes in kept {
+		chunks[coordinate] = bytes
+	}
+	for chunk in changed {
+		chunks[chunk.coordinate] = encode_field_chunk(chunk, context.temp_allocator)
 	}
 	bytes := make([dynamic]byte, context.temp_allocator)
 	append_save_header(&bytes, FIELD_FILE_MAGIC, header)

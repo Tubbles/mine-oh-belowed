@@ -32,7 +32,8 @@ import "platform"
 // - Hash_Report and Hash_Mismatch: every STATE_HASH_INTERVAL_TICKS each
 //   client sends its state hash; the host compares it with its own, and a
 //   mismatch is logged with both hashes and the tick, toasted naming the
-//   machine and sent to every client. Play continues.
+//   machine and sent to every client. Play continues. The hash is taken
+//   only while the machine is not alone (report_state_hash, 0345).
 // - Join_Refused: the joiner's build or content tables differ from the
 //   host's (Join_Request carries both); the reason, then the host drops it.
 // - Add_Local_Player and Local_Player_Added: a client that has the
@@ -1341,9 +1342,12 @@ send_hash_report :: proc(network: ^Session_Network, tick, hash: u64) {
 }
 
 // The machine's hash of a due tick: the host keeps its own, a client
-// sends its own. Offline nothing is hashed. hashed says whether it was.
+// sends its own. A machine alone (offline, or a host no client follows)
+// hashes nothing, since no comparison can read it: a joiner's first
+// report is of the first due tick after its snapshot, which the host runs
+// after host_join made it not alone (0345). hashed says whether it hashed.
 report_state_hash :: proc(network: ^Session_Network, simulation: ^Simulation_State) -> (hashed: bool) {
-	if network.role == .Offline || !state_hash_due(simulation.tick) {
+	if session_alone(network^) || !state_hash_due(simulation.tick) {
 		return false
 	}
 	hash := lockstep_state_hash(simulation)

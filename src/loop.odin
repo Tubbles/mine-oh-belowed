@@ -902,23 +902,31 @@ autosave_due :: proc(ticks_since_save: u64, autosave_minutes, tick_rate: int) ->
 	return autosave_minutes > 0 && ticks_since_save >= u64(autosave_minutes) * 60 * u64(tick_rate)
 }
 
-// The pause menu's Save and the autosave interval, each with a toast.
-// saved: a save ran this frame, whether it succeeded or not (the frame
-// profile's Save event, 0342).
+// The pause menu's Save and the autosave interval, off the frame (0345,
+// session_save.odin): a save in flight that finished shows its toast, then
+// a due save takes its snapshot and starts its thread. saved: a snapshot
+// was taken this frame (the frame profile's Save event, 0342).
 save_when_due :: proc(state: ^Frame_State) -> (saved: bool) {
 	session := state.session
-	requested := session.save_requested
-	session.save_requested = false
-	autosave := session.save.enabled && autosave_due(session.ticks_since_save, state.settings.autosave_minutes, session.simulation.tick_rate)
-	if !requested && !autosave {
-		return false
+	if outcome, finished := poll_session_save(session); finished {
+		ui_toast(primary_ui(state), text(save_outcome_text_key(outcome)))
 	}
-	if save_session(session, state.content) != "" {
+	started, problem := begin_due_session_save(session, state.content, state.settings.autosave_minutes)
+	if problem != "" {
 		ui_toast(primary_ui(state), text("save_failed"))
-	} else {
-		ui_toast(primary_ui(state), text(requested ? "save_done" : "autosave_done"))
 	}
-	return true
+	return started
+}
+
+// The toast of a finished save.
+save_outcome_text_key :: proc(outcome: Save_Outcome) -> string {
+	switch {
+	case outcome.problem != "":
+		return "save_failed"
+	case outcome.requested:
+		return "save_done"
+	}
+	return "autosave_done"
 }
 
 // The 2D passes (the underwater overlay, the diagnostics pages, the UI)

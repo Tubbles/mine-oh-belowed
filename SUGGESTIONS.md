@@ -358,3 +358,10 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The settle tests of 0312, 0334 and 0336 wait for the water to be still and compare no volume, so a lake that lost water into a cave would still pass them. `test_a_lake_settles_beside_dense_caves` is the only one that would see it.
 - `water_tile_lakes_near` drops the springs array `take_water_tile_finals` makes. Harmless under the temp allocator every caller uses, a leak of about 1 KB a call under any other.
 - `generation_lakes_meeting_box` with tiles clones every kept lake of the near tiles per chunk or grid list, twice a chunk job, where only the lakes meeting the box are read: 91 to 160 KB a job, freed with it. Filtering under the lock before the clone would cut it to the masks read. Worth doing only if a profile shows the clones.
+
+## Suggestions from the hash and the autosave (0345, 2026-11-12)
+
+- In a session of two or more every machine still hashes on the frame, about 30 ms every 300 ticks at the profiled views. Spreading the hash over several ticks, or hashing a snapshot on a thread, would need every machine to do the same, since they compare the same tick. Worth designing once multiplayer is played at the couch's 60 fps bar.
+- A save in flight that a second save or a quit waits for loses its toast (the failure is still logged). Keeping the outcome for the next frame's toast would close it.
+- The cluster table of `doc/code_map.md` holds file and line counts far under the measured ones (world 54 files and 18,400 lines against 65 and 27,719, and the other rows likewise). `tools/code_graph.py --check` does not compare them. Either the check should, or the columns should go.
+- `test_a_screen_request_from_the_second_viewport_serves_its_screen` and `test_a_vessel_round_trips_a_save_and_an_older_save_loads_without_vessels` take over 3 s in the unit tier when the field chunk cache is cold and are not marked slow.

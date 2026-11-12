@@ -476,7 +476,9 @@ encode_entities :: proc(state: ^Simulation_State, content: Simulation_Content, h
 	return entities[:]
 }
 
-encode_save_files :: proc(state: ^Simulation_State, content: Simulation_Content, display_name: string, last_played_unix_seconds: i64) -> Save_Files {
+// The save's files without field.bin, which the save off the frame
+// encodes on its thread (0345, session_save.odin). In the temp allocator.
+encode_save_files_without_field :: proc(state: ^Simulation_State, content: Simulation_Content, display_name: string, last_played_unix_seconds: i64) -> Save_Files {
 	header := make_save_header()
 	files := Save_Files {
 		world    = encode_world_file(make_world_file(state, display_name, last_played_unix_seconds), context.temp_allocator),
@@ -486,8 +488,13 @@ encode_save_files :: proc(state: ^Simulation_State, content: Simulation_Content,
 	for region, chunks in group_chunks_by_region(collect_saved_chunks(&state.world)) {
 		append(&files.regions, Region_File{name = region_file_name(region), bytes = encode_region(header, region, chunks[:], context.temp_allocator)})
 	}
+	return files
+}
+
+encode_save_files :: proc(state: ^Simulation_State, content: Simulation_Content, display_name: string, last_played_unix_seconds: i64) -> Save_Files {
+	files := encode_save_files_without_field(state, content, display_name, last_played_unix_seconds)
 	if state.field.enabled {
-		files.field = encode_field_file(&state.field, header)
+		files.field = encode_field_file(&state.field, make_save_header())
 	}
 	return files
 }
@@ -533,7 +540,14 @@ swap_in_save :: proc(target, staging, previous: string) -> os.Error {
 // otherwise the problem.
 save_world :: proc(state: ^Simulation_State, content: Simulation_Content, location: Save_Location, last_played_unix_seconds: i64) -> string {
 	refresh_loaded_surfaces(&state.world, &state.records.explored)
-	files := encode_save_files(state, content, location.display_name, last_played_unix_seconds)
+	return write_save_files_into_place(location, encode_save_files(state, content, location.display_name, last_played_unix_seconds))
+}
+
+// The files into <directory>.saving, then swapped in (the header). Both
+// the save on the frame and the save's thread (0345) write through it.
+// Returns an empty string on success, otherwise the problem, in the temp
+// allocator.
+write_save_files_into_place :: proc(location: Save_Location, files: Save_Files) -> string {
 	target := platform.join_path(location.saves_directory, location.directory_name)
 	staging := strings.concatenate({target, STAGING_DIRECTORY_SUFFIX}, context.temp_allocator)
 	previous := strings.concatenate({target, PREVIOUS_DIRECTORY_SUFFIX}, context.temp_allocator)

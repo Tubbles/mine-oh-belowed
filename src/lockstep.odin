@@ -31,8 +31,9 @@ import "core:time"
 // so the reconciliation is the rebuild itself. Only the presentation reads
 // the prediction.
 
-// Every machine hashes its state at the ticks that are a multiple of this
-// and the host compares (session_network.odin): five seconds at 60 Hz.
+// Every machine of a session that is not alone (session_alone) hashes its
+// state at the ticks that are a multiple of this and the host compares
+// (session_network.odin): five seconds at 60 Hz.
 STATE_HASH_INTERVAL_TICKS :: 300
 // A member that never joined, or never left.
 NEVER_TICK :: max(u64)

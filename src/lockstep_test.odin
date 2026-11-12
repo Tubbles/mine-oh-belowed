@@ -82,10 +82,11 @@ relay_in_process :: proc(machines: []^Lockstep_Test_Machine) {
 }
 
 // Every tick whose records and chunks are there, through the game's
-// run_session_tick (the socket lines included).
-run_lockstep_test_ticks :: proc(machine: ^Lockstep_Test_Machine, content: Simulation_Content) {
+// run_session_tick (the socket lines included), while the machine's tick
+// is below below_tick.
+run_lockstep_test_ticks :: proc(machine: ^Lockstep_Test_Machine, content: Simulation_Content, below_tick := max(u64)) {
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
-	for {
+	for machine.simulation.tick < below_tick {
 		feed_lockstep_test_chunks(machine)
 		if !lockstep_records_ready(machine.lockstep, machine.simulation.tick) || !simulated_chunks_ready(&machine.simulation) {
 			break

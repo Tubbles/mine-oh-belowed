@@ -1,6 +1,6 @@
 # 0345: The state hash and the autosave off the frame
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-12)
 
 Every windowed game hosts, so it hashes the whole state every 300 ticks, and the autosave (every minute in the user's settings) encodes and writes on the main thread (`work/performance_research_0340.md`, 2.1). Neither is timed today.
 
@@ -170,3 +170,13 @@ Existing tests stay as they are: the ones that read `network.hashes` all have a 
 1. The hash with a client joined stays on the main thread here. It becomes an item of its own once 0342 has a view with a joined machine to measure it by.
 2. The plain chunk copy ships. A cache of encoded bytes waits for 0342's table of a dug-out view.
 3. Implemented after 0342, on its tree: the same files, and its table is the acceptance.
+
+### Deviations (implementation, 2026-11-12)
+
+- `copy_field_save_inputs` (`session_save.odin`, with a `core:mem` import for its allocator parameter) holds the field part of `take_save_snapshot`, so the snapshot procedure stays short.
+- `begin_due_session_save` returns `started` false when `start_session_save` gives a problem: no snapshot was taken, so the profile's Save event stays off that frame. The toast still shows.
+- The loopback hash test reads the host's tick before the frame that sent the world (`send_world_noting_alone_ticks`) and asserts no hash at or below it: a due tick between the snapshot and the end of that frame is hashed rightly, so the spec's T taken after the frame could fail by chance.
+- `run_lockstep_test_ticks` takes `below_tick` (default `max(u64)`) for the joiner's ticks up to 600 instead of a copy of its loop.
+- The byte equality test also asserts that the live state's encoding after the change differs from the on-frame save, so the equality cannot hold by a change that reaches no byte. The second save test sets `ticks_since_save` to 5 first, so its reset shows.
+- The only "300 ticks" line is in 0342's done item, a record left as written. The fact went to architecture.md, Performance, the frame profile's counters.
+- code_map.md's loop row has the measured 20 files and 10692 lines, which include drift from items before this one.
