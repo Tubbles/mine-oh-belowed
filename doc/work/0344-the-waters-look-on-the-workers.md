@@ -1,6 +1,6 @@
 # 0344: The water's look on the workers
 
-Status: designed (2026-11-11)
+Status: implementing (2026-11-12)
 
 `gather_field_grid` runs `write_field_water_look` on the main thread for every mesh job it gathers: 2.8 ms for a lake's chunk and 5.5 ms for a sea chunk in the test build, up to 8 jobs a frame (`work/performance_research_0340.md`, 2.1). It is there because the workers never read `Field_World`.
 
