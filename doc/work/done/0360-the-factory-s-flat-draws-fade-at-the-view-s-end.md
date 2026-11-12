@@ -1,6 +1,6 @@
 # 0360: The factory's flat draws fade at the view's end
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 442e4f9)
 
 Found by 0354's design: foundation slabs (`draw_frames`), belt runs and poles and torch boxes are drawn unhazed at every distance (0313 chose them so). At a 256 m view a factory 300 m away shows them standing on the faded ground with its machines faded out. Since 0347 the slabs are `draw_field_foundations` and, with the runs and the belt items, are culled at the haze's end, so they stop there on a step instead of showing past it.
 
