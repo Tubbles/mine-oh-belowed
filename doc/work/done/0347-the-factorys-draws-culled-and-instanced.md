@@ -1,6 +1,6 @@
 # 0347: The factory's draws culled and instanced
 
-Status: verified (2026-11-12)
+Status: landed (2026-11-12, 9a6d5df)
 
 Every machine (up to 4 draw calls each), every foundation cell (twice a frame) and every belt item is drawn every frame wherever it is, with no culling (`work/performance_research_0340.md`, 2.2; `doc/audit/presentation.md`). Small with a handful of machines, the largest CPU item of the frame once factories grow. Builds on 0163 (`doc/work/0163-per-frame-machine-view.md`).
 
