@@ -11,9 +11,11 @@ import rl "shared:raylib"
 // drawn. Items are their icon on a camera facing quad (render_icons.odin),
 // or a small cube in their category's colour for an item without an icon
 // file, drawn one each (no instancing yet), at most eight per block.
-// A splitter is the flat surface on both halves inside a wire frame, with
-// an arrow along its direction; a splitter model (render_models.odin)
-// takes the frame's place.
+// A splitter is the flat surface on both halves (draw_splitter, the block
+// world's) inside a wire frame, with an arrow along its direction; a
+// splitter model (render_models.odin) takes the frame's place. The frame
+// or the model is draw_entities' and the arrow draw_ports_and_arrows' on
+// both worlds (0362, draw_splitter_body).
 
 BELT_SURFACE_HEIGHT :: 0.03
 BELT_ITEM_SIZE :: 0.2
@@ -262,7 +264,7 @@ belt_surface_pose :: proc(belt: Belt) -> Belt_Surface_Pose {
 // The meshes are shared, so the belts of each speed are drawn after the
 // texture is scrolled for that speed. A splitter scrolls like the slowest
 // belt.
-draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Machine_Registry, frame: Model_Frame) {
 	tick, alpha, tick_rate := frame.tick, frame.alpha, frame.tick_rate
 	for speed, tier in belt_speeds(machines) {
 		scroll_belt_models(renderer, belt_scroll_offset(tick, alpha, speed / u32(max(tick_rate, 1))))
@@ -275,7 +277,7 @@ draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Ma
 		if tier == 0 {
 			for splitter in world.entities.splitters.entries {
 				if splitter.alive {
-					draw_splitter(renderer, splitter, machines, models, frame)
+					draw_splitter(renderer, splitter)
 				}
 			}
 		}
@@ -283,11 +285,11 @@ draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Ma
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame, billboards: Item_Billboards) {
+draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry, machines: Machine_Registry, frame: Model_Frame, billboards: Item_Billboards) {
 	if !renderer.ready {
 		return
 	}
-	draw_belt_surfaces(renderer, world, machines, models, frame)
+	draw_belt_surfaces(renderer, world, machines, frame)
 	begin_item_billboards()
 	defer end_item_billboards()
 	for line in world.entities.belt_network.lines {
@@ -295,19 +297,30 @@ draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry
 	}
 }
 
-draw_splitter :: proc(renderer: ^Belt_Renderer, splitter: Splitter, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+// The belt surface on both halves, in block cells: the block world's.
+draw_splitter :: proc(renderer: ^Belt_Renderer, splitter: Splitter) {
 	for side in Splitter_Side {
 		cell := splitter_half_cell(splitter.origin, splitter.rotation, side)
 		position := [3]f32{f32(cell.x) + 0.5, f32(cell.y), f32(cell.z) + 0.5}
 		rl.DrawModelEx(renderer.models[.Flat], position, {0, 1, 0}, -90 * f32(splitter.rotation), {1, 1, 1}, rl.WHITE)
 	}
-	if !draw_machine_model(models, machines, splitter.common, frame, false) {
-		centre := box_centre(splitter.origin, splitter.size)
-		centre.y = f32(splitter.origin.y) + SPLITTER_FRAME_HEIGHT / 2
-		extent := [3]f32{f32(splitter.size.x), SPLITTER_FRAME_HEIGHT, f32(splitter.size.z)}
-		rl.DrawCubeWiresV(centre, extent, SPLITTER_FRAME_COLOR)
+}
+
+// The splitter's model, or the wire frame under its frame's matrix
+// (draw_entities, both worlds).
+draw_splitter_body :: proc(splitter: Splitter, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	if draw_machine_model(models, machines, splitter.common, frame, false) {
+		return
 	}
-	draw_splitter_arrow(splitter.origin, splitter.size, splitter.rotation, SPLITTER_ARROW_COLOR)
+	low, high := entity_cell_box(splitter.origin, splitter.size)
+	if !begin_entity_cells_draw(frame, splitter.frame, low, high) {
+		return
+	}
+	defer end_entity_cells_draw(splitter.frame)
+	centre := box_centre(splitter.origin, splitter.size)
+	centre.y = f32(splitter.origin.y) + SPLITTER_FRAME_HEIGHT / 2
+	extent := [3]f32{f32(splitter.size.x), SPLITTER_FRAME_HEIGHT, f32(splitter.size.z)}
+	rl.DrawCubeWiresV(centre, extent, SPLITTER_FRAME_COLOR)
 }
 
 // Across the middle of the footprint from its back edge to its front

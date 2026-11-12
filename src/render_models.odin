@@ -595,7 +595,7 @@ draw_posed_model :: proc(renderer: Model_Renderer, common: Entity_Common, machin
 // The pose of a machine whose part runs on the clock while it works, at
 // its own offset into the period.
 clock_pose :: proc(frame: Model_Frame, common: Entity_Common, machine: Machine, working: bool) -> Model_Pose {
-	offset := motion_phase_offset(common.origin)
+	offset := motion_phase_offset(common.origin, common.frame)
 	return {phase = motion_phase(frame.tick, frame.alpha, frame.tick_rate, machine.motion.period_seconds, working, offset), working = working}
 }
 

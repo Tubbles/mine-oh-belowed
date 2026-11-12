@@ -8,7 +8,7 @@ import "shared:raylib/rlgl"
 // Placeholder entity models: a coloured cube per footprint cell, with a
 // brighter top layer on a burning furnace, for inserters a post with an
 // arm that turns with the cycle, and for drills a darker top with a
-// turning bar and the output arrow (brown burner, blue electric), for
+// turning bar (brown burner, blue electric), for
 // crafting machines a body in their category's colour (teal assembler,
 // brown crusher, blue washer, grey alloy furnace) with a bright top while
 // working, and for labs a white body with a blue top while researching.
@@ -22,6 +22,12 @@ import "shared:raylib/rlgl"
 // launch pad's model is the platform, with the tower and the rocket drawn
 // as before. A vessel part (0361) without a model is a box per held cell
 // in its record's colour, so an empty ring shows its hollow.
+// draw_entities draws every pool's body on both worlds (0362), each box
+// on a frame under the frame's matrix (begin_entity_cells_draw); the fluid
+// ports and the arrows (a drill's output, a pump's flow, a splitter's
+// direction) are signs drawn after the bodies (draw_ports_and_arrows), and
+// on the field a launching rocket, the one translucent box, after the
+// players (draw_launching_rockets).
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
@@ -86,6 +92,11 @@ ROCKET_MINIMUM_FRACTION :: 0.05
 ROCKET_ASCENT_HEIGHT :: 120.0
 // Turns of the bit per drill cycle.
 DRILL_BIT_TURNS_PER_CYCLE :: 4
+// The cull box of the ports, the arrows and a drill's bar: the footprint
+// grown by the margin each way and by the rise above, for the squares on
+// the faces and the arrows' tips over the top.
+PORT_AND_ARROW_MARGIN_CELLS :: 0.1
+PORT_AND_ARROW_RISE_CELLS :: 0.2
 
 box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
 	return {f32(minimum.x) + f32(size.x) / 2, f32(minimum.y) + f32(size.y) / 2, f32(minimum.z) + f32(size.z) / 2}
@@ -95,6 +106,37 @@ box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
 entity_cell_box :: proc(origin: World_Coordinate, size: [3]i32) -> (minimum, maximum: [3]f32) {
 	minimum = {f32(origin.x), f32(origin.y), f32(origin.z)}
 	return minimum, minimum + {f32(size.x), f32(size.y), f32(size.z)}
+}
+
+// The footprint's box grown for its ports and arrows.
+port_and_arrow_box :: proc(common: Entity_Common) -> (minimum, maximum: [3]f32) {
+	low, high := entity_cell_box(common.origin, common.size)
+	margin := f32(PORT_AND_ARROW_MARGIN_CELLS)
+	return low - margin, high + {margin, PORT_AND_ARROW_RISE_CELLS, margin}
+}
+
+// Before a box drawn in a frame's cells (low to high): false when the pass
+// does not show the box under the frame's matrix (model_frame_shows_cells),
+// and nothing pushed; else true with the matrix pushed onto rlgl's stack,
+// the block frame's identity skipped as draw_entity_cells skips it. A true
+// is closed by end_entity_cells_draw with the same frame.
+begin_entity_cells_draw :: proc(frame: Model_Frame, frame_id: Frame_Id, low, high: [3]f32) -> (shown: bool) {
+	transform := model_frame_entity_matrix(frame, &frame.world.entities, frame_id)
+	if !model_frame_shows_cells(frame, transform, low, high) {
+		return false
+	}
+	if frame_id != BLOCK_FRAME {
+		flat := transmute([16]f32)transform
+		rlgl.PushMatrix()
+		rlgl.MultMatrixf(raw_data(flat[:]))
+	}
+	return true
+}
+
+end_entity_cells_draw :: proc(frame_id: Frame_Id) {
+	if frame_id != BLOCK_FRAME {
+		rlgl.PopMatrix()
+	}
 }
 
 // The machine's model (render_models.odin) when it has one, posed for
@@ -210,9 +252,20 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, models: Model_Render
 	}
 }
 
-// A bar across the top that turns with the cycle while the drill mines
-// (a model moves its own part instead), and the output arrow on the top
-// face.
+// The bar across the top in the frame's cells, just over the top face's
+// centre, turned with the cycle: DRILL_BIT_TURNS_PER_CYCLE turns a cycle
+// of the drill's tick counter.
+drill_bar_ends :: proc(drill: Drill, machine: Machine, tick_rate: int) -> (start, end: [3]f32) {
+	centre := box_centre(drill.origin, drill.size)
+	top := centre + {0, f32(drill.size.y) / 2 + 0.02, 0}
+	angle := drill_progress_fraction(drill, machine, tick_rate) * DRILL_BIT_TURNS_PER_CYCLE * 2 * math.PI
+	half := [3]f32{math.cos(angle), 0, math.sin(angle)} * DRILL_BIT_LENGTH / 2
+	return top - half, top + half
+}
+
+// The body, and without a model a bar across the top that turns with the
+// cycle while the drill mines (a model moves its own part instead), under
+// the frame's matrix. The output arrow is draw_ports_and_arrows'.
 draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
 	working := drill_model_working(drill)
 	color, top_color := DRILL_COLOR, DRILL_TOP_COLOR
@@ -221,21 +274,16 @@ draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, m
 	} else if drill_is_electric(drill) {
 		color, top_color = ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR
 	}
-	has_model := draw_entity_cells(drill.common, machines, models, frame, working, color, top_color)
-	// The bar and the arrow are drawn in raw cells, without the frame's
-	// matrix (0362), and culled where they are drawn.
-	low, high := entity_cell_box(drill.origin, drill.size)
-	if !model_frame_shows_box(frame, low - 0.1, high + {0.1, 0.2, 0.1}) {
+	if draw_entity_cells(drill.common, machines, models, frame, working, color, top_color) {
 		return
 	}
-	centre := box_centre(drill.origin, drill.size)
-	top := centre + {0, f32(drill.size.y) / 2 + 0.02, 0}
-	if !has_model {
-		angle := drill_progress_fraction(drill, machine, frame.tick_rate) * DRILL_BIT_TURNS_PER_CYCLE * 2 * math.PI
-		half := [3]f32{math.cos(angle), 0, math.sin(angle)} * DRILL_BIT_LENGTH / 2
-		rl.DrawCylinderEx(top - half, top + half, DRILL_BIT_RADIUS, DRILL_BIT_RADIUS, 6, DRILL_BIT_COLOR)
+	low, high := port_and_arrow_box(drill.common)
+	if !begin_entity_cells_draw(frame, drill.frame, low, high) {
+		return
 	}
-	draw_drill_arrow(drill.origin, drill.size, drill.rotation, top.y, DRILL_ARROW_COLOR)
+	defer end_entity_cells_draw(drill.frame)
+	start, end := drill_bar_ends(drill, machine, frame.tick_rate)
+	rl.DrawCylinderEx(start, end, DRILL_BIT_RADIUS, DRILL_BIT_RADIUS, 6, DRILL_BIT_COLOR)
 }
 
 // From the footprint's centre to the side the output drops from, with a
@@ -280,6 +328,15 @@ lab_model_working :: proc(lab: Lab) -> bool {
 	return marker_means_working(entity_marker_colour(lab.common, machine_marker_colour(lab.state, true)))
 }
 
+fluid_machine_model_working :: proc(fluid_machine: Fluid_Machine) -> bool {
+	return marker_means_working(entity_marker_colour(fluid_machine.common, machine_marker_colour(fluid_machine.state, true)))
+}
+
+// A power switch that is on; a pole never works.
+pole_model_working :: proc(pole: Pole, machine: Machine) -> bool {
+	return machine.kind == .Power_Switch && pole.on
+}
+
 // The pod always works for its model, its emissive materials and its
 // lamps (0224), so its cabin is lit from the arrival on; a hatch while it
 // is open (as hatch_pose); the charge controller always (0358), as the
@@ -315,9 +372,11 @@ append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 	}
 }
 
-// The lamps of the machines draw_entities draws whose model works. Chests
-// and capsules never work; an inserter's light is its arm's lamp
-// (arm_point_light). The models give each box its top (machine_model_top).
+// The lamps of the machines draw_entities draws whose model works. Chests,
+// capsules and splitters never work; an inserter's light is its arm's lamp
+// (arm_point_light); a fluid machine works as its draw says, a power
+// switch while on, a lamp while lit (0362). The models give each box its
+// top (machine_model_top).
 // A furnace's lamps flicker with its flames (the salt and the clock of
 // gather_machine_flames, 0274), at FIRE_POINT_LIGHT_SHARE of their swing
 // (fire_point_light_flicker, 0284).
@@ -359,6 +418,22 @@ gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 			append_machine_lights(lights, entities, pad.common, machines.machines[pad.machine], launch_pad_is_working(pad), machine_model_top(models, pad.common))
 		}
 	}
+	for fluid_machine in entities.fluid_machines.entries {
+		if fluid_machine.alive {
+			append_machine_lights(lights, entities, fluid_machine.common, machines.machines[fluid_machine.machine], fluid_machine_model_working(fluid_machine), machine_model_top(models, fluid_machine.common))
+		}
+	}
+	for pole in entities.poles.entries {
+		if pole.alive {
+			machine := machines.machines[pole.machine]
+			append_machine_lights(lights, entities, pole.common, machine, pole_model_working(pole, machine), machine_model_top(models, pole.common))
+		}
+	}
+	for lamp in entities.lamps.entries {
+		if lamp.alive {
+			append_machine_lights(lights, entities, lamp.common, machines.machines[lamp.machine], lamp.lit, machine_model_top(models, lamp.common))
+		}
+	}
 	for foundation in entities.foundations.entries {
 		if foundation.alive {
 			machine := machines.machines[foundation.machine]
@@ -367,12 +442,16 @@ gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 	}
 }
 
-// Between BeginMode3D and EndMode3D, after the chunks. In the scene's
-// pass collecting instances (model_frame_flat_batch) the pools' box
-// draws, the held items and the vessel parts' boxes go through the model
-// shader's flat batch and take the haze (0360); the foundations' pool
-// stays out, since the pod there draws by DrawMesh through the model
-// shader, which would read flat_on at 1.
+// Between BeginMode3D and EndMode3D, after the chunks. Every pool's
+// bodies on both worlds (0362): the splitters, the fluid machines, the
+// poles and the lamps after the launch pads; a splitter's belt halves
+// stay draw_belts', the wires draw_wires', the ports and arrows
+// draw_ports_and_arrows'. In the scene's pass collecting instances
+// (model_frame_flat_batch) the pools' box draws, the held items and the
+// vessel parts' boxes go through the model shader's flat batch and take
+// the haze (0360); the foundations' pool stays out, since the pod there
+// draws by DrawMesh through the model shader, which would read flat_on
+// at 1.
 draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) {
 	flat := model_frame_flat_batch(frame)
 	if flat {
@@ -432,6 +511,26 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 	for pad in world.entities.launch_pads.entries {
 		if pad.alive && model_frame_draws_entity(frame, &world.entities, models, pad.common) {
 			draw_launch_pad(pad, machines, models, frame)
+		}
+	}
+	for splitter in world.entities.splitters.entries {
+		if splitter.alive && model_frame_draws_entity(frame, &world.entities, models, splitter.common) {
+			draw_splitter_body(splitter, machines, models, frame)
+		}
+	}
+	for fluid_machine in world.entities.fluid_machines.entries {
+		if fluid_machine.alive && model_frame_draws_entity(frame, &world.entities, models, fluid_machine.common) {
+			draw_fluid_machine(fluid_machine, machines, models, frame)
+		}
+	}
+	for pole in world.entities.poles.entries {
+		if pole.alive && model_frame_draws_entity(frame, &world.entities, models, pole.common) {
+			draw_pole(pole, machines, models, frame)
+		}
+	}
+	for lamp in world.entities.lamps.entries {
+		if lamp.alive && model_frame_draws_entity(frame, &world.entities, models, lamp.common) {
+			draw_lamp(lamp, machines, models, frame)
 		}
 	}
 	if flat {
@@ -508,28 +607,29 @@ rocket_ascent :: proc(fraction: f32) -> (height: f32, alpha: u8) {
 	return fraction * fraction * ROCKET_ASCENT_HEIGHT, u8((1 - fraction) * 255)
 }
 
-draw_launch_pad :: proc(pad: Launch_Pad, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
-	machine := machines.machines[pad.machine]
-	tick_rate := frame.tick_rate
+// A launch pad's boxes in its frame's cells: the platform (drawn without
+// a model), the tower on its first cell and, while rocket, the rocket on
+// the footprint's centre, growing with its assembly, standing while ready
+// and rising and fading (rocket_ascent's alpha) while it launches.
+Launch_Pad_Boxes :: struct {
+	platform_centre, platform_size: [3]f32,
+	tower_centre, tower_size:       [3]f32,
+	rocket_centre, rocket_size:     [3]f32,
+	rocket_color:                   rl.Color,
+	rocket:                         bool,
+}
+
+launch_pad_boxes :: proc(pad: Launch_Pad, machine: Machine, tick_rate: int) -> (boxes: Launch_Pad_Boxes) {
 	centre := box_centre(pad.origin, pad.size)
 	bottom := f32(pad.origin.y)
-	has_model := draw_machine_model(models, machines, pad.common, frame, launch_pad_is_working(pad))
-	// The fallback platform, the tower and the rocket are drawn in raw
-	// cells (0362), culled where they are drawn up to the rocket's ascent.
-	low, high := entity_cell_box(pad.origin, pad.size)
-	high.y = low.y + LAUNCH_PAD_PLATFORM_HEIGHT + ROCKET_HEIGHT + ROCKET_ASCENT_HEIGHT
-	if !model_frame_shows_box(frame, low, high) {
-		return
-	}
-	if !has_model {
-		platform := [3]f32{f32(pad.size.x), LAUNCH_PAD_PLATFORM_HEIGHT, f32(pad.size.z)}
-		rl.DrawCubeV({centre.x, bottom + platform.y / 2, centre.z}, platform, LAUNCH_PAD_COLOR)
-		rl.DrawCubeWiresV({centre.x, bottom + platform.y / 2, centre.z}, platform, ENTITY_EDGE_COLOR)
-	}
+	boxes.platform_size = {f32(pad.size.x), LAUNCH_PAD_PLATFORM_HEIGHT, f32(pad.size.z)}
+	boxes.platform_centre = {centre.x, bottom + LAUNCH_PAD_PLATFORM_HEIGHT / 2, centre.z}
 	tower := block_centre(pad.origin)
-	rl.DrawCubeV({tower.x, bottom + LAUNCH_TOWER_HEIGHT / 2, tower.z}, {1, LAUNCH_TOWER_HEIGHT, 1}, LAUNCH_TOWER_COLOR)
-	if pad.state != .Assembling && pad.state != .Rocket_Ready && pad.state != .Launching {
-		return
+	boxes.tower_size = {1, LAUNCH_TOWER_HEIGHT, 1}
+	boxes.tower_centre = {tower.x, bottom + LAUNCH_TOWER_HEIGHT / 2, tower.z}
+	boxes.rocket = pad.state == .Assembling || pad.state == .Rocket_Ready || pad.state == .Launching
+	if !boxes.rocket {
+		return boxes
 	}
 	lift, alpha, height := f32(0), u8(255), f32(ROCKET_HEIGHT)
 	if pad.state == .Launching {
@@ -537,10 +637,143 @@ draw_launch_pad :: proc(pad: Launch_Pad, machines: Machine_Registry, models: Mod
 	} else if pad.state == .Assembling {
 		height *= max(launch_pad_progress(pad, machine, tick_rate), ROCKET_MINIMUM_FRACTION)
 	}
-	rocket := [3]f32{centre.x, bottom + LAUNCH_PAD_PLATFORM_HEIGHT + height / 2 + lift, centre.z}
-	color := ROCKET_COLOR
-	color.a = alpha
-	rl.DrawCubeV(rocket, {ROCKET_WIDTH, height, ROCKET_WIDTH}, color)
+	boxes.rocket_centre = {centre.x, bottom + LAUNCH_PAD_PLATFORM_HEIGHT + height / 2 + lift, centre.z}
+	boxes.rocket_size = {ROCKET_WIDTH, height, ROCKET_WIDTH}
+	boxes.rocket_color = ROCKET_COLOR
+	boxes.rocket_color.a = alpha
+	return boxes
+}
+
+// The model, then under the frame's matrix the platform without a model,
+// the tower and the rocket, culled together up to the rocket's ascent. A
+// launching rocket is translucent: the field's passes (a view or casters)
+// leave it to draw_launching_rockets, the block world draws it here.
+draw_launch_pad :: proc(pad: Launch_Pad, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	machine := machines.machines[pad.machine]
+	has_model := draw_machine_model(models, machines, pad.common, frame, launch_pad_is_working(pad))
+	low, high := entity_cell_box(pad.origin, pad.size)
+	high.y = low.y + LAUNCH_PAD_PLATFORM_HEIGHT + ROCKET_HEIGHT + ROCKET_ASCENT_HEIGHT
+	if !begin_entity_cells_draw(frame, pad.frame, low, high) {
+		return
+	}
+	defer end_entity_cells_draw(pad.frame)
+	boxes := launch_pad_boxes(pad, machine, frame.tick_rate)
+	if !has_model {
+		rl.DrawCubeV(boxes.platform_centre, boxes.platform_size, LAUNCH_PAD_COLOR)
+		rl.DrawCubeWiresV(boxes.platform_centre, boxes.platform_size, ENTITY_EDGE_COLOR)
+	}
+	rl.DrawCubeV(boxes.tower_centre, boxes.tower_size, LAUNCH_TOWER_COLOR)
+	launching_elsewhere := pad.state == .Launching && (frame.view != nil || frame.casters != nil)
+	if boxes.rocket && !launching_elsewhere {
+		rl.DrawCubeV(boxes.rocket_centre, boxes.rocket_size, boxes.rocket_color)
+	}
+}
+
+// The field scene's launching rockets, after the players and before the
+// open sky is cleared: drawn in draw_entities' region they would be
+// flushed before the instanced machines and the trees, and their depth
+// would hide what stands behind them (0360). Through the flat batch with
+// the depth test on and depth writes off, the batch flushed before and
+// after so nothing else draws without writing depth; the depth mask is
+// back on at the end. Nothing unless a pad launches.
+draw_launching_rockets :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	if launching_pad_count(world) == 0 {
+		return
+	}
+	begin_flat_batch(models)
+	rlgl.DrawRenderBatchActive()
+	rlgl.DisableDepthMask()
+	for pad in world.entities.launch_pads.entries {
+		if !pad.alive || pad.state != .Launching {
+			continue
+		}
+		boxes := launch_pad_boxes(pad, machines.machines[pad.machine], frame.tick_rate)
+		low, high := boxes.rocket_centre - boxes.rocket_size / 2, boxes.rocket_centre + boxes.rocket_size / 2
+		if begin_entity_cells_draw(frame, pad.frame, low, high) {
+			rl.DrawCubeV(boxes.rocket_centre, boxes.rocket_size, boxes.rocket_color)
+			end_entity_cells_draw(pad.frame)
+		}
+	}
+	rlgl.DrawRenderBatchActive()
+	rlgl.EnableDepthMask()
+	end_flat_batch(models)
+}
+
+// The sign a machine shows over its body (draw_entity_ports_and_arrow).
+Machine_Arrow :: enum u8 {
+	None,
+	Drill_Output,
+	Flow,
+	Splitter,
+}
+
+// The machine's single face ports and its arrow under its frame's matrix,
+// culled by the footprint grown for them; nothing for no port and no
+// arrow. buffers may be nil (the ports' filter colours).
+draw_entity_ports_and_arrow :: proc(common: Entity_Common, machine: Machine, buffers: []Fluid_Buffer, fluids: Fluid_Registry, frame: Model_Frame, arrow: Machine_Arrow) {
+	if machine.fluid_port_count == 0 && arrow == .None {
+		return
+	}
+	low, high := port_and_arrow_box(common)
+	if !begin_entity_cells_draw(frame, common.frame, low, high) {
+		return
+	}
+	defer end_entity_cells_draw(common.frame)
+	draw_fluid_ports(common, machine, buffers, fluids)
+	switch arrow {
+	case .None:
+	case .Drill_Output:
+		draw_drill_arrow(common.origin, common.size, common.rotation, f32(common.origin.y + common.size.y) + 0.02, DRILL_ARROW_COLOR)
+	case .Flow:
+		draw_direction_arrow(common.origin, common.size, common.rotation, FLUID_MACHINE_ARROW_COLOR)
+	case .Splitter:
+		draw_splitter_arrow(common.origin, common.size, common.rotation, SPLITTER_ARROW_COLOR)
+	}
+}
+
+// Between BeginMode3D and EndMode3D, after draw_entities: the ports and
+// arrows of the drills, the crafting machines, the launch pads, the fluid
+// machines and the splitters, in the flat batch in the scene's collecting
+// pass as draw_entities' boxes. Signs, not bodies: never in the sun's
+// pass.
+draw_ports_and_arrows :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, models: Model_Renderer, frame: Model_Frame) {
+	flat := model_frame_flat_batch(frame)
+	if flat {
+		begin_flat_batch(models)
+	}
+	for drill in world.entities.drills.entries {
+		if drill.alive {
+			buffers := drill.buffers
+			draw_entity_ports_and_arrow(drill.common, machines.machines[drill.machine], buffers[:], fluids, frame, .Drill_Output)
+		}
+	}
+	for assembler in world.entities.assemblers.entries {
+		if assembler.alive {
+			buffers := assembler.buffers
+			draw_entity_ports_and_arrow(assembler.common, machines.machines[assembler.machine], buffers[:], fluids, frame, .None)
+		}
+	}
+	for pad in world.entities.launch_pads.entries {
+		if pad.alive {
+			buffers := pad.buffers
+			draw_entity_ports_and_arrow(pad.common, machines.machines[pad.machine], buffers[:], fluids, frame, .None)
+		}
+	}
+	for fluid_machine in world.entities.fluid_machines.entries {
+		if fluid_machine.alive {
+			machine := machines.machines[fluid_machine.machine]
+			buffers := fluid_machine.buffers
+			draw_entity_ports_and_arrow(fluid_machine.common, machine, buffers[:], fluids, frame, fluid_machine_has_arrow(machine.kind) ? .Flow : .None)
+		}
+	}
+	for splitter in world.entities.splitters.entries {
+		if splitter.alive {
+			draw_entity_ports_and_arrow(splitter.common, machines.machines[splitter.machine], nil, fluids, frame, .Splitter)
+		}
+	}
+	if flat {
+		end_flat_batch(models)
+	}
 }
 
 // Bottleneck overlay markers (work item 0028): a cube above each machine

@@ -1,6 +1,6 @@
 # 0362: The field session draws every machine
 
-Status: implementing (2026-11-12)
+Status: verified (2026-11-13)
 
 Found by 0347's design: `draw_fluid_entities` and `draw_power_entities` are called only from the block world's pass (`loop.odin`), so on a field world a boiler, a steam engine, a pipe, a pump, a tank, a lamp and a pole are placed and simulated and never drawn. And `draw_drill`'s bar and arrow and `draw_launch_pad`'s fallback platform, tower and rocket draw in raw cells without their frame's matrix, so on a planet they land near its centre.
 
@@ -157,3 +157,9 @@ Checked: every changed procedure is in a presentation file or a loop draw (`draw
 5. No pipe capture: a field pipe is a run, drawn since 0176.
 6. The coverage test without the pod and the launch pad, with the two separate tests for the pad's tower and rocket and the drill's bar, is accepted.
 7. The profile's `factory` view draws more after this item (its boiler, steam engine, poles and lamp), so its rows before and after are not comparable: the log says so at the landing.
+
+### Deviations
+
+- `test_a_drills_bar_lands_at_the_drill_on_its_frame` compares progress 0 with a sixteenth of a cycle (a quarter turn of the bar), not with half a cycle: at `DRILL_BIT_TURNS_PER_CYCLE` 4 half a cycle is two whole turns, the same ends as progress 0. Half a cycle stays in the in-box checks.
+- `port_and_arrow_box` (the footprint grown by the two constants) is shared by the drill's bar and `draw_entity_ports_and_arrow`.
+- `doc/audit/presentation.md` names `draw_ports_and_arrows`, `draw_pipes` and `draw_entities` where it named the two removed procedures, which `tools/check_docs.py` requires.

@@ -203,9 +203,12 @@ hatch_open_fraction :: proc(open: bool, toggle_tick: u64, tick: u64, alpha: f32,
 }
 
 // A fixed share of a period from 0 up to 1 per entity, hashed from its
-// origin cell, so it needs no state and survives saves and reloads.
-motion_phase_offset :: proc(origin: World_Coordinate) -> f32 {
-	hash := u32(origin.x) * 0x9E3779B1 ~ u32(origin.y) * 0x85EBCA77 ~ u32(origin.z) * 0xC2B2AE3D
+// origin cell and its frame, so it needs no state and survives saves and
+// reloads. The frame tells apart the machines on bare ground, each on a
+// frame of its own at the same cell (0362); the block frame's 0 leaves the
+// block world's offsets as they were.
+motion_phase_offset :: proc(origin: World_Coordinate, frame: Frame_Id = BLOCK_FRAME) -> f32 {
+	hash := u32(origin.x) * 0x9E3779B1 ~ u32(origin.y) * 0x85EBCA77 ~ u32(origin.z) * 0xC2B2AE3D ~ u32(frame) * 0x27D4EB2F
 	hash ~= hash >> 16
 	hash *= 0x7FEB352D
 	hash ~= hash >> 15

@@ -7,7 +7,9 @@ import rl "shared:raylib"
 // that glows while lit, and wires are lines between the tops of wired
 // nodes. A pole's ghost shows its supply volume as a wire box. A pole,
 // switch or lamp with a model (render_models.odin) is drawn with it; its
-// glow lights up while the switch is on or the lamp lit.
+// glow lights up while the switch is on or the lamp lit. The poles,
+// switches and lamps are draw_entities' on both worlds (0362), under
+// their frames' matrices; the wires are the block world's (draw_wires).
 
 POLE_COLOR :: rl.Color{120, 90, 60, 255}
 POLE_WIDTH :: 0.2
@@ -42,9 +44,14 @@ draw_wires :: proc(world: ^World) {
 
 draw_pole :: proc(pole: Pole, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
 	machine := machines.machines[pole.machine]
-	if draw_machine_model(models, machines, pole.common, frame, machine.kind == .Power_Switch && pole.on) {
+	if draw_machine_model(models, machines, pole.common, frame, pole_model_working(pole, machine)) {
 		return
 	}
+	low, high := entity_cell_box(pole.origin, pole.size)
+	if !begin_entity_cells_draw(frame, pole.frame, low, high) {
+		return
+	}
+	defer end_entity_cells_draw(pole.frame)
 	centre := box_centre(pole.origin, pole.size)
 	if machine.kind == .Power_Switch {
 		color := pole.on ? SWITCH_ON_COLOR : SWITCH_OFF_COLOR
@@ -71,25 +78,15 @@ draw_lamp :: proc(lamp: Lamp, machines: Machine_Registry, models: Model_Renderer
 	if draw_machine_model(models, machines, lamp.common, frame, lamp.lit) {
 		return
 	}
+	low, high := entity_cell_box(lamp.origin, lamp.size)
+	if !begin_entity_cells_draw(frame, lamp.frame, low, high) {
+		return
+	}
+	defer end_entity_cells_draw(lamp.frame)
 	centre := block_centre(lamp.origin)
 	centre.y = f32(lamp.origin.y) + LAMP_SIZE / 2
 	rl.DrawCubeV(centre, {LAMP_SIZE, LAMP_SIZE, LAMP_SIZE}, lamp.lit ? LAMP_ON_COLOR : LAMP_OFF_COLOR)
 	rl.DrawCubeWiresV(centre, {LAMP_SIZE, LAMP_SIZE, LAMP_SIZE}, ENTITY_EDGE_COLOR)
-}
-
-// Between BeginMode3D and EndMode3D, after the chunks.
-draw_power_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
-	for pole in world.entities.poles.entries {
-		if pole.alive {
-			draw_pole(pole, machines, models, frame)
-		}
-	}
-	for lamp in world.entities.lamps.entries {
-		if lamp.alive {
-			draw_lamp(lamp, machines, models, frame)
-		}
-	}
-	draw_wires(world)
 }
 
 // The supply volume of a pole's ghost.

@@ -103,9 +103,9 @@
 // follows the fire's flicker, as the flames' reach and brightness do.
 // Each shines a point light in a field session while the machine's model
 // works (the same flag that lights its emissive materials; a pod always
-// works); the block world takes no point lights. Presentation only. A
-// machine whose model draw_entities does not draw (fluid and power
-// machines, inserters, trees) may list lamps, which then do nothing.
+// works); the block world takes no point lights. Presentation only. An
+// inserter (its light is its arm's lamp) and a tree may list lamps, which
+// then do nothing.
 // A machine whose model has data/models/<model>.collision.sjson (work item
 // 0230, doc/content.md, Models) collides by its volumes on a frame: its
 // cells stay its own for placement, its open cells for the spawn, the

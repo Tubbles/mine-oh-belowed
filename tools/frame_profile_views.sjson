@@ -116,7 +116,8 @@ factory = {
 // first, each pad 2 cells from the next (FACTORY_COPY_GAP_CELLS), against
 // the frame's right (along it the leaning pad sinks under the ground) and
 // along its forward. A copy holds only the factory's machines named here,
-// the ones the field session draws (no fluid or power machine, 0362).
+// the ones the field session drew before 0362 (no fluid or power machine),
+// so its rows stay comparable across it.
 // The camera stands back_metres back along the frame's forward and
 // up_metres up along its up from the middle of the copies one row over
 // the pads, looking at it.

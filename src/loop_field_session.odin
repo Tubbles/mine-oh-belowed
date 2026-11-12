@@ -671,7 +671,10 @@ draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_
 // (draw_scene_model_instances) with the model shader's instancing, the
 // pod alone. The slabs, the runs, the poles, the belt items, the torch
 // boxes and the emissive layers draw flat through the model shader and
-// are hazed as the machines (0360).
+// are hazed as the machines (0360). Every machine pool is draw_entities'
+// (0362); the ports and arrows follow the machines (draw_ports_and_arrows),
+// and a launching rocket, translucent, is drawn after the players without
+// writing depth (draw_launching_rockets).
 draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node) {
 	profile_mark(scene.profile, .Lights)
 	scene := scene
@@ -703,6 +706,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	draw_field_foundations(&scene.renderer.foundations, scene.models, machines_frame, &world.entities, nil)
 	profile_mark(scene.profile, .Machines)
 	draw_entities(world, scene.content.machines, scene.models, scene.content.items, machines_frame)
+	draw_ports_and_arrows(world, scene.content.machines, scene.content.fluids, scene.models, machines_frame)
 	draw_scene_model_instances(scene.models, instances[:], &buffers.models)
 	pop_pod_transform(scene.pod_transform)
 	profile_mark(scene.profile, .Trees)
@@ -717,6 +721,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres, scene.models)
 	push_pod_transform(scene.pod_transform)
 	draw_field_players(scene, transform_point(linalg.inverse(view.transform), camera.position))
+	draw_launching_rockets(world, scene.content.machines, scene.models, machines_frame)
 	pop_pod_transform(scene.pod_transform)
 	clear_model_open_sky(scene.models)
 	// Before the ghosts, so a ghost cube's depth does not hide them.

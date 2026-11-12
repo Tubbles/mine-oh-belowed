@@ -4,15 +4,18 @@ import rl "shared:raylib"
 
 // Placeholder fluid models: a pipe is a small core cube with a stub
 // towards every neighbour it connects to and a band in the fluid's colour
-// whose height follows the level. Fluid machines are coloured boxes with
-// their single face ports drawn as squares on the footprint faces, in the
-// colour of the fluid held or taken (every face ports, the tank's, get
-// none). Offshore pumps, pumps and tar pit pumps show their direction with
-// an arrow. A flare stack's top glows while it burns gas, a combustion
-// generator's top is brighter while it generates. A fluid machine with a
-// model (render_models.odin) is drawn with it, animated while its
-// bottleneck marker would be green; the ports and arrows stay. Pipes keep
-// their stubs: a model per connection shape is left for later.
+// whose height follows the level (the block world's draw_pipes). Fluid
+// machines are coloured boxes, drawn by draw_entities with the other
+// machines on both worlds (0362); their single face ports are squares on
+// the footprint faces, in the colour of the fluid held or taken (every
+// face ports, the tank's, get none), drawn with the other machines' ports
+// by draw_ports_and_arrows (render_entities.odin). Offshore pumps, pumps
+// and tar pit pumps show their direction with an arrow there. A flare
+// stack's top glows while it burns gas, a combustion generator's top is
+// brighter while it generates. A fluid machine with a model
+// (render_models.odin) is drawn with it, animated while its bottleneck
+// marker would be green; the ports and arrows stay. Pipes keep their
+// stubs: a model per connection shape is left for later.
 
 PIPE_COLOR :: rl.Color{110, 112, 118, 255}
 FLARE_BURNING_TOP_COLOR :: rl.Color{255, 170, 60, 255}
@@ -152,7 +155,9 @@ fluid_machine_has_arrow :: proc(kind: Machine_Kind) -> bool {
 	return kind == .Offshore_Pump || kind == .Pump || kind == .Tar_Pit_Pump
 }
 
-draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry, frame: Model_Frame) {
+// The body: the model, or the boxes under the frame's matrix
+// (draw_entity_cells).
+draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
 	machine := machines.machines[fluid_machine.machine]
 	color := fluid_machine_colors[machine.kind]
 	top_color := color
@@ -162,13 +167,7 @@ draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Regis
 	if (machine.kind == .Combustion_Generator || machine.kind == .Hydro_Turbine) && fluid_machine.state == .Generating {
 		top_color = GENERATING_TOP_COLOR
 	}
-	working := marker_means_working(entity_marker_colour(fluid_machine.common, machine_marker_colour(fluid_machine.state, true)))
-	draw_entity_cells(fluid_machine.common, machines, models, frame, working, color, top_color)
-	buffers := fluid_machine.buffers
-	draw_fluid_ports(fluid_machine.common, machine, buffers[:], fluids)
-	if fluid_machine_has_arrow(machine.kind) {
-		draw_direction_arrow(fluid_machine.origin, fluid_machine.size, fluid_machine.rotation, FLUID_MACHINE_ARROW_COLOR)
-	}
+	draw_entity_cells(fluid_machine.common, machines, models, frame, fluid_machine_model_working(fluid_machine), color, top_color)
 }
 
 // On the top face, from the centre to the end the rotation points at.
@@ -182,34 +181,12 @@ draw_direction_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u
 	rl.DrawCubeV(tip, {0.12, 0.12, 0.12}, color)
 }
 
-// Between BeginMode3D and EndMode3D, after the chunks.
-draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry, frame: Model_Frame) {
+// Between BeginMode3D and EndMode3D, after the chunks: the block world's
+// cell pipes (a field world's pipes are runs, draw_belt_runs).
+draw_pipes :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry) {
 	for pipe in world.entities.pipes.entries {
 		if pipe.alive {
 			draw_pipe(world, pipe, machines, fluids)
-		}
-	}
-	for fluid_machine in world.entities.fluid_machines.entries {
-		if fluid_machine.alive {
-			draw_fluid_machine(fluid_machine, machines, models, fluids, frame)
-		}
-	}
-	for assembler in world.entities.assemblers.entries {
-		if assembler.alive {
-			buffers := assembler.buffers
-			draw_fluid_ports(assembler.common, machines.machines[assembler.machine], buffers[:], fluids)
-		}
-	}
-	for drill in world.entities.drills.entries {
-		if drill.alive {
-			buffers := drill.buffers
-			draw_fluid_ports(drill.common, machines.machines[drill.machine], buffers[:], fluids)
-		}
-	}
-	for pad in world.entities.launch_pads.entries {
-		if pad.alive {
-			buffers := pad.buffers
-			draw_fluid_ports(pad.common, machines.machines[pad.machine], buffers[:], fluids)
 		}
 	}
 }

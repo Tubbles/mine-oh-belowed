@@ -147,6 +147,35 @@ test_each_origin_has_its_own_phase_offset :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0362: the block frame keeps the one argument offsets; frames
+// 1 to 16 at one cell each get their own, so machines on bare ground, each
+// on a frame of its own at the same cell, do not move in step.
+@(test)
+test_a_machines_phase_offset_takes_its_frame :: proc(t: ^testing.T) {
+	for origin in ([3]World_Coordinate{{0, 0, 0}, {3, 1, -2}, {-40, 7, 120}}) {
+		testing.expect_value(t, motion_phase_offset(origin, BLOCK_FRAME), motion_phase_offset(origin))
+	}
+	offsets: [17]f32
+	for &offset, frame in offsets {
+		offset = motion_phase_offset({}, Frame_Id(frame))
+	}
+	for frame in 1 ..< len(offsets) {
+		for other in 0 ..< frame {
+			testing.expectf(t, offsets[frame] != offsets[other], "frames %d and %d share offset %v", frame, other, offsets[frame])
+		}
+	}
+	machines := make_test_machines()
+	engine := test_machine(machines, "steam_engine")
+	machine := machines.machines[engine]
+	frame := Model_Frame{tick = 37, tick_rate = 60}
+	first := Entity_Common{machine = engine, frame = Frame_Id(1), size = {3, 2, 5}}
+	second := first
+	second.frame = Frame_Id(2)
+	first_phase := clock_pose(frame, first, machine, true).phase
+	second_phase := clock_pose(frame, second, machine, true).phase
+	testing.expectf(t, first_phase != second_phase, "two engines at one cell on frames 1 and 2 share phase %v", first_phase)
+}
+
 @(test)
 test_the_light_tint_combines_sky_and_block_light :: proc(t: ^testing.T) {
 	white := [3]f32{1, 1, 1}

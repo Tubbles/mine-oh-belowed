@@ -428,3 +428,12 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `set_field_node_uniforms` makes two `SetShaderValue` calls a node, each binding the program again. To look at only if the frame table shows it.
 - The bit for bit test needs 16 matched pairs and would not notice two nodes giving a shared vertex different integer positions; the review's probe checked that and found none. The check could move into the test.
 - The comment in `field.vs` and the item say `invariant` requires the compiler to keep the sum; "in practice" is the honest word (the log has the reason).
+
+## Suggestions from the field's machines (0362, 2026-11-13)
+
+- A lit lamp lights no ground on the field: `gather_machine_lights` now takes lamps, but the lamp's record lists no `lights`. An entry there is a content change for the user to decide (colour, radius).
+- The launch pad's tower and rocket are flat red and grey boxes beside a modelled pad. They read as placeholders in the captures; a model is the sealed lab's work.
+- `draw_entity_cells`, `draw_inserter` and `draw_vessel_part` keep their own matrix pushes where `begin_entity_cells_draw` would do.
+- `test_a_machines_phase_offset_takes_its_frame` compares the block frame's offset with the default argument's, which is the same call. One literal offset from the old formula would guard the block world's phases.
+- `doc/audit/presentation.md` is a dated audit: its `draw_entities` row still lists the drill's drop arrow and its uncovered list predates the new coverage test.
+- A capture of a drill on a vein, for its arrow on a planet, needs a frame started by hand (`place` starts none); a socket command that starts a frame on the ground would make it a line.
