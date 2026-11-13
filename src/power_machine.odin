@@ -270,6 +270,8 @@ validate_fuel_efficiency :: proc(definition: Machine_Definition, kind: Machine_K
 
 // Dispatch orders run from 0 (serves first) to this.
 MAXIMUM_DISPATCH_ORDER :: 9
+// A vessel's batteries give after every generator (0383).
+STORE_DISPATCH_ORDER :: MAXIMUM_DISPATCH_ORDER + 1
 
 machine_kind_is_generator :: proc(kind: Machine_Kind) -> bool {
 	return kind == .Steam_Engine || kind == .Combustion_Generator || kind == .Hydro_Turbine

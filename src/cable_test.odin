@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:math/linalg"
 import "core:mem/virtual"
 import "core:slice"
@@ -1003,4 +1004,180 @@ test_benchmark_modules_cable_every_electric_machine :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, electric > 20, "the modules hold electric machines")
+}
+
+// One tick with the fuel generator's offer set to joules, as
+// tick_with_hand_run_offer sets the engine's.
+tick_with_generator_offer :: proc(simulation: ^Simulation_State, content: Simulation_Content, generator: Entity_Handle, joules: u32) {
+	test_fluid_machine(&simulation.world, generator).fuel_joules = joules
+	tick_test_entities(&simulation.world, &simulation.records, content, 1)
+}
+
+// Step 2 of 0368 (0383). A lead battery charged to 1000 J and cabled to a
+// control unit holds the unit at 1000 while its charge falls by the
+// unit's 1 J a tick, a store of the unit's network. A fuel generator on
+// the ground cabled to the vessel's connector then serves the unit and
+// charges the battery from what is left: at most the 32 J its 33 J cable
+// has beside the unit's joule (less a joule of the solve's whole per mille
+// level), the generator giving both; then the 20 J of room left to its
+// capacity, and nothing once full. With the generator's fuel cut every
+// other tick the battery gives in one tick and takes in the next, never
+// both in one.
+@(test)
+test_vessel_battery_charges_and_discharges :: proc(t: ^testing.T) {
+	simulation, content, _ := make_vessel_test()
+	defer destroy_simulation(&simulation)
+	world, entities := &simulation.world, &simulation.world.entities
+	networks := &entities.electric_networks
+	_, vessel := start_test_vessel(&simulation, content, "iron_truss", 4 * POSITION_UNITS_PER_METRE, 0)
+	battery := add_test_vessel_part(&simulation, content, "lead_battery", vessel.id, {0, 1, 0})
+	connector := add_test_vessel_part(&simulation, content, "docking_connector", vessel.id, {0, 2, 0})
+	control := add_test_vessel_part(&simulation, content, "control_unit", vessel.id, {0, 3, 0})
+	lay_test_cable(world, content, "light_cable", {battery, 1}, {control, 0})
+	lay_test_cable(world, content, "light_cable", {connector, 2}, {battery, 0})
+	pool_get(&entities.vessel_parts, battery).stored_joules = 1000
+	tick_test_entities(world, &simulation.records, content, 10)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, control).power.satisfaction, 1000)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, battery).stored_joules, 990)
+	testing.expect_value(t, len(networks.networks), 1)
+	testing.expect_value(t, networks.networks[0].store_count, 1)
+	testing.expect_value(t, networks.networks[0].generator_count, 0)
+	testing.expect_value(t, simulation.records.statistics.unpowered_machines, 0)
+	// The overview lists the battery under the batteries, not the generators.
+	testing.expect_value(t, len(largest_participant_groups(networks.participants[:], 0, .Generators, POWER_GENERATOR_TYPE_COUNT)), 0)
+	batteries := largest_participant_groups(networks.participants[:], 0, .Batteries, POWER_BATTERY_TYPE_COUNT)
+	lead_battery := test_machine(content.machines, "lead_battery")
+	testing.expect_value(t, len(batteries), 1)
+	if len(batteries) == 1 {
+		testing.expect_value(t, batteries[0], Participant_Group{machine = lead_battery, count = 1, joules = 1})
+	}
+
+	pad := lay_test_pad(entities, content.machines, 0, 0, {-2, 0, -2}, {1, 0, 1})
+	generator := place_on_test_pad(&simulation, content, pad, "fuel_generator", {-2, 1, -2})
+	lay_test_cable(world, content, "light_cable", {generator, 0}, {connector, 0})
+	tick_with_generator_offer(&simulation, content, generator, 10_000)
+	charge, _ := entity_participant(networks, battery)
+	supply, _ := entity_participant(networks, generator)
+	testing.expectf(t, charge.charged >= 31 && charge.charged <= 32, "charged %d", charge.charged)
+	testing.expect_value(t, charge.delivered, 0)
+	testing.expect_value(t, supply.delivered, 1 + charge.charged)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, battery).stored_joules, 990 + charge.charged)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, control).power.satisfaction, 1000)
+	taking := largest_participant_groups(networks.participants[:], 0, .Batteries, POWER_BATTERY_TYPE_COUNT)
+	testing.expect_value(t, len(taking), 1)
+	if len(taking) == 1 {
+		testing.expect_value(t, taking[0], Participant_Group{machine = lead_battery, count = 1, taken = charge.charged})
+		testing.expect_value(t, participant_group_power_text(taking[0], TEST_TICK_RATE), fmt.tprintf("+%s", format_joules_per_tick(charge.charged, TEST_TICK_RATE)))
+	}
+
+	record, _ := vessel_part_record(content.vessel_parts, test_machine(content.machines, "lead_battery"))
+	capacity := battery_capacity_joules(record)
+	testing.expect_value(t, capacity, 2000 * 3600)
+	pool_get(&entities.vessel_parts, battery).stored_joules = capacity - 20
+	tick_with_generator_offer(&simulation, content, generator, 10_000)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, battery).stored_joules, capacity)
+	tick_with_generator_offer(&simulation, content, generator, 10_000)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, battery).stored_joules, capacity)
+
+	for tick in 0 ..< 6 {
+		before := pool_get(&entities.vessel_parts, battery).stored_joules
+		tick_with_generator_offer(&simulation, content, generator, tick % 2 == 0 ? 0 : 10_000)
+		participant, _ := entity_participant(networks, battery)
+		testing.expectf(t, (tick % 2 == 0) == (participant.delivered == 1) && (tick % 2 == 0) == (participant.charged == 0), "tick %d: gave %d, took %d", tick, participant.delivered, participant.charged)
+		testing.expect_value(t, pool_get(&entities.vessel_parts, battery).stored_joules, before + participant.charged - participant.delivered)
+		testing.expect_value(t, pool_get(&entities.vessel_parts, control).power.satisfaction, 1000)
+	}
+}
+
+// A vessel 4 m from the flat site with an empty lead battery, a docking
+// connector and a control unit, none cabled (0383).
+Battery_Test_Vessel :: struct {
+	battery, connector, control: Entity_Handle,
+}
+
+add_battery_test_vessel :: proc(simulation: ^Simulation_State, content: Simulation_Content) -> (vessel: Battery_Test_Vessel) {
+	_, frame := start_test_vessel(simulation, content, "iron_truss", 4 * POSITION_UNITS_PER_METRE, 0)
+	vessel.battery = add_test_vessel_part(simulation, content, "lead_battery", frame.id, {0, 1, 0})
+	vessel.connector = add_test_vessel_part(simulation, content, "docking_connector", frame.id, {0, 2, 0})
+	vessel.control = add_test_vessel_part(simulation, content, "control_unit", frame.id, {0, 3, 0})
+	return
+}
+
+// A vessel's own network raises no warning (0383): an uncabled control
+// unit, and one on an empty battery, count neither unpowered nor in a
+// brownout and the HUD warns of none, while the unit itself gets nothing.
+// Cabled through the connector to a lamp on the ground with no generator,
+// the network counts as any network does: in a brownout every tick, and
+// with the battery left out (no store), the unit and the lamp unpowered.
+@(test)
+test_a_vessels_own_network_raises_no_warning :: proc(t: ^testing.T) {
+	simulation, content, _ := make_vessel_test()
+	defer destroy_simulation(&simulation)
+	world, entities := &simulation.world, &simulation.world.entities
+	networks := &entities.electric_networks
+	statistics := &simulation.records.statistics
+	vessel := add_battery_test_vessel(&simulation, content)
+	tick_test_entities(world, &simulation.records, content, 1)
+	testing.expect_value(t, statistics.unpowered_machine_ticks, 0)
+	testing.expect_value(t, statistics.brownout_ticks, 0)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, vessel.control).power.satisfaction, 0)
+
+	lay_test_cable(world, content, "light_cable", {vessel.battery, 1}, {vessel.control, 0})
+	tick_test_entities(world, &simulation.records, content, 1)
+	testing.expect(t, network_is_in_brownout(networks.networks[0]))
+	testing.expect(t, !any_network_in_brownout(networks))
+	testing.expect_value(t, statistics.unpowered_machine_ticks, 0)
+	testing.expect_value(t, statistics.brownout_ticks, 0)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, vessel.control).power.satisfaction, 0)
+
+	pad := lay_test_pad(entities, content.machines, 0, 0, {-2, 0, -2}, {1, 0, 1})
+	lamp := place_on_test_pad(&simulation, content, pad, "lamp", {0, 1, 0})
+	lay_test_cable(world, content, "light_cable", {vessel.connector, 2}, {vessel.battery, 0})
+	lay_test_cable(world, content, "light_cable", {lamp, 0}, {vessel.connector, 0})
+	tick_test_entities(world, &simulation.records, content, 2)
+	testing.expect(t, any_network_in_brownout(networks))
+	testing.expect_value(t, statistics.brownout_ticks, 2)
+	// The empty battery is a store (0368's rule), so nothing is unpowered.
+	testing.expect_value(t, statistics.unpowered_machine_ticks, 0)
+
+	remove_cable(entities, content.machines, port_end_cable(&entities.cables, {vessel.battery, 1}))
+	remove_cable(entities, content.machines, port_end_cable(&entities.cables, {vessel.battery, 0}))
+	lay_test_cable(world, content, "light_cable", {vessel.connector, 2}, {vessel.control, 0})
+	tick_test_entities(world, &simulation.records, content, 1)
+	testing.expect_value(t, statistics.unpowered_machines, 2)
+	testing.expect_value(t, statistics.brownout_ticks, 3)
+}
+
+// Produced is what the generators gave, the battery's charge included
+// (0383): with the battery charging, produced and the fuel left make the
+// one coal lit, as the combustion tests count it without a battery, and
+// produced is the unit's joules and the battery's charge. With the
+// generator's cable taken up the battery gives alone and produced stays.
+@(test)
+test_energy_produced_counts_the_charge_and_no_discharge :: proc(t: ^testing.T) {
+	simulation, content, _ := make_vessel_test()
+	defer destroy_simulation(&simulation)
+	world, entities := &simulation.world, &simulation.world.entities
+	statistics := &simulation.records.statistics
+	vessel := add_battery_test_vessel(&simulation, content)
+	lay_test_cable(world, content, "light_cable", {vessel.battery, 1}, {vessel.control, 0})
+	lay_test_cable(world, content, "light_cable", {vessel.connector, 2}, {vessel.battery, 0})
+	pad := lay_test_pad(entities, content.machines, 0, 0, {-2, 0, -2}, {1, 0, 1})
+	generator := place_on_test_pad(&simulation, content, pad, "fuel_generator", {-2, 1, -2})
+	test_fluid_machine(world, generator).slots[COMBUSTION_FUEL_SLOT] = {test_item(content.items, "coal"), 3}
+	lay_test_cable(world, content, "light_cable", {generator, 0}, {vessel.connector, 0})
+	tick_test_entities(world, &simulation.records, content, 100)
+	charge := pool_get(&entities.vessel_parts, vessel.battery).stored_joules
+	testing.expect(t, charge > 0)
+	testing.expect_value(t, statistics.fuel_burned, 1)
+	testing.expect_value(t, statistics.energy_produced_joules + u64(test_fluid_machine(world, generator).fuel_joules), 1_000_000)
+	testing.expect_value(t, statistics.energy_consumed_joules, 100)
+	testing.expect_value(t, statistics.energy_produced_joules, statistics.energy_consumed_joules + charge)
+
+	produced := statistics.energy_produced_joules
+	remove_cable(entities, content.machines, port_end_cable(&entities.cables, {generator, 0}))
+	tick_test_entities(world, &simulation.records, content, 10)
+	testing.expect_value(t, statistics.energy_produced_joules, produced)
+	testing.expect_value(t, statistics.energy_consumed_joules, 110)
+	testing.expect_value(t, pool_get(&entities.vessel_parts, vessel.battery).stored_joules, charge - 10)
 }

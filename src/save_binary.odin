@@ -612,6 +612,24 @@ write_list :: proc(bytes: ^[dynamic]byte, values: []$T) {
 	write_elements(bytes, raw_data(values), type_info_of(T), size_of(T), len(values))
 }
 
+// Whether the list of structs at the reader was written with the field:
+// its schema names it. Reads a copy of the reader, for a load's line about
+// a field an older build did not write.
+saved_list_has_field :: proc(reader: Byte_Reader, name: string) -> bool {
+	peek := reader
+	read_u32(&peek) or_return
+	count := read_u16(&peek) or_return
+	for _ in 0 ..< count {
+		field := read_string(&peek) or_return
+		read_u64(&peek) or_return
+		read_u32(&peek) or_return
+		if field == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Every value takes at least one byte, which bounds the count by the
 // bytes left before anything is allocated. Elements start zeroed, so
 // fields the file lacks read as zero.

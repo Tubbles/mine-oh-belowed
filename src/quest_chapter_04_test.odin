@@ -238,7 +238,7 @@ test_power_counters_count_brownouts_and_unpowered_machines :: proc(t: ^testing.T
 	networks: Electric_Networks
 	networks.networks = make([dynamic]Electric_Network, context.temp_allocator)
 	networks.participants = make([dynamic]Electric_Participant, context.temp_allocator)
-	append(&networks.networks, Electric_Network{supply = 50, demand = 100, delivered = 50, satisfaction = POWER_FULL / 2, generator_count = 1, consumer_count = 1})
+	append(&networks.networks, Electric_Network{supply = 50, demand = 100, delivered = 50, satisfaction = POWER_FULL / 2, generator_count = 1, consumer_count = 1, ground_participant_count = 2})
 	append(&networks.participants, Electric_Participant{network = 0, offered = 100, delivered = 50})
 	append(&networks.participants, Electric_Participant{network = -1})
 	append(&networks.participants, Electric_Participant{network = -1, generator = true})

@@ -13,9 +13,11 @@ POWER_LIST_COLUMN_FRACTION :: 0.4
 POWER_OVERVIEW_WIDTH :: 1400
 POWER_TOP_CONSUMER_COUNT :: 5
 POWER_GENERATOR_TYPE_COUNT :: 3
-// Network, supply, demand, satisfaction, the generators' heading and its
-// lines, the consumers' heading and its lines.
-POWER_DETAIL_ROWS :: 6 + POWER_GENERATOR_TYPE_COUNT + POWER_TOP_CONSUMER_COUNT
+// The lead and the nickel battery (0383).
+POWER_BATTERY_TYPE_COUNT :: 2
+// Network, supply, demand, satisfaction, the generators', the batteries'
+// and the consumers' headings, each with its lines.
+POWER_DETAIL_ROWS :: 7 + POWER_GENERATOR_TYPE_COUNT + POWER_BATTERY_TYPE_COUNT + POWER_TOP_CONSUMER_COUNT
 
 // Joules per tick as kW.
 joules_per_tick_kilowatts :: proc(joules: u64, tick_rate: int) -> f32 {
@@ -146,28 +148,47 @@ power_entity_status_text :: proc(world: ^World, machines: Machine_Registry, hand
 	return fmt.tprintf("%s  %s", name, network < 0 ? text("power_switch_open") : network_name(network))
 }
 
-// Consumers or generators of one machine type in a network, for the
-// overview: joules is the consumers' demand or the generators' output in
-// the last tick.
+// The overview's three lists: a battery (0383) is a generator that is
+// also a store, listed apart from the generators.
+Participant_Side :: enum {
+	Consumers,
+	Generators,
+	Batteries,
+}
+
+participant_side :: proc(participant: Electric_Participant) -> Participant_Side {
+	switch {
+	case participant.store:
+		return .Batteries
+	case participant.generator:
+		return .Generators
+	}
+	return .Consumers
+}
+
+// Consumers, generators or batteries of one machine type in a network,
+// for the overview: joules is the consumers' demand or what the
+// generators and batteries gave in the last tick, taken what the
+// batteries took.
 Participant_Group :: struct {
 	machine: Machine_Id,
 	count:   int,
 	joules:  u64,
+	taken:   u64,
 }
 
 // What a participant adds to its group: a consumer's demand, a
-// generator's delivered energy.
+// generator's or battery's delivered energy.
 participant_group_joules :: proc(participant: Electric_Participant) -> u64 {
 	return participant.generator ? participant.delivered : participant.offered
 }
 
-// The consumers (or the generators) of a network grouped by machine,
-// largest first (ties by machine id), at most `limit`. In the temp
-// allocator.
-largest_participant_groups :: proc(participants: []Electric_Participant, network: int, generators: bool, limit: int) -> []Participant_Group {
+// One side of a network grouped by machine, largest first (what was given
+// and taken, ties by machine id), at most `limit`. In the temp allocator.
+largest_participant_groups :: proc(participants: []Electric_Participant, network: int, side: Participant_Side, limit: int) -> []Participant_Group {
 	groups := make([dynamic]Participant_Group, context.temp_allocator)
 	for participant in participants {
-		if participant.network != network || participant.generator != generators {
+		if participant.network != network || participant_side(participant) != side {
 			continue
 		}
 		index := participant_group_index(groups[:], participant.machine)
@@ -177,14 +198,27 @@ largest_participant_groups :: proc(participants: []Electric_Participant, network
 		}
 		groups[index].count += 1
 		groups[index].joules += participant_group_joules(participant)
+		groups[index].taken += participant.charged
 	}
 	slice.sort_by(groups[:], proc(first, second: Participant_Group) -> bool {
-		if first.joules != second.joules {
-			return first.joules > second.joules
+		if first.joules + first.taken != second.joules + second.taken {
+			return first.joules + first.taken > second.joules + second.taken
 		}
 		return first.machine < second.machine
 	})
 	return groups[:min(limit, len(groups))]
+}
+
+// A group's power: what it gave, and what batteries took with a plus,
+// as "+31 W"; what it gave when it neither gave nor took.
+participant_group_power_text :: proc(group: Participant_Group, tick_rate: int) -> string {
+	switch {
+	case group.taken == 0:
+		return format_joules_per_tick(group.joules, tick_rate)
+	case group.joules == 0:
+		return fmt.tprintf("+%s", format_joules_per_tick(group.taken, tick_rate))
+	}
+	return fmt.tprintf("%s  +%s", format_joules_per_tick(group.joules, tick_rate), format_joules_per_tick(group.taken, tick_rate))
 }
 
 participant_group_index :: proc(groups: []Participant_Group, machine: Machine_Id) -> int {
@@ -259,16 +293,18 @@ power_network_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_demand"), format_joules_per_tick(network.demand, tick_rate)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_satisfaction"), format_satisfaction(network.satisfaction)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
 	detail_line(state, &content, fmt.tprintf("%s: %d", text("power_generators"), network.generator_count), UI_DIM_TEXT_COLOR, UI_LINE_HEIGHT)
-	participant_group_lines(state, &content, screen_context, index, true, POWER_GENERATOR_TYPE_COUNT)
+	participant_group_lines(state, &content, screen_context, index, .Generators, POWER_GENERATOR_TYPE_COUNT)
+	detail_line(state, &content, fmt.tprintf("%s: %d", text("power_overview_batteries"), network.store_count), UI_DIM_TEXT_COLOR, UI_LINE_HEIGHT)
+	participant_group_lines(state, &content, screen_context, index, .Batteries, POWER_BATTERY_TYPE_COUNT)
 	detail_line(state, &content, text("power_largest_consumers"), UI_DIM_TEXT_COLOR, UI_LINE_HEIGHT)
-	participant_group_lines(state, &content, screen_context, index, false, POWER_TOP_CONSUMER_COUNT)
+	participant_group_lines(state, &content, screen_context, index, .Consumers, POWER_TOP_CONSUMER_COUNT)
 }
 
-participant_group_lines :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context, network: int, generators: bool, limit: int) {
+participant_group_lines :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context, network: int, side: Participant_Side, limit: int) {
 	participants := screen_context.world.entities.electric_networks.participants[:]
-	for group in largest_participant_groups(participants, network, generators, limit) {
+	for group in largest_participant_groups(participants, network, side, limit) {
 		name := machine_name(screen_context.machines, group.machine)
-		detail_line(state, content, fmt.tprintf("%s x%d  %s", name, group.count, format_joules_per_tick(group.joules, screen_context.tick_rate)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
+		detail_line(state, content, fmt.tprintf("%s x%d  %s", name, group.count, participant_group_power_text(group, screen_context.tick_rate)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
 	}
 }
 

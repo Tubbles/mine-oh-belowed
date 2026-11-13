@@ -214,7 +214,7 @@ test_brownout_is_shared_between_steam_and_combustion :: proc(t: ^testing.T) {
 	testing.expect_value(t, records.statistics.energy_consumed_joules, 98 * 10)
 	testing.expect_value(t, records.statistics.brownout_ticks, 10)
 	// The overview groups the generators by type with their output.
-	groups := largest_participant_groups(networks.participants[:], 0, true, POWER_GENERATOR_TYPE_COUNT)
+	groups := largest_participant_groups(networks.participants[:], 0, .Generators, POWER_GENERATOR_TYPE_COUNT)
 	testing.expect_value(t, len(groups), 2)
 	testing.expect_value(t, groups[0], Participant_Group{machine = test_machine(content.machines, "steam_engine"), count = 1, joules = 60})
 	testing.expect_value(t, groups[1], Participant_Group{machine = test_machine(content.machines, "combustion_generator"), count = 1, joules = 38})

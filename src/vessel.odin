@@ -19,10 +19,13 @@ import "platform"
 // last part releases its frame, and the frame's release drops the record
 // (release_empty_frame, remove_vessel_record).
 
-// A vessel's part: its common data only (the battery's charge and a
-// tank's contents are 0355's and 0356's).
+// A vessel's part: its common data, what the netlist gave a control unit
+// this tick and a battery's charge in joules (0383; a tank's contents are
+// 0356's). Absent in an older save, both read zero.
 Vessel_Part :: struct {
-	using common: Entity_Common,
+	using common:  Entity_Common,
+	power:         Power_State,
+	stored_joules: u64,
 }
 
 // parts_replaced counts the swaps in place (0365); 0 until then.
@@ -332,7 +335,9 @@ write_vessel_tables :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
 }
 
 // See write_vessel_tables. A save from before 0361 ends before the table
-// and loads with no vessels and one log line. False for a live part whose
+// and loads with no vessels and one log line; one from before 0383 has
+// parts without their charge and loads its batteries empty, with one log
+// line when it holds a vessel. False for a live part whose
 // machine is of no vessel kind, a frame record naming a dead part or an
 // unknown frame, vessel records out of order or naming no frame, or a
 // live part on a frame of no vessel. The occupancy follows
@@ -345,6 +350,7 @@ read_vessel_tables :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: 
 		platform.log_printf("save: written before vessels (0361), no vessels")
 		return true
 	}
+	charged := saved_list_has_field(reader^, "stored_joules")
 	read_pool(reader, &entities.vessel_parts, .Vessel_Part, machines) or_return
 	for part in entities.vessel_parts.entries {
 		if part.alive && !machine_kind_is_vessel(machines.machines[part.machine].kind) {
@@ -372,6 +378,9 @@ read_vessel_tables :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: 
 		if part.alive && vessel_index(entities, part.frame) < 0 {
 			return false
 		}
+	}
+	if !charged && len(entities.vessels) > 0 {
+		platform.log_printf("save: written before the batteries' charge (0383), every battery starts empty")
 	}
 	return true
 }

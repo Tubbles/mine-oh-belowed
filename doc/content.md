@@ -258,7 +258,7 @@ The first set (0361). The keys and their rules are in [vessels.md](vessels.md), 
   | `nickel_battery` | `vessel_part` | 1×1×1 | as the lead battery at 3000 W | battery 2 | 45 | supplies 3000 W, stores 3000 Wh |
   | `iron_tank` | `vessel_part` | 2×2×2 | `fluid` fluid (0, 0, 1) +z 10 L/s | tank 1 | 150 | stores 1000 L |
   | `control_unit` | `vessel_control_unit` | 1×1×1 | `power` power (0, 0, 0) +z 200 W | control_unit 1 | 20 | draws 60 W |
-  | `docking_connector` | `vessel_part` | 1×1×1 | `power` power (0, 0, 0) +z 5000 W, `fluid` fluid (0, 0, 0) +x 20 L/s | docking_connector 1 | 30 | connector |
+  | `docking_connector` | `vessel_part` | 1×1×1 | `power` power (0, 0, 0) +z 5000 W, `fluid` fluid (0, 0, 0) +x 20 L/s, `power_inner` power (0, 0, 0) -z 5000 W (0383: a port takes one cable, one port for the ground's and one for the vessel's) | docking_connector 1 | 30 | connector |
 
 - The control unit draws 60 W, not 50: 50 W floors to no joule a tick at 60 ticks a second (0355's design).
 - Items: category `machine`, stack 50 as every machine (Items), the price the sum of the recipe's inputs' prices: truss 6, deck plate 14, iron ring 48, steel ring 152, lead battery 20, nickel battery 34, tank 36, control unit 34, docking connector 36.

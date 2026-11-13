@@ -25,10 +25,17 @@ import "netlist"
 // (power_machine.odin); the generators share what was delivered in their
 // dispatch order (0140), within one order in proportion to their offers,
 // and burn fuel or steam only for their share.
+//
+// A vessel's battery (0383) is a store: it offers its charge up to its
+// rate at STORE_DISPATCH_ORDER, after every generator, and takes charge up
+// to its rate and its room from what the generators have left once the
+// consumers are served, through what that left of each cable. A battery
+// that gave this tick takes nothing. A control unit is a consumer.
 
 // The last tick's balance of one network, joules per tick. satisfaction
 // is the lowest level of its consumers with a demand, in per mille, or
-// full when nothing asks and something could give.
+// full when nothing asks and something could give. supply counts the
+// batteries' offers too.
 Electric_Network :: struct {
 	supply:          u64,
 	demand:          u64,
@@ -36,21 +43,29 @@ Electric_Network :: struct {
 	satisfaction:    u32,
 	generator_count: int,
 	consumer_count:  int,
-	// The batteries (0383); 0 until then.
+	// The batteries (0383).
 	store_count:     int,
+	// The participants that are no vessel part: 0 for a vessel's own
+	// network, which raises no warning (network_holds_only_vessel_parts).
+	ground_participant_count: int,
 }
 
 // offered is a consumer's demand or a generator's supply for the tick,
 // delivered what it received or gave. node is its node in the netlist, -1
 // for an entity without a power port; network is -1 outside every network.
+// A battery is a generator that is also a store: room is what it can take
+// this tick, charged what it took.
 Electric_Participant :: struct {
 	handle:    Entity_Handle,
 	machine:   Machine_Id,
 	network:   int,
 	node:      int,
 	generator: bool,
+	store:     bool,
 	offered:   u64,
 	delivered: u64,
+	room:      u64,
+	charged:   u64,
 	// Generators: lower serves first (the netlist's dispatch_by_order).
 	dispatch_order: u8,
 }
@@ -206,9 +221,9 @@ power_satisfaction :: proc(supply, demand: u64) -> u32 {
 // Through the netlist: each participant's input on its node, each edge's
 // capacity in whole joules a tick (floored after bundling: a limit, no
 // energy is lost), the solve, and each participant's delivered (supplied
-// for a generator). The networks' figures are summed from the
-// participants; a network's satisfaction is the lowest level among its
-// consumers with a demand.
+// for a generator) and charged (a battery's). The networks' figures are
+// summed from the participants; a network's satisfaction is the lowest
+// level among its consumers with a demand.
 balance_electric_energy :: proc(networks: ^Electric_Networks, tick_rate: int) {
 	node_count := len(networks.node_entities)
 	resize(&networks.capacity_per_tick, node_count)
@@ -233,12 +248,13 @@ balance_electric_energy :: proc(networks: ^Electric_Networks, tick_rate: int) {
 		network.satisfaction = POWER_FULL + 1
 	}
 	for &participant in networks.participants {
-		participant.delivered = 0
+		participant.delivered, participant.charged = 0, 0
 		if participant.node < 0 {
 			continue
 		}
 		output := networks.outputs[participant.node]
 		participant.delivered = u64(participant.generator ? output.supplied : output.delivered)
+		participant.charged = u64(output.charged)
 		if participant.network >= 0 {
 			network := &networks.networks[participant.network]
 			add_participant_offer(network, participant)
@@ -257,20 +273,29 @@ balance_electric_energy :: proc(networks: ^Electric_Networks, tick_rate: int) {
 	}
 }
 
+// A battery's dispatch order is STORE_DISPATCH_ORDER
+// (make_battery_participant); any other generator's room is 0.
 participant_node_input :: proc(participant: Electric_Participant) -> netlist.Node_Input {
 	if participant.generator {
-		return {offer = i64(participant.offered), order = participant.dispatch_order}
+		return {offer = i64(participant.offered), charge_room = i64(participant.room), order = participant.dispatch_order, store = participant.store}
 	}
 	return {demand = i64(participant.offered)}
 }
 
 add_participant_offer :: proc(network: ^Electric_Network, participant: Electric_Participant) {
-	if participant.generator {
+	switch {
+	case participant.store:
+		network.supply += participant.offered
+		network.store_count += 1
+	case participant.generator:
 		network.supply += participant.offered
 		network.generator_count += 1
-	} else {
+	case:
 		network.demand += participant.offered
 		network.consumer_count += 1
+	}
+	if participant.handle.kind != .Vessel_Part {
+		network.ground_participant_count += 1
 	}
 }
 
@@ -364,6 +389,7 @@ collect_electric_participants :: proc(tick_context: Entity_Tick_Context) {
 		}
 	}
 	collect_crafting_participants(tick_context)
+	collect_vessel_participants(tick_context)
 }
 
 // Electric crafting machines, labs, core sample drills and launch pads,
@@ -404,6 +430,48 @@ collect_crafting_participants :: proc(tick_context: Entity_Tick_Context) {
 	}
 }
 
+JOULES_PER_WATT_HOUR :: 3600
+
+// Batteries and control units (0383): the live vessel parts with a power
+// port, in pool order, after every other pool.
+collect_vessel_participants :: proc(tick_context: Entity_Tick_Context) {
+	content, tick_rate := tick_context.content, tick_context.tick_rate
+	networks := &tick_context.entities.electric_networks
+	for part in tick_context.entities.vessel_parts.entries {
+		record, found := vessel_part_record(content.vessel_parts, part.machine)
+		if !part.alive || !found || !machine_touches_power(content.machines.machines[part.machine]) {
+			continue
+		}
+		if vessel_part_is_battery(record) {
+			append(&networks.participants, make_battery_participant(networks, part, record, tick_rate))
+		} else if record.draws_watts > 0 {
+			demand := electric_joules_per_tick(u32(record.draws_watts), tick_rate)
+			append(&networks.participants, make_participant(networks, part.common, false, demand))
+		}
+	}
+}
+
+vessel_part_is_battery :: proc(record: Vessel_Part_Record) -> bool {
+	return record.supplies_watts > 0 && record.stores_watt_hours > 0
+}
+
+battery_capacity_joules :: proc(record: Vessel_Part_Record) -> u64 {
+	return u64(record.stores_watt_hours) * JOULES_PER_WATT_HOUR
+}
+
+// A store at STORE_DISPATCH_ORDER: it offers its charge and takes the room
+// left to its capacity, each up to its rate a tick. A charge above the
+// capacity (the data's capacity lowered) takes nothing until it falls
+// below.
+make_battery_participant :: proc(networks: ^Electric_Networks, part: Vessel_Part, record: Vessel_Part_Record, tick_rate: int) -> Electric_Participant {
+	rate := electric_joules_per_tick(u32(record.supplies_watts), tick_rate)
+	capacity := battery_capacity_joules(record)
+	participant := make_participant(networks, part.common, true, min(rate, part.stored_joules))
+	participant.store, participant.dispatch_order = true, STORE_DISPATCH_ORDER
+	participant.room = part.broken ? 0 : min(rate, capacity - min(part.stored_joules, capacity))
+	return participant
+}
+
 // Sets a consumer's satisfaction for the tick: the one seam every
 // consumer's share of the balance goes through.
 deliver_power_satisfaction :: proc(entities: ^Entities, handle: Entity_Handle, satisfaction: u32) {
@@ -429,15 +497,24 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 		return &pool_get(&entities.core_sample_drills, handle).power
 	case .Launch_Pad:
 		return &pool_get(&entities.launch_pads, handle).power
+	case .Vessel_Part:
+		return &pool_get(&entities.vessel_parts, handle).power
 	}
 	return nil
 }
 
-// A consumer gets its node's level. Generators draw their steam, gas and
-// fuel items here, so they are counted consumed here.
+// A consumer gets its node's level. A battery's charge moves by what it
+// took and gave (the solve charges no store that gave, and gives no more
+// than its charge). Generators draw their steam, gas and fuel items here,
+// so they are counted consumed here.
 apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content, statistics: ^Statistics, tick_rate: int) {
 	networks := &entities.electric_networks
 	for participant in networks.participants {
+		if participant.store {
+			battery := pool_get(&entities.vessel_parts, participant.handle)
+			battery.stored_joules = battery.stored_joules + participant.charged - participant.delivered
+			continue
+		}
 		network := participant.network >= 0 ? networks.networks[participant.network] : Electric_Network{}
 		if !participant.generator {
 			level := participant.node >= 0 ? networks.outputs[participant.node].level : 0
@@ -487,21 +564,25 @@ record_generator_tick :: proc(statistics: ^Statistics, kind: Machine_Kind, befor
 	record_slot_consumption(statistics, slots_before[:before.slot_count], slots_after[:after.slot_count])
 }
 
-// Energy and brownouts for the overview and the quest hints. A consumer
-// is unpowered outside every network or in one with no generator and no
-// store.
+// Energy and brownouts for the overview and the quest hints. Produced is
+// what the generators gave, the batteries' charge included, never a
+// battery's discharge; consumed what the consumers received. A vessel's
+// own network raises no warning (0383): it is left out of the brownout
+// ticks and its consumers out of the unpowered count.
 record_electric_tick :: proc(statistics: ^Statistics, networks: ^Electric_Networks) {
 	unpowered := 0
 	for participant in networks.participants {
-		if !participant.generator && (participant.network < 0 || network_has_no_source(networks.networks[participant.network])) {
+		if participant.generator && !participant.store {
+			statistics.energy_produced_joules += participant.delivered
+		}
+		if consumer_counts_unpowered(networks, participant) {
 			unpowered += 1
 		}
 	}
 	brownout := false
 	for network in networks.networks {
-		statistics.energy_produced_joules += network.delivered
 		statistics.energy_consumed_joules += network.delivered
-		brownout = brownout || network_is_in_brownout(network)
+		brownout = brownout || network_warns_of_brownout(network)
 	}
 	if brownout {
 		statistics.brownout_ticks += 1
@@ -510,17 +591,43 @@ record_electric_tick :: proc(statistics: ^Statistics, networks: ^Electric_Networ
 	statistics.unpowered_machine_ticks += u64(unpowered)
 }
 
+// A consumer outside every network or in one with no generator and no
+// store, unless the network is a vessel's own; a vessel part with no cable
+// is a vessel's own tree of one.
+consumer_counts_unpowered :: proc(networks: ^Electric_Networks, participant: Electric_Participant) -> bool {
+	if participant.generator {
+		return false
+	}
+	if participant.network < 0 {
+		return participant.handle.kind != .Vessel_Part
+	}
+	network := networks.networks[participant.network]
+	return network_has_no_source(network) && !network_holds_only_vessel_parts(network)
+}
+
 network_has_no_source :: proc(network: Electric_Network) -> bool {
 	return network.generator_count == 0 && network.store_count == 0
+}
+
+// A vessel's own network: no participant on the ground (a docked vessel
+// on ground power counts as any network does).
+network_holds_only_vessel_parts :: proc(network: Electric_Network) -> bool {
+	return network.ground_participant_count == 0
 }
 
 network_is_in_brownout :: proc(network: Electric_Network) -> bool {
 	return network.demand > 0 && network.satisfaction < POWER_FULL
 }
 
+// The HUD warning and the brownout ticks: a brownout outside a vessel's
+// own network.
+network_warns_of_brownout :: proc(network: Electric_Network) -> bool {
+	return network_is_in_brownout(network) && !network_holds_only_vessel_parts(network)
+}
+
 any_network_in_brownout :: proc(networks: ^Electric_Networks) -> bool {
 	for network in networks.networks {
-		if network_is_in_brownout(network) {
+		if network_warns_of_brownout(network) {
 			return true
 		}
 	}

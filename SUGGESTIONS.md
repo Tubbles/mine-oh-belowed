@@ -467,3 +467,12 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The frame profile's heavy cable leaves the steam engine's port on its far face and runs through the engine's body. A port on the side facing the box would read right in captures.
 - `draw_cables` sizes its looks list for every cable, not only the shown ones: one temp allocation a frame.
 - The near cut could scale with the thickness (boxes only where they are a pixel or wider), which would spare the instances of light cables between 9 and 32 m. Worth it only if the night's figure for many cables asks.
+
+## Suggestions from the batteries (0383, 2026-11-13)
+
+- A picked up battery loses its charge, since items carry no state. To decide before batteries are carried between vessels.
+- An empty battery counts as a source for the unpowered statistic, so a consumer beside one is in brownout and never unpowered. Should an empty store stop counting?
+- The overview still colours a vessel only network in brownout while the HUD stays quiet. Information, not a warning; say if it should go too.
+- A vessel part record with both store and draw figures, or with supply and no storage, is taken as a battery only or as nothing. Data validation could refuse those shapes.
+- The docking connector's one fluid port has the power port's problem for pipes; 0356 will need a second.
+- No UI audit case shows a battery in the overview: the audit's site is a block world, which holds no vessel parts.

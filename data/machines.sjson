@@ -1509,9 +1509,12 @@ machines = [
 		kind = "vessel_part"
 		footprint = {width = 1, depth = 1, height = 1}
 		color = [200, 160, 60]
+		// A port takes one cable, so power from the ground reaches the
+		// vessel's parts through a second power port (0383).
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 5000}
 			{id = "fluid", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_litres_per_second = 20}
+			{id = "power_inner", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 5000}
 		]
 	}
 ]

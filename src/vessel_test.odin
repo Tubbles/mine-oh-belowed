@@ -4,8 +4,8 @@ import "core:testing"
 
 // Work item 0361: a field world's save carries a vessel of every part,
 // its frame and its record, and the hash survives; the steel ring's hollow
-// stays free. The same save cut before the vessels' table (one written
-// before 0361) loads with no vessels.
+// stays free; a battery keeps its charge (0383). The same save cut before
+// the vessels' table (one written before 0361) loads with no vessels.
 @(test)
 test_a_vessel_round_trips_a_save_and_an_older_save_loads_without_vessels :: proc(t: ^testing.T) {
 	config := test_field_game_config()
@@ -36,6 +36,7 @@ test_a_vessel_round_trips_a_save_and_an_older_save_loads_without_vessels :: proc
 		add_entity(entities, machines, test_machine(machines, part.id), part.cell, 0, frame)
 	}
 	testing.expect_value(t, pool_alive_count(entities.vessel_parts), len(parts))
+	pool_get(&entities.vessel_parts, entity_at(entities, {-2, 0, 0}, frame)).stored_joules = 123_456
 	hash := simulation_state_hash(state)
 	files := encode_save_files(state, simulation_content, "vessel", 0)
 	table := make([dynamic]byte, context.temp_allocator)
@@ -70,6 +71,51 @@ test_a_vessel_round_trips_a_save_and_an_older_save_loads_without_vessels :: proc
 		}
 		testing.expect_value(t, entity_at(loaded_entities, {0, 3, 0}, frame), NO_ENTITY)
 		testing.expect_value(t, entity_at(loaded_entities, {-1, 3, 0}, frame), entity_at(loaded_entities, {-1, 2, -1}, frame))
+		testing.expect_value(t, pool_get(&loaded_entities.vessel_parts, entity_at(loaded_entities, {-2, 0, 0}, frame)).stored_joules, 123_456)
+	}
+}
+
+// A vessel part as written before 0383: its common data only.
+Vessel_Part_Before_Batteries :: struct {
+	using common: Entity_Common,
+}
+
+// The vessels' table with the parts in their layout before 0383.
+write_vessel_tables_before_batteries :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
+	parts := make([dynamic]Vessel_Part_Before_Batteries, context.temp_allocator)
+	for part in entities.vessel_parts.entries {
+		append(&parts, Vessel_Part_Before_Batteries{common = part.common})
+	}
+	write_list(bytes, parts[:])
+	write_list(bytes, entities.vessel_parts.free[:])
+	write_list(bytes, vessel_part_frame_records(entities))
+	write_list(bytes, entities.vessels[:])
+}
+
+// Work item 0383: the vessels' table of a save written before 0383, its
+// parts without their charge, reads every part back with its battery
+// empty; its parts' schema lacks the charge, which the load's line reads
+// (saved_list_has_field), and this build's has it.
+@(test)
+test_a_save_before_the_batteries_loads_them_empty :: proc(t: ^testing.T) {
+	simulation, content, _ := make_vessel_test()
+	defer destroy_simulation(&simulation)
+	entities := &simulation.world.entities
+	_, vessel := start_test_vessel(&simulation, content, "iron_truss", 0, 0)
+	battery := add_test_vessel_part(&simulation, content, "lead_battery", vessel.id, {0, 1, 0})
+	pool_get(&entities.vessel_parts, battery).stored_joules = 123_456
+	current, older := make([dynamic]byte, context.temp_allocator), make([dynamic]byte, context.temp_allocator)
+	write_vessel_tables(&current, entities)
+	write_vessel_tables_before_batteries(&older, entities)
+	testing.expect(t, saved_list_has_field(Byte_Reader{data = current[:]}, "stored_joules"))
+	testing.expect(t, !saved_list_has_field(Byte_Reader{data = older[:]}, "stored_joules"))
+	for bytes, index in ([2][]byte{current[:], older[:]}) {
+		reader := Byte_Reader{data = bytes}
+		testing.expect(t, read_vessel_tables(&reader, entities, content.machines))
+		testing.expect_value(t, bytes_left(reader), 0)
+		testing.expect_value(t, pool_alive_count(entities.vessel_parts), 2)
+		testing.expect_value(t, len(entities.vessels), 1)
+		testing.expect_value(t, pool_get(&entities.vessel_parts, battery).stored_joules, index == 0 ? 123_456 : 0)
 	}
 }
 
