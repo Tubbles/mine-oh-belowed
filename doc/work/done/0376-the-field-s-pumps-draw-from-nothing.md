@@ -1,6 +1,6 @@
 # 0376: The field's pumps draw from nothing
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, f56d7b8a)
 
 Found by 0356's design: on the field the offshore pump and the tar pit pump have no source check and produce their fluid wherever they stand.
 
