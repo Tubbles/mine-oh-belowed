@@ -531,7 +531,8 @@ focused_tooltip_shows :: proc(state: Ui_State) -> bool {
 test_item_tooltip_shows_itself_after_the_delay :: proc(t: ^testing.T) {
 	state: Ui_State
 	defer destroy_ui_state(&state)
-	push_screen(&state.screens, .Inventory)
+	// A machine panel: on the inventory Info assigns instead (0278).
+	push_screen(&state.screens, .Machine)
 	tooltip_test_frame(&state, {}, 0.25)
 	ui_resolve(&state)
 	testing.expect_value(t, state.focus, 1)

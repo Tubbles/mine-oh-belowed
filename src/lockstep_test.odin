@@ -472,9 +472,9 @@ shown_slot :: proc(simulation: ^Simulation_State, player: int, machine: Entity_H
 // hand onto the cursor and returns it; player 1 takes it into the
 // inventory. Both then pick up and drag drop a stack with its return,
 // drop and split on the inserter's fuel slot, spread a split over it,
-// quick move into it and between the hotbar and the backpack, press
-// Fill, sort, transfer a grid and drop a stack on the ground. The sort
-// takes its order from the sender's own state.
+// quick move into it, name a kind on a toolbar slot (0278), sort, press
+// Fill, transfer the inventory into the inserter and drop a stack on the
+// ground. The sort takes its order from the sender's own state.
 slot_test_commands :: proc(simulation: ^Simulation_State, player, frame: int, inserter: Entity_Handle, stone: Item_Id, ranks: []u16) {
 	list := &simulation.player_commands
 	state := simulation.players[player]
@@ -503,12 +503,13 @@ slot_test_commands :: proc(simulation: ^Simulation_State, player, frame: int, in
 		queue_player_command(list, player, Return_Held_Command{})
 	case 64:
 		queue_player_command(list, player, Quick_Move_Command{machine = inserter, step = {kind = .All, target = {.Inventory, -1}, item = state.inventory.slots[HOTBAR_SLOT_COUNT + 5].item}})
-		queue_player_command(list, player, Quick_Move_Command{machine = NO_ENTITY, step = {kind = .Stack, target = {.Hotbar, 2}}})
+		queue_player_command(list, player, Toolbar_Assign_Command{toolbar = 0, slot = 2, item = stone})
 	case 70:
+		// The sort first: Fill changes the slots the sort's order covers.
+		queue_player_command(list, player, slot_sort_command(NO_ENTITY, state.inventory.slots, ranks))
 		queue_player_command(list, player, Transfer_Button_Command{machine = inserter, button = .Fill})
-		queue_player_command(list, player, slot_sort_command(NO_ENTITY, inventory_grid(state.inventory), ranks))
 	case 76:
-		queue_player_command(list, player, Grid_Transfer_Command{machine = NO_ENTITY, transfer = {source = .Main, target = .Hotbar}})
+		queue_player_command(list, player, Grid_Transfer_Command{machine = inserter, transfer = {source = .Main, target = .Machine}})
 	case 82:
 		for slot, index in state.inventory.slots {
 			if slot.item == stone && !stack_is_empty(slot) {

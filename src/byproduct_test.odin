@@ -364,8 +364,7 @@ test_concrete_brick_and_slag_place_and_mine :: proc(t: ^testing.T) {
 		records: Game_Records
 		players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 		player := &players[0]
-		player.inventory.slots[0] = Item_Stack{item, 1}
-		player.selected_hotbar_slot = 0
+		hold_test_stack(player, Item_Stack{item, 1})
 		player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
 		place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 		testing.expect_value(t, world_get_block(&world, {2, 1, 0}), block)
@@ -380,7 +379,7 @@ test_concrete_brick_and_slag_place_and_mine :: proc(t: ^testing.T) {
 		testing.expect_value(t, world_get_block(&world, {0, 0, 0}), block)
 		tick_test_player(&world, &records, registry, player, Input_Frame{pressed = {.Mine}}, 1)
 		testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
-		// A block item without a stack on the hotbar goes to the main grid.
-		testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{item, 1})
+		// The mined item takes the first empty slot.
+		testing.expect_value(t, player.inventory.slots[0], Item_Stack{item, 1})
 	}
 }

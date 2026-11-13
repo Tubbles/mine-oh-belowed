@@ -191,7 +191,7 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	players := []Player{make_test_player(content.blocks, {0.5, 1, 0.5})}
 	player := &players[0]
 	furnace_item := test_item(content.items, "steel_furnace")
-	player.inventory.slots[0] = Item_Stack{furnace_item, 2}
+	hold_test_stack(player, Item_Stack{furnace_item, 2})
 	player.target = Raycast_Hit{hit = true, block = {4, 0, 4}, face = .Positive_Y, adjacent = {4, 1, 4}}
 	place_with_player(&world, &records.statistics, content, players, 0, {.Rotate_Building})
 	testing.expect_value(t, player.placement_rotation, 1)
@@ -211,7 +211,7 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	testing.expect(t, !entity_is_alive(&world.entities, handle))
 	testing.expect_value(t, len(world.entities.frames.occupants), 0)
 	testing.expect_value(t, player.inventory.slots[0], Item_Stack{furnace_item, 2})
-	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{test_item(content.items, "iron_plate"), 7})
+	testing.expect_value(t, player.inventory.slots[1], Item_Stack{test_item(content.items, "iron_plate"), 7})
 }
 
 // Work item 0233: X (Open_Inventory and Interact, routed as the frame

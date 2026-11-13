@@ -55,12 +55,12 @@ test_split_and_sort_are_separate :: proc(t: ^testing.T) {
 	held = return_held_stack(inventory, held, items)
 	testing.expect_value(t, held.stack, EMPTY_STACK)
 	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 5], Item_Stack{TEST_GEAR, 9})
-	// X sorts the grid even on a stack of several; the hotbar keeps its order.
+	// X sorts the whole inventory even on a stack of several (0278).
 	sort := inventory_slot_commands(inventory, EMPTY_HELD_STACK, {activated = -1, focused = -1, context_action = true}, ranks)[0].(Slot_Sort_Command)
-	arrange_slots(inventory_grid(inventory), items, sort_command_order(sort))
-	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{TEST_ORE, 1})
-	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 1], Item_Stack{TEST_GEAR, 9})
-	testing.expect_value(t, inventory.slots[3], Item_Stack{TEST_MACHINE, 1})
+	arrange_slots(inventory.slots, items, sort_command_order(sort))
+	testing.expect_value(t, inventory.slots[0], Item_Stack{TEST_ORE, 1})
+	testing.expect_value(t, inventory.slots[1], Item_Stack{TEST_GEAR, 9})
+	testing.expect_value(t, inventory.slots[2], Item_Stack{TEST_MACHINE, 1})
 }
 
 @(test)
@@ -102,10 +102,9 @@ test_inventory_slot_input_queues_confirm_split_and_sort :: proc(t: ^testing.T) {
 	testing.expect_value(t, commands[0].(Slot_Split_Command), Slot_Split_Command{target = {NO_ENTITY, HOTBAR_SLOT_COUNT}, expects = {hand = NO_ITEM, slot = TEST_ORE}})
 	sort := commands[1].(Slot_Sort_Command)
 	testing.expect_value(t, sort.count, 1)
-	testing.expect_value(t, sort.order[0], 0)
+	testing.expect_value(t, sort.order[0], HOTBAR_SLOT_COUNT)
 	// L2 on an empty slot splits nothing.
 	testing.expect_value(t, len(inventory_slot_commands(inventory, EMPTY_HELD_STACK, {activated = -1, focused = 0, secondary = true}, ranks)), 0)
-	testing.expect_value(t, grid_result_to_inventory({activated = 2, focused = -1}, HOTBAR_SLOT_COUNT), Slot_Grid_Result{HOTBAR_SLOT_COUNT + 2, -1})
 }
 
 @(test)
@@ -115,7 +114,11 @@ test_radial_selects_hotbar_slot :: proc(t: ^testing.T) {
 	items := make_small_items()
 	player := Player {
 		inventory = make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT),
+		toolbars  = empty_toolbars(),
 	}
+	// The radial shows the active toolbar's kinds (0278), one held.
+	player.toolbars[0][0], player.toolbars[0][1] = TEST_ORE, TEST_GEAR
+	player.inventory.slots[20] = Item_Stack{TEST_GEAR, 3}
 	commands := make([dynamic]Queued_Player_Command, context.temp_allocator)
 	positions := [HOTBAR_SLOT_COUNT][2]f32{{0.5, 0.05}, {0.85, 0.15}, {0.95, 0.5}, {0.85, 0.85}, {0.5, 0.95}, {0.15, 0.85}, {0.05, 0.5}, {0.15, 0.15}}
 	for position, slot in positions {
@@ -259,15 +262,10 @@ test_machine_slots_filter_what_the_player_drops :: proc(t: ^testing.T) {
 @(test)
 test_active_slot_follows_the_focused_grid :: proc(t: ^testing.T) {
 	active := active_slot_after_focus({}, 3, -1)
-	testing.expect_value(t, active, Active_Slot{.Hotbar, 3})
+	testing.expect_value(t, active, Active_Slot{.Main, 3})
 	active = active_slot_after_focus(active, HOTBAR_SLOT_COUNT + 4, -1)
 	testing.expect_value(t, active, Active_Slot{.Main, HOTBAR_SLOT_COUNT + 4})
 	active = active_slot_after_focus(active, -1, 2)
 	testing.expect_value(t, active, Active_Slot{.Machine, 2})
 	testing.expect_value(t, active_slot_after_focus(active, -1, -1), active)
-	// Sort from the hotbar sorts the main grid; the hotbar keeps its order.
-	testing.expect_value(t, sort_target_grid(.Hotbar), Slot_Grid_Kind.Main)
-	testing.expect_value(t, sort_target_grid(.Main), Slot_Grid_Kind.Main)
-	testing.expect_value(t, sort_target_grid(.Machine), Slot_Grid_Kind.Machine)
-	testing.expect_value(t, sort_target_grid(.None), Slot_Grid_Kind.None)
 }

@@ -414,7 +414,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	case_text := fmt.tprintf("%s, %.0fx%.0f at scale %.2f, text %.1f, %v glyphs", audit_case.name, size.pixels.x, size.pixels.y, size.scale, audit.settings.text_scale, device)
 	audit_draw_list(audit, state, case_text, frame_name)
 	if audit_case.hud && len(audit_case.screens) == 0 && !audit_case.touch {
-		audit_glyph_bar_clear_of_hotbar(audit, state, audit.simulation.players[0].selected_hotbar_slot, case_text, frame_name)
+		audit_glyph_bar_clear_of_hotbar(audit, state, audit.simulation.players[0].selected_hotbar_slot, toolbar_count(audit.content), case_text, frame_name)
 	}
 	if audit_case.touch {
 		audit_touch_labels_whole(audit, state, case_text, frame_name)
@@ -462,11 +462,21 @@ hotbar_slot_boxes_in_draw_list :: proc(commands: []Draw_Command, expected: [HOTB
 	return boxes
 }
 
-// No command of the HUD's glyph bar lies over a hotbar slot (0219).
-audit_glyph_bar_clear_of_hotbar :: proc(audit: ^Ui_Audit, state: ^Ui_State, selected: int, case_text, frame_name: string) {
-	slots := hotbar_slot_boxes_in_draw_list(state.draw_list[:], hud_hotbar_rectangles(ui_safe_area(state), selected))
-	if len(slots) < HOTBAR_SLOT_COUNT {
-		audit_report(audit, case_text, frame_name, .Glyph_Bar_Over_Hotbar, .Fill, {}, fmt.tprintf("%d of %d hotbar slots found", len(slots), HOTBAR_SLOT_COUNT))
+// The slot boxes of every drawn toolbar row (0278). In the temp allocator.
+toolbar_slot_boxes_in_draw_list :: proc(commands: []Draw_Command, safe: Ui_Rectangle, selected, rows: int) -> [dynamic]Ui_Rectangle {
+	boxes := make([dynamic]Ui_Rectangle, context.temp_allocator)
+	for row in 0 ..< rows {
+		append(&boxes, ..hotbar_slot_boxes_in_draw_list(commands, hud_toolbar_row_rectangles(safe, selected, row))[:])
+	}
+	return boxes
+}
+
+// No command of the HUD's glyph bar lies over a toolbar slot of any of
+// the rows drawn (0219, 0278).
+audit_glyph_bar_clear_of_hotbar :: proc(audit: ^Ui_Audit, state: ^Ui_State, selected, rows: int, case_text, frame_name: string) {
+	slots := toolbar_slot_boxes_in_draw_list(state.draw_list[:], ui_safe_area(state), selected, rows)
+	if len(slots) < rows * HOTBAR_SLOT_COUNT {
+		audit_report(audit, case_text, frame_name, .Glyph_Bar_Over_Hotbar, .Fill, {}, fmt.tprintf("%d of %d toolbar slots found", len(slots), rows * HOTBAR_SLOT_COUNT))
 	}
 	for command in state.draw_list {
 		if command.panel != UI_GLYPH_BAR_PANEL {
@@ -728,6 +738,15 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	append(&simulation.quests.messages, Quest_Message{tick = 60 * 60 * 62, text_key = ITEM_DISCOVERED_KEY, argument_key = audit.content.items.items[longest_item].name_key, item = longest_item})
 	player := &simulation.players[0]
 	player.crafting = audit_craft_queue(audit.content.recipes, longest_item)
+	// The HUD cases show a toolbar of the kinds the player holds and, on
+	// its last slot, the longest named kind, which it lacks (0278).
+	for slot in player.inventory.slots {
+		if !stack_is_empty(slot) {
+			take_toolbar_slot(player, slot.item)
+		}
+	}
+	assert(inventory_count(player.inventory, longest_item) == 0)
+	player.toolbars[0][HOTBAR_SLOT_COUNT - 1] = longest_item
 	for &drill in simulation.world.entities.drills.entries {
 		if drill.alive {
 			player.target = Raycast_Hit{hit = true, entity = drill.handle}
@@ -1296,17 +1315,30 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "power", screens = {.Power}, walk_focus = true})
 	audit_case(audit, {name = "map", screens = {.Map}})
 	audit_touch_rows(audit)
-	// Last, since it changes the hotbar: a selected magnetometer shows its
+	// Last, since it changes the toolbar: a selected magnetometer shows its
 	// dial and the Use_Item hint.
 	player := &simulation.players[0]
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(audit.content.items, "magnetometer"), 1}
+	hold_test_stack(player, Item_Stack{test_item(audit.content.items, "magnetometer"), 1})
 	player.magnetometer.found = true
 	audit_case(audit, {name = "hud magnetometer", hud = true, toasts = toasts[:]})
 	// The world's glyph bar with a machine held on the field and with
 	// nothing held, beside or above the hotbar (0219).
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(audit.content.items, "stone_furnace"), 1}
+	furnace := test_item(audit.content.items, "stone_furnace")
+	hold_test_stack(player, Item_Stack{furnace, 1})
 	audit_case(audit, {name = "hud field furnace held", hud = true, field_session = true})
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = EMPTY_STACK
+	// Two toolbars (0278), both rows named, the furnace held.
+	count_before := audit.content.toolbar_count
+	audit.content.toolbar_count = 2
+	player.toolbars[1] = player.toolbars[0]
+	player.toolbars[1][0] = test_item(audit.content.items, "magnetometer")
+	audit_case(audit, {name = "hud two toolbars", hud = true, field_session = true})
+	audit.content.toolbar_count = count_before
+	player.toolbars[1] = empty_toolbars()[1]
+	// A furnace named and none held (0278): the slot's shade, the dim
+	// name and no held hints.
+	inventory_remove(player.inventory, furnace, inventory_count(player.inventory, furnace))
+	audit_case(audit, {name = "hud field kind missing", hud = true, field_session = true})
+	hold_test_stack(player, EMPTY_STACK)
 	audit_case(audit, {name = "hud field nothing held", hud = true, field_session = true})
 	// Strapped into the pod's chair after the landing (0223): Unbuckle on
 	// the bar.
@@ -1319,7 +1351,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	// touch row with Configure in Sort's place.
 	with_audit_foundation_blocks(audit)
 	foundation := audit.content.machines.machines[audit.content.field.pad_foundation].item
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{foundation, 1}
+	hold_test_stack(player, Item_Stack{foundation, 1})
 	audit_case(audit, {name = "configure foundation block", screens = {.Inventory, .Configure}, configure_item = foundation, walk_focus = true})
 	audit_case(audit, {name = "configure foundation block touch row", screens = {.Inventory, .Configure}, configure_item = foundation, hud = true, touch = true})
 	audit_case(audit, {name = "inventory foundation touch row", screens = {.Inventory}, hud = true, touch = true})
@@ -1366,21 +1398,27 @@ test_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("inventory_title")))
 	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("technologies_title")))
 	destroy_ui_state(&pause)
+	// The selected slot names a furnace whose first stack is slot 17
+	// (0278): both screens open on it.
 	player := &simulation.players[0]
 	player.selected_hotbar_slot = 3
+	furnace := test_item(audit.content.items, "stone_furnace")
+	inventory_remove(player.inventory, furnace, inventory_count(player.inventory, furnace))
+	player.inventory.slots[17] = Item_Stack{furnace, 1}
+	player.toolbars[0][3] = furnace
 	inventory := Ui_State{theme = audit.theme, focus = 12345}
 	// A focus kept from an earlier screen goes on a frame in the world.
 	screen_test_frame(audit, &inventory, {})
 	push_screen(&inventory.screens, .Inventory)
 	screen_test_frame(audit, &inventory, {})
-	testing.expect_value(t, inventory.focus, ui_hash(ui_hash(ui_hash(0, "inventory", -1), "hotbar", -1), "slot", 3))
+	testing.expect_value(t, inventory.focus, inventory_grid_slot_test_id(17))
 	destroy_ui_state(&inventory)
 	machine := Ui_State{theme = audit.theme}
 	handle := machines_with_panels(&simulation.world, audit.content)[0]
 	push_screen(&machine.screens, .Machine)
 	simulation.players[0].open_machine = handle
 	screen_test_frame(audit, &machine, {})
-	testing.expect_value(t, machine.focus, ui_hash(ui_hash(ui_hash(0, "machine", -1), "hotbar", -1), "slot", 3))
+	testing.expect_value(t, machine.focus, ui_hash(ui_hash(ui_hash(0, "machine", -1), "grid", -1), "slot", 17))
 	destroy_ui_state(&machine)
 }
 
@@ -1463,11 +1501,11 @@ slot_test_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input) {
 	apply_player_commands(&audit.simulation, audit.content)
 }
 
-// Work item 0090: in the inventory screen R1 with A (0276) moves the
-// focused hotbar stack into the backpack and the right stick click drops
-// it, without a Drop button.
+// Work item 0090: in the inventory screen the right stick click drops the
+// focused stack, without a Drop button. R1 with A queues nothing there
+// (0278).
 @(test)
-test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
+test_inventory_screen_drop :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
 	player := &audit.simulation.players[0]
@@ -1478,18 +1516,19 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 	}
 	player.held = EMPTY_HELD_STACK
 	player.selected_hotbar_slot = 3
+	player.toolbars[0][3] = coal
 	player.inventory.slots[3] = {coal, 5}
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
 	push_screen(&state.screens, .Inventory)
 	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.focus, inventory_grid_slot_test_id(3))
+	queued := len(audit.simulation.player_commands)
 	screen_test_frame(audit, &state, {confirm = true, modifier_five = true})
-	// The move waits for the tick (0179).
-	testing.expect_value(t, player.inventory.slots[3], Item_Stack{coal, 5})
+	testing.expect_value(t, len(audit.simulation.player_commands), queued)
 	apply_player_commands(&audit.simulation, audit.content)
 	testing.expect_value(t, player.held, EMPTY_HELD_STACK)
-	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
-	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 5})
+	testing.expect_value(t, player.inventory.slots[3], Item_Stack{coal, 5})
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 	player.inventory.slots[3] = {stone, 2}
 	screen_test_frame(audit, &state, {})
@@ -1644,10 +1683,10 @@ make_configure_test :: proc(audit: ^Ui_Audit, state: ^Ui_State) -> Configure_Tes
 		foundation = audit.content.machines.machines[audit.content.field.pad_foundation].item,
 		furnace    = audit.content.machines.machines[test_machine(audit.content.machines, "stone_furnace")].item,
 	}
-	hotbar := inventory_hotbar(player.inventory)
 	player.selected_hotbar_slot = 0
-	hotbar[0] = Item_Stack{test.foundation, 10}
-	hotbar[1] = Item_Stack{test.furnace, 1}
+	player.inventory.slots[0] = Item_Stack{test.foundation, 10}
+	player.inventory.slots[1] = Item_Stack{test.furnace, 1}
+	player.toolbars[0][0], player.toolbars[0][1] = test.foundation, test.furnace
 	state.theme = audit.theme
 	push_screen(&state.screens, .Inventory)
 	screen_test_frame(audit, state, {})
@@ -1711,7 +1750,7 @@ test_the_configure_popup_picks_the_foundation_block :: proc(t: ^testing.T) {
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("configure_title_foundation_block")))
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("inventory_foundation_size")))
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_pick")))
-	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_hotbar")))
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_title")))
 	pixels, found := draw_list_text_pixels(&state, "5x5")
 	testing.expect(t, found)
 	screen_test_frame(audit, &state, {mouse_position = pixels, mouse_moved = true, mouse_pressed = true, mouse_down = true})
@@ -1745,8 +1784,8 @@ test_the_configure_popup_picks_the_foundation_block :: proc(t: ^testing.T) {
 	testing.expect_value(t, state.focus, focus_before)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_configure")))
 	// Only once: after a window step to the journal and back the view
-	// focuses the selected hotbar slot, not the slot that opened the
-	// pop-up.
+	// focuses the first stack of the selected slot's kind, not the slot
+	// that opened the pop-up.
 	audit.simulation.players[0].selected_hotbar_slot = 1
 	screen_test_frame(audit, &state, {window_next = true})
 	testing.expect_value(t, top_screen(state.screens), Screen.Journal)
@@ -1755,13 +1794,13 @@ test_the_configure_popup_picks_the_foundation_block :: proc(t: ^testing.T) {
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {})
-	testing.expect_value(t, state.focus, inventory_hotbar_slot_test_id(1))
+	testing.expect_value(t, state.focus, inventory_grid_slot_test_id(1))
 }
 
-// The id the inventory view gives a hotbar slot (selected_hotbar_slot_id
+// The id the inventory view gives an inventory slot (selected_kind_slot_id
 // inside the "inventory" panel).
-inventory_hotbar_slot_test_id :: proc(slot: int) -> Ui_Id {
-	return ui_hash(ui_hash(ui_hash(0, "inventory", -1), "hotbar", -1), "slot", slot)
+inventory_grid_slot_test_id :: proc(slot: int) -> Ui_Id {
+	return ui_hash(ui_hash(ui_hash(0, "inventory", -1), "grid", -1), "slot", slot)
 }
 
 // Touch: with the tapped slot on a foundation the row's Configure takes
@@ -1919,7 +1958,7 @@ set_glyph_bar_test_player :: proc(audit: ^Ui_Audit, bar: Glyph_Bar_Test_Bar) {
 	player.target = Raycast_Hit{entity = NO_ENTITY}
 	player.velocity = {}
 	stack := bar == .Furnace_Held ? Item_Stack{test_item(audit.content.items, "stone_furnace"), 1} : EMPTY_STACK
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = stack
+	hold_test_stack(player, stack)
 }
 
 // One HUD frame of the bar at the size with the shipped bindings, as
@@ -1976,7 +2015,7 @@ test_the_worlds_hints_name_the_held_machines_controls :: proc(t: ^testing.T) {
 	testing.expect_value(t, kept, 0)
 	player := &audit.simulation.players[0]
 	foundation := audit.content.machines.machines[find_foundation_machine(audit.content.machines)].item
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{foundation, 1}
+	hold_test_stack(player, Item_Stack{foundation, 1})
 	audit_field_session_hud(audit, &hud)
 	hints, kept = world_glyph_hints(audit_screen_context(audit), hud)
 	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Use_Item, .Tools, .Inventory, .Pause}), "Place, Tools, Inventory, Pause")
@@ -2009,12 +2048,12 @@ glyph_bar_extent :: proc(commands: []Draw_Command) -> Glyph_Bar_Extent {
 	return extent
 }
 
-// The bar's commands lie in the safe area and clear of every hotbar slot,
-// all eight of which are found in the draw list.
-expect_glyph_bar_clear_of_hotbar :: proc(t: ^testing.T, state: ^Ui_State, selected: int, case_text: string) {
+// The bar's commands lie in the safe area and clear of every toolbar
+// slot of the rows drawn, all of which are found in the draw list.
+expect_glyph_bar_clear_of_hotbar :: proc(t: ^testing.T, state: ^Ui_State, selected, rows: int, case_text: string) {
 	safe := ui_safe_area(state)
-	slots := hotbar_slot_boxes_in_draw_list(state.draw_list[:], hud_hotbar_rectangles(safe, selected))
-	testing.expectf(t, len(slots) == HOTBAR_SLOT_COUNT, "%s: %d slots found", case_text, len(slots))
+	slots := toolbar_slot_boxes_in_draw_list(state.draw_list[:], safe, selected, rows)
+	testing.expectf(t, len(slots) == rows * HOTBAR_SLOT_COUNT, "%s: %d slots found", case_text, len(slots))
 	for command in state.draw_list {
 		if command.panel != UI_GLYPH_BAR_PANEL {
 			continue
@@ -2064,12 +2103,12 @@ test_the_glyph_bar_never_covers_the_hotbar :: proc(t: ^testing.T) {
 					state := glyph_bar_test_frame(t, audit, bar, size, device)
 					defer destroy_ui_state(&state)
 					case_text := fmt.tprintf("%v %v scale %.1f text %.1f %v", bar, size.pixels, size.scale, text_scale, device)
-					expect_glyph_bar_clear_of_hotbar(t, &state, player.selected_hotbar_slot, case_text)
+					expect_glyph_bar_clear_of_hotbar(t, &state, player.selected_hotbar_slot, toolbar_count(audit.content), case_text)
 					safe := ui_safe_area(&state)
 					hotbar := hud_hotbar_rectangles(safe, player.selected_hotbar_slot)
 					extent := glyph_bar_extent(state.draw_list[:])
 					above := extent.bottom <= hotbar[player.selected_hotbar_slot].y + UI_AUDIT_TOLERANCE
-					above_rows := hud_glyph_bar_above_rows(state.screen_units, hud_glyph_bar_above_bottom(safe))
+					above_rows := hud_glyph_bar_above_rows(state.screen_units, hud_glyph_bar_above_bottom(safe, toolbar_count(audit.content)))
 					band_bottom := hud_target_line_top(state.screen_units, HUD_TARGET_LINE_COUNT)
 					if above && bar != .Editor {
 						testing.expectf(t, extent.rows <= above_rows, "%s: %d rows above, %d allowed", case_text, extent.rows, above_rows)

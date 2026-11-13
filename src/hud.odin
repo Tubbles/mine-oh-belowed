@@ -8,15 +8,17 @@ import "core:math"
 // targeted block's name (dim, "Unknown ore" for an ore not discovered
 // yet), the pickaxe the block needs and the vein of a targeted drill or of
 // a block over a vein footprint (or the deep vein under a bore drill
-// ghost), hotbar with the held item's name, the hotbar radial, the active quest objective (top right,
+// ghost), the toolbars with the held kind's name (0278, the active one
+// lowest, its row the hotbar's), the hotbar radial of the active toolbar,
+// the active quest objective (top right,
 // ui_journal.odin) or, once every quest is done, the oldest open contract
 // (ui_contracts.odin), the brownout warning (top centre, ui_power.odin),
 // the biome banner below it (biome_banner.odin) and the glyph bar, and the magnetometer's dial while one is selected
 // (ui_prospecting.odin). The tools radial on Pipette's controls and the
 // placement editor's tool line and glyph bar (0215). The glyph bar
 // (0219) stands beside the hotbar, right of it, in up to two rows, or
-// above the hotbar when what it must keep does not fit there
-// (hud_glyph_bar_layout); it never covers a hotbar slot. With the touch
+// above the toolbars when what it must keep does not fit there
+// (hud_glyph_bar_layout); it never covers a toolbar slot. With the touch
 // overlay driving the world, the touch buttons right of the hotbar
 // (0134): inventory, map, pause, tools, rotate, and the placement
 // editor's grid while it is anchored. With no screen open, Mission Control's panel at
@@ -28,6 +30,10 @@ CROSSHAIR_THICKNESS :: 3.0
 CROSSHAIR_COLOR :: Ui_Color{255, 255, 255, 200}
 HUD_SELECTED_SLOT_SCALE :: 1.25
 HUD_SLOT_COLOR :: Ui_Color{24, 26, 34, 180}
+// Over a toolbar slot's icon while the inventory lacks its kind, and over
+// each slot of a toolbar row above the active one (0278).
+HUD_EMPTY_KIND_SHADE :: Ui_Color{24, 26, 34, 170}
+HUD_INACTIVE_ROW_SHADE :: Ui_Color{24, 26, 34, 110}
 HUD_QUEUE_SLOT_SIZE :: 56
 HUD_WAITING_MAXIMUM_LINES :: 2
 // Rows of run boxes beside the hotbar at most (0138).
@@ -346,22 +352,75 @@ draw_hud_touch_buttons :: proc(state: ^Ui_State, shown: bit_set[Hud_Touch_Button
 	}
 }
 
-draw_hud_hotbar :: proc(state: ^Ui_State, player: Player, items: Item_Registry) {
-	hotbar := inventory_hotbar(player.inventory)
-	rectangles := hud_hotbar_rectangles(ui_safe_area(state), player.selected_hotbar_slot)
-	for stack, index in hotbar {
-		draw_fill(state, rectangles[index], HUD_SLOT_COLOR)
-		selected := index == player.selected_hotbar_slot
-		draw_outline(state, rectangles[index], selected ? UI_ACCENT_COLOR : UI_PANEL_BORDER_COLOR, selected ? UI_FOCUS_BORDER : UI_BORDER)
-		draw_item_stack(state, rectangles[index], stack, items)
+// A toolbar row's slots (0278): row 0, the active toolbar, is the
+// hotbar's row with the selected slot enlarged; a higher row's slots are
+// UI_SLOT_SIZE square from the same left edge, the lowest a gap above the
+// enlarged slot and each next one a slot and a gap higher.
+hud_toolbar_row_rectangles :: proc(area: Ui_Rectangle, selected, row: int) -> [HOTBAR_SLOT_COUNT]Ui_Rectangle {
+	rectangles := hud_hotbar_rectangles(area, selected)
+	if row == 0 {
+		return rectangles
 	}
-	held := selected_hotbar_stack(player)
-	if stack_is_empty(held) {
+	left := rectangles[0].x
+	top := area.y + area.height - UI_SLOT_SIZE * HUD_SELECTED_SLOT_SCALE - f32(row) * (UI_SLOT_SIZE + UI_GAP)
+	for &rectangle, index in rectangles {
+		rectangle = {left + f32(index) * (UI_SLOT_SIZE + UI_GAP), top, UI_SLOT_SIZE, UI_SLOT_SIZE}
+	}
+	return rectangles
+}
+
+// The top of the toolbars' stack of rows: row 0's enlarged slot, then a
+// slot and a gap per row above it.
+hud_toolbar_stack_top :: proc(area: Ui_Rectangle, rows: int) -> f32 {
+	return area.y + area.height - UI_SLOT_SIZE * HUD_SELECTED_SLOT_SCALE - f32(rows - 1) * (UI_SLOT_SIZE + UI_GAP)
+}
+
+// A toolbar slot (0278): the icon of the kind it names as draw_item_stack
+// insets it, the inventory's count of it above 1 (fitted, up to 45 full
+// stacks), and the shade over the icon while the inventory lacks it.
+// Nothing for a slot that names nothing.
+draw_toolbar_slot :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, entry: Toolbar_Entry, items: Item_Registry) {
+	if entry.item == NO_ITEM {
 		return
 	}
-	selected_rectangle := rectangles[player.selected_hotbar_slot]
-	name_area := Ui_Rectangle{0, selected_rectangle.y - UI_GAP - UI_ROW_HEIGHT, state.screen_units.x, UI_ROW_HEIGHT}
-	draw_text(state, name_area, item_name(items, held.item), UI_BODY_TEXT_SIZE, .Centre)
+	icon := inset(rectangle, UI_SLOT_ICON_INSET * rectangle.height / UI_SLOT_SIZE)
+	draw_item_icon(state, icon, item_icon(items, entry.item))
+	if entry.count == 0 {
+		draw_fill(state, icon, HUD_EMPTY_KIND_SHADE)
+	}
+	if entry.count > 1 {
+		count_area := inset(rectangle, 4)
+		count_area = cut_bottom(&count_area, UI_SLOT_COUNT_TEXT_SIZE)
+		draw_text_fitted(state, count_area, fmt.tprint(entry.count), UI_SLOT_COUNT_TEXT_SIZE, .Right)
+	}
+}
+
+// The toolbars (0278): count rows, the active toolbar lowest and the next
+// ones above it (toolbar_at_row), drawn as the hotbar was with the
+// selected outline on row 0 only and a shade over each slot of a higher
+// row. The selected slot's kind is named a gap above the stack, dim while
+// the inventory lacks it.
+draw_hud_toolbars :: proc(state: ^Ui_State, player: Player, items: Item_Registry, count: int) {
+	safe := ui_safe_area(state)
+	for row in 0 ..< count {
+		rectangles := hud_toolbar_row_rectangles(safe, player.selected_hotbar_slot, row)
+		for entry, index in toolbar_entries(player, toolbar_at_row(player.active_toolbar, count, row)) {
+			draw_fill(state, rectangles[index], HUD_SLOT_COLOR)
+			selected := row == 0 && index == player.selected_hotbar_slot
+			draw_outline(state, rectangles[index], selected ? UI_ACCENT_COLOR : UI_PANEL_BORDER_COLOR, selected ? UI_FOCUS_BORDER : UI_BORDER)
+			draw_toolbar_slot(state, rectangles[index], entry, items)
+			if row > 0 {
+				draw_fill(state, rectangles[index], HUD_INACTIVE_ROW_SHADE)
+			}
+		}
+	}
+	kind := selected_kind(player)
+	if kind == NO_ITEM {
+		return
+	}
+	name_area := Ui_Rectangle{0, hud_toolbar_stack_top(safe, count) - UI_GAP - UI_ROW_HEIGHT, state.screen_units.x, UI_ROW_HEIGHT}
+	color := inventory_count(player.inventory, kind) > 0 ? UI_TEXT_COLOR : UI_DIM_TEXT_COLOR
+	draw_text(state, name_area, item_name(items, kind), UI_BODY_TEXT_SIZE, .Centre, color)
 }
 
 // Left of the hotbar, newest run nearest to it, in up to
@@ -448,9 +507,9 @@ hotbar_radial_source :: proc(input: Ui_Input) -> Radial_Source {
 	return input.left_touchpad.down ? .Touchpad : .Held_Button
 }
 
-// The left pad (or Tab and the right stick) shows the hotbar as a wheel
-// around the screen centre, slot 0 at the top, clockwise. Release selects
-// through a Hotbar_Slot_Command for the tick.
+// The left pad (or Tab and the right stick) shows the active toolbar as a
+// wheel around the screen centre, slot 0 at the top, clockwise. Release
+// selects through a Hotbar_Slot_Command for the tick.
 hotbar_radial :: proc(state: ^Ui_State, player: ^Player, player_index: int, commands: ^[dynamic]Queued_Player_Command, items: Item_Registry) {
 	source := hotbar_radial_source(state.input)
 	touching, position := radial_input(state.input, source)
@@ -460,25 +519,28 @@ hotbar_radial :: proc(state: ^Ui_State, player: ^Player, player_index: int, comm
 		queue_player_command(commands, player_index, Hotbar_Slot_Command{slot = result.selected})
 	}
 	if state.radial.open {
-		draw_hotbar_radial(state, inventory_hotbar(player.inventory), items)
+		entries := toolbar_entries(player^, player.active_toolbar)
+		draw_hotbar_radial(state, entries[:], items)
 	}
 }
 
-draw_hotbar_radial :: proc(state: ^Ui_State, hotbar: []Item_Stack, items: Item_Registry) {
+// The slots as the HUD's toolbar draws them (draw_toolbar_slot) and the
+// highlighted slot's kind named in the middle.
+draw_hotbar_radial :: proc(state: ^Ui_State, entries: []Toolbar_Entry, items: Item_Registry) {
 	centre := state.screen_units / 2
-	for stack, index in hotbar {
-		point := radial_slot_offset(index, len(hotbar)) * HUD_RADIAL_RADIUS + centre
+	for entry, index in entries {
+		point := radial_slot_offset(index, len(entries)) * HUD_RADIAL_RADIUS + centre
 		highlighted := index == state.radial.highlight
 		size := hud_slot_size(index, state.radial.highlight)
 		box := Ui_Rectangle{point.x - size / 2, point.y - size / 2, size, size}
 		draw_fill(state, box, UI_PANEL_COLOR)
 		draw_outline(state, box, highlighted ? UI_ACCENT_COLOR : UI_PANEL_BORDER_COLOR, highlighted ? UI_FOCUS_BORDER : UI_BORDER)
-		draw_item_stack(state, box, stack, items)
+		draw_toolbar_slot(state, box, entry, items)
 	}
 	highlight := state.radial.highlight
-	if highlight >= 0 && highlight < len(hotbar) && !stack_is_empty(hotbar[highlight]) {
+	if highlight >= 0 && highlight < len(entries) && entries[highlight].item != NO_ITEM {
 		name_area := Ui_Rectangle{centre.x - HUD_RADIAL_RADIUS, centre.y - UI_ROW_HEIGHT / 2, 2 * HUD_RADIAL_RADIUS, UI_ROW_HEIGHT}
-		draw_text(state, name_area, item_name(items, hotbar[highlight].item), UI_BODY_TEXT_SIZE, .Centre)
+		draw_text(state, name_area, item_name(items, entries[highlight].item), UI_BODY_TEXT_SIZE, .Centre)
 	}
 }
 
@@ -688,7 +750,8 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		draw_jet_bar(state, field, screen_context.content.field.tuning)
 		draw_cheat_tag(state, field)
 	}
-	draw_hud_hotbar(state, player^, items)
+	toolbars := toolbar_count(screen_context.content)
+	draw_hud_toolbars(state, player^, items, toolbars)
 	draw_craft_queue(state, player^, screen_context)
 	if state.screens.count > 0 {
 		state.radial = {}
@@ -745,11 +808,11 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	}
 	if hud.placement.mode == .Anchored {
 		hints := placement_editor_glyph_hints()
-		ui_hud_glyph_bar(state, hints[:], len(hints), true)
+		ui_hud_glyph_bar(state, hints[:], len(hints), true, toolbars)
 		return
 	}
 	hints, kept := world_glyph_hints(screen_context, hud, glyph(state, .Interact) == glyph(state, .Inventory))
-	ui_hud_glyph_bar(state, hints, kept, false)
+	ui_hud_glyph_bar(state, hints, kept, false, toolbars)
 }
 
 // The world's glyph bar (0219), in the temp allocator: the aimed thing's
@@ -895,18 +958,24 @@ Hud_Glyph_Bar_Layout :: struct {
 	beside: bool,
 }
 
-// Beside the hotbar, right of it, when the first kept hints (at least
-// one) fit there in HUD_GLYPH_BAR_MAXIMUM_ROWS rows without a drop; else
-// above the hotbar over the held item's name, as wide as from the
-// hotbar's left edge to the safe right edge and never up into the target
-// lines (hud_glyph_bar_above_rows). Either way the rows shed from the end.
-// The placement editor's bar (whole) is the exception: above the hotbar
-// it takes HUD_GLYPH_BAR_MAXIMUM_ROWS rows even into the target lines'
-// band, since a missing Cancel is worse than the tool line crossing it
-// (main agent, 2026-10-04). The band ends at H/2 + 194 units and the
-// first row tops at 0.95H - 216, so at UI scale 1.2 and 1.5 (H under 911)
-// even the world's single row above the hotbar lies in the band.
-hud_glyph_bar_layout :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole: bool) -> Hud_Glyph_Bar_Layout {
+// Beside the hotbar (the active toolbar's row), right of it, when the
+// first kept hints (at least one) fit there in HUD_GLYPH_BAR_MAXIMUM_ROWS
+// rows without a drop; else above the toolbar_rows rows of toolbars over
+// the held item's name, as wide as from the hotbar's left edge to the
+// safe right edge and never up into the target lines
+// (hud_glyph_bar_above_rows). Either way the rows shed from the end. A
+// toolbar row above the hotbar is narrower than it from the same left
+// edge, so the bar beside it never meets one. The placement editor's bar
+// (whole) is the exception: above the hotbar it takes
+// HUD_GLYPH_BAR_MAXIMUM_ROWS rows even into the target lines' band, since
+// a missing Cancel is worse than the tool line crossing it (main agent,
+// 2026-10-04). The band ends at H/2 + 194 units and the first row tops at
+// 0.95H - 216 over one toolbar, so at UI scale 1.2 and 1.5 (H under 911)
+// even the world's single row above the hotbar lies in the band. Over two
+// toolbars (0278) it tops at 0.95H - 304, 12 units into the band at 1080p,
+// and the second toolbar's row itself clears the band only for H of 849
+// units or more.
+hud_glyph_bar_layout :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole: bool, toolbar_rows: int) -> Hud_Glyph_Bar_Layout {
 	safe := ui_safe_area(state)
 	hotbar := hud_hotbar_rectangles(safe, 0)
 	last := hotbar[HOTBAR_SLOT_COUNT - 1]
@@ -918,16 +987,16 @@ hud_glyph_bar_layout :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, w
 		rows, _, _ := glyph_bar_rows(state, hints, beside_width, HUD_GLYPH_BAR_MAXIMUM_ROWS)
 		return {rows, right, bottom, true}
 	}
-	above := hud_glyph_bar_above_bottom(safe)
+	above := hud_glyph_bar_above_bottom(safe, toolbar_rows)
 	maximum_rows := whole ? HUD_GLYPH_BAR_MAXIMUM_ROWS : hud_glyph_bar_above_rows(state.screen_units, above)
 	rows, _, _ := glyph_bar_rows(state, hints, right - hotbar[0].x, maximum_rows)
 	return {rows, right, above, false}
 }
 
-// The bottom of the bar above the hotbar: a gap over the held item's
-// name, which stands a gap over the enlarged selected slot.
-hud_glyph_bar_above_bottom :: proc(safe: Ui_Rectangle) -> f32 {
-	return safe.y + safe.height - UI_SLOT_SIZE * HUD_SELECTED_SLOT_SCALE - UI_GAP - UI_ROW_HEIGHT - UI_GAP
+// The bottom of the bar above the toolbars: a gap over the held item's
+// name, which stands a gap over the stack of the toolbars' rows.
+hud_glyph_bar_above_bottom :: proc(safe: Ui_Rectangle, rows: int) -> f32 {
+	return hud_toolbar_stack_top(safe, rows) - UI_GAP - UI_ROW_HEIGHT - UI_GAP
 }
 
 // The rows the bar above the hotbar takes with its first row's bottom at
@@ -942,9 +1011,10 @@ hud_glyph_bar_above_rows :: proc(screen_units: [2]f32, bottom: f32) -> int {
 	return rows
 }
 
-// The HUD's glyph bar, laid out by hud_glyph_bar_layout.
-ui_hud_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole: bool) {
-	layout := hud_glyph_bar_layout(state, hints, kept, whole)
+// The HUD's glyph bar, laid out by hud_glyph_bar_layout over
+// toolbar_rows rows of toolbars.
+ui_hud_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole: bool, toolbar_rows: int) {
+	layout := hud_glyph_bar_layout(state, hints, kept, whole, toolbar_rows)
 	ui_glyph_rows(state, layout.rows, layout.right, layout.bottom)
 }
 

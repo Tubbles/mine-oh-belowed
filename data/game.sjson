@@ -8,14 +8,15 @@ day_length_seconds = 1200
 // (work item 0196), torches light a dug cave. No digging tool (work item
 // 0265): the first logs come from a small tree felled by hand (0197) and
 // make the wooden shovel and pickaxe and the stone cutting table, and the
-// hotbar starts on slot 1, the foundations, so a resting thumb digs
-// nothing. More torches are made by hand from a coal and a stone (0179);
-// machines are crafted by hand (work item 0012).
+// toolbar starts on slot 1, the foundations, so a resting thumb digs
+// nothing. Each kind is named on the next toolbar slot in order (work
+// item 0278). More torches are made by hand from a coal and a stone
+// (0179); machines are crafted by hand (work item 0012).
 starting_items = [
 	{item = "wooden_foundation", count = 16}
 	{item = "torch", count = 4}
 ]
-// The water tech demo's hotbar (work item 0291): one entry per slot in
+// The water tech demo's toolbar (work item 0291): one entry per slot in
 // order. Dirt is one full stack since the demo never debits it; the water
 // bucket, the drain bucket and ten pumps (work item 0295) come before the
 // torch.
@@ -27,6 +28,8 @@ tech_demo_items = [
 	{item = "water_pump", count = 10}
 	{item = "torch", count = 20}
 ]
+// The toolbars stacked on the HUD (work item 0278, doc/content.md): 1 to 4.
+toolbars = 1
 // World setting "all recipes unlocked at start", for repeat playthroughs:
 // every technology counts as researched and every item as discovered.
 // The --unlock-all command line flag does the same.

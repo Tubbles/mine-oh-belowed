@@ -84,7 +84,7 @@ test_placing_a_machine_clears_ground_cover :: proc(t: ^testing.T) {
 	testing.expect(t, !cell_takes_machine(&world, content.blocks, {4, 2, 4}))
 	set_blocks(&world, tuft, {10, 1, 10})
 	players := []Player{make_test_player(content.blocks, {16.5, 1, 16.5})}
-	players[0].inventory.slots[0] = Item_Stack{test_item(content.items, "steel_furnace"), 1}
+	hold_test_stack(&players[0], Item_Stack{test_item(content.items, "steel_furnace"), 1})
 	players[0].target = Raycast_Hit{hit = true, block = {10, 1, 10}, face = .Positive_Y, adjacent = {10, 2, 10}}
 	aimed := placement_for_player(&world, content, players, 0)
 	testing.expect_value(t, aimed.origin.y, 1)

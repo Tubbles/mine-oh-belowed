@@ -468,7 +468,9 @@ read_later_tables :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Re
 }
 
 // Players read into fresh ones (make_player), so fields the file lacks
-// take a new player's values.
+// take a new player's values. A player saved before the toolbars (0278)
+// is read into its 44 slots and its hotbar moved
+// (move_hotbar_into_inventory).
 read_players :: proc(reader: ^Byte_Reader, players: ^[dynamic]Player) -> bool {
 	count := int(read_u32(reader) or_return)
 	if count == 0 || count > bytes_left(reader^) {
@@ -478,11 +480,61 @@ read_players :: proc(reader: ^Byte_Reader, players: ^[dynamic]Player) -> bool {
 		destroy_player(player)
 	}
 	clear(players)
+	moved := 0
 	for _ in 0 ..< count {
 		append(players, make_player({}))
-		read_value_of(reader, &players[len(players) - 1]) or_return
+		player := &players[len(players) - 1]
+		legacy := !saved_struct_has_field(reader^, "toolbars")
+		if legacy {
+			destroy_inventory(player.inventory)
+			player.inventory = make_inventory(HOTBAR_ERA_INVENTORY_SLOT_COUNT)
+		}
+		read_value_of(reader, player) or_return
+		if legacy {
+			move_hotbar_into_inventory(player)
+			moved += 1
+		}
+	}
+	if moved > 0 {
+		platform.log_printf("save: written before the toolbars (0278), %d hotbars moved into the inventory's fifth row and onto the first toolbar", moved)
 	}
 	return true
+}
+
+// The inventory of a player saved before the toolbars (0278): the hotbar's
+// 8 slots, then the main grid's 36.
+HOTBAR_ERA_INVENTORY_SLOT_COUNT :: 44
+
+#assert(HOTBAR_ERA_INVENTORY_SLOT_COUNT < PLAYER_INVENTORY_SLOT_COUNT)
+
+// The old main grid takes slots 0 to 35 and the old hotbar the fifth row,
+// 36 to 43, one to one, so nothing merges and nothing is left; the first
+// toolbar names the hotbar's kinds in their slots, and the held stack's
+// origin follows its slot.
+move_hotbar_into_inventory :: proc(player: ^Player) {
+	old := player.inventory
+	moved := make_inventory(PLAYER_INVENTORY_SLOT_COUNT)
+	grid_count := HOTBAR_ERA_INVENTORY_SLOT_COUNT - HOTBAR_SLOT_COUNT
+	copy(moved.slots[:grid_count], old.slots[HOTBAR_SLOT_COUNT:])
+	copy(moved.slots[grid_count:], old.slots[:HOTBAR_SLOT_COUNT])
+	player.toolbars = empty_toolbars()
+	for stack, slot in old.slots[:HOTBAR_SLOT_COUNT] {
+		if !stack_is_empty(stack) {
+			player.toolbars[0][slot] = stack.item
+		}
+	}
+	player.held.origin_slot = moved_hotbar_era_slot(player.held.origin_slot)
+	player.inventory = moved
+	destroy_inventory(old)
+}
+
+// Where a slot of the hotbar era's inventory lies after
+// move_hotbar_into_inventory; -1 stays.
+moved_hotbar_era_slot :: proc(slot: int) -> int {
+	if slot < 0 {
+		return slot
+	}
+	return slot < HOTBAR_SLOT_COUNT ? HOTBAR_ERA_INVENTORY_SLOT_COUNT - HOTBAR_SLOT_COUNT + slot : slot - HOTBAR_SLOT_COUNT
 }
 
 // Reads the body of entities.bin into a simulation made for the world
@@ -504,6 +556,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	read_players(reader, &state.players) or_return
 	for &player in state.players {
 		remap_craft_queue(&player.crafting, reader.remap^) or_return
+		clamp_toolbar_selection(&player, toolbar_count(content))
 	}
 	read_later_tables(reader, &state.world, &state.records, content.machines) or_return
 	clear(&state.world.entities.cables.cables)

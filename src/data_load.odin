@@ -59,8 +59,11 @@ Game_Config :: struct {
 	tick_rate:            int,
 	day_length_seconds:   int,
 	starting_items:       []Starting_Item,
-	// The water tech demo's hotbar (0291), validated like the starter kit.
+	// The water tech demo's kit (0291), validated like the starter kit.
 	tech_demo_items:      []Starting_Item,
+	// The toolbars stacked on the HUD (0278, toolbar.odin): 1 to
+	// MAXIMUM_TOOLBAR_COUNT.
+	toolbars:             int,
 	// The world setting "all recipes unlocked at start".
 	all_recipes_unlocked: bool,
 	// The world setting "vein finiteness": true lets veins never run dry.
@@ -909,6 +912,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	}
 	if config.day_length_seconds < 1 || config.day_length_seconds > MAXIMUM_DAY_LENGTH_SECONDS {
 		return fmt.tprintf("day_length_seconds %d is outside 1 to %d", config.day_length_seconds, MAXIMUM_DAY_LENGTH_SECONDS)
+	}
+	if config.toolbars < 1 || config.toolbars > MAXIMUM_TOOLBAR_COUNT {
+		return fmt.tprintf("toolbars %d is outside 1 to %d", config.toolbars, MAXIMUM_TOOLBAR_COUNT)
 	}
 	if config.loose_item_despawn_minutes < 0 || config.loose_item_despawn_minutes > MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES {
 		return fmt.tprintf("loose_item_despawn_minutes %d is outside 0 to %d", config.loose_item_despawn_minutes, MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES)

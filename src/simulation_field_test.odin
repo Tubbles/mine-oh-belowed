@@ -255,10 +255,11 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 		tick_field_test_simulation(&first.simulation, first_content, field_test_script_frame(tick))
 		tick_field_test_simulation(&second.simulation, second_content, field_test_script_frame(tick))
 		if tick == 495 {
-			// The dug dirt into the hotbar, as a drag would put it.
+			// The dug topsoil named on the toolbar's fourth slot, as Y in
+			// the crafting view would name it (0278).
+			topsoil := first_content.field.materials[.Topsoil].item
 			for session in ([2]^Session{first, second}) {
-				slots := session.simulation.players[0].inventory.slots
-				slots[3], slots[HOTBAR_SLOT_COUNT] = slots[HOTBAR_SLOT_COUNT], slots[3]
+				session.simulation.players[0].toolbars[0][3] = topsoil
 			}
 		}
 		if tick == 519 {
@@ -1568,7 +1569,7 @@ test_a_machine_on_bare_ground_stands_centred_on_its_frame :: proc(t: ^testing.T)
 		tick_field_test_simulation(state, simulation_content, Input_Frame{move = {0, 1}, pressed = {.Move}})
 	}
 	furnace := test_machine(simulation_content.machines, "stone_furnace")
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{simulation_content.machines.machines[furnace].item, 1}
+	hold_test_stack(player, Item_Stack{simulation_content.machines.machines[furnace].item, 1})
 	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
 	testing.expect_value(t, player.field.tool, Field_Held_Tool.Machine)
 	testing.expect(t, player.field.target.hit && !player.field.frame_target.hit, "the ground is aimed at")

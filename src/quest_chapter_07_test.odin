@@ -103,7 +103,7 @@ test_bore_drill_no_vein_attempts_are_counted :: proc(t: ^testing.T) {
 	add_test_deep_vein(&world, content, "bauxite", {2, 2}, 2, {100, 20, 0, 0})
 	players := []Player{make_test_player(content.blocks, {10, 1, 10})}
 	player := &players[0]
-	inventory_add(player.inventory, content.items, test_item(content.items, "bore_drill"), 1)
+	give_test_kind(player, content.items, test_item(content.items, "bore_drill"), 1)
 	player.target = Raycast_Hit{hit = true, block = {20, 0, 20}, face = .Positive_Y, adjacent = {20, 1, 20}}
 	press_place(&world, &records, content, players)
 	press_place(&world, &records, content, players)

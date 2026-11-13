@@ -11,7 +11,7 @@ package game
 // the items the screen showed; a stale command changes nothing and raises
 // Action_Refused.
 
-#assert(PLAYER_GRID_SLOT_COUNT <= MAXIMUM_CHEST_SLOTS && MAXIMUM_CHEST_SLOTS <= 255)
+#assert(PLAYER_INVENTORY_SLOT_COUNT <= MAXIMUM_CHEST_SLOTS && MAXIMUM_CHEST_SLOTS <= 255)
 
 // What the screen showed when it queued the command: the hand's item and
 // the target slot's, NO_ITEM for empty. A press made on a frame older than
@@ -76,7 +76,7 @@ Slot_Split_Command :: struct {
 	expects: Held_Expectation,
 }
 
-// X with an empty hand: the player's main grid (NO_ENTITY) or a chest's
+// X with an empty hand: the player's inventory (NO_ENTITY) or a chest's
 // slots into the order the screen took (sorted_slot_order), since the
 // order follows the display language.
 Slot_Sort_Command :: struct {
@@ -109,7 +109,7 @@ Drop_Stack_Command :: struct {
 }
 
 // One step of the quick move (advance_quick_move): into or out of the
-// machine, or with NO_ENTITY between the hotbar and the backpack.
+// machine. The inventory has no quick move of its own (0278).
 Quick_Move_Command :: struct {
 	machine: Entity_Handle,
 	step:    Quick_Move_Step,
@@ -120,8 +120,7 @@ Transfer_Button_Command :: struct {
 	button:  Transfer_Button,
 }
 
-// The touch row's Transfer all and Transfer all of type, NO_ENTITY in the
-// inventory screen.
+// The machine panel touch row's Transfer all and Transfer all of type.
 Grid_Transfer_Command :: struct {
 	machine:  Entity_Handle,
 	transfer: Grid_Transfer,
@@ -249,10 +248,10 @@ slot_target_valid :: proc(player: Player, entities: ^Entities, target: Slot_Comm
 	return command_machine_open(player, entities, target.machine) && index_in_range(target.slot, len(target_slots(player, entities, target.machine)))
 }
 
-// The slots X sorts: the main grid, or a chest's.
+// The slots X sorts: the whole inventory, or a chest's.
 sort_target_slots :: proc(player: Player, entities: ^Entities, machine: Entity_Handle) -> []Item_Stack {
 	if machine == NO_ENTITY {
-		return inventory_grid(player.inventory)
+		return player.inventory.slots
 	}
 	return machine.kind == .Chest ? entity_slots(entities, machine) : nil
 }
@@ -275,12 +274,11 @@ widened_indices :: proc(indices: []u8) -> []int {
 	return result
 }
 
-// A quick move's side belongs to its screen (the panel's Inventory and
-// Machine, the inventory screen's Hotbar and Backpack) and a single
-// stack's slot is in range.
+// A quick move belongs to a machine panel (the inventory has none since
+// 0278) and a single stack's slot is in range.
 quick_move_command_fits :: proc(player: Player, entities: ^Entities, command: Quick_Move_Command) -> bool {
 	side := command.step.target.side
-	if (command.machine == NO_ENTITY) != (side == .Hotbar || side == .Backpack) {
+	if command.machine == NO_ENTITY {
 		return false
 	}
 	if command.step.kind != .Stack {
@@ -372,11 +370,7 @@ apply_slot_command :: proc(state: ^Simulation_State, content: Simulation_Content
 	case Drop_Stack_Command:
 		drop_player_stack(&state.world, &state.records.statistics, content.blocks, player, player_index, value.slot)
 	case Quick_Move_Command:
-		if value.machine == NO_ENTITY {
-			apply_inventory_quick_move(player.inventory, content.items, value.step)
-		} else {
-			apply_quick_move(entities, content, value.machine, player.inventory, value.step)
-		}
+		apply_quick_move(entities, content, value.machine, player.inventory, value.step)
 	case Transfer_Button_Command:
 		apply_transfer_button(entities, content, value.machine, player.inventory, value.button)
 	case Grid_Transfer_Command:

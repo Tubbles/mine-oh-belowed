@@ -518,3 +518,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The pump's panel prints its two ports without saying which takes and which gives.
 - Every lone port is a tree of its own and runs the whole solve each tick. An early out for one node trees is worth measuring in the night window with `test_fluid_shaped_solve_cost`.
 - The benchmark's idle rule excuses every producer at Output full. Excusing one only when another producer on its netlist supplied in the window would still show a producer whose line is cut.
+
+## Suggestions from the toolbars (0278, 2026-11-13)
+
+- For 0280, before `toolbars` goes above 1: the placement editor's touch grid falls back to a position over slots 6 and 7 of a second toolbar row on narrow screens (`hud_touch_button_rectangles`), `bottom_strip_top` leaves higher rows out of the world tap's exclusion strip, and `toolbars` is not in the join check (`content_tables_hash`), so a host and a joiner with different values would clamp differently.
+- Machines and tools taken from a chest or the capsule with Take all get no toolbar slot; only pick ups and hand crafts offer one.
+- `slot_command_stale` could refuse a `Grid_Transfer_Command` with `NO_ENTITY`, which nothing sends any more.
+- The cluster table's Files and Lines columns in `doc/code_map.md` are stale (simulation says 54 files, the tool counts 68).
+- The name line under the toolbars is drawn unfitted; a very long item name could pass the screen edge in a split screen quarter.

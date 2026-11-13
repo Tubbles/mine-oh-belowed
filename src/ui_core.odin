@@ -892,8 +892,9 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	clear(&state.panels)
 	clear(&state.draw_list)
 	// Y rotates the held building in the world, so it opens the info panel
-	// only on a screen.
-	if state.screens.count == 0 {
+	// only on a screen; in the crafting view it assigns a toolbar slot
+	// (0278, inventory_screen), so there it opens none either.
+	if state.screens.count == 0 || top_screen(state.screens) == .Inventory {
 		state.tooltip_open = false
 	} else if input.info && state.keyboard.field == 0 {
 		state.tooltip_open = !state.tooltip_open

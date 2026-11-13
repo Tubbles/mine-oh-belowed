@@ -217,8 +217,7 @@ test_blocks_placed_and_recycled_counters :: proc(t: ^testing.T) {
 	records.statistics = make_statistics(len(items.items), 1, len(registry.definitions), context.temp_allocator)
 	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 	player := &players[0]
-	player.inventory.slots[0] = Item_Stack{concrete, 2}
-	player.selected_hotbar_slot = 0
+	hold_test_stack(player, Item_Stack{concrete, 2})
 	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
 	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 	testing.expect_value(t, records.statistics.blocks_placed[concrete], 1)

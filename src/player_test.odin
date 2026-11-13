@@ -424,11 +424,11 @@ test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	defer destroy_simulation(&first)
 	second := make_generated_simulation(&second_generator, content)
 	defer destroy_simulation(&second)
-	// Mined blocks reach the hotbar only onto a partial stack there
-	// (inventory_add_picked_up), so both start with one dirt to pillar with.
+	// Both start with one dirt held on the selected toolbar slot to pillar
+	// with; mined dirt joins its stack (0278).
 	dirt := test_item(content.items, "dirt")
-	first.players[0].inventory.slots[0] = Item_Stack{dirt, 1}
-	second.players[0].inventory.slots[0] = Item_Stack{dirt, 1}
+	hold_test_stack(&first.players[0], Item_Stack{dirt, 1})
+	hold_test_stack(&second.players[0], Item_Stack{dirt, 1})
 	start := first.players[0].position
 	placed_count := 0
 	for tick in 0 ..< 1200 {
@@ -448,7 +448,7 @@ test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 		testing.expect_value(t, slot, b.inventory.slots[index])
 	}
 	moved := a.position - start
-	log.infof("after 1200 ticks: moved %v, placed %d, hotbar %v, selected %v", moved, placed_count, inventory_hotbar(a.inventory), a.selected_hotbar_slot)
+	log.infof("after 1200 ticks: moved %v, placed %d, held %v, selected %v", moved, placed_count, selected_hotbar_stack(a), a.selected_hotbar_slot)
 	testing.expectf(t, moved.x * moved.x + moved.z * moved.z > 1, "moved %v", moved)
 	testing.expectf(t, placed_count > 0, "nothing placed")
 }

@@ -889,9 +889,9 @@ describe_item_reeds = "Wetland reeds rooted in mud. No use to the factory. They 
 describe_item_brick = "Clay fired at about 1000 degrees Celsius. A building block made from the mud the washers leave behind."
 describe_item_asphalt = "Paving from the two things the outpost makes without trying: heavy oil and gravel. Four blocks from two bitumen and four gravel."
 describe_item_snow = "Snow from the cold barrens. It places back as snow. The outpost has no use for it."
-describe_item_schematic_low_grade_iron_plate = "A recovered schematic: smelt two low grade hematite straight into one iron plate, no crusher needed. Read it from the hotbar."
-describe_item_schematic_charcoal_steel = "A recovered schematic: steel from five iron plates and two charcoal instead of coal. Read it from the hotbar."
-describe_item_schematic_wood_gas_plastic = "A recovered schematic: plastic from 40 litres of wood gas alone. Read it from the hotbar."
+describe_item_schematic_low_grade_iron_plate = "A recovered schematic: smelt two low grade hematite straight into one iron plate, no crusher needed. Read it from the toolbar."
+describe_item_schematic_charcoal_steel = "A recovered schematic: steel from five iron plates and two charcoal instead of coal. Read it from the toolbar."
+describe_item_schematic_wood_gas_plastic = "A recovered schematic: plastic from 40 litres of wood gas alone. Read it from the toolbar."
 describe_item_schematic_slag_concrete = "A recovered schematic: two slag and 30 litres of water set into concrete in the washer. Waste into foundations."
 describe_item_schematic_wood_gas_rocket_fuel = "A recovered schematic: rocket fuel from wood gas and coal. Whoever held the lease before apparently flew on trees."
 describe_item_launch_pad = "Nine by nine. Assembles a rocket from its parts and 200 litres of fuel, and sends the cargo up to the buyers. A hundred steel and a hundred concrete."
@@ -906,9 +906,11 @@ item_category_tool = "Tool"
 item_category_machine = "Machine"
 item_category_block = "Block"
 
-// Inventory and hotbar
+// Inventory and toolbars
 inventory_title = "Inventory"
-inventory_hotbar = "Hotbar"
+// Y in the crafting view names the item on the active toolbar's selected
+// slot (work item 0278); {value} is the slot, 1 to 8.
+toast_toolbar_assigned = "{name} on slot {value}"
 // The configure pop-up over the inventory (work item 0202): its title per
 // configuration, its Close button. The foundation block's rows (0193):
 // the label, then one choice per entry of foundation_sizes and
@@ -934,6 +936,7 @@ hint_quick_move = "Quick move"
 hint_drop = "Drop"
 hint_sort = "Sort"
 hint_configure = "Configure"
+hint_assign = "Assign"
 hint_pick = "Pick"
 hint_close = "Close"
 hint_inventory = "Inventory"
@@ -1803,6 +1806,7 @@ slot_button_transfer_all_of_type = "Transfer same"
 // The touch row on every screen (work item 0137)
 touch_button_back = "Back"
 touch_button_drop = "Drop"
+touch_button_assign_toolbar = "Assign"
 touch_button_configure = "Configure"
 touch_button_clear_filter = "Clear"
 touch_button_craft = "Craft"

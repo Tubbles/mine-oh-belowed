@@ -65,7 +65,7 @@ test_player_mines_block_onto_its_hotbar_stack :: proc(t: ^testing.T) {
 	stone := test_block(registry, "stone")
 	stone_item := test_item(items, "stone")
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	player.inventory.slots[0] = Item_Stack{item = stone_item, count = 1}
+	hold_test_stack(&player, Item_Stack{item = stone_item, count = 1})
 	player.pitch = -89
 	player.held.stack = Item_Stack{test_item(items, "wooden_pickaxe"), 1}
 	required := int(mining_required_ticks(registry.definitions[stone].hardness_seconds, TEST_TICK_RATE))
@@ -156,6 +156,8 @@ test_place_uses_selected_hotbar_slot_and_respects_player_box :: proc(t: ^testing
 	player := &players[0]
 	player.inventory.slots[2] = Item_Stack{item = test_item(items, "dirt"), count = 2}
 	player.inventory.slots[3] = Item_Stack{item = test_item(items, "hematite"), count = 5}
+	player.toolbars[0][2] = test_item(items, "dirt")
+	player.toolbars[0][3] = test_item(items, "hematite")
 	player.selected_hotbar_slot = 2
 	player.target = Raycast_Hit{hit = true, block = {0, 0, 0}, face = .Positive_Y, adjacent = {0, 1, 0}}
 	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
@@ -178,6 +180,87 @@ test_place_uses_selected_hotbar_slot_and_respects_player_box :: proc(t: ^testing
 	player.selected_hotbar_slot = 2
 	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 	testing.expect_value(t, player.inventory.slots[2], EMPTY_STACK)
+}
+
+// 0278: the selected slot names a kind, and Place takes from its first
+// stack in slot order, wherever the stacks lie.
+@(test)
+test_place_draws_from_the_first_stack_of_the_kind :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	items := make_test_items()
+	content := Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}
+	world := make_floor_world(registry, 32)
+	records: Game_Records
+	dirt := test_item(items, "dirt")
+	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
+	player := &players[0]
+	player.inventory.slots[3] = Item_Stack{dirt, 5}
+	player.inventory.slots[20] = Item_Stack{dirt, 7}
+	player.toolbars[0][0] = dirt
+	for cell in ([2]World_Coordinate{{2, 1, 0}, {4, 1, 0}}) {
+		player.target = Raycast_Hit{hit = true, block = cell - {0, 1, 0}, face = .Positive_Y, adjacent = cell}
+		place_with_player(&world, &records.statistics, content, players, 0, {.Place})
+		testing.expect_value(t, world_get_block(&world, cell), test_block(registry, "dirt"))
+	}
+	testing.expect_value(t, player.inventory.slots[3], Item_Stack{dirt, 3})
+	testing.expect_value(t, player.inventory.slots[20], Item_Stack{dirt, 7})
+}
+
+// 0278: a named kind the inventory lacks holds nothing: Place puts no
+// block, Use_Item uses nothing, and the field tool is the hand.
+@(test)
+test_an_absent_kind_places_and_uses_nothing :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
+	dirt, stone := test_item(content.items, "dirt"), test_item(content.items, "stone")
+	schematic := test_item(content.items, "schematic_slag_concrete")
+	players := []Player{make_test_player(content.blocks, {0.5, 1, 0.5})}
+	player := &players[0]
+	player.toolbars[0][0] = dirt
+	player.toolbars[0][1] = schematic
+	player.inventory.slots[0] = Item_Stack{stone, 3}
+	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), AIR_BLOCK)
+	testing.expect_value(t, player.inventory.slots[0], Item_Stack{stone, 3})
+	update_field_held_tool(player, content, {})
+	testing.expect_value(t, player.field.tool, Field_Held_Tool.Hand)
+	player.selected_hotbar_slot = 1
+	player.field.tool = .Material
+	input, used := resolve_use_item(player, &world.entities, content.items, press({.Place, .Use_Item}))
+	testing.expect_value(t, used, NO_ITEM)
+	testing.expect_value(t, input.just_pressed, Action_Set{.Place})
+	update_field_held_tool(player, content, {})
+	testing.expect_value(t, player.field.tool, Field_Held_Tool.Hand)
+}
+
+// 0278: placing the last of a kind empties its stack and keeps the kind
+// named: the hand is empty until the kind arrives again.
+@(test)
+test_the_last_item_placed_leaves_the_kind_named_and_the_hand_empty :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	items := make_test_items()
+	content := Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}
+	world := make_floor_world(registry, 32)
+	records: Game_Records
+	dirt := test_item(items, "dirt")
+	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
+	player := &players[0]
+	player.selected_hotbar_slot = 4
+	player.toolbars[0][4] = dirt
+	player.inventory.slots[12] = Item_Stack{dirt, 1}
+	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), test_block(registry, "dirt"))
+	testing.expect_value(t, player.inventory.slots[12], EMPTY_STACK)
+	testing.expect_value(t, player.toolbars[0][4], dirt)
+	testing.expect_value(t, selected_hotbar_stack(player^), EMPTY_STACK)
+	player.target = Raycast_Hit{hit = true, block = {4, 0, 0}, face = .Positive_Y, adjacent = {4, 1, 0}}
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, {4, 1, 0}), AIR_BLOCK)
+	inventory_add(player.inventory, items, dirt, 2)
+	testing.expect_value(t, selected_hotbar_stack(player^), Item_Stack{dirt, 2})
 }
 
 @(test)
@@ -319,7 +402,7 @@ test_mining_a_log_fells_the_tree :: proc(t: ^testing.T) {
 		}
 	}
 	log_item := test_item(content.items, "log")
-	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{item = log_item, count = 1})
+	testing.expect_value(t, player.inventory.slots[0], Item_Stack{item = log_item, count = 1})
 	for height in i32(1) ..= tree.trunk_height {
 		testing.expect_value(t, world_get_block(&world, tree.root + {0, height, 0}), AIR_BLOCK)
 	}
@@ -365,6 +448,8 @@ test_placing_slabs_and_rotated_stairs :: proc(t: ^testing.T) {
 	player := &players[0]
 	player.inventory.slots[0] = Item_Stack{item = test_item(items, "stone_slab"), count = 4}
 	player.inventory.slots[1] = Item_Stack{item = test_item(items, "stone_stairs"), count = 4}
+	player.toolbars[0][0] = test_item(items, "stone_slab")
+	player.toolbars[0][1] = test_item(items, "stone_stairs")
 	// Looking down at the floor two blocks ahead.
 	player.pitch = -60
 	player.target = raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
@@ -406,7 +491,7 @@ test_placing_a_block_replaces_ground_cover :: proc(t: ^testing.T) {
 	tuft := test_block(registry, "grass_tuft")
 	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 	player := &players[0]
-	player.inventory.slots[0] = Item_Stack{item = test_item(items, "dirt"), count = 2}
+	hold_test_stack(player, Item_Stack{item = test_item(items, "dirt"), count = 2})
 	player.pitch = -60
 	floor := raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
 	set_blocks(&world, tuft, floor.adjacent)

@@ -302,3 +302,44 @@ test_the_clear_craft_queue_command_round_trips_and_applies :: proc(t: ^testing.T
 	testing.expect_value(t, len(simulation.events), events + 1)
 	testing.expect_value(t, simulation.events[len(simulation.events) - 1].kind, Player_Event.Inventory_Full)
 }
+
+// Work item 0278: the crafting view's assign survives the wire, names the
+// kind at the next tick, and is refused for a toolbar past the count, a
+// slot past the toolbar and an unknown item; NO_ITEM clears the slot.
+@(test)
+test_the_toolbar_assign_command_round_trips_and_applies :: proc(t: ^testing.T) {
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	stone := test_item(content.items, "stone")
+	command := Toolbar_Assign_Command{toolbar = 0, slot = 5, item = stone}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	encode_player_command(&bytes, command)
+	reader := Byte_Reader{data = bytes[:]}
+	decoded, ok := decode_player_command(&reader)
+	testing.expect(t, ok)
+	testing.expect_value(t, decoded.(Toolbar_Assign_Command), command)
+	testing.expect(t, player_command_valid(command, content))
+	player := &simulation.players[0]
+	queue_player_command(&simulation.player_commands, 0, command)
+	testing.expect_value(t, player.toolbars[0][5], NO_ITEM)
+	simulation_tick(&simulation, content, {})
+	testing.expect_value(t, player.toolbars[0][5], stone)
+	// The second toolbar exists only at a count of two.
+	second := Toolbar_Assign_Command{toolbar = 1, slot = 0, item = stone}
+	one := content
+	one.toolbar_count = 1
+	testing.expect(t, !player_command_valid(second, one))
+	two := content
+	two.toolbar_count = 2
+	testing.expect(t, player_command_valid(second, two))
+	queue_player_command(&simulation.player_commands, 0, second)
+	simulation_tick(&simulation, two, {})
+	testing.expect_value(t, player.toolbars[1][0], stone)
+	testing.expect(t, !player_command_valid(Toolbar_Assign_Command{toolbar = 0, slot = HOTBAR_SLOT_COUNT, item = stone}, content))
+	testing.expect(t, !player_command_valid(Toolbar_Assign_Command{toolbar = 0, slot = 0, item = Item_Id(len(content.items.items))}, content))
+	clear := Toolbar_Assign_Command{toolbar = 0, slot = 5, item = NO_ITEM}
+	testing.expect(t, player_command_valid(clear, content))
+	queue_player_command(&simulation.player_commands, 0, clear)
+	simulation_tick(&simulation, content, {})
+	testing.expect_value(t, player.toolbars[0][5], NO_ITEM)
+}

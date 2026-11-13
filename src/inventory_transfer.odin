@@ -9,9 +9,6 @@ package game
 Quick_Move_Side :: enum u8 {
 	Inventory,
 	Machine,
-	// The inventory screen's two sections (work item 0090).
-	Hotbar,
-	Backpack,
 }
 
 // The slot a quick move acts on: an inventory index or a machine slot.
@@ -95,20 +92,6 @@ take_slot :: proc(inventory: Inventory, items: Item_Registry, slot: ^Item_Stack)
 	}
 }
 
-// Inventory indices, the main grid before the hotbar, so the hotbar is
-// the last to empty. In the temp allocator.
-inventory_order_hotbar_last :: proc(inventory: Inventory) -> []int {
-	order := make([dynamic]int, 0, len(inventory.slots), context.temp_allocator)
-	hotbar := len(inventory_hotbar(inventory))
-	for index in hotbar ..< len(inventory.slots) {
-		append(&order, index)
-	}
-	for index in 0 ..< hotbar {
-		append(&order, index)
-	}
-	return order[:]
-}
-
 slots_hold_item :: proc(slots: []Item_Stack, item: Item_Id) -> bool {
 	for slot in slots {
 		if !stack_is_empty(slot) && slot.item == item {
@@ -118,11 +101,11 @@ slots_hold_item :: proc(slots: []Item_Stack, item: Item_Id) -> bool {
 	return false
 }
 
-// Every inventory stack of the item into the entity, the hotbar last.
+// Every inventory stack of the item into the entity, in slot order.
 store_item :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, inventory: Inventory, item: Item_Id) {
-	for index in inventory_order_hotbar_last(inventory) {
-		if inventory.slots[index].item == item {
-			store_slot(entities, content, handle, &inventory.slots[index])
+	for &slot in inventory.slots {
+		if slot.item == item {
+			store_slot(entities, content, handle, &slot)
 		}
 	}
 }
@@ -154,22 +137,6 @@ apply_quick_move :: proc(entities: ^Entities, content: Simulation_Content, handl
 		}
 	}
 }
-// The slots of the section a stack from the side goes to.
-inventory_quick_move_destination :: proc(inventory: Inventory, side: Quick_Move_Side) -> []Item_Stack {
-	return side == .Hotbar ? inventory_grid(inventory) : inventory_hotbar(inventory)
-}
-
-// The inventory indices of the side's section.
-inventory_quick_move_origin :: proc(inventory: Inventory, side: Quick_Move_Side) -> (first, last: int) {
-	hotbar := len(inventory_hotbar(inventory))
-	return side == .Hotbar ? 0 : hotbar, side == .Hotbar ? hotbar : len(inventory.slots)
-}
-
-// One slot's stack into the other section; the rest stays in the slot.
-move_slot_to_section :: proc(inventory: Inventory, items: Item_Registry, index: int, side: Quick_Move_Side) {
-	move_stack_into_slots(inventory_quick_move_destination(inventory, side), items, &inventory.slots[index])
-}
-
 // Partial stacks of the item first, then empty slots; the rest stays in
 // the slot.
 move_stack_into_slots :: proc(destination: []Item_Stack, items: Item_Registry, slot: ^Item_Stack) {
@@ -182,35 +149,14 @@ move_stack_into_slots :: proc(destination: []Item_Stack, items: Item_Registry, s
 	}
 }
 
-apply_inventory_quick_move :: proc(inventory: Inventory, items: Item_Registry, step: Quick_Move_Step) {
-	switch step.kind {
-	case .None:
-	case .Stack:
-		move_slot_to_section(inventory, items, step.target.slot, step.target.side)
-	case .All:
-		first, last := inventory_quick_move_origin(inventory, step.target.side)
-		for index in first ..< last {
-			if inventory.slots[index].item == step.item {
-				move_slot_to_section(inventory, items, index, step.target.side)
-			}
-		}
-	}
-}
-
 // Store all: stacks of items the container holds first, then the rest,
-// the main grid before the hotbar. In the temp allocator.
+// each in slot order. In the temp allocator.
 store_all_order :: proc(inventory: Inventory, container: []Item_Stack) -> []int {
 	order := make([dynamic]int, 0, len(inventory.slots), context.temp_allocator)
-	hotbar := len(inventory_hotbar(inventory))
-	parts := [2][2]int{{hotbar, len(inventory.slots)}, {0, hotbar}}
-	held_first := [2]bool{true, false}
-	for part in parts {
-		for held in held_first {
-			for index in part[0] ..< part[1] {
-				slot := inventory.slots[index]
-				if !stack_is_empty(slot) && slots_hold_item(container, slot.item) == held {
-					append(&order, index)
-				}
+	for held in ([2]bool{true, false}) {
+		for slot, index in inventory.slots {
+			if !stack_is_empty(slot) && slots_hold_item(container, slot.item) == held {
+				append(&order, index)
 			}
 		}
 	}
@@ -255,15 +201,15 @@ fill_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []int {
 	return result[:]
 }
 
-// Fill: from the inventory, the hotbar last, into the fill slots up to
-// the insertion limit.
+// Fill: from the inventory in slot order into the fill slots up to the
+// insertion limit.
 fill_from_inventory :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, inventory: Inventory) {
 	targets := fill_slots(entities, handle)
 	if len(targets) == 0 {
 		return
 	}
-	for index in inventory_order_hotbar_last(inventory) {
-		store_slot(entities, content, handle, &inventory.slots[index], targets)
+	for &slot in inventory.slots {
+		store_slot(entities, content, handle, &slot, targets)
 	}
 }
 
@@ -286,24 +232,21 @@ Grid_Transfer :: struct {
 	item:    Item_Id,
 }
 
-// The grid's slots; the machine's are the open entity's.
+// The grid's slots: the player's whole inventory, or the open entity's.
 grid_slots :: proc(inventory: Inventory, machine_slots: []Item_Stack, grid: Slot_Grid_Kind) -> []Item_Stack {
 	switch grid {
 	case .None:
-	case .Hotbar:
-		return inventory_hotbar(inventory)
 	case .Main:
-		return inventory_grid(inventory)
+		return inventory.slots
 	case .Machine:
 		return machine_slots
 	}
 	return nil
 }
 
-// Into the machine the way the quick move stores (store_slot), between
-// the player's grids and out of the machine by partial stacks first,
-// then empty slots. What does not fit stays where it was. The inventory
-// screen passes no entities and NO_ENTITY, as it never targets a machine.
+// Into the machine the way the quick move stores (store_slot), and out
+// of the machine into the inventory by partial stacks first, then empty
+// slots. What does not fit stays where it was.
 apply_grid_transfer :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, inventory: Inventory, transfer: Grid_Transfer) {
 	machine_slots: []Item_Stack
 	if handle != NO_ENTITY {

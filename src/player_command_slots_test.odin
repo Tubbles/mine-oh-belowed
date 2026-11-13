@@ -22,17 +22,18 @@ test_a_slot_transfer_applies_at_the_next_tick_and_not_before :: proc(t: ^testing
 	defer destroy_ui_state(&state)
 	player := drag_test_inventory(audit, &state)
 	coal := player.inventory.slots[3]
-	// The focus is on the selected hotbar slot 0; the tap focuses slot 3.
-	tap_widget(audit, &state, inventory_slot_id("hotbar", 3))
-	screen_test_frame(audit, &state, {confirm = true, modifier_five = true})
+	// The tap focuses slot 3; L1 with A splits it (0278: the inventory
+	// has no quick move of its own).
+	tap_widget(audit, &state, inventory_slot_id("grid", 3))
+	screen_test_frame(audit, &state, {confirm = true, modifier_most = true})
 	testing.expect_value(t, len(audit.simulation.player_commands), 1)
 	screen_test_frame(audit, &state, {})
 	testing.expect_value(t, player.inventory.slots[3], coal)
-	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], EMPTY_STACK)
+	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	run_audit_tick(audit)
 	testing.expect_value(t, len(audit.simulation.player_commands), 0)
-	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
-	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
+	testing.expect_value(t, player.inventory.slots[3], Item_Stack{coal.item, 2})
+	testing.expect_value(t, player.held.stack, Item_Stack{coal.item, 3})
 }
 
 // A chest removed between the frame and the tick: the quick move out of
@@ -113,7 +114,7 @@ test_a_stale_sort_order_is_refused :: proc(t: ^testing.T) {
 	player.held = EMPTY_HELD_STACK
 	coal := Item_Stack{test_item(audit.content.items, "coal"), 3}
 	player.inventory.slots[HOTBAR_SLOT_COUNT + 4] = coal
-	sort := slot_sort_command(NO_ENTITY, inventory_grid(player.inventory), audit.item_sort_ranks)
+	sort := slot_sort_command(NO_ENTITY, player.inventory.slots, audit.item_sort_ranks)
 	player.inventory.slots[HOTBAR_SLOT_COUNT + 7] = coal
 	queue_player_command(&simulation.player_commands, 0, sort)
 	apply_player_commands(simulation, audit.content)
@@ -140,7 +141,7 @@ test_slot_commands_cross_the_codec :: proc(t: ^testing.T) {
 		Drop_Stack_Command{slot = 4, expects = {hand = NO_ITEM, slot = 5}},
 		Quick_Move_Command{machine = chest, step = {kind = .All, target = {.Machine, -1}, item = 3}},
 		Transfer_Button_Command{machine = chest, button = .Store_All},
-		Grid_Transfer_Command{machine = NO_ENTITY, transfer = {source = .Hotbar, target = .Main, of_type = true, item = 2}},
+		Grid_Transfer_Command{machine = chest, transfer = {source = .Machine, target = .Main, of_type = true, item = 2}},
 		Inserter_Hand_Command{inserter = {kind = .Inserter, index = 1, generation = 1}, into_inventory = true},
 	}
 	for command in commands {

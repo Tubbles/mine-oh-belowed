@@ -54,11 +54,10 @@ apply_slot_split :: proc(inventory: Inventory, held: Held_Stack, index: int) -> 
 	return Held_Stack{stack = taken, origin_slot = index}
 }
 
-// The grids of a slot screen (0125): the player's hotbar row, the
-// player's main grid and the open machine's slots.
+// The grids of a slot screen (0125): the player's inventory and the open
+// machine's slots.
 Slot_Grid_Kind :: enum u8 {
 	None,
-	Hotbar,
 	Main,
 	Machine,
 }
@@ -72,19 +71,12 @@ Active_Slot :: struct {
 	index: int,
 }
 
-// The grid Sort sorts: the active one, but the hotbar keeps its order,
-// so from the hotbar Sort sorts the player's main grid (the screens open
-// with the focus on the hotbar).
-sort_target_grid :: proc(active: Slot_Grid_Kind) -> Slot_Grid_Kind {
-	return active == .Hotbar ? .Main : active
-}
-
 // A focused player slot (an inventory index) or machine slot makes its
 // grid active; a focus off the slots keeps the last one.
 active_slot_after_focus :: proc(previous: Active_Slot, player_focused, machine_focused: int) -> Active_Slot {
 	switch {
 	case player_focused >= 0:
-		return {player_focused < HOTBAR_SLOT_COUNT ? .Hotbar : .Main, player_focused}
+		return {.Main, player_focused}
 	case machine_focused >= 0:
 		return {.Machine, machine_focused}
 	}

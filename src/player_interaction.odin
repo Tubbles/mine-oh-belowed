@@ -128,7 +128,7 @@ mining_tool_line :: proc(blocks: Block_Registry, items: Item_Registry, block: Bl
 	return format_message_text(text("mining_needs_tool"), item_name(items, tool_item_for_tier(items, needed)))
 }
 
-// The block's items go into the inventory, hotbar first: its drop and an
+// The block's items go into the inventory in slot order: its drop and an
 // extra drop (gold quartz gives quartz and gold ore). What does not fit
 // spills at the block's cell as loose items (loose_item.odin), and the
 // full inventory is reported once for the block. A log fells the tree
@@ -154,7 +154,7 @@ mine_block :: proc(world: ^World, records: ^Game_Records, registry: Block_Regist
 	drop_unsupported_cover(world, registry, items, player.target.block + UP)
 	spilled := false
 	for drop in block_drop_stacks(items, block_id) {
-		if leftover := inventory_add_picked_up(player.inventory, items, drop.item, 1); leftover > 0 {
+		if leftover := add_picked_up(player, items, drop.item, 1); leftover > 0 {
 			spill_stack(world, registry, player.target.block, Item_Stack{item = drop.item, count = u16(leftover)})
 			spilled = true
 		}
@@ -202,7 +202,7 @@ mine_entity :: proc(world: ^World, statistics: ^Statistics, content: Simulation_
 		return {}
 	}
 	player.mining = {}
-	spills := !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(world, content, player.target.entity))
+	spills := !inventory_fits_all(player.inventory, content.items, entity_pickup_stacks(world, content, player.target.entity))
 	if !pick_up_entity(world, statistics, content, player, player.target.entity, tick) || !spills {
 		return {}
 	}
@@ -251,8 +251,12 @@ placement_allowed :: proc(world: ^World, registry: Block_Registry, players: []Pl
 	return true
 }
 
+// The stack the hand holds: the first stack of the selected toolbar
+// slot's kind (selected_stack_index, 0278), empty when the inventory
+// lacks it.
 selected_hotbar_stack :: proc(player: Player) -> Item_Stack {
-	return inventory_hotbar(player.inventory)[player.selected_hotbar_slot]
+	index := selected_stack_index(player)
+	return index >= 0 ? player.inventory.slots[index] : EMPTY_STACK
 }
 
 // The block the selected hotbar slot would place, or air.
@@ -321,7 +325,7 @@ place_block_with_player :: proc(world: ^World, statistics: ^Statistics, registry
 	hit_point := player_eye(player.position) + player.target_direction * player.target.distance
 	block = placed_block_variant(registry, block, target, hit_point, player.yaw, player.placement_rotation)
 	if world_set_block(world, target.adjacent, block) {
-		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
+		take_from_slot(&player.inventory.slots[selected_stack_index(player^)], 1)
 		record_block_placed(statistics, item)
 	}
 }

@@ -754,16 +754,19 @@ run_planet_preview_frames :: proc(preview: ^Planet_Preview) -> int {
 }
 
 // The preview's extras on top of the starter kit: the pickaxe, the
-// foundations and the poles.
+// foundations and the poles, each named on the toolbar.
 give_planet_preview_items :: proc(player: ^Player, items: Item_Registry, machines: Machine_Registry) {
 	if tool, found := find_item_id(items, PLANET_PREVIEW_TOOL_ITEM); found {
 		inventory_add(player.inventory, items, tool, 1)
+		take_toolbar_slot(player, tool)
 	}
 	if foundation := find_foundation_machine(machines); foundation != NO_MACHINE {
 		inventory_add(player.inventory, items, machines.machines[foundation].item, PLANET_PREVIEW_FOUNDATION_COUNT)
+		take_toolbar_slot(player, machines.machines[foundation].item)
 	}
 	if pole := find_machine_of_kind(machines, .Belt_Pole); pole != NO_MACHINE {
 		inventory_add(player.inventory, items, machines.machines[pole].item, PLANET_PREVIEW_POLE_COUNT)
+		take_toolbar_slot(player, machines.machines[pole].item)
 	}
 }
 

@@ -3,12 +3,12 @@ package game
 import "core:slice"
 
 // Fixed slots of item stacks. A slot is empty when its count is 0. The
-// hotbar is a window onto the first eight slots of the same array, so
-// moving a stack into the hotbar is an ordinary slot move.
+// player's inventory is one grid of five rows of nine (work item 0278);
+// the toolbars name item kinds in it and hold no slots (toolbar.odin).
 
+// The slots of one toolbar.
 HOTBAR_SLOT_COUNT :: 8
-PLAYER_GRID_SLOT_COUNT :: 36
-PLAYER_INVENTORY_SLOT_COUNT :: HOTBAR_SLOT_COUNT + PLAYER_GRID_SLOT_COUNT
+PLAYER_INVENTORY_SLOT_COUNT :: 45
 
 Item_Stack :: struct {
 	item:  Item_Id,
@@ -35,14 +35,6 @@ destroy_inventory :: proc(inventory: Inventory, allocator := context.allocator) 
 
 stack_is_empty :: proc(stack: Item_Stack) -> bool {
 	return stack.count == 0
-}
-
-inventory_hotbar :: proc(inventory: Inventory) -> []Item_Stack {
-	return inventory.slots[:min(HOTBAR_SLOT_COUNT, len(inventory.slots))]
-}
-
-inventory_grid :: proc(inventory: Inventory) -> []Item_Stack {
-	return inventory.slots[min(HOTBAR_SLOT_COUNT, len(inventory.slots)):]
 }
 
 // Takes as much of count as the slot has room for and returns the rest.
@@ -88,7 +80,8 @@ add_to_slots :: proc(slots: []Item_Stack, item: Item_Id, count: int, stack_size:
 	return fill_empty_slots(slots, item, fill_partial_stacks(slots, item, count, stack_size), stack_size)
 }
 
-// Hotbar first, since it is the front of the slot array.
+// Partial stacks of the item first, then empty slots, both in slot order
+// (the grid's reading order).
 inventory_add :: proc(inventory: Inventory, registry: Item_Registry, item: Item_Id, count: int) -> (leftover: int) {
 	stack_size := item_stack_size(registry, item)
 	if stack_size == 0 {
@@ -97,48 +90,12 @@ inventory_add :: proc(inventory: Inventory, registry: Item_Registry, item: Item_
 	return add_to_slots(inventory.slots, item, count, stack_size)
 }
 
-// Tools and machines take an empty hotbar slot on pick up; every other
-// item goes to the main grid.
-item_takes_empty_hotbar_slot :: proc(registry: Item_Registry, item: Item_Id) -> bool {
-	return int(item) < len(registry.items) && registry.items[item].category in bit_set[Item_Category]{.Tool, .Machine}
-}
-
-// Items picked up, mined, or returned by a machine pick up (work item
-// 0128): the item's partial stacks on the hotbar first, whatever the
-// item; then a tool or a machine takes empty hotbar slots before the main
-// grid, while every other item fills the main grid (partial stacks, then
-// empty slots) and takes empty hotbar slots only when the grid is full.
-inventory_add_picked_up :: proc(inventory: Inventory, registry: Item_Registry, item: Item_Id, count: int) -> (leftover: int) {
-	stack_size := item_stack_size(registry, item)
-	if stack_size == 0 {
-		return count
-	}
-	hotbar, grid := inventory_hotbar(inventory), inventory_grid(inventory)
-	remaining := fill_partial_stacks(hotbar, item, count, stack_size)
-	if item_takes_empty_hotbar_slot(registry, item) {
-		return add_to_slots(grid, item, fill_empty_slots(hotbar, item, remaining, stack_size), stack_size)
-	}
-	return fill_empty_slots(hotbar, item, add_to_slots(grid, item, remaining, stack_size), stack_size)
-}
-
 // Whether all the stacks fit at once, tried on a copy of the slots.
 inventory_fits_all :: proc(inventory: Inventory, registry: Item_Registry, stacks: []Item_Stack) -> bool {
 	trial := make([]Item_Stack, len(inventory.slots), context.temp_allocator)
 	copy(trial, inventory.slots)
 	for stack in stacks {
 		if !stack_is_empty(stack) && add_to_slots(trial, stack.item, int(stack.count), item_stack_size(registry, stack.item)) > 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// inventory_fits_all for stacks that go in by inventory_add_picked_up.
-inventory_fits_all_picked_up :: proc(inventory: Inventory, registry: Item_Registry, stacks: []Item_Stack) -> bool {
-	trial := Inventory{slots = make([]Item_Stack, len(inventory.slots), context.temp_allocator)}
-	copy(trial.slots, inventory.slots)
-	for stack in stacks {
-		if !stack_is_empty(stack) && inventory_add_picked_up(trial, registry, stack.item, int(stack.count)) > 0 {
 			return false
 		}
 	}
@@ -155,7 +112,8 @@ take_from_slot :: proc(slot: ^Item_Stack, count: int) -> int {
 	return taken
 }
 
-// Removes from the last slots first, so the hotbar is the last to empty.
+// Removes from the last slots first, so the first stack in slot order
+// (the one a toolbar slot holds, selected_stack_index) empties last.
 // Returns how many were removed.
 inventory_remove :: proc(inventory: Inventory, item: Item_Id, count: int) -> (removed: int) {
 	#reverse for &slot in inventory.slots {

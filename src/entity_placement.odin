@@ -262,7 +262,7 @@ place_entity_with_player :: proc(world: ^World, statistics: ^Statistics, content
 		return
 	}
 	commit_placement(world, content.machines, placement)
-	take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
+	take_from_slot(&player.inventory.slots[selected_stack_index(player^)], 1)
 	record_placed(statistics, placement.machine)
 }
 
@@ -468,7 +468,7 @@ entity_pickup_stacks :: proc(world: ^World, content: Simulation_Content, handle:
 // allocator. The block world spills them (pick_up_entity); the field
 // takes an entity only when nothing is left over (drain_field_pick_up,
 // 0195), since it has no loose items yet.
-take_entity_into_inventory :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, inventory: Inventory, handle: Entity_Handle) -> (leftovers: []Item_Stack, taken: bool) {
+take_entity_into_inventory :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player, handle: Entity_Handle) -> (leftovers: []Item_Stack, taken: bool) {
 	if !entity_can_be_picked_up(world, content.machines, handle) {
 		return nil, false
 	}
@@ -482,7 +482,7 @@ take_entity_into_inventory :: proc(world: ^World, statistics: ^Statistics, conte
 		if stack_is_empty(stack) {
 			continue
 		}
-		if leftover := inventory_add_picked_up(inventory, content.items, stack.item, int(stack.count)); leftover > 0 {
+		if leftover := add_picked_up(player, content.items, stack.item, int(stack.count)); leftover > 0 {
 			append(&left, Item_Stack{item = stack.item, count = u16(leftover)})
 		}
 	}
@@ -499,7 +499,7 @@ pick_up_entity :: proc(world: ^World, statistics: ^Statistics, content: Simulati
 		return false
 	}
 	removed := common^
-	leftovers := take_entity_into_inventory(world, statistics, content, player.inventory, handle) or_return
+	leftovers := take_entity_into_inventory(world, statistics, content, player, handle) or_return
 	schedule_water_around_freed_cells(world, content.blocks, common_cells(removed, content.machines), tick)
 	for stack in leftovers {
 		spill_stack(world, content.blocks, removed.origin, stack)

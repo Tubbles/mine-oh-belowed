@@ -498,7 +498,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	height := max(inventory_panel_height(), machine_height + 2 * UI_PADDING)
 	panel := fitted_panel(safe, player_width + machine_width + 4 * UI_PADDING, height)
 	ui_panel_begin(state, "machine", panel)
-	ui_prefer_focus(state, selected_hotbar_slot_id(state, player))
+	ui_prefer_focus(state, selected_kind_slot_id(state, player))
 	content := inset(panel, UI_PADDING)
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Left)
 	player_slots := player_slot_region(state, {content.x, content.y, player_width, content.height}, player, items)
@@ -611,15 +611,15 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 	player, items := screen_context.player, screen_context.items
 	recipes, ranks := screen_context.recipes, screen_context.item_sort_ranks
 	input := state.input
-	// X sorts the active grid alone, the main grid from the hotbar
-	// (sort_target_grid, 0125); on a filter slot it clears the filter.
+	// X sorts the active grid alone (0125); on a filter slot it clears the
+	// filter.
 	sorts := input.context_action && !machine_slots.filter_focused
 	if !state.distribute.active {
 		player_input := Inventory_Slot_Input {
 			activated      = player_slots.activated,
 			focused        = player_slots.focused,
 			secondary      = modifiers.split_pressed,
-			context_action = sorts && sort_target_grid(state.active_slot.grid) == .Main,
+			context_action = sorts && state.active_slot.grid == .Main,
 			drag_drop      = state.slot_drag.released,
 			drag_hand      = dragged_hand_item(screen_context),
 		}
@@ -630,7 +630,7 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 		focused        = machine_slots.focused,
 		confirm_down   = input.confirm_down || state.pointer_held,
 		secondary      = modifiers.split_pressed,
-		context_action = sorts && sort_target_grid(state.active_slot.grid) == .Machine,
+		context_action = sorts && state.active_slot.grid == .Machine,
 		drag_drop      = state.slot_drag.released,
 		drag_hand      = dragged_hand_item(screen_context),
 	}

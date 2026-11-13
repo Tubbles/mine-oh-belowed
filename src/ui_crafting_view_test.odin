@@ -144,7 +144,7 @@ test_the_focus_crosses_the_seam_and_wraps_inside_each_half :: proc(t: ^testing.T
 	defer destroy_ui_state(&state)
 	open_crafting_view(audit, &state, .Inventory)
 	inventory := ui_hash(0, "inventory", -1)
-	for slot in ([2]Ui_Id{inventory_slot_id("grid", 8), inventory_slot_id("hotbar", 7)}) {
+	for slot in ([2]Ui_Id{inventory_slot_id("grid", 8), inventory_slot_id("grid", PLAYER_INVENTORY_SLOT_COUNT - 1)}) {
 		state.focus = slot
 		screen_test_frame(audit, &state, {})
 		testing.expect_value(t, state.crafting_half, Crafting_Half.Inventory)
@@ -163,7 +163,8 @@ test_the_focus_crosses_the_seam_and_wraps_inside_each_half :: proc(t: ^testing.T
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {navigation = .Left})
 	testing.expect_value(t, focused_widget_panel(state), inventory)
-	state.focus = inventory_slot_id("hotbar", 3)
+	// Down from the last row wraps inside the half.
+	state.focus = inventory_slot_id("grid", PLAYER_INVENTORY_SLOT_COUNT - INVENTORY_COLUMNS + 3)
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {navigation = .Down})
 	testing.expect_value(t, focused_widget_panel(state), inventory)
@@ -174,8 +175,9 @@ test_the_focus_crosses_the_seam_and_wraps_inside_each_half :: proc(t: ^testing.T
 }
 
 // C from the world opens the view on a schematic, the inventory binding
-// on the selected hotbar slot. C on the view closes it, and a window step
-// to the journal and back keeps the half.
+// on the first stack of the selected toolbar slot's kind (0278). C on the
+// view closes it, and a window step to the journal and back keeps the
+// half.
 @(test)
 test_c_and_the_inventory_binding_open_the_crafting_view_on_their_half :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -192,12 +194,17 @@ test_c_and_the_inventory_binding_open_the_crafting_view_on_their_half :: proc(t:
 	testing.expect_value(t, state.focus, schematic_cell_id(browser.focused_recipe))
 	screen_test_frame(audit, &state, {open_recipes = true})
 	expect_screens(t, &state, {})
-	audit.simulation.players[0].selected_hotbar_slot = 2
+	player := &audit.simulation.players[0]
+	player.selected_hotbar_slot = 2
+	stone := test_item(audit.content.items, "stone")
+	inventory_remove(player.inventory, stone, inventory_count(player.inventory, stone))
+	player.inventory.slots[30] = Item_Stack{stone, 2}
+	player.toolbars[0][2] = stone
 	screen_test_frame(audit, &state, {open_inventory = true})
 	expect_screens(t, &state, {.Inventory})
 	testing.expect_value(t, state.crafting_half, Crafting_Half.Inventory)
 	screen_test_frame(audit, &state, {})
-	testing.expect_value(t, state.focus, inventory_slot_id("hotbar", 2))
+	testing.expect_value(t, state.focus, inventory_slot_id("grid", 30))
 	screen_test_frame(audit, &state, {back = true})
 	expect_screens(t, &state, {})
 	// On the schematics, a step to the journal and back.
@@ -256,11 +263,11 @@ test_a_tab_step_moves_the_schematics_focus_to_the_new_tab :: proc(t: ^testing.T)
 	testing.expect_value(t, state.focus, schematics_toggle_id())
 	testing.expect_value(t, browser.focused_recipe, first_of(tab_recipes(audit, tabs[2])))
 	// On a slot.
-	state.focus = inventory_slot_id("hotbar", 0)
+	state.focus = inventory_slot_id("grid", 0)
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {tab_next = true})
 	testing.expect_value(t, view.tab, 3)
-	testing.expect_value(t, state.focus, inventory_slot_id("hotbar", 0))
+	testing.expect_value(t, state.focus, inventory_slot_id("grid", 0))
 	testing.expect_value(t, browser.focused_recipe, first_of(tab_recipes(audit, tabs[3])))
 	// Back from the first tab to the last.
 	view.tab = 0
@@ -313,9 +320,9 @@ test_modifiers_with_a_on_a_schematic :: proc(t: ^testing.T) {
 		testing.expectf(t, draw_list_has_text(state.draw_list[:], text("hint_clear_craft_queue")), "%v: no Clear queue hint", device)
 		clear(&audit.simulation.player_commands)
 	}
-	// A backpack stack: the gamepad's X sorts.
+	// A stack: the gamepad's X sorts.
 	player.inventory.slots[HOTBAR_SLOT_COUNT] = {test_item(audit.content.items, "stone"), 3}
-	state.focus = inventory_slot_id("grid", 0)
+	state.focus = inventory_slot_id("grid", HOTBAR_SLOT_COUNT)
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {context_action = true, device = .Gamepad, device_seen = true})
 	_, sorts := last_queued_command(audit).(Slot_Sort_Command)
@@ -576,4 +583,155 @@ test_unlocked_only_moves_the_detail_off_a_hidden_recipe :: proc(t: ^testing.T) {
 	testing.expect(t, audit.views.crafting_view.available_only)
 	testing.expect_value(t, browser.focused_recipe, NO_RECIPE)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("recipes_none")))
+}
+
+// A recipe the audit's player has not unlocked that makes an item, for
+// the assign tests (0278).
+locked_item_recipe :: proc(audit: ^Ui_Audit) -> int {
+	for recipe, index in audit.content.recipes.recipes {
+		if !recipe_is_available(audit.simulation.unlocks, index) && len(recipe.outputs) > 0 {
+			return index
+		}
+	}
+	return NO_RECIPE
+}
+
+// The crafting view on a schematic's cell, Unlocked only off.
+open_crafting_view_on_recipe :: proc(audit: ^Ui_Audit, state: ^Ui_State, recipe: int) {
+	audit.views.crafting_view = {tab = crafting_view_test_tab(audit.content.recipes, recipe), available_only = false}
+	audit.views.recipe_browser.focused_recipe = recipe
+	open_crafting_view(audit, state, .Schematics)
+}
+
+// Work item 0278: Y in the crafting view names the focused slot's item,
+// or an available schematic's first output, on the active toolbar's
+// selected slot and toasts it; an empty slot and a locked recipe name
+// nothing. The view opens no info panel. On a chest panel Y is the info
+// panel and names nothing.
+@(test)
+test_y_assigns_the_focused_slot_or_schematic_to_the_selected_slot :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	player.selected_hotbar_slot = 2
+	player.held = EMPTY_HELD_STACK
+	log_item := test_item(audit.content.items, "log")
+	player.inventory.slots[5] = {log_item, 7}
+	player.inventory.slots[6] = EMPTY_STACK
+	clear(&audit.simulation.player_commands)
+	{
+		state: Ui_State
+		defer destroy_ui_state(&state)
+		open_crafting_view(audit, &state, .Inventory)
+		state.focus = inventory_slot_id("grid", 5)
+		screen_test_frame(audit, &state, {})
+		screen_test_frame(audit, &state, {info = true})
+		testing.expect_value(t, len(audit.simulation.player_commands), 1)
+		testing.expect_value(t, last_queued_command(audit).(Toolbar_Assign_Command), Toolbar_Assign_Command{toolbar = 0, slot = 2, item = log_item})
+		testing.expect_value(t, state.toasts[len(state.toasts) - 1].text, "Log on slot 3")
+		testing.expect(t, !state.tooltip_open)
+		apply_player_commands(&audit.simulation, audit.content)
+		testing.expect_value(t, player.toolbars[0][2], log_item)
+		state.focus = inventory_slot_id("grid", 6)
+		screen_test_frame(audit, &state, {})
+		screen_test_frame(audit, &state, {info = true})
+		testing.expect_value(t, len(audit.simulation.player_commands), 0)
+		testing.expect(t, !state.tooltip_open)
+	}
+	{
+		plank := test_recipe(audit.content.recipes, "plank")
+		state: Ui_State
+		defer destroy_ui_state(&state)
+		open_crafting_view_on_recipe(audit, &state, plank)
+		testing.expect_value(t, state.focus, schematic_cell_id(plank))
+		screen_test_frame(audit, &state, {info = true})
+		testing.expect_value(t, last_queued_command(audit).(Toolbar_Assign_Command).item, audit.content.recipes.recipes[plank].outputs[0].item)
+		clear(&audit.simulation.player_commands)
+	}
+	{
+		locked := locked_item_recipe(audit)
+		if !testing.expect(t, locked != NO_RECIPE) {
+			return
+		}
+		state: Ui_State
+		defer destroy_ui_state(&state)
+		open_crafting_view_on_recipe(audit, &state, locked)
+		testing.expect_value(t, state.focus, schematic_cell_id(locked))
+		screen_test_frame(audit, &state, {info = true})
+		testing.expect_value(t, len(audit.simulation.player_commands), 0)
+	}
+	{
+		state: Ui_State
+		defer destroy_ui_state(&state)
+		chest_test_panel(audit, &state)
+		screen_test_frame(audit, &state, {info = true})
+		testing.expect(t, state.tooltip_open)
+		testing.expect_value(t, len(audit.simulation.player_commands), 0)
+	}
+}
+
+// The bars say Assign on Y where Y names something: a stack on the
+// inventory half, an available schematic's cell; not on an empty slot or
+// a locked recipe.
+@(test)
+test_the_crafting_view_bars_offer_assign :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	player.held = EMPTY_HELD_STACK
+	player.inventory.slots[5] = {test_item(audit.content.items, "log"), 7}
+	player.inventory.slots[6] = EMPTY_STACK
+	{
+		state: Ui_State
+		defer destroy_ui_state(&state)
+		open_crafting_view(audit, &state, .Inventory)
+		state.focus = inventory_slot_id("grid", 5)
+		screen_test_frame(audit, &state, {})
+		screen_test_frame(audit, &state, {})
+		testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_assign")))
+		state.focus = inventory_slot_id("grid", 6)
+		screen_test_frame(audit, &state, {})
+		screen_test_frame(audit, &state, {})
+		testing.expect(t, !draw_list_has_text(state.draw_list[:], text("hint_assign")))
+	}
+	{
+		state: Ui_State
+		defer destroy_ui_state(&state)
+		open_crafting_view_on_recipe(audit, &state, test_recipe(audit.content.recipes, "plank"))
+		testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_assign")))
+	}
+	{
+		state: Ui_State
+		defer destroy_ui_state(&state)
+		open_crafting_view_on_recipe(audit, &state, locked_item_recipe(audit))
+		testing.expect(t, !draw_list_has_text(state.draw_list[:], text("hint_assign")))
+	}
+}
+
+// P2 of 0278: touch has no Y, so the row's Assign names the active slot's
+// item, or on the schematics half the selected recipe's output.
+@(test)
+test_the_touch_assign_button_assigns :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	player.selected_hotbar_slot = 4
+	player.held = EMPTY_HELD_STACK
+	log_item := test_item(audit.content.items, "log")
+	player.inventory.slots[5] = {log_item, 7}
+	clear(&audit.simulation.player_commands)
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	open_crafting_view(audit, &state, .Inventory)
+	slot_test_frame(audit, &state, {pointer_is_touch = true})
+	tap_widget(audit, &state, inventory_slot_id("grid", 5))
+	tap_widget(audit, &state, slot_button_id("touch_button_assign_toolbar"))
+	testing.expect_value(t, last_queued_command(audit).(Toolbar_Assign_Command), Toolbar_Assign_Command{toolbar = 0, slot = 4, item = log_item})
+	clear(&audit.simulation.player_commands)
+	plank := test_recipe(audit.content.recipes, "plank")
+	audit.views.crafting_view = {tab = crafting_view_test_tab(audit.content.recipes, plank), available_only = false}
+	slot_test_frame(audit, &state, {pointer_is_touch = true})
+	tap_widget(audit, &state, schematic_cell_id(plank))
+	tap_widget(audit, &state, slot_button_id("touch_button_assign_toolbar"))
+	testing.expect_value(t, last_queued_command(audit).(Toolbar_Assign_Command).item, audit.content.recipes.recipes[plank].outputs[0].item)
 }

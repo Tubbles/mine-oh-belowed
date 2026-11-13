@@ -3,16 +3,17 @@ package game
 import "core:fmt"
 import "core:slice"
 
-// The inventory screen, the crafting view's inventory half (0277): the 36
-// slot grid and the hotbar as slot grids, with the slot interaction from
-// doc/ui.md and the quick move between the hotbar and the backpack
-// (quick_transfer.odin). Menu_Drop (the right stick click, X on the
-// keyboard) puts the cursor's stack, or the focused one with nothing
-// held, onto the ground in front of the player (loose_item.odin). It does
-// not pause the simulation.
+// The inventory screen, the crafting view's inventory half (0277): the 45
+// slot grid (0278; the toolbars name kinds in it and draw on the HUD),
+// with the slot interaction from doc/ui.md. Menu_Drop (the right stick
+// click, X on the keyboard) puts the cursor's stack, or the focused one
+// with nothing held, onto the ground in front of the player
+// (loose_item.odin). Y assigns the focused slot's item to the active
+// toolbar's selected slot (queue_toolbar_assign). It does not pause the
+// simulation.
 
 INVENTORY_COLUMNS :: 9
-INVENTORY_ROWS :: PLAYER_GRID_SLOT_COUNT / INVENTORY_COLUMNS
+INVENTORY_ROWS :: PLAYER_INVENTORY_SLOT_COUNT / INVENTORY_COLUMNS
 // The held stack sits this far up and right of the focused slot, so the
 // slot under it stays visible.
 HELD_STACK_FOCUS_OFFSET :: [2]f32{UI_SLOT_SIZE * 0.4, -UI_SLOT_SIZE * 0.4}
@@ -51,7 +52,7 @@ inventory_slot_commands :: proc(inventory: Inventory, held: Held_Stack, input: I
 		append(&commands, Slot_Split_Command{target = {NO_ENTITY, input.focused}, expects = shown_expectation(held, inventory.slots[input.focused])})
 	}
 	if input.context_action {
-		append(&commands, slot_sort_command(NO_ENTITY, inventory_grid(inventory), ranks))
+		append(&commands, slot_sort_command(NO_ENTITY, inventory.slots, ranks))
 	}
 	return commands[:]
 }
@@ -90,27 +91,8 @@ queue_slot_commands :: proc(state: ^Ui_State, screen_context: Screen_Context, co
 	}
 }
 
-// The hotbar grid shows slots 0 to 7, the main grid the rest.
-grid_result_to_inventory :: proc(result: Slot_Grid_Result, first_slot: int) -> Slot_Grid_Result {
-	return Slot_Grid_Result {
-		activated = result.activated >= 0 ? result.activated + first_slot : -1,
-		focused = result.focused >= 0 ? result.focused + first_slot : -1,
-	}
-}
-
-merge_grid_results :: proc(first, second: Slot_Grid_Result) -> Slot_Grid_Result {
-	return Slot_Grid_Result{activated = max(first.activated, second.activated), focused = max(first.focused, second.focused)}
-}
-
 inventory_panel_height :: proc() -> f32 {
-	return(
-		UI_ROW_HEIGHT +
-		slot_grid_height(INVENTORY_ROWS) +
-		UI_GAP +
-		UI_ROW_HEIGHT +
-		slot_grid_height(1) +
-		2 * UI_PADDING \
-	)
+	return UI_ROW_HEIGHT + slot_grid_height(INVENTORY_ROWS) + 2 * UI_PADDING
 }
 
 // The configure pop-up (0202): the item it configures, set when the
@@ -264,22 +246,17 @@ foundation_block_settings :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_c
 	}
 }
 
-// The player's grid and hotbar with the hotbar label between them, from
-// the top of the area. Results are inventory slot indices.
+// The player's inventory as one grid from the top of the area. Results
+// are inventory slot indices.
 player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player, items: Item_Registry) -> Slot_Grid_Result {
-	content := area
-	grid_area := cut_top(&content, slot_grid_height(INVENTORY_ROWS) + UI_GAP)
-	grid := ui_slot_grid(state, {grid_area.x, grid_area.y}, "grid", INVENTORY_COLUMNS, inventory_grid(player.inventory), items)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_hotbar"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	hotbar := ui_slot_grid(state, {content.x, content.y}, "hotbar", HOTBAR_SLOT_COUNT, inventory_hotbar(player.inventory), items)
-	draw_outline(state, slot_grid_rectangle({content.x, content.y}, HOTBAR_SLOT_COUNT, player.selected_hotbar_slot), UI_ACCENT_COLOR)
-	return merge_grid_results(grid_result_to_inventory(grid, HOTBAR_SLOT_COUNT), grid_result_to_inventory(hotbar, 0))
+	return ui_slot_grid(state, {area.x, area.y}, "grid", INVENTORY_COLUMNS, player.inventory.slots, items)
 }
 
-// The id player_slot_region gives the selected hotbar slot, for a
+// The id player_slot_region gives the first stack of the selected
+// toolbar slot's kind (the first slot when the inventory lacks it), for a
 // screen's preferred focus; called inside the same panel.
-selected_hotbar_slot_id :: proc(state: ^Ui_State, player: ^Player) -> Ui_Id {
-	return ui_hash(ui_id(state, "hotbar"), "slot", player.selected_hotbar_slot)
+selected_kind_slot_id :: proc(state: ^Ui_State, player: ^Player) -> Ui_Id {
+	return ui_hash(ui_id(state, "grid"), "slot", max(selected_stack_index(player^), 0))
 }
 
 // The crafting view (0277, ui_crafting_view.odin): the inventory half
@@ -299,19 +276,23 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_panel_begin(state, "inventory", layout.inventory, art = false)
 	inventory_panel := state.current_panel
 	// Back from the configure pop-up focuses the slot that opened it, once:
-	// the frame after the focus landed there the view prefers the
-	// selected hotbar slot again (a window step there and back).
+	// the frame after the focus landed there the view prefers the first
+	// stack of the selected kind again (a window step there and back).
 	if state.focus == state.configure.return_focus {
 		state.configure.return_focus = 0
 	}
-	slot_preferred := state.configure.return_focus != 0 ? state.configure.return_focus : selected_hotbar_slot_id(state, player)
+	slot_preferred := state.configure.return_focus != 0 ? state.configure.return_focus : selected_kind_slot_id(state, player)
 	slots := player_slot_region(state, layout.inventory, player, items)
 	ui_panel_end(state)
 	schematics := schematics_half(state, screen_context, layout)
 	state.crafting_half = crafting_half_of_focus(state.widgets[:], state.focus, inventory_panel, schematics.panel, state.crafting_half)
 	on_schematics := state.crafting_half == .Schematics
 	modifiers := slot_modifier_input(state^, stack_is_empty(player.held.stack))
-	slots.activated = apply_inventory_quick_move_input(state, screen_context, slots, modifiers)
+	// A press with R1 or L1 activates nothing: the inventory has no quick
+	// move (0278) and the split acts through the slot input's secondary.
+	if modifiers.quick_move_pressed || modifiers.split_pressed {
+		slots.activated = -1
+	}
 	state.active_slot = active_slot_after_focus(state.active_slot, slots.focused, -1)
 	active := state.active_slot
 	touch := touch_row_shows(state)
@@ -323,7 +304,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// neither half, so the half and the selection stay.
 	button := touch ? crafting_view_touch_row(state, on_schematics, configurable != NO_ITEM) : .None
 	// On touch a tap on a cell selects the recipe and the row's buttons
-	// commit.
+	// commit, on the gamepad the focused cell is the recipe.
+	selected_shown := slice.contains(schematics.visible, browser.focused_recipe)
+	on_cell := touch ? selected_shown : state.focus == recipe_row_id(schematics.grid, browser.focused_recipe)
 	activated := schematics.activated
 	if activated != NO_RECIPE && tap_selects_only(state) {
 		focus_recipe_row(state, browser, schematics.grid, activated)
@@ -346,19 +329,21 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		activated      = slots.activated,
 		focused        = slots.focused,
 		secondary      = modifiers.split_pressed,
-		context_action = !on_schematics && state.input.context_action && !configures && sort_target_grid(active.grid) == .Main,
+		context_action = !on_schematics && state.input.context_action && !configures && active.grid == .Main,
 		drag_drop      = state.slot_drag.released,
 		drag_hand      = dragged_hand_item(screen_context),
 	}
 	queue_slot_commands(state, screen_context, inventory_slot_commands(player.inventory, player.held, slot_input, screen_context.item_sort_ranks))
 	queue_slot_commands(state, screen_context, player_slot_button_commands(player.inventory, player.held, active, button, screen_context.item_sort_ranks))
-	transfer := slot_button_transfer(.Inventory, active, active_slot_stack(player.inventory, nil, active), button)
-	if transfer.target != .None {
-		queue_slot_command(state, screen_context, Grid_Transfer_Command{machine = NO_ENTITY, transfer = transfer})
+	// Y (or the row's Assign) names the slot's or the recipe's item on the
+	// active toolbar's selected slot (0278).
+	assigned_stack := touch ? active_slot_stack(player.inventory, nil, active) : (slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK)
+	assignment := toolbar_assignment(state.crafting_half, assigned_stack, on_cell, browser.focused_recipe, screen_context.recipes, screen_context.unlocks.available)
+	if assignment != NO_ITEM && ((state.input.info && state.keyboard.field == 0) || button == .Assign_Toolbar) {
+		queue_toolbar_assign(state, screen_context, assignment)
 	}
 	// The row's craft buttons act on the selected recipe while the grid
 	// shows it.
-	selected_shown := slice.contains(schematics.visible, browser.focused_recipe)
 	apply_recipe_craft_input(state, screen_context, activated, selected_shown, button, crafting_view_queue_act(state.input.context_action && on_schematics, button))
 	if screen_context.world != nil && (state.input.drop || button == .Drop) {
 		dropped_slot := button == .Drop ? player_slot_index(active) : slots.focused
@@ -371,9 +356,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	switch {
 	case touch:
 	case on_schematics:
-		crafting_view_glyph_bar(state, state.focus == recipe_row_id(schematics.grid, browser.focused_recipe))
+		crafting_view_glyph_bar(state, on_cell, assignment != NO_ITEM)
 	case:
-		inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, quick_move = true, drop = true, configure = configurable != NO_ITEM)
+		inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, drop = true, configure = configurable != NO_ITEM, assign = true)
 	}
 	if configures {
 		open_configure_popup(state, configurable)
@@ -389,12 +374,13 @@ crafting_view_touch_row :: proc(state: ^Ui_State, on_schematics, configurable: b
 	return ui_touch_row(state, inventory_touch_buttons(configurable), INVENTORY_TOUCH_LAYOUT)
 }
 
-// The inventory's touch row (0125, 0137): the slot buttons on the active
-// grid, and Drop, which drops the active slot's stack as the right stick
-// click drops the focused one. Configure takes Sort's place while the
-// active slot holds a configurable item (0202); the row is laid out for
-// Configure, the wider label, so the others keep their places.
-INVENTORY_TOUCH_BUTTONS :: Touch_Buttons{.Sort, .Split, .Transfer_All, .Transfer_All_Of_Type, .Drop, .Back}
+// The inventory's touch row (0125, 0137): Sort and Split on the active
+// slot, Drop, which drops the active slot's stack as the right stick
+// click drops the focused one, and Assign, Y's place (0278). The one
+// grid has no pair, so no transfers. Configure takes Sort's place while
+// the active slot holds a configurable item (0202); the row is laid out
+// for Configure, the wider label, so the others keep their places.
+INVENTORY_TOUCH_BUTTONS :: Touch_Buttons{.Sort, .Split, .Drop, .Assign_Toolbar, .Back}
 INVENTORY_TOUCH_LAYOUT :: INVENTORY_TOUCH_BUTTONS - {.Sort} + {.Configure}
 
 inventory_touch_buttons :: proc(configurable: bool) -> Touch_Buttons {
@@ -416,7 +402,7 @@ drop_stack_command :: proc(player: Player, slot: int) -> (command: Drop_Stack_Co
 // The active slot's inventory index when it is one of the player's, -1
 // otherwise.
 player_slot_index :: proc(active: Active_Slot) -> int {
-	return active.grid == .Hotbar || active.grid == .Main ? active.index : -1
+	return active.grid == .Main ? active.index : -1
 }
 
 // Where the row goes: right of the HUD's hotbar, which draws under open
@@ -464,15 +450,14 @@ slot_button_transfer :: proc(screen: Slot_Screen_Kind, active: Active_Slot, acti
 }
 
 // Sort and Split on the player's active slot, as X and L1 with A on it:
-// Sort sorts the main grid from the main grid and from the hotbar, which
-// keeps its order (sort_target_grid).
+// Sort sorts the whole inventory.
 player_slot_button_commands :: proc(inventory: Inventory, held: Held_Stack, active: Active_Slot, button: Touch_Button, ranks: []u16) -> []Player_Command {
-	on_player := active.grid == .Hotbar || active.grid == .Main
+	on_player := active.grid == .Main
 	input := Inventory_Slot_Input {
 		activated      = -1,
 		focused        = on_player ? active.index : -1,
 		secondary      = on_player && button == .Split,
-		context_action = sort_target_grid(active.grid) == .Main && button == .Sort,
+		context_action = on_player && button == .Sort,
 	}
 	return inventory_slot_commands(inventory, held, input, ranks)
 }
@@ -516,31 +501,6 @@ slot_modifier_input :: proc(state: Ui_State, hand_empty: bool) -> Slot_Modifier_
 		quick_move_down = (state.input.confirm_down || state.pointer_held) && act == .Quick_Move,
 		split_pressed = (pressed && act == .Split) || state.pointer_split,
 	}
-}
-
-// The quick move between the hotbar and the backpack: R1 with A (Left
-// Control with Enter or a click) on a slot, as apply_quick_move_input in
-// the machine panel. A modified press takes the slot's activation, so
-// neither the quick move nor the split also picks up. Returns the
-// activation left for the ordinary slot input.
-apply_inventory_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, slots: Slot_Grid_Result, modifiers: Slot_Modifier_Input) -> (activated: int) {
-	inventory := screen_context.player.inventory
-	target, found := inventory_quick_move_target(slots.activated >= 0 ? slots.activated : slots.focused)
-	quick_input := Quick_Move_Input {
-		panel   = NO_ENTITY,
-		pressed = modifiers.quick_move_pressed,
-		down    = modifiers.quick_move_down,
-		seconds = state.frame_seconds,
-		found   = found,
-		target  = target,
-		stack   = found ? inventory.slots[target.slot] : EMPTY_STACK,
-	}
-	step: Quick_Move_Step
-	state.quick_move, step = advance_quick_move(state.quick_move, quick_input)
-	if step.kind != .None {
-		queue_slot_command(state, screen_context, Quick_Move_Command{machine = NO_ENTITY, step = step})
-	}
-	return modifiers.quick_move_pressed || modifiers.split_pressed ? -1 : slots.activated
 }
 
 // The item a drag's drop carries: the hand's, or while the drag's pick up
@@ -613,14 +573,18 @@ draw_held_stack :: proc(state: ^Ui_State, stack: Item_Stack, items: Item_Registr
 // quick_move: the R1 with A hint on a focused stack. drop: the Drop hint
 // on a focused or held stack (the inventory screen). configure: the
 // context action opens the configure pop-up instead of sorting (0202).
+// assign: Y's Assign on a focused stack (the crafting view, 0278).
 // A modifier's glyph goes before its Confirm, unlabelled, so the bar
 // drops the pair together (glyph_hints_that_fit).
-inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false, drop := false, configure := false) {
+inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false, drop := false, configure := false, assign := false) {
 	if !stack_is_empty(held) {
 		hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 		append(&hints, Glyph_Hint{.Confirm, text("hint_place_stack")})
 		if drop {
 			append(&hints, Glyph_Hint{.Drop, text("hint_drop")})
+		}
+		if assign && !stack_is_empty(focused) {
+			append(&hints, Glyph_Hint{.Info, text("hint_assign")})
 		}
 		append(&hints, Glyph_Hint{.Back, text("hint_close")})
 		ui_glyph_bar(state, hints[:])
@@ -633,6 +597,9 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_m
 	}
 	if drop && !stack_is_empty(focused) {
 		append(&hints, Glyph_Hint{.Drop, text("hint_drop")})
+	}
+	if assign && !stack_is_empty(focused) {
+		append(&hints, Glyph_Hint{.Info, text("hint_assign")})
 	}
 	if focused.count >= 2 {
 		append(&hints, Glyph_Hint{.Most, ""}, Glyph_Hint{.Confirm, text("hint_split")})

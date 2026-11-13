@@ -23,6 +23,9 @@ Simulation_Content :: struct {
 	contracts:    Contract_Registry,
 	// Chapter kits for the developer menu and --chapter.
 	developer_kits: Developer_Kits,
+	// The toolbars stacked on the HUD (0278, game.sjson's toolbars); read
+	// through toolbar_count.
+	toolbar_count: int,
 	generator:    ^Generator,
 	// The terrain field's tables for the session's planet, spacing and
 	// tick rate (field_mining.odin, make_field_content); zero outside a

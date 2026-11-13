@@ -50,8 +50,10 @@ add_test_miner :: proc(simulation: ^Simulation_State, items: Item_Registry, feet
 	miner.field.pitch = -FIELD_PITCH_LIMIT
 	miner.field.held_material = .Stone
 	miner.field.tool = .Material
+	// Each kind is named on the toolbar in order (0278), so the first one
+	// given is held.
 	for stack in stacks {
-		inventory_add(miner.inventory, items, test_item(items, stack.item), stack.count)
+		give_test_kind(&miner, items, test_item(items, stack.item), stack.count)
 	}
 	append(&simulation.players, miner)
 }
@@ -474,7 +476,7 @@ test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 		tool: Field_Held_Tool,
 	}{{"stone", .Material}, {"wooden_foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Tool}, {"water_bucket", .Water}, {"wooden_chest", .Machine}}
 	for entry, slot in cases {
-		inventory_add(player.inventory, items, test_item(items, entry.item), 1)
+		give_test_kind(&player, items, test_item(items, entry.item), 1)
 		player.selected_hotbar_slot = slot
 		update_field_held_tool(&player, content, {})
 		testing.expectf(t, player.field.tool == entry.tool, "%s: %v", entry.item, player.field.tool)
@@ -530,7 +532,7 @@ test_the_foundation_block_command_sets_the_indices :: proc(t: ^testing.T) {
 	testing.expect(t, ok)
 	testing.expect_value(t, decoded.(Foundation_Block_Command), Foundation_Block_Command{size_index = 3, height_index = 2})
 	player := &simulation.players[0]
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(items, "wooden_foundation"), 1}
+	hold_test_stack(player, Item_Stack{test_item(items, "wooden_foundation"), 1})
 	update_field_held_tool(player, content, {held = {.Sneak}, just_pressed = {.Next_Brush}})
 	testing.expect_value(t, field.tool, Field_Held_Tool.Foundation)
 	testing.expect_value(t, field.brush, 1)

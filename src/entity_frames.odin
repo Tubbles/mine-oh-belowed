@@ -724,7 +724,7 @@ advance_field_pick_up :: proc(state: ^Simulation_State, content: Simulation_Cont
 		player.field_refusal = refusal
 		return {}, false
 	}
-	if !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)) {
+	if !inventory_fits_all(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)) {
 		player.mining = {}
 		player.field_refusal = .Inventory_Full
 		return {}, false
@@ -757,11 +757,11 @@ drain_field_pick_up :: proc(state: ^Simulation_State, content: Simulation_Conten
 		player.field_refusal = refusal
 		return
 	}
-	if !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)) {
+	if !inventory_fits_all(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)) {
 		player.field_refusal = .Inventory_Full
 		return
 	}
-	take_entity_into_inventory(&state.world, &state.records.statistics, content, player.inventory, handle)
+	take_entity_into_inventory(&state.world, &state.records.statistics, content, player, handle)
 }
 
 // The save (save_state.odin, write_later_tables).

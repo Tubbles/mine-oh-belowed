@@ -111,7 +111,7 @@ advance_field_cable_take_up :: proc(state: ^Simulation_State, content: Simulatio
 	if cable.ends[0] != body.cable_take_up {
 		body.cable_take_up, body.cable_take_up_ticks = cable.ends[0], 0
 	}
-	if !inventory_fits_all_picked_up(player.inventory, content.items, []Item_Stack{{item = cable.item, count = cable.metres}}) {
+	if !inventory_fits_all(player.inventory, content.items, []Item_Stack{{item = cable.item, count = cable.metres}}) {
 		player.field_refusal = .Inventory_Full
 		body.cable_take_up_ticks = 0
 		return true
@@ -154,12 +154,12 @@ drain_field_cable_removal :: proc(state: ^Simulation_State, content: Simulation_
 		return
 	}
 	cable := entities.cables.cables[index]
-	if !inventory_fits_all_picked_up(player.inventory, content.items, []Item_Stack{{item = cable.item, count = cable.metres}}) {
+	if !inventory_fits_all(player.inventory, content.items, []Item_Stack{{item = cable.item, count = cable.metres}}) {
 		player.field_refusal = .Inventory_Full
 		return
 	}
 	remove_cable(entities, content.machines, index)
-	inventory_add_picked_up(player.inventory, content.items, cable.item, int(cable.metres))
+	add_picked_up(player, content.items, cable.item, int(cable.metres))
 }
 
 // Where a carried run reaches the player's hand: 300 mm below the eye and

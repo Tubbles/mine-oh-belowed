@@ -219,7 +219,7 @@ lift_loose_items_out_of :: proc(loose_items: ^Loose_Items, cells: []World_Coordi
 }
 
 // Walking near stacks picks them up as far as they fit
-// (inventory_add_picked_up); a full inventory leaves them lying.
+// (add_picked_up); a full inventory leaves them lying.
 LOOSE_ITEM_PICKUP_RANGE :: 1
 
 // A stack whose cell centre lies within LOOSE_ITEM_PICKUP_RANGE blocks of
@@ -257,7 +257,7 @@ pick_up_loose_items :: proc(world: ^World, items: Item_Registry, player: ^Player
 		if !loose_item_in_pickup_range(loose.cell, feet, player.position) {
 			loose.dropping_player = dropping_player_out_of_range(loose.dropping_player, player_index)
 		} else if !loose_item_waits_for_player(loose, player_index) {
-			leftover := inventory_add_picked_up(player.inventory, items, loose.item, int(loose.count))
+			leftover := add_picked_up(player, items, loose.item, int(loose.count))
 			picked ||= leftover < int(loose.count)
 			loose.count = u16(leftover)
 		}

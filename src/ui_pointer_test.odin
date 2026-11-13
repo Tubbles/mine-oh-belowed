@@ -791,13 +791,14 @@ test_touch_row_buttons_by_screen :: proc(t: ^testing.T) {
 	testing.expect(t, .Back in machine_touch_buttons(false))
 	testing.expect_value(t, recipe_touch_buttons(true), Touch_Buttons{.Choose_Recipe, .Back})
 	testing.expect_value(t, recipe_touch_buttons(false), Touch_Buttons{.Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Back})
-	testing.expect_value(t, CRAFTING_VIEW_TOUCH_BUTTONS, Touch_Buttons{.Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Clear_Craft_Queue, .Back})
+	testing.expect_value(t, CRAFTING_VIEW_TOUCH_BUTTONS, Touch_Buttons{.Assign_Toolbar, .Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Clear_Craft_Queue, .Back})
 	testing.expect(t, .Drop in INVENTORY_TOUCH_BUTTONS)
+	testing.expect(t, .Assign_Toolbar in INVENTORY_TOUCH_BUTTONS)
 	testing.expect(t, .Research in TECHNOLOGY_TOUCH_BUTTONS)
 	testing.expect_value(t, map_touch_zoom_step(.Zoom_In), -1)
 	testing.expect_value(t, map_touch_zoom_step(.Zoom_Out), 1)
 	testing.expect_value(t, map_touch_zoom_step(.Back), 0)
-	testing.expect_value(t, player_slot_index({.Hotbar, 3}), 3)
+	testing.expect_value(t, player_slot_index({.Main, 3}), 3)
 	testing.expect_value(t, player_slot_index({.Machine, 3}), -1)
 }
 

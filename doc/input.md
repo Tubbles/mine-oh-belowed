@@ -140,17 +140,17 @@ Rule: every action a control triggers is a line in `data/bindings.sjson` (0025);
 | Right stick | Look. Click: cheat movement on and off on the field in the tech demo and under `--dev` (0296, The jetpack and cheat movement) | A flick left or right: the window's tabs, once per flick: past 0.5 mostly sideways steps, and the next step waits until the stick came back within 0.3 sideways (`right_stick_tab_step`, `UI_STICK_FLICK_REARM_THRESHOLD`, 0276). Up and down: scroll lists, the map's zoom. Click: `Menu_Drop` (drop the held or focused stack) |
 | Gyro | Fine aim while the right stick or pad is touched | Off |
 | Right trackpad | Look as a mouse surface. Click: Interact (turns a switch, takes a crate's schematic; nothing on a launch pad) | Pointer. Click: a pointer click, or Confirm while the pointer is hidden ([ui.md](ui.md)) |
-| Left trackpad | Hotbar radial: touch shows it, slide to a slot, release selects, the centre (`RADIAL_CENTER_RADIUS` 0.15) cancels; the right stick does not turn the view while it is open | Letter wheel in the recipe, technology and statistics lists |
+| Left trackpad | Hotbar radial, the active toolbar's slots (0278): touch shows it, slide to a slot, release selects, the centre (`RADIAL_CENTER_RADIUS` 0.15) cancels; the right stick does not turn the view while it is open | Letter wheel in the recipe, technology and statistics lists |
 | R2 | Mine | The next window of the carousel (`Window_Next`, 0276, 0385, [ui.md](ui.md), Window carousel). In the touch layout editor the size |
 | L2 | Place, Use_Item | The previous window (`Window_Previous`), as R2 |
-| A | Jump | Confirm. With R1 held five (on a slot with an empty hand the quick move), with L1 held the most (on such a slot the split) |
+| A | Jump | Confirm. With R1 held five (on a machine panel's slot with an empty hand the quick move), with L1 held the most (on such a slot the split) |
 | B | Sneak | Back |
 | X | Open_Inventory and Interact, one action per aimed target: a power switch turns, a full schematic crate is taken, a water pump cycles its mode, the pod's chair unbuckles after touchdown, then stands and sits (seated, whatever the aim), a machine with a panel (a launch pad included) opens it, else the crafting view opens on its inventory half (an empty crate included) | Context action (sort, configure, on the crafting view's schematics clear the crafting queue, in the station browser cancel the last craft) |
-| Y | Rotate_Building | Info panel |
+| Y | Rotate_Building | Info panel; in the crafting view Assign (0278, [ui.md](ui.md), Crafting view) |
 | D-pad | Left, right: hotbar previous and next. Up: the tools radial held, Pipette tapped. Down: Drop_Stack. In the placement editor the four nudges. In the water tech demo (0291) up toggles the torchlight and down steps the clock noon, evening, midnight, morning (0297); under `--dev` outside it up toggles the torchlight beside Pipette | Focus navigation |
 | L1, R1 | Hotbar previous and next | Held with A: L1 the most, R1 five (`Modifier_Most`, `Modifier_Five`). Both held, or alone, nothing |
 | L4, R4 | Jump, Sneak | Confirm, Back |
-| L5, R5 | Rotate_Building, the tools radial (Pipette) | Info panel, navigate up |
+| L5, R5 | Rotate_Building, the tools radial (Pipette) | Info panel (Assign in the crafting view), navigate up |
 | View (`BACK`) | Open_Map | Open_Map |
 | Menu (`START`) | Pause | Pause, which acts as Back over a screen |
 
@@ -158,7 +158,7 @@ The bindings name SDL's buttons, not the physical ones, and the game swaps nothi
 
 ### Keyboard and mouse
 
-`data/bindings.sjson` lists every key; WASD and the mouse's look are not bindings. Keys 1 to 8 select hotbar slots (9 and 0 are free); F3 to F9 are developer keys (F8 only in developer mode). F7 drops an iron plate on the targeted belt. In menus Backspace is Back, Enter Confirm, Q and E the previous and the next window of the carousel (E closes a machine panel, the recipe picker and the station browser, being Open_Inventory too) and the touch layout editor's size, `[` and `]` the window's tabs and the map's zoom (0276). Left Control and Left Shift held are R1 and L1: with Enter or a click Left Control quick moves a slot or crafts five, Left Shift splits a slot or crafts the most. The statistics (N), the bottleneck overlay (O), the crafting view on its schematics half (C) and the journal (J) have no direct gamepad button; the pause menu and the window carousel reach them. Q and the middle mouse button hold the tools radial (Pipette tapped); the arrows nudge in the placement editor and navigate in menus.
+`data/bindings.sjson` lists every key; WASD and the mouse's look are not bindings. Keys 1 to 8 select the active toolbar's slots (9 and 0 are free); F3 to F9 are developer keys (F8 only in developer mode). F7 drops an iron plate on the targeted belt. In menus Backspace is Back, Enter Confirm, Q and E the previous and the next window of the carousel (E closes a machine panel, the recipe picker and the station browser, being Open_Inventory too) and the touch layout editor's size, `[` and `]` the window's tabs and the map's zoom (0276). Left Control and Left Shift held are R1 and L1: with Enter or a click Left Control quick moves a machine panel's slot or crafts five, Left Shift splits a slot or crafts the most. The statistics (N), the bottleneck overlay (O), the crafting view on its schematics half (C) and the journal (J) have no direct gamepad button; the pause menu and the window carousel reach them. Q and the middle mouse button hold the tools radial (Pipette tapped); the arrows nudge in the placement editor and navigate in menus.
 
 ### The placement editor
 

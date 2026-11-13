@@ -53,7 +53,7 @@ test_the_held_hints_follow_the_tool :: proc(t: ^testing.T) {
 	defer destroy_world(&world)
 	items := make_test_items()
 	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
-	inventory_hotbar(player.inventory)[0] = Item_Stack{test_item(items, "stone_furnace"), 1}
+	hold_test_stack(&player, Item_Stack{test_item(items, "stone_furnace"), 1})
 	screen_context := Screen_Context{world = &world, player = &player, items = items}
 	hud := Hud_Context{field_view_set = true}
 	hud.field_view.tool = .Machine
@@ -237,7 +237,7 @@ test_the_chair_hints_unbuckle_stand_and_sit :: proc(t: ^testing.T) {
 	corner := rotate_footprint_cell({machine.seat.cells.from.x, machine.seat.cells.from.z}, machine.footprint.x, machine.footprint.z, pod.rotation)
 	chair := Frame_Raycast_Hit{hit = true, frame = frame.id, cell = pod.origin + {corner.x, 1, corner.y}, occupant = {handle = entity_occupant_handle(pod.handle)}}
 	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
-	inventory_hotbar(player.inventory)[0] = Item_Stack{test_item(items, "stone_furnace"), 1}
+	hold_test_stack(&player, Item_Stack{test_item(items, "stone_furnace"), 1})
 	screen_context := Screen_Context{world = &world, player = &player, items = items, machines = machines}
 	hud := Hud_Context{field_view_set = true, field_session = true}
 	hud.field_view.tool = .Machine
@@ -393,4 +393,111 @@ test_the_pump_line_fits_the_quarter_screen_at_the_largest_text :: proc(t: ^testi
 		testing.expectf(t, ui_text_width(&state, command.text, UI_BODY_TEXT_SIZE) <= command.rectangle.width, "%q fits %v", command.text, command.rectangle.width)
 	}
 	testing.expect_value(t, drawn, 1)
+}
+
+// The commands of a draw list whose rectangle's centre lies in the area.
+draw_commands_in :: proc(commands: []Draw_Command, area: Ui_Rectangle) -> [dynamic]Draw_Command {
+	found := make([dynamic]Draw_Command, context.temp_allocator)
+	for command in commands {
+		centre := [2]f32{command.rectangle.x + command.rectangle.width / 2, command.rectangle.y + command.rectangle.height / 2}
+		if rectangle_contains(area, centre) {
+			append(&found, command)
+		}
+	}
+	return found
+}
+
+draw_commands_have_fill :: proc(commands: []Draw_Command, color: Ui_Color) -> bool {
+	for command in commands {
+		if command.kind == .Fill && command.color == color {
+			return true
+		}
+	}
+	return false
+}
+
+// Work item 0278: a toolbar slot counts its kind over every stack, an
+// absent kind shows its icon under the shade with its name dim, and a
+// slot that names nothing draws no icon.
+@(test)
+test_the_toolbar_shows_counts_and_greys_an_absent_kind :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	items := make_test_items()
+	dirt, furnace := test_item(items, "dirt"), test_item(items, "stone_furnace")
+	player := make_player({}, context.temp_allocator)
+	player.inventory.slots[2] = Item_Stack{dirt, 200}
+	player.inventory.slots[30] = Item_Stack{dirt, 50}
+	player.toolbars[0][0] = dirt
+	player.toolbars[0][1] = furnace
+	player.selected_hotbar_slot = 1
+	test_ui_frame(&state, {})
+	draw_hud_toolbars(&state, player, items, 1)
+	rectangles := hud_toolbar_row_rectangles(ui_safe_area(&state), 1, 0)
+	present := draw_commands_in(state.draw_list[:], rectangles[0])
+	testing.expect(t, draw_list_has_text(present[:], "250"))
+	testing.expect(t, !draw_commands_have_fill(present[:], HUD_EMPTY_KIND_SHADE), "a present kind is not shaded")
+	absent := draw_commands_in(state.draw_list[:], rectangles[1])
+	testing.expect(t, draw_commands_have_fill(absent[:], HUD_EMPTY_KIND_SHADE), "an absent kind is shaded")
+	testing.expect(t, !draw_list_has_text(absent[:], "0"), "an absent kind draws no count")
+	for command in draw_commands_in(state.draw_list[:], rectangles[2]) {
+		testing.expectf(t, command.kind == .Fill || command.kind == .Outline, "a slot that names nothing draws %v", command.kind)
+	}
+	name := item_name(items, furnace)
+	name_found := false
+	for command in state.draw_list {
+		if command.kind == .Text && command.text == name {
+			name_found = true
+			testing.expect_value(t, command.color, UI_DIM_TEXT_COLOR)
+		}
+	}
+	testing.expect(t, name_found, "the absent kind is named")
+}
+
+// Work item 0278: two toolbars with the second active: row 0 draws the
+// second's kinds with the selected outline, row 1 above it the first's
+// under the inactive shade, the name above row 1 and the glyph bar's
+// bottom above that, at 1080p.
+@(test)
+test_two_toolbars_stack_with_the_active_one_lowest :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	items := make_test_items()
+	dirt, stone := test_item(items, "dirt"), test_item(items, "stone")
+	player := make_player({}, context.temp_allocator)
+	player.inventory.slots[0] = Item_Stack{dirt, 3}
+	player.inventory.slots[1] = Item_Stack{stone, 4}
+	player.toolbars[0][0] = dirt
+	player.toolbars[1][0] = stone
+	player.active_toolbar = 1
+	test_ui_frame(&state, {})
+	draw_hud_toolbars(&state, player, items, 2)
+	safe := ui_safe_area(&state)
+	row_0 := hud_toolbar_row_rectangles(safe, 0, 0)
+	row_1 := hud_toolbar_row_rectangles(safe, 0, 1)
+	testing.expect(t, draw_list_has_text(draw_commands_in(state.draw_list[:], row_0[0])[:], "4"), "row 0 holds the active toolbar's stone")
+	testing.expect(t, draw_list_has_text(draw_commands_in(state.draw_list[:], row_1[0])[:], "3"), "row 1 holds the first toolbar's dirt")
+	shaded := 0
+	for rectangle in row_1 {
+		for command in draw_commands_in(state.draw_list[:], rectangle) {
+			if command.kind == .Fill && command.color == HUD_INACTIVE_ROW_SHADE && command.rectangle == rectangle {
+				shaded += 1
+			}
+		}
+	}
+	testing.expect_value(t, shaded, HOTBAR_SLOT_COUNT)
+	testing.expect(t, !draw_commands_have_fill(draw_commands_in(state.draw_list[:], row_0[3])[:], HUD_INACTIVE_ROW_SHADE), "row 0 is not shaded")
+	testing.expect_value(t, row_1[0].y, f32(838))
+	for command in state.draw_list {
+		if command.kind == .Text && command.text == item_name(items, stone) {
+			testing.expect_value(t, command.rectangle.y, f32(774))
+			testing.expect_value(t, command.color, UI_TEXT_COLOR)
+		}
+	}
+	testing.expect_value(t, hud_glyph_bar_above_bottom(safe, 2), f32(766))
+	testing.expect_value(t, hud_glyph_bar_above_bottom(safe, 1), f32(854))
 }

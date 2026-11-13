@@ -1012,7 +1012,7 @@ test_a_touch_aimed_slab_takes_its_half_from_the_aim :: proc(t: ^testing.T) {
 	records: Game_Records
 	set_blocks(&world, test_block(content.blocks, "stone"), {3, 2, 0})
 	players := []Player{make_test_player(content.blocks, {0.5, 1, 0.5})}
-	players[0].inventory.slots[0] = Item_Stack{item = test_item(content.items, "stone_slab"), count = 4}
+	hold_test_stack(&players[0], Item_Stack{item = test_item(content.items, "stone_slab"), count = 4})
 	// The view looks down at the floor, where a slab would go low.
 	players[0].pitch = -60
 	eye := player_eye(players[0].position)
@@ -1814,7 +1814,7 @@ test_the_rotate_button_shows_only_while_the_selection_rotates :: proc(t: ^testin
 	}
 	cases := [?]Case{{"wooden_chest", true}, {"stone_stairs", true}, {"stone", false}, {"", false}}
 	for test_case in cases {
-		player.inventory.slots[0] = test_case.item == "" ? {} : Item_Stack{item = test_item(content.items, test_case.item), count = 1}
+		hold_test_stack(&player, test_case.item == "" ? EMPTY_STACK : Item_Stack{item = test_item(content.items, test_case.item), count = 1})
 		testing.expectf(t, selected_placement_rotates(player, content.machines, content.blocks, content.items) == test_case.rotates, "%q", test_case.item)
 	}
 	// Hidden, its place is free screen: a finger there is undecided.

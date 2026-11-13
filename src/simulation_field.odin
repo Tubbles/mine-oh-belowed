@@ -340,7 +340,7 @@ drain_field_torch_removal :: proc(state: ^Simulation_State, content: Simulation_
 	if index < 0 {
 		return
 	}
-	if inventory_add_picked_up(player.inventory, content.items, content.field.torch_item, 1) > 0 {
+	if add_picked_up(player, content.items, content.field.torch_item, 1) > 0 {
 		player.field_refusal = .Inventory_Full
 		return
 	}
@@ -460,6 +460,7 @@ tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_
 	queue_field_player_edit(state, content, index, input)
 	queue_field_water_edit(state, content, index, input)
 	if finished, finished_free := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, state.tick_rate, state.free_crafting); finished != NO_RECIPE {
+		offer_crafted_outputs(player, content.items, content.recipes.recipes[finished].outputs)
 		record_produced_stacks(&state.records.statistics, content.recipes.recipes[finished].outputs)
 		if !finished_free {
 			record_consumed_stacks(&state.records.statistics, content.recipes.recipes[finished].inputs)

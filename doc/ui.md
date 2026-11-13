@@ -41,7 +41,7 @@ Screens stack over the world and the HUD (`UI_SCREEN_STACK_CAPACITY` 8). Any ope
 | Pause, Settings, Developer, Textures, Data files, Touch layout, Title, New world, Load, Delete confirmation, Multiplayer, Tech demos, Tech demo | Inventory (the crafting view), Configure pop-up, Machine, Recipes (the picker and the station browser), Journal, Power, Statistics, Technologies, Map |
 
 - The stack (`handle_screen_keys`, 0385), the world being the empty stack. Push: the world's keys open their screen (the inventory binding and C both the crafting view, on its inventory and on its schematics half, 0277), a panel its pop-ups (an assembler's recipe picker, a crafting station's browser, a lab's Research), the crafting view its configure pop-up, the pause menu Settings and Developer; the pause menu's Journal, Power and Statistics rows replace the menu, so their window lies on the world. Replace: LT and RT (Q and E) on a window of the carousel (Window carousel). Pop one level: Back (B, Backspace), Pause over a screen, a tap off the panel and a window's own key (C, J, P, N, T, M, View, C popping the crafting view and the recipe browser), the first press closing an open info panel alone; Open_Inventory pops the crafting view, the recipe browser, Research and a machine panel, except when the same press is the context action (the gamepad's X sorts) or a window's step (the keyboard's E steps on a window and closes a panel). So a window opened from the world closes to it, Research opened from a lab's panel returns to the panel, also after a step, the configure pop-up returns to the crafting view, the picker to its panel and Settings to Pause. The pause menu's Resume clears the stack.
-- A screen opened from the world focuses the widget it prefers (`ui_prefer_focus`), else its first (0094); the inventory and machine panels prefer the selected hotbar slot. The focus is forgotten on the first frame without a screen (`run_screens`); a screen pushed over another keeps it.
+- A screen opened from the world focuses the widget it prefers (`ui_prefer_focus`), else its first (0094); the inventory and machine panels prefer the first stack of the selected toolbar slot's kind (`selected_kind_slot_id`, 0278). The focus is forgotten on the first frame without a screen (`run_screens`); a screen pushed over another keeps it.
 - The pause menu: Resume, Cancel placement (while the viewport's placement editor is anchored, 0215: it cancels the editor and closes the menu; a split screen guest's menu shows its own editor's row), Skip arrival (during a new world's fall, 0200), Journal, Power, Statistics, Save, Settings, Developer (developer mode), Quit to title, Quit. Skip arrival shows until the hit (`field_arrival_skippable`, `Screen_Context.arrival_skippable`), queues `Skip_Arrival_Command` and closes the menu; it ends the fall for every player. During the fall Pause is the only binding that opens a screen from the world and the pause menu has no Journal, Power or Statistics row (`Screen_Context.arrival_falling`, `handle_screen_keys`, `pause_screen_buttons`). A split screen guest's (any viewport but the first, 0178) has Leave split screen in place of the two quits, and its world runs on while it is open; one whose player's join tick has not run yet shows only Resume, Settings and Leave split screen, and no other screen opens there (`WAITING_PLAYER_SCREENS`).
 - Sounds go to `Ui_State.sound_events` for the frame loop: a move click when the focus moves between widgets (not the fallback on opening), a confirm click on an activation, a back click on Back over any screen but the title.
 
@@ -79,14 +79,14 @@ One slot code serves the inventory, the machine panels and chests (`ui_item_slot
 ### Gamepad
 
 - A picks up the focused stack and drops, merges or swaps on another slot. L1 held with A (Left Shift with Enter) splits it (the larger half, so one item lifts whole). X sorts the active grid; in the inventory on a configurable item it opens the configure pop-up instead (Screens, Configure pop-up).
-- R1 held with A (Left Control with Enter or a click) quick moves (0078): across a machine panel by the inserters' rules (fuel to the fuel slot, ore to the input); in the inventory between the backpack and the hotbar, partial stacks first, then empty slots (0090). A second press within half a second, or a hold, moves every stack of the item. What does not fit stays.
+- R1 held with A (Left Control with Enter or a click) quick moves (0078) across a machine panel by the inserters' rules (fuel to the fuel slot, ore to the input). A second press within half a second, or a hold, moves every stack of the item. What does not fit stays. The inventory is one grid (0278), so there it does nothing.
 - The bumpers change A only with an empty hand (`slot_act`, 0276): with a stack in hand A places, merges or swaps whatever is held, and both bumpers held leave A alone. A modified press takes the slot's activation, so neither the quick move nor the split also picks up.
 - Holding A with a stack in hand while the focus crosses machine slots spreads it evenly over them on release (Even Distribution).
 - A held stack follows the focus and the pointer, and returns to its slot when the screen closes. Machine inputs take only what the machine uses; a rejected drop stays in hand.
 - A broken machine's panel (0201, [content.md](content.md), Machines on bare ground) says "Broken down, tear it down" in the danger colour under its description.
 - Machine panels have Take all, Store all and Fill. An inserter's "In hand" slot shows what its arm carries: A or a drag lifts it, R1 with A moves it to the inventory, it takes nothing in (0079).
 - In the inventory the right stick click (keyboard X, `Menu_Drop`) drops the held stack, else the focused one, on the ground (0062); the glyph bar shows Drop then. Pick up rules: [logistics.md](logistics.md), Loose items.
-- In the world `Drop_Stack` (d-pad down, keyboard X, the touch overlay's long press on the selected hotbar slot) drops the selected hotbar slot's stack in front of the player as a loose item.
+- In the world `Drop_Stack` (d-pad down, keyboard X, the touch overlay's long press on the selected hotbar slot) drops the first stack of the selected toolbar slot's kind in front of the player as a loose item ([hud.md](hud.md), Toolbars).
 
 ### Pointer
 
@@ -97,16 +97,16 @@ Rule: the pointer moves stacks by drag and drop (0124, `Slot_Drag`); a click on 
 - A tap focuses the slot. Resting `TOUCH_HOLD_SECONDS` (0.25 s) on a stack of two or more splits it and drags the half.
 - With a stack held, a press drags it at once. Confirm sounds on pick up and drop.
 - Pick up and the rest's split reach the screens as a plain Confirm and `pointer_split` (`Ui_State`) on the slot, so every slot screen applies them as the gamepad's. Even Distribution stays the gamepad's.
-- Ctrl or Shift held with a click quick moves or splits the pressed slot on the press, focusing it and starting no drag (0276). With a stack held a modified click drags as a plain one and sounds only on the drop, and a drag's pick up is never a quick move. Off the item slots a modified click is a plain one: it focuses, drags or taps off the panel as a click without the modifier.
+- Ctrl or Shift held with a click quick moves (on a machine panel) or splits the pressed slot on the press, focusing it and starting no drag (0276). With a stack held a modified click drags as a plain one and sounds only on the drop, and a drag's pick up is never a quick move. Off the item slots a modified click is a plain one: it focuses, drags or taps off the panel as a click without the modifier.
 - With the `Touch` pointer source the dragged stack draws a slot height above the finger.
 
 ### Active grid
 
-The grid of the slot that last held the focus (`Active_Slot`: the hotbar row, the main grid or the machine's slots), kept while the focus is on a button, forgotten when the screens close.
+The grid of the slot that last held the focus (`Active_Slot`: the inventory's 45 slots or the machine's), kept while the focus is on a button, forgotten when the screens close.
 
-- Sort sorts it alone; the hotbar keeps its order, so with the hotbar active the main grid is sorted (`sort_target_grid`).
+- Sort sorts it alone, the inventory whole (0278): the toolbars name kinds, so no slot keeps its place.
 - Split takes the larger half of the active slot's stack onto the cursor, as L1 with A.
-- Transfer all moves the active grid's stacks, Transfer same those of the active slot's item, to the paired grid (`transfer_target_grid`): hotbar and main grid into each other in the inventory; in a machine panel into the machine as the quick move stores, and from the machine into the main grid, never the hotbar. What does not fit stays.
+- Transfer all moves the active grid's stacks, Transfer same those of the active slot's item, to the paired grid (`transfer_target_grid`) in a machine panel: into the machine as the quick move stores, and from the machine into the inventory. What does not fit stays. The inventory alone has no paired grid.
 
 ## Touch
 
@@ -118,8 +118,8 @@ Rule: on Android and while the touch overlay is on (`Ui_Input.pointer_is_touch`)
 
 | Screen | Row |
 | --- | --- |
-| Crafting view, inventory half | Sort (Configure in its place while the active slot holds a configurable item, the row laid out for Configure), Split, Transfer all, Transfer same, Drop (the active slot's stack), Back |
-| Crafting view, schematics half | Craft, Craft 5, Craft max, Cancel last, Clear queue (0277), Back |
+| Crafting view, inventory half | Sort (Configure in its place while the active slot holds a configurable item, the row laid out for Configure), Split, Drop (the active slot's stack), Assign (0278), Back |
+| Crafting view, schematics half | Assign (0278), Craft, Craft 5, Craft max, Cancel last, Clear queue (0277), Back |
 | Machine panels | Clear (an inserter's or splitter's filter), Sort, Split, Transfer all, Transfer same, Back; laid out for Clear, so the others keep their places |
 | Recipe browser | Craft, Craft 5, Craft max (0276), Cancel last (Choose when picking), Back |
 | Technology screen | Research, Back |
@@ -213,7 +213,8 @@ The inventory binding's window (0277, after Techtonica, `ui_crafting_view.odin` 
 - The tabs are the categories table's ([content.md](content.md), Recipes), stepped by the right stick's flick (`[` and `]`) from either half and picked by the pointer. A step scrolls the grid to its top and makes the tab's first recipe the focused one, so the detail follows. A focus on a cell moves to that first cell, one on the toggle or a slot stays. While any label would not draw whole beside its icon, every tab draws its icon alone, centred, shrunk to the tab where the tab is narrower than the icon (`icons_alone_when_cut`).
 - The grid: the tab's recipes in data order, those no hand makes included, as icon cells with the craftable mark of the recipe browser. Unlocked only (on at a session's start) hides the locked ones, and turned on it moves the detail off a recipe it hides to the first cell shown, or to nothing on an empty grid. A graph step in the detail opens the recipe's tab, Unlocked only off for a locked recipe.
 - Tooltips and the info panel dock beside the view's panel, not beside a half (Widgets). At 1080p the view leaves no room beside it, so they go under or over the focused widget, inside its own half.
-- The halves are two panels in the view's: the focus wraps inside each, and Right in the inventory half or Left in the schematics half with nothing ahead in that half's row crosses the seam to the nearest widget ahead (`crafting_seam_target`). `Ui_State.crafting_half` follows the focus. The inventory binding opens on the selected hotbar slot, C on the focused recipe's cell (else the first, else the toggle).
+- The halves are two panels in the view's: the focus wraps inside each, and Right in the inventory half or Left in the schematics half with nothing ahead in that half's row crosses the seam to the nearest widget ahead (`crafting_seam_target`). `Ui_State.crafting_half` follows the focus. The inventory binding opens on the first stack of the selected toolbar slot's kind, C on the focused recipe's cell (else the first, else the toggle).
+- Y (L5, R on the keyboard) assigns (0278): it names the focused slot's item, or on the schematics half the focused available recipe's first output, on the active toolbar's selected slot (`Toolbar_Assign_Command`, [hud.md](hud.md), Toolbars) and toasts which slot ("Log on slot 3"). An empty slot and a locked recipe name nothing. The info panel does not open here; an item slot keeps its delayed tooltip, and the configure pop-up, its own screen, keeps Y's info panel. On touch the row's Assign names the tapped slot's item or the selected recipe's output. The glyph bar shows Assign while Y would name something.
 - On the inventory half the slots work as in Item slots. On the schematics half A crafts one, R1 with A five and L1 with A the most (Recipe browser), and the context action (X, F) clears the queue (Crafting queue). Cancel last is only the touch row's button. The glyph bar and the touch row are the focused half's: on the schematics Craft, Craft 5 and Craft max on a cell (Select elsewhere), Clear queue, Tabs and Close.
 
 ### Configure pop-up

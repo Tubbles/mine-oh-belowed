@@ -554,7 +554,7 @@ test_the_axe_fells_a_large_tree_the_hand_cannot :: proc(t: ^testing.T) {
 	testing.expect(t, test.tree.key not_in state.field.felled_trees, "the hand does not fell it")
 	testing.expect_value(t, count_field_refused_events(state.events[:], .Needs_Axe), 1)
 	testing.expect(t, !player.mining.active, "no progress")
-	player.inventory.slots[0] = Item_Stack{test_item(test.content.items, "wooden_axe"), 1}
+	hold_test_stack(player, Item_Stack{test_item(test.content.items, "wooden_axe"), 1})
 	ticks := felling_test_axe_ticks(test)
 	hold_felling_test_mine(test, ticks - 1)
 	testing.expect(t, test.tree.key not_in state.field.felled_trees, "the tree stands a tick short")

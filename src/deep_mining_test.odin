@@ -390,7 +390,7 @@ test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
 	vein := add_test_deep_vein(&world, content, "bauxite", {2, 2}, 2, {100, 20, 0, 0})
 	players := []Player{make_test_player(content.blocks, {10, 1, 10})}
 	player := &players[0]
-	inventory_add(player.inventory, content.items, test_item(content.items, "bore_drill"), 1)
+	give_test_kind(player, content.items, test_item(content.items, "bore_drill"), 1)
 	// On the top face at (1, 0, 1): the 4 by 4 footprint starts at (0, 1, 0), centre column (2, 2).
 	player.target = Raycast_Hit{hit = true, block = {1, 0, 1}, face = .Positive_Y, adjacent = {1, 1, 1}}
 	placement := placement_for_player(&world, content, players, 0)

@@ -75,9 +75,16 @@ Player :: struct {
 	// touch aim while one overrides it (player_target_direction).
 	target_direction:     [3]f32,
 	mining:               Mining_State,
-	// The hotbar is the first HOTBAR_SLOT_COUNT slots.
 	inventory:            Inventory,
+	// The selected slot of the active toolbar (toolbar.odin, 0278); the
+	// name is the hotbar's, so older saves keep the value.
 	selected_hotbar_slot: int,
+	// The toolbars' kinds and the active one. Item_Id 0 is an item and
+	// the codec zeroes a fixed array's missing tail, so raising
+	// MAXIMUM_TOOLBAR_COUNT needs read_players to fill the new rows with
+	// NO_ITEM.
+	toolbars:             [MAXIMUM_TOOLBAR_COUNT]Toolbar,
+	active_toolbar:       int,
 	// The stack on the cursor of the inventory screen.
 	held:                 Held_Stack,
 	// Quarter turns of the machine ghost and of held stairs, changed with
@@ -151,16 +158,20 @@ make_player :: proc(start: Player_Start, allocator := context.allocator) -> Play
 		previous_pitch = start.pitch,
 		flying = start.flying,
 		inventory = make_inventory(PLAYER_INVENTORY_SLOT_COUNT, allocator),
+		toolbars = empty_toolbars(),
 		held = EMPTY_HELD_STACK,
 		crafting = make_craft_queue(),
 	}
 }
 
 // Unknown names are skipped: validate_starting_items reports them at load.
+// Each kind takes the next empty toolbar slot (take_toolbar_slot), so the
+// kit's order is the toolbar's.
 give_starting_items :: proc(player: ^Player, items: Item_Registry, starting_items: []Starting_Item) {
 	for starting in starting_items {
 		if item, found := find_item_id(items, starting.item); found {
 			inventory_add(player.inventory, items, item, starting.count)
+			take_toolbar_slot(player, item)
 		}
 	}
 }
@@ -628,14 +639,15 @@ tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_C
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player.target_direction, PLAYER_REACH)
 	events += mine_with_player(world, records, content, player, .Mine in input.pressed, tick_rate, tick, cheat_speed)
 	place_with_player(world, &records.statistics, content, players, index, input.just_pressed, input.pressed)
-	// Drop_Stack (0119) drops the selected hotbar slot's stack, the hotbar
-	// being the first slots; before the selection changes, since the long
-	// press that sent it was on the slot selected until now.
+	// Drop_Stack (0119) drops the first stack of the selected kind (0278);
+	// before the selection changes, since the long press that sent it was
+	// on the slot selected until now.
 	if .Drop_Stack in input.just_pressed {
-		drop_player_stack(world, &records.statistics, content.blocks, player, index, player.selected_hotbar_slot)
+		drop_player_stack(world, &records.statistics, content.blocks, player, index, selected_stack_index(player^))
 	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	if finished, finished_free := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate, free_crafting); finished != NO_RECIPE {
+		offer_crafted_outputs(player, content.items, content.recipes.recipes[finished].outputs)
 		record_produced_stacks(&records.statistics, content.recipes.recipes[finished].outputs)
 		if !finished_free {
 			record_consumed_stacks(&records.statistics, content.recipes.recipes[finished].inputs)

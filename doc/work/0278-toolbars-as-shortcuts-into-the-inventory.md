@@ -1,6 +1,6 @@
 # 0278: Toolbars as shortcuts into the inventory
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 ## Goal
 
@@ -217,3 +217,12 @@ Changed or removed:
 4. Q1: the toast is the sign of which slot was assigned. A toolbar row inside the view is 0279's (the edit mode shows the toolbars as a grid).
 5. Correction to the specification: on the inventory half L1 with A still splits a stack, as on every slot. Only R1 with A (the quick move between the backpack and the hotbar) has nothing left to do there, and it stays the quick move on machine and chest panels. The implementer follows this where the specification says both do nothing, and the tests assert the split.
 6. 0216 (the pipette) is designed after this item: it selects the toolbar slot naming the kind, or assigns the kind to the selected slot.
+
+### Deviations (implementation, 2026-11-13)
+
+- `inventory_test`'s `test_picked_up_raw_items_go_to_the_main_grid` and `test_picked_up_fits_check_follows_the_routing` go too: they tested the removed routing.
+- `test_item_tooltip_shows_itself_after_the_delay` runs on a machine panel: on the inventory the Info toggle no longer opens the panel, which its last step needs.
+- `test_a_left_control_click_quick_moves_the_pressed_slot` had no machine panel case, so it gained a chest's slot quick moved by a Ctrl click.
+- `test_slot_commands_keep_two_machines_in_step` (lockstep): the inventory's quick move became a `Toolbar_Assign_Command`, the inventory's grid transfer one into the inserter, and the sort is queued before Fill, since Fill now draws from the slots the sort's order covers and made it stale.
+- The test helpers that gave a player items to hold (`add_test_miner`, `give_test_items`) name each kind on the toolbar (`give_test_kind`), as the old slot order selected the first stack given.
+- `moved_hotbar_era_slot` holds the held stack's origin map as its own pure procedure; `read_players` prints the remap's line.

@@ -82,6 +82,14 @@ Hotbar_Slot_Command :: struct {
 	slot: int,
 }
 
+// Y in the crafting view (0278): names the item on a toolbar's slot,
+// NO_ITEM clears it. One kind may stand on several slots.
+Toolbar_Assign_Command :: struct {
+	toolbar: int,
+	slot:    int,
+	item:    Item_Id,
+}
+
 // The foundation block the configure pop-up picks (0193, 0202; opened
 // with Context_Action on a highlighted foundation in the inventory view):
 // indices into the field content's foundation_sizes and
@@ -161,6 +169,7 @@ Player_Command :: union {
 	Splitter_Priorities_Command,
 	Splitter_Side_Command,
 	Hotbar_Slot_Command,
+	Toolbar_Assign_Command,
 	Foundation_Block_Command,
 	Close_Machine_Command,
 	Debug_Remove_Block_Command,
@@ -312,6 +321,8 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 		}
 	case Hotbar_Slot_Command:
 		state.players[queued.player].selected_hotbar_slot = clamp(command.slot, 0, HOTBAR_SLOT_COUNT - 1)
+	case Toolbar_Assign_Command:
+		state.players[queued.player].toolbars[command.toolbar][command.slot] = command.item
 	case Foundation_Block_Command:
 		field := &state.players[queued.player].field
 		field.foundation_size_index, field.foundation_height_index = u8(command.size_index), u8(command.height_index)
@@ -485,6 +496,8 @@ player_command_valid :: proc(command: Player_Command, content: Simulation_Conten
 		return index_in_range(value.entry, len(content.contracts.catalogue))
 	case Machine_Filter_Command:
 		return item_valid(value.filter, content.items, true)
+	case Toolbar_Assign_Command:
+		return index_in_range(value.toolbar, toolbar_count(content)) && index_in_range(value.slot, HOTBAR_SLOT_COUNT) && item_valid(value.item, content.items, true)
 	case Splitter_Priorities_Command:
 		return enum_in_range(value.input) && enum_in_range(value.output)
 	case Splitter_Side_Command:

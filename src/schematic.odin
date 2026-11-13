@@ -67,17 +67,19 @@ place_pending_crates :: proc(tick_context: Entity_Tick_Context) {
 	}
 }
 
-// The selected hotbar item is used with Use_Item, which shares Place's
-// control: a usable item never places, and anything else never uses.
-// Interact on a schematic crate takes its schematic.
+// The held item (the first stack of the selected kind, 0278) is used
+// with Use_Item, which shares Place's control: a usable item never
+// places, and anything else never uses. A kind the inventory lacks uses
+// nothing. Interact on a schematic crate takes its schematic.
 // Returns the input the rest of the tick sees and the item used, or
-// NO_ITEM; the item is taken from the slot when its use consumes it
+// NO_ITEM; the item is taken from its stack when its use consumes it
 // (use_consumes_item). Like resolve_interact, it acts on the previous
 // tick's target.
 resolve_use_item :: proc(player: ^Player, entities: ^Entities, items: Item_Registry, input: Input_Frame) -> (result: Input_Frame, used: Item_Id) {
 	result, used = input, NO_ITEM
-	selected := &inventory_hotbar(player.inventory)[player.selected_hotbar_slot]
-	if !stack_is_empty(selected^) && item_is_usable(items, selected.item) {
+	index := selected_stack_index(player^)
+	if index >= 0 && item_is_usable(items, player.inventory.slots[index].item) {
+		selected := &player.inventory.slots[index]
 		result.pressed -= {.Place}
 		result.just_pressed -= {.Place}
 		if .Use_Item in input.just_pressed {

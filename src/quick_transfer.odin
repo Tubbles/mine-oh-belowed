@@ -12,7 +12,7 @@ package game
 // stack of that item on that side. The transfer buttons: Take all (a
 // chest's or the capsule's slots, the output slots of a furnace or a
 // crafting machine), Store all (every inventory stack a chest or the
-// capsule takes, stacks of items it already holds first, the hotbar last)
+// capsule takes, stacks of items it already holds first, in slot order)
 // and Fill (the fuel slot or a lab's pack slots from the inventory). What
 // does not fit stays where it was. This file holds the panel's side: the
 // state machine and the buttons queue slot commands
@@ -108,19 +108,6 @@ quick_move_targets_hand :: proc(machine_slots: Machine_Slot_Result, slot_found: 
 	return machine_slots.hand_activated || (machine_slots.hand_focused && !slot_found)
 }
 
-// The inventory screen's quick move (work item 0090) runs the same state
-// machine with NO_ENTITY as its panel: a stack goes from the hotbar to
-// the backpack or back, partial stacks of the item first, then empty
-// slots; what does not fit stays in the slot.
-
-// The focused inventory index as a quick move target, -1 for none.
-inventory_quick_move_target :: proc(focused: int) -> (target: Quick_Move_Target, found: bool) {
-	if focused < 0 {
-		return {}, false
-	}
-	return {focused < HOTBAR_SLOT_COUNT ? .Hotbar : .Backpack, focused}, true
-}
-
 // The transfer buttons a machine's panel shows.
 machine_transfer_buttons :: proc(machine: Machine) -> Transfer_Buttons {
 	#partial switch machine.kind {
@@ -177,10 +164,9 @@ transfer_button_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, machine: 
 }
 
 // The touch row's transfers (0125) move stacks from the active grid to
-// the grid the screen pairs it with: in the inventory screen the hotbar
-// and the main grid into each other, in a machine panel the hotbar and
-// the main grid into the machine and the machine into the main grid,
-// never into the hotbar.
+// the grid the screen pairs it with: in a machine panel the inventory
+// into the machine and the machine into the inventory. The inventory
+// screen's one grid has no pair (0278).
 Slot_Screen_Kind :: enum u8 {
 	Inventory,
 	Machine,
@@ -189,15 +175,9 @@ Slot_Screen_Kind :: enum u8 {
 transfer_target_grid :: proc(screen: Slot_Screen_Kind, source: Slot_Grid_Kind) -> Slot_Grid_Kind {
 	switch screen {
 	case .Inventory:
-		#partial switch source {
-		case .Hotbar:
-			return .Main
-		case .Main:
-			return .Hotbar
-		}
 	case .Machine:
 		#partial switch source {
-		case .Hotbar, .Main:
+		case .Main:
 			return .Machine
 		case .Machine:
 			return .Main

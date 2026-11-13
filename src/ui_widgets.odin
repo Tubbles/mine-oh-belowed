@@ -1315,6 +1315,9 @@ Touch_Button :: enum u8 {
 	Transfer_All,
 	Transfer_All_Of_Type,
 	Drop,
+	// Y's place in the crafting view (0278): names the active slot's or
+	// the selected recipe's item on the toolbar.
+	Assign_Toolbar,
 	Craft,
 	Craft_Five,
 	// The most crafts the inventory affords, as L1 with A (0276).
@@ -1345,6 +1348,7 @@ touch_button_keys := [Touch_Button]string {
 	.Transfer_All         = "slot_button_transfer_all",
 	.Transfer_All_Of_Type = "slot_button_transfer_all_of_type",
 	.Drop                 = "touch_button_drop",
+	.Assign_Toolbar       = "touch_button_assign_toolbar",
 	.Craft                = "touch_button_craft",
 	.Craft_Five           = "touch_button_craft_five",
 	.Craft_Most           = "touch_button_craft_most",

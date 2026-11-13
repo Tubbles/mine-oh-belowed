@@ -452,7 +452,7 @@ credit_field_volume :: proc(inventory: Inventory, items: Item_Registry, item: It
 	if whole == 0 {
 		return
 	}
-	leftover := inventory_add_picked_up(inventory, items, item, int(whole))
+	leftover := inventory_add(inventory, items, item, int(whole))
 	credit^ -= (whole - i64(leftover)) * FIELD_ITEM_VOLUME
 }
 

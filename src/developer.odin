@@ -269,9 +269,13 @@ give_requests :: proc(requests: ^[dynamic]Developer_Request, grants: []Developer
 // Serving requests.
 
 // Into the inventory as far as it fits, the rest into the capsule's
-// pending rewards in stacks.
+// pending rewards in stacks. A kind that went in takes an empty toolbar
+// slot (take_toolbar_slot, 0278).
 give_to_player :: proc(player: ^Player, pending_rewards: ^[dynamic]Item_Stack, items: Item_Registry, grant: Developer_Grant) {
 	leftover := inventory_add(player.inventory, items, grant.item, grant.count)
+	if leftover < grant.count {
+		take_toolbar_slot(player, grant.item)
+	}
 	stack_size := max(int(item_stack_size(items, grant.item)), 1)
 	for leftover > 0 {
 		count := min(leftover, stack_size)

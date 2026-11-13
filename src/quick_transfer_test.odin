@@ -183,13 +183,13 @@ test_take_all_and_store_all :: proc(t: ^testing.T) {
 	test.inventory.slots[2] = {coal, 6}
 	test.inventory.slots[9] = {stone, 8}
 	test.inventory.slots[15] = {hematite, 9}
-	// Matching items first, the main grid before the hotbar.
+	// Matching items first, each part in slot order.
 	order := store_all_order(test.inventory, slots)
 	testing.expect_value(t, len(order), 4)
-	testing.expect_value(t, order[0], 15)
-	testing.expect_value(t, order[1], 9)
-	testing.expect_value(t, order[2], 0)
-	testing.expect_value(t, order[3], 2)
+	testing.expect_value(t, order[0], 0)
+	testing.expect_value(t, order[1], 15)
+	testing.expect_value(t, order[2], 2)
+	testing.expect_value(t, order[3], 9)
 	apply_transfer_button(&test.world.entities, test.content, chest, test.inventory, .Store_All)
 	testing.expect_value(t, slots[3], Item_Stack{hematite, 23})
 	testing.expect_value(t, chest_total(test.world, chest), 37)
@@ -239,11 +239,11 @@ test_fill_fuel_and_lab_packs :: proc(t: ^testing.T) {
 	test.inventory.slots[10] = {coal, 30}
 	apply_transfer_button(&test.world.entities, test.content, furnace, test.inventory, .Fill)
 	slots := entity_slots(&test.world.entities, furnace)
-	// The main grid first, up to the stack size; the ore stays.
+	// In slot order, up to the stack size; the ore stays.
 	testing.expect_value(t, slots[FURNACE_FUEL_SLOT], Item_Stack{coal, 50})
 	testing.expect_value(t, slots[FURNACE_INPUT_SLOT], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[10], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[0], Item_Stack{coal, 20})
+	testing.expect_value(t, test.inventory.slots[0], EMPTY_STACK)
+	testing.expect_value(t, test.inventory.slots[10], Item_Stack{coal, 20})
 	testing.expect_value(t, test.inventory.slots[9], Item_Stack{hematite, 20})
 	lab := add_entity(&test.world.entities, test.content.machines, test_machine(test.content.machines, "lab"), {12, 1, 12}, 0)
 	first, second := test.content.machines.lab_packs[0], test.content.machines.lab_packs[1]
@@ -301,114 +301,19 @@ test_quick_move_targets_the_hand_slot :: proc(t: ^testing.T) {
 	testing.expect(t, !quick_move_targets_hand({grid = {activated = -1, focused = 0}}, true))
 }
 
-// Work item 0090: the quick move between the hotbar and the backpack.
-@(test)
-test_inventory_quick_move_target :: proc(t: ^testing.T) {
-	target, found := inventory_quick_move_target(HOTBAR_SLOT_COUNT - 1)
-	testing.expect(t, found)
-	testing.expect_value(t, target, Quick_Move_Target{.Hotbar, HOTBAR_SLOT_COUNT - 1})
-	target, found = inventory_quick_move_target(HOTBAR_SLOT_COUNT)
-	testing.expect_value(t, target, Quick_Move_Target{.Backpack, HOTBAR_SLOT_COUNT})
-	_, found = inventory_quick_move_target(-1)
-	testing.expect(t, !found)
-}
-
-@(test)
-test_inventory_quick_move_between_hotbar_and_backpack :: proc(t: ^testing.T) {
-	test := make_quick_transfer_test()
-	coal := test_item(test.content.items, "coal")
-	stone := test_item(test.content.items, "stone")
-	test.inventory.slots[0] = {stone, 1}
-	test.inventory.slots[3] = {coal, 5}
-	test.inventory.slots[20] = {coal, 10}
-	// The hotbar's partial coal stack before its first empty slot.
-	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .Stack, target = {.Backpack, 20}, item = coal})
-	testing.expect_value(t, test.inventory.slots[20], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[3], Item_Stack{coal, 15})
-	testing.expect_value(t, test.inventory.slots[1], EMPTY_STACK)
-	// Back into the backpack's first empty slot.
-	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .Stack, target = {.Hotbar, 3}, item = coal})
-	testing.expect_value(t, test.inventory.slots[3], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 15})
-	testing.expect_value(t, test.inventory.slots[0], Item_Stack{stone, 1})
-}
-
-@(test)
-test_inventory_quick_move_all_of_one_item :: proc(t: ^testing.T) {
-	test := make_quick_transfer_test()
-	coal := test_item(test.content.items, "coal")
-	stone := test_item(test.content.items, "stone")
-	test.inventory.slots[2] = {coal, 4}
-	test.inventory.slots[12] = {coal, 5}
-	test.inventory.slots[30] = {coal, 6}
-	test.inventory.slots[31] = {stone, 7}
-	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .All, target = {.Backpack, -1}, item = coal})
-	testing.expect_value(t, test.inventory.slots[2], Item_Stack{coal, 15})
-	testing.expect_value(t, test.inventory.slots[12], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[30], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[31], Item_Stack{stone, 7})
-	// From the hotbar, none of the backpack's own stacks move.
-	test.inventory.slots[40] = {coal, 1}
-	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .All, target = {.Hotbar, -1}, item = coal})
-	testing.expect_value(t, inventory_count(test.inventory, coal), 16)
-	testing.expect_value(t, test.inventory.slots[2], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[40], Item_Stack{coal, 16})
-}
-
-@(test)
-test_inventory_quick_move_into_a_full_section_leaves_the_stack :: proc(t: ^testing.T) {
-	test := make_quick_transfer_test()
-	coal := test_item(test.content.items, "coal")
-	stone := test_item(test.content.items, "stone")
-	stone_size := item_stack_size(test.content.items, stone)
-	for &slot in inventory_hotbar(test.inventory) {
-		slot = {stone, stone_size}
-	}
-	test.inventory.slots[20] = {coal, 10}
-	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .Stack, target = {.Backpack, 20}, item = coal})
-	testing.expect_value(t, test.inventory.slots[20], Item_Stack{coal, 10})
-}
-
-// Work item 0125: the touch row's transfer targets. The inventory screen
-// pairs the hotbar and the main grid; a machine panel sends both into
-// the machine and the machine into the main grid, never the hotbar.
+// Work item 0125: the touch row's transfer targets. A machine panel sends
+// the inventory into the machine and the machine into the inventory; the
+// inventory screen's one grid has no pair (0278).
 @(test)
 test_transfer_target_grid_per_screen :: proc(t: ^testing.T) {
-	testing.expect_value(t, transfer_target_grid(.Inventory, .Hotbar), Slot_Grid_Kind.Main)
-	testing.expect_value(t, transfer_target_grid(.Inventory, .Main), Slot_Grid_Kind.Hotbar)
+	testing.expect_value(t, transfer_target_grid(.Inventory, .Main), Slot_Grid_Kind.None)
 	testing.expect_value(t, transfer_target_grid(.Inventory, .None), Slot_Grid_Kind.None)
-	testing.expect_value(t, transfer_target_grid(.Machine, .Hotbar), Slot_Grid_Kind.Machine)
 	testing.expect_value(t, transfer_target_grid(.Machine, .Main), Slot_Grid_Kind.Machine)
 	testing.expect_value(t, transfer_target_grid(.Machine, .Machine), Slot_Grid_Kind.Main)
 	testing.expect_value(t, transfer_target_grid(.Machine, .None), Slot_Grid_Kind.None)
 }
 
-@(test)
-test_grid_transfer_between_hotbar_and_main_grid :: proc(t: ^testing.T) {
-	test := make_quick_transfer_test()
-	coal, stone := test_item(test.content.items, "coal"), test_item(test.content.items, "stone")
-	test.inventory.slots[1] = {coal, 5}
-	test.inventory.slots[2] = {stone, 3}
-	test.inventory.slots[4] = {coal, 2}
-	test.inventory.slots[HOTBAR_SLOT_COUNT + 3] = {coal, 1}
-	// Of type: only the coal, onto the partial stack first.
-	apply_grid_transfer(nil, test.content, NO_ENTITY, test.inventory, {source = .Hotbar, target = .Main, of_type = true, item = coal})
-	testing.expect_value(t, test.inventory.slots[HOTBAR_SLOT_COUNT + 3], Item_Stack{coal, 8})
-	testing.expect_value(t, test.inventory.slots[1], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[4], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[2], Item_Stack{stone, 3})
-	// All: the stone too, into the first empty slot.
-	apply_grid_transfer(nil, test.content, NO_ENTITY, test.inventory, {source = .Hotbar, target = .Main})
-	testing.expect_value(t, test.inventory.slots[2], EMPTY_STACK)
-	testing.expect_value(t, test.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{stone, 3})
-	// And back.
-	apply_grid_transfer(nil, test.content, NO_ENTITY, test.inventory, {source = .Main, target = .Hotbar})
-	testing.expect_value(t, test.inventory.slots[0], Item_Stack{stone, 3})
-	testing.expect_value(t, test.inventory.slots[1], Item_Stack{coal, 8})
-	testing.expect(t, slots_empty(inventory_grid(test.inventory)))
-}
-
-// Hotbar and main grid into a chest, the chest into the main grid only.
+// The inventory into a chest, the chest into the inventory.
 @(test)
 test_grid_transfer_into_and_out_of_a_chest :: proc(t: ^testing.T) {
 	test := make_quick_transfer_test()
@@ -417,17 +322,17 @@ test_grid_transfer_into_and_out_of_a_chest :: proc(t: ^testing.T) {
 	test.inventory.slots[0] = {coal, 5}
 	test.inventory.slots[HOTBAR_SLOT_COUNT + 2] = {stone, 3}
 	slots := entity_slots(&test.world.entities, chest)
-	apply_grid_transfer(&test.world.entities, test.content, chest, test.inventory, {source = .Hotbar, target = .Machine})
+	apply_grid_transfer(&test.world.entities, test.content, chest, test.inventory, {source = .Main, target = .Machine, of_type = true, item = coal})
 	testing.expect_value(t, test.inventory.slots[0], EMPTY_STACK)
 	testing.expect_value(t, slots[0], Item_Stack{coal, 5})
+	testing.expect_value(t, test.inventory.slots[HOTBAR_SLOT_COUNT + 2], Item_Stack{stone, 3})
 	apply_grid_transfer(&test.world.entities, test.content, chest, test.inventory, {source = .Main, target = .Machine})
 	testing.expect_value(t, slots[1], Item_Stack{stone, 3})
 	testing.expect(t, slots_empty(test.inventory.slots))
 	apply_grid_transfer(&test.world.entities, test.content, chest, test.inventory, {source = .Machine, target = .Main})
 	testing.expect(t, slots_empty(slots))
-	testing.expect(t, slots_empty(inventory_hotbar(test.inventory)))
-	testing.expect_value(t, test.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 5})
-	testing.expect_value(t, test.inventory.slots[HOTBAR_SLOT_COUNT + 1], Item_Stack{stone, 3})
+	testing.expect_value(t, test.inventory.slots[0], Item_Stack{coal, 5})
+	testing.expect_value(t, test.inventory.slots[1], Item_Stack{stone, 3})
 }
 
 slots_empty :: proc(slots: []Item_Stack) -> bool {

@@ -70,6 +70,7 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 		return {}, {}, false
 	}
 	content.developer_kits = load_developer_kits(data_directory, content.items) or_return
+	content.toolbar_count = config.toolbars
 	content.touch_overlay = load_touch_overlay(data_directory) or_return
 	content.planets = load_planets(data_directory) or_return
 	content.field_materials = load_field_material_table(data_directory, content.items) or_return

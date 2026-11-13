@@ -125,6 +125,8 @@ Player_Command_Tag :: enum u8 {
 	Machine_Placement,
 	// The crafting view's Clear queue (0277).
 	Clear_Craft_Queue,
+	// Y in the crafting view names a toolbar slot's kind (0278).
+	Toolbar_Assign,
 }
 
 // A player a client's machine drives, on the host: the newest tick
@@ -312,6 +314,8 @@ encode_player_command :: proc(bytes: ^[dynamic]byte, command: Player_Command) {
 		write_tagged_command(bytes, .Splitter_Side, variant)
 	case Hotbar_Slot_Command:
 		write_tagged_command(bytes, .Hotbar_Slot, variant)
+	case Toolbar_Assign_Command:
+		write_tagged_command(bytes, .Toolbar_Assign, variant)
 	case Close_Machine_Command:
 		write_tagged_command(bytes, .Close_Machine, variant)
 	case Debug_Remove_Block_Command:
@@ -419,6 +423,8 @@ decode_player_command :: proc(reader: ^Byte_Reader) -> (command: Player_Command,
 		return read_command_value(reader, Machine_Placement_Command)
 	case .Clear_Craft_Queue:
 		return read_command_value(reader, Clear_Craft_Queue_Command)
+	case .Toolbar_Assign:
+		return read_command_value(reader, Toolbar_Assign_Command)
 	}
 	return nil, false
 }

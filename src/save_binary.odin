@@ -618,6 +618,14 @@ write_list :: proc(bytes: ^[dynamic]byte, values: []$T) {
 saved_list_has_field :: proc(reader: Byte_Reader, name: string) -> bool {
 	peek := reader
 	read_u32(&peek) or_return
+	return saved_struct_has_field(peek, name)
+}
+
+// Whether the struct at the reader was written with the field: its schema
+// names it. Reads a copy of the reader, for a load that remaps a value an
+// older build wrote without the field (read_players, 0278).
+saved_struct_has_field :: proc(reader: Byte_Reader, name: string) -> bool {
+	peek := reader
 	count := read_u16(&peek) or_return
 	for _ in 0 ..< count {
 		field := read_string(&peek) or_return

@@ -55,8 +55,10 @@ test_yaw_direction_and_steps :: proc(t: ^testing.T) {
 	testing.expect(t, !ok)
 }
 
+// Named on the toolbar too (give_test_kind), so the first item given is
+// the one held.
 give_test_items :: proc(player: ^Player, items: Item_Registry, id: string, count: int) {
-	inventory_add(player.inventory, items, test_item(items, id), count)
+	give_test_kind(player, items, test_item(items, id), count)
 }
 
 // Dragging over the floor: straight, up a one block step, then a turn

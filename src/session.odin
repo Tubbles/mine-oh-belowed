@@ -293,6 +293,7 @@ start_tech_demo_session :: proc(config: Game_Config, content: Game_Content, base
 	silence_quests(&simulation.quests)
 	player := &simulation.players[0]
 	slice.fill(player.inventory.slots, EMPTY_STACK)
+	player.toolbars = empty_toolbars()
 	give_starting_items(player, content.items, config.tech_demo_items)
 	player.selected_hotbar_slot = 0
 	switch setup.start {

@@ -314,7 +314,7 @@ advance_field_felling :: proc(state: ^Simulation_State, content: Simulation_Cont
 		player.mining = {}
 		player.field_refusal = .Needs_Axe
 		return {}, false
-	case !inventory_fits_all_picked_up(player.inventory, content.items, yield[:]):
+	case !inventory_fits_all(player.inventory, content.items, yield[:]):
 		player.mining = {}
 		player.field_refusal = .Inventory_Full
 		return {}, false
@@ -338,11 +338,11 @@ drain_field_felling :: proc(state: ^Simulation_State, content: Simulation_Conten
 		return
 	}
 	yield := field_tree_yield(species, tree)
-	if !inventory_fits_all_picked_up(player.inventory, content.items, yield[:]) {
+	if !inventory_fits_all(player.inventory, content.items, yield[:]) {
 		player.field_refusal = .Inventory_Full
 		return
 	}
-	inventory_add_picked_up(player.inventory, content.items, species.item, int(yield[0].count))
+	add_picked_up(player, content.items, species.item, int(yield[0].count))
 	state.field.felled_trees[key] = {}
 }
 

@@ -1253,3 +1253,77 @@ test_cables_save_and_load :: proc(t: ^testing.T) {
 		testing.expectf(t, strings.contains(problem, "the save has a cable whose end is gone"), "%q", problem)
 	}
 }
+
+// A player as a build before the toolbars (0278) wrote one: 44 slots,
+// the hotbar's 8 first.
+Hotbar_Era_Test_Player :: struct {
+	inventory:            Inventory,
+	selected_hotbar_slot: int,
+	held:                 Held_Stack,
+}
+
+// Work item 0278: an old save's hotbar moves into the fifth row and its
+// kinds onto the first toolbar; the main grid takes slots 0 to 35, the
+// held stack's origin follows its slot and the selection is kept.
+@(test)
+test_an_old_save_moves_the_hotbar_into_the_fifth_row :: proc(t: ^testing.T) {
+	old := Hotbar_Era_Test_Player {
+		inventory            = make_inventory(HOTBAR_ERA_INVENTORY_SLOT_COUNT, context.temp_allocator),
+		selected_hotbar_slot = 5,
+		held                 = {stack = {Item_Id(9), 2}, origin_slot = 2},
+	}
+	for &slot, index in old.inventory.slots {
+		if index != 4 {
+			slot = Item_Stack{Item_Id(index + 1), u16(index + 1)}
+		}
+	}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	append_u32(&bytes, 1)
+	write_value_of(&bytes, &old)
+	players: [dynamic]Player
+	defer {
+		for entry in players {
+			destroy_player(entry)
+		}
+		delete(players)
+	}
+	reader := Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_players(&reader, &players))
+	testing.expect_value(t, len(players), 1)
+	if len(players) != 1 {
+		return
+	}
+	player := players[0]
+	testing.expect_value(t, len(player.inventory.slots), PLAYER_INVENTORY_SLOT_COUNT)
+	for index in 0 ..< 36 {
+		testing.expectf(t, player.inventory.slots[index] == old.inventory.slots[HOTBAR_SLOT_COUNT + index], "grid slot %d", index)
+	}
+	for slot in 0 ..< HOTBAR_SLOT_COUNT {
+		testing.expectf(t, player.inventory.slots[36 + slot] == old.inventory.slots[slot], "hotbar slot %d at %d", slot, 36 + slot)
+		expected := slot == 4 ? NO_ITEM : old.inventory.slots[slot].item
+		testing.expectf(t, player.toolbars[0][slot] == expected, "the first toolbar's slot %d", slot)
+	}
+	testing.expect_value(t, player.inventory.slots[44], EMPTY_STACK)
+	for row in 1 ..< MAXIMUM_TOOLBAR_COUNT {
+		for item, slot in player.toolbars[row] {
+			testing.expectf(t, item == NO_ITEM, "toolbar %d slot %d", row, slot)
+		}
+	}
+	testing.expect_value(t, player.held.origin_slot, 38)
+	testing.expect_value(t, player.selected_hotbar_slot, 5)
+	testing.expect_value(t, moved_hotbar_era_slot(10), 2)
+	testing.expect_value(t, moved_hotbar_era_slot(MACHINE_SLOT_ORIGIN), MACHINE_SLOT_ORIGIN)
+}
+
+// Work item 0278: a selection past the loaded config's toolbars is
+// clamped to the last toolbar and the last slot.
+@(test)
+test_a_loaded_toolbar_selection_is_clamped :: proc(t: ^testing.T) {
+	player := Player{active_toolbar = 3, selected_hotbar_slot = 12}
+	clamp_toolbar_selection(&player, 1)
+	testing.expect_value(t, player.active_toolbar, 0)
+	testing.expect_value(t, player.selected_hotbar_slot, 7)
+	player.active_toolbar = 3
+	clamp_toolbar_selection(&player, 2)
+	testing.expect_value(t, player.active_toolbar, 1)
+}

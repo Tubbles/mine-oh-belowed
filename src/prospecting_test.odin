@@ -118,7 +118,7 @@ test_use_item_consumes_only_schematics_and_fired_charges :: proc(t: ^testing.T) 
 	for id in ([?]string{"geologists_hammer", "magnetometer"}) {
 		clear_inventory(player.inventory)
 		tool := test_item(content.items, id)
-		inventory_add(player.inventory, content.items, tool, 1)
+		hold_test_stack(&player, Item_Stack{tool, 1})
 		player.target = Raycast_Hit{hit = true, block = {10, 0, 10}}
 		input, used := resolve_use_item(&player, &world.entities, content.items, press({.Place, .Use_Item}))
 		testing.expect_value(t, used, tool)
@@ -127,7 +127,7 @@ test_use_item_consumes_only_schematics_and_fired_charges :: proc(t: ^testing.T) 
 	}
 	clear_inventory(player.inventory)
 	charge := test_item(content.items, "thumper_charge")
-	inventory_add(player.inventory, content.items, charge, 2)
+	hold_test_stack(&player, Item_Stack{charge, 2})
 	player.target = {}
 	_, used := resolve_use_item(&player, &world.entities, content.items, press({.Use_Item}))
 	testing.expect_value(t, used, charge)
@@ -191,7 +191,7 @@ test_selected_magnetometer_reads_every_tick :: proc(t: ^testing.T) {
 	player := make_test_player(content.blocks, {0.5, 1, 0.5})
 	update_magnetometer(&world, content, &player)
 	testing.expect(t, !player.magnetometer.found)
-	inventory_add(player.inventory, content.items, test_item(content.items, "magnetometer"), 1)
+	give_test_kind(&player, content.items, test_item(content.items, "magnetometer"), 1)
 	update_magnetometer(&world, content, &player)
 	testing.expect(t, player.magnetometer.found)
 	testing.expect_value(t, player.magnetometer.offset, [2]i32{10, 0})

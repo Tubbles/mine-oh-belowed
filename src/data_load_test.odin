@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 import "core:testing"
 
@@ -594,4 +595,21 @@ test_water_look_values_are_bounded :: proc(t: ^testing.T) {
 	config.water_look = hard
 	testing.expect(t, strings.has_prefix(validate_game_config(config), "water_look.wave_kick_percent "))
 	testing.expect(t, water_look_problem({}) != "", "a missing table fails")
+}
+
+// Work item 0278: the shipped config holds one toolbar, and a count
+// outside 1 to MAXIMUM_TOOLBAR_COUNT refuses the config with its message.
+@(test)
+test_toolbars_outside_one_to_four_refuse_game_config :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, config.toolbars, 1)
+	for count in ([2]int{0, 5}) {
+		config.toolbars = count
+		testing.expect_value(t, validate_game_config(config), fmt.tprintf("toolbars %d is outside 1 to 4", count))
+	}
+	for count in ([2]int{1, 4}) {
+		config.toolbars = count
+		testing.expect_value(t, validate_game_config(config), "")
+	}
 }

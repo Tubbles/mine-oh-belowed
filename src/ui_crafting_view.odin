@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:slice"
 
 // The crafting view (0277, after Techtonica): the window the inventory
@@ -13,7 +14,8 @@ import "core:slice"
 // them (crafting_seam_target). A on a schematic crafts one, with R1 held
 // five, with L1 held the most. The context action clears the crafting
 // queue on the schematics half and sorts or configures on the inventory
-// half. The
+// half. Y assigns the focused slot's or schematic's item to the active
+// toolbar's selected slot (0278, toolbar_assignment). The
 // recipe browser (ui_recipes.odin) keeps the picker and the station modes.
 
 Crafting_Half :: enum u8 {
@@ -44,10 +46,10 @@ CRAFTING_DETAIL_MINIMUM_WIDTH :: 300
 CRAFTING_SIDE_BY_SIDE_WIDTH :: 500
 CRAFTING_STACKED_GRID_ROWS :: 2
 
-// The schematics half's touch row: the recipe row of the station browser
-// and Clear queue, which the context action does on the gamepad and the
-// keyboard.
-CRAFTING_VIEW_TOUCH_BUTTONS :: Touch_Buttons{.Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Clear_Craft_Queue, .Back}
+// The schematics half's touch row: the recipe row of the station browser,
+// Clear queue, which the context action does on the gamepad and the
+// keyboard, and Assign, Y's place (0278).
+CRAFTING_VIEW_TOUCH_BUTTONS :: Touch_Buttons{.Assign_Toolbar, .Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Clear_Craft_Queue, .Back}
 
 Crafting_View_Layout :: struct {
 	title, inventory, seam, schematics, tabs, toggle, summary, grid, detail: Ui_Rectangle,
@@ -211,7 +213,7 @@ crafting_view_toggle_label :: proc(state: ^Ui_State, layout: Crafting_View_Layou
 
 // The tab's recipes as icon cells in rows of columns, scrolling inside
 // the area: the craftable mark at a cell's left edge and the recipe's
-// icon (a silhouette while locked), its name in the info panel, no count.
+// icon (a silhouette while locked), its name on the detail panel, no count.
 // A focused cell is the browser's focused recipe. Returns the activated
 // recipe or NO_RECIPE.
 schematic_grid :: proc(state: ^Ui_State, area: Ui_Rectangle, columns: int, screen_context: Screen_Context, visible: []int, craftable: []bool) -> (activated: int) {
@@ -336,8 +338,9 @@ crafting_view_queue_act :: proc(context_action: bool, button: Touch_Button) -> C
 
 // The schematics half's glyph bar: on a cell A crafts with its modifier
 // pairs, which the bar drops together, and on the toggle and the graph
-// rows A selects. The context action clears the queue.
-crafting_view_glyph_bar :: proc(state: ^Ui_State, on_cell: bool) {
+// rows A selects. Y assigns while the cell's recipe has an item to name
+// (assigns, toolbar_assignment). The context action clears the queue.
+crafting_view_glyph_bar :: proc(state: ^Ui_State, on_cell, assigns: bool) {
 	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 	if on_cell {
 		append(&hints, Glyph_Hint{.Confirm, text("hint_craft")})
@@ -346,8 +349,43 @@ crafting_view_glyph_bar :: proc(state: ^Ui_State, on_cell: bool) {
 	} else {
 		append(&hints, Glyph_Hint{.Confirm, text("hint_select")})
 	}
+	if assigns {
+		append(&hints, Glyph_Hint{.Info, text("hint_assign")})
+	}
 	append(&hints, Glyph_Hint{.Context_Action, text("hint_clear_craft_queue")})
 	append(&hints, Glyph_Hint{.Tabs, text("hint_tabs")})
 	append(&hints, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
+}
+
+// What Y assigns to the active toolbar's selected slot (0278): on the
+// inventory half the slot's item, whatever the hand holds; on the
+// schematics half on a cell the recipe's first item output while the
+// recipe is available. NO_ITEM for an empty slot, the toggle, a graph
+// row, a locked recipe and a recipe without an item output.
+toolbar_assignment :: proc(half: Crafting_Half, slot_stack: Item_Stack, on_cell: bool, recipe: int, recipes: Recipe_Registry, available: []bool) -> Item_Id {
+	switch half {
+	case .Inventory:
+		return shown_item(slot_stack)
+	case .Schematics:
+		if !on_cell || !index_in_range(recipe, len(recipes.recipes)) || recipe >= len(available) || !available[recipe] {
+			return NO_ITEM
+		}
+		outputs := recipes.recipes[recipe].outputs
+		return len(outputs) > 0 ? outputs[0].item : NO_ITEM
+	}
+	return NO_ITEM
+}
+
+// The assignment as a Toolbar_Assign_Command on the active toolbar's
+// selected slot, and a toast naming the item and the slot (1 to 8).
+// Nothing without a command list.
+queue_toolbar_assign :: proc(state: ^Ui_State, screen_context: Screen_Context, item: Item_Id) {
+	if screen_context.player_commands == nil {
+		return
+	}
+	player := screen_context.player
+	queue_player_command(screen_context.player_commands, screen_context.player_index, Toolbar_Assign_Command{player.active_toolbar, player.selected_hotbar_slot, item})
+	toast := replace_message_mark(text("toast_toolbar_assigned"), "{name}", item_name(screen_context.items, item))
+	ui_toast(state, replace_message_mark(toast, "{value}", fmt.tprint(player.selected_hotbar_slot + 1)))
 }
