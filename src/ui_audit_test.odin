@@ -1167,14 +1167,14 @@ test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 	for screen, index in inventory_tab_screens {
 		state := Ui_State{theme = audit.theme}
 		push_screen(&state.screens, screen)
-		screen_test_frame(audit, &state, {tab_next = true})
+		screen_test_frame(audit, &state, {window_next = true})
 		next := inventory_tab_screens[(index + 1) % len(inventory_tab_screens)]
 		testing.expect_value(t, top_screen(state.screens), next)
 		testing.expect_value(t, state.screens.count, 1)
 		destroy_ui_state(&state)
 	}
-	// The picker: no strip, and the bumpers change neither the screen nor
-	// the category.
+	// The picker: no strip, and the window step changes neither the screen
+	// nor the category.
 	simulation := &audit.simulation
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if !assembler.alive || audit.content.machines.machines[assembler.machine].recipe_choice == .Fixed {
@@ -1186,7 +1186,7 @@ test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 		audit.views.recipe_browser.selecting_for = assembler.handle
 		simulation.players[0].open_machine = assembler.handle
 		category := audit.views.recipe_browser.filter.category
-		screen_test_frame(audit, &state, {tab_next = true})
+		screen_test_frame(audit, &state, {window_next = true})
 		testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
 		testing.expect_value(t, state.screens.count, 2)
 		testing.expect_value(t, audit.views.recipe_browser.filter.category, category)
@@ -1298,9 +1298,9 @@ slot_test_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input) {
 	apply_player_commands(&audit.simulation, audit.content)
 }
 
-// Work item 0090: in the inventory screen R2 moves the focused hotbar
-// stack into the backpack and the right stick click drops it, without a
-// Drop button.
+// Work item 0090: in the inventory screen R1 with A (0276) moves the
+// focused hotbar stack into the backpack and the right stick click drops
+// it, without a Drop button.
 @(test)
 test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -1318,7 +1318,7 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 	defer destroy_ui_state(&state)
 	push_screen(&state.screens, .Inventory)
 	screen_test_frame(audit, &state, {})
-	screen_test_frame(audit, &state, {quick_move = true})
+	screen_test_frame(audit, &state, {confirm = true, modifier_five = true})
 	// The move waits for the tick (0179).
 	testing.expect_value(t, player.inventory.slots[3], Item_Stack{coal, 5})
 	apply_player_commands(&audit.simulation, audit.content)
@@ -1570,10 +1570,10 @@ test_the_configure_popup_picks_the_foundation_block :: proc(t: ^testing.T) {
 	// Only once: after a tab step to Recipes and back the view focuses the
 	// selected hotbar slot, not the slot that opened the pop-up.
 	audit.simulation.players[0].selected_hotbar_slot = 1
-	screen_test_frame(audit, &state, {tab_next = true})
+	screen_test_frame(audit, &state, {window_next = true})
 	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
 	screen_test_frame(audit, &state, {})
-	screen_test_frame(audit, &state, {tab_previous = true})
+	screen_test_frame(audit, &state, {window_previous = true})
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {})

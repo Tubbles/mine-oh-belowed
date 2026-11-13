@@ -30,8 +30,8 @@ launch_pad_area_height :: proc(machine: Machine, width: f32) -> f32 {
 	return UI_ROW_HEIGHT + tab_row + f32(launch_pad_text_rows(machine)) * UI_ROW_HEIGHT + slot_rows + button_rows
 }
 
-// Rocket, Contracts and Catalogue (work item 0041), switched with the
-// bumpers or a click.
+// Rocket, Contracts and Catalogue (work item 0041), switched with the tab
+// step (the right stick's flick, `[` and `]`) or a click.
 launch_pad_tab :: proc(state: ^Ui_State, content: ^Ui_Rectangle) -> int {
 	labels := [?]string{text("launch_pad_tab_rocket"), text("launch_pad_tab_contracts"), text("launch_pad_tab_catalogue")}
 	tab := ui_tabs(state, cut_top(content, UI_ROW_HEIGHT), "launch_pad_tabs", labels[:])

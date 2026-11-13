@@ -223,6 +223,6 @@ statistics_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		shipments_tab(state, content, screen_context)
 	}
 	ui_panel_end(state)
-	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
+	hints := [?]Glyph_Hint{{.Tabs, text("hint_tabs")}, {.Back, text("hint_close")}}
 	ui_glyph_bar_or_back_row(state, hints[:])
 }

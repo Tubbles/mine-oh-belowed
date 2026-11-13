@@ -68,17 +68,22 @@ Action :: enum u8 {
 	Navigate_Down,
 	Navigate_Left,
 	Navigate_Right,
+	// The tab step of a screen's tab strip: `[` and `]`, and the right
+	// stick's flick, which has no binding (right_stick_tab_step).
 	Tab_Previous,
 	Tab_Next,
 	Info_Panel,
 	Context_Action,
-	// L2 (or Left Shift) in menus: split the focused stack.
-	Menu_Secondary,
-	// R2 (or Q) in a machine panel: move the focused stack to the other
-	// side (quick_transfer.odin, 0078).
-	Menu_Quick_Move,
-	// Held with a click, a quick move with the mouse: Left Control.
-	Menu_Quick_Move_Modifier,
+	// The triggers (or Q and E) in menus: the previous and the next window,
+	// wrapping. Until 0385 they step the inventory's tab strip (0276).
+	Window_Previous,
+	Window_Next,
+	// Held with Confirm (R1 or Left Control): five crafts, on a slot the
+	// quick move (0276).
+	Modifier_Five,
+	// Held with Confirm (L1 or Left Shift): the most crafts, on a slot the
+	// split (0276).
+	Modifier_Most,
 	// The right stick click (or X) in the inventory: drop the held or
 	// focused stack on the ground (0062).
 	Menu_Drop,

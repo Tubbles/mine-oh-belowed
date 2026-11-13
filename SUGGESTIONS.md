@@ -451,3 +451,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `settle_gone_machines` now deletes a broken pool entry of a malformed save where the load refused the file before, with the log line `removed 1 placed machines of deleted kinds ()`.
 - `append_power_nodes` splits any entry of the poles pool whose `on` is false; gating it on the power switch's kind would keep a malformed save's junction box whole.
 - `test_a_snapshot_hashes_to_the_direct_state_hash` (0382) runs at 3 s in the unit tier without a slow mark.
+
+## Suggestions from the screens' button layer (0276, 2026-11-13)
+
+- `quick_move_continues` does not compare the item: a second R1 with A within 0.5 s on another stack of the same side moves every stack of the first item. Older than 0276, likelier with the modifier.
+- The modifiers read the hand from the simulation and the drag from `pending_hand_item`; judging "hand empty" by the pending hand in `slot_act` would make them agree during an online pick up.
+- The flick is also held off while the left trackpad is touched, since Hotbar_Radial is bound there and the letter wheel follows the pad, not the stick.
+- `doc/audit/ui.md` names `Menu_Secondary` in a dated audit note.
+- `doc/code_map.md`'s field count of `Ui_State` was already behind the struct before this item (the implementer counted 61 against the recorded 58).

@@ -238,6 +238,209 @@ test_recipe_detail_lines :: proc(t: ^testing.T) {
 	testing.expect_value(t, can_craft_text(0), "Can craft 0")
 }
 
+// Work item 0276: one press crafts one, five with R1 held, the planner's
+// most with L1 held, and at least one so a refusal toasts.
+@(test)
+test_craft_count_follows_the_modifier :: proc(t: ^testing.T) {
+	testing.expect_value(t, craft_count(.None, 40), 1)
+	testing.expect_value(t, craft_count(.Five, 40), RECIPE_CRAFT_MANY_COUNT)
+	testing.expect_value(t, craft_count(.Most, 40), 40)
+	testing.expect_value(t, craft_count(.Most, 0), 1)
+}
+
+// The audit's pod crafting bench, a station with the hand maker.
+audit_crafting_bench :: proc(audit: ^Ui_Audit) -> Entity_Handle {
+	for foundation in audit.simulation.world.entities.foundations.entries {
+		if foundation.alive && audit.content.machines.machines[foundation.machine].kind == .Crafting_Bench {
+			return foundation.handle
+		}
+	}
+	return NO_ENTITY
+}
+
+// The recipe browser open on the plank recipe's focused row, from the
+// inventory's strip or (station) a crafting station's panel, with the
+// inventory holding logs and nothing queued. Returns the row's id.
+open_recipe_browser_on_plank :: proc(audit: ^Ui_Audit, state: ^Ui_State, station: Entity_Handle, logs: u16) -> Ui_Id {
+	player := &audit.simulation.players[0]
+	plank := test_recipe(audit.content.recipes, "plank")
+	player.crafting = {}
+	slice.fill(player.inventory.slots, EMPTY_STACK)
+	player.inventory.slots[3] = {test_item(audit.content.items, "log"), logs}
+	player.open_machine = station
+	clear(&audit.simulation.player_commands)
+	browser := &audit.views.recipe_browser
+	browser.station = station
+	browser.filter.category = audit.content.recipes.recipes[plank].category
+	browser.focused_recipe = plank
+	if station != NO_ENTITY {
+		push_screen(&state.screens, .Machine)
+	}
+	push_screen(&state.screens, .Recipes)
+	screen_test_frame(audit, state, {})
+	return recipe_row_id(ui_hash(ui_hash(0, "recipes", -1), "recipe_list", -1), plank)
+}
+
+// Work item 0276: A on a focused recipe queues one craft, with R1 held
+// five, with L1 held the most the planner accepts. With nothing to craft
+// from L1 with A queues nothing and toasts. X cancels the newest craft.
+// The same in the station browser (the pod's crafting bench).
+@(test)
+test_modifiers_with_a_on_a_recipe :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	bench := audit_crafting_bench(audit)
+	if !testing.expect(t, bench != NO_ENTITY) {
+		return
+	}
+	plank := test_recipe(audit.content.recipes, "plank")
+	player := &audit.simulation.players[0]
+	for station in ([2]Entity_Handle{NO_ENTITY, bench}) {
+		state := Ui_State{theme = audit.theme}
+		defer destroy_ui_state(&state)
+		row := open_recipe_browser_on_plank(audit, &state, station, 20)
+		testing.expect_value(t, state.focus, row)
+		screen_context := audit_screen_context(audit)
+		most := planned_craft_count(player.crafting, player.inventory, audit.content.recipes, screen_context.unlocks^, plank, screen_craft_makers(screen_context), screen_context.free_crafting)
+		testing.expectf(t, most > RECIPE_CRAFT_MANY_COUNT, "the planner accepts %d", most)
+		presses := [?]struct {
+			input: Ui_Input,
+			count: int,
+		}{{{confirm = true}, 1}, {{confirm = true, modifier_five = true}, RECIPE_CRAFT_MANY_COUNT}, {{confirm = true, modifier_most = true}, most}}
+		for press in presses {
+			screen_test_frame(audit, &state, press.input)
+			testing.expectf(t, len(audit.simulation.player_commands) == 1, "count %d: %d commands", press.count, len(audit.simulation.player_commands))
+			craft, crafts := last_queued_command(audit).(Craft_Command)
+			testing.expectf(t, crafts && craft == Craft_Command{recipe = plank, count = press.count}, "station %v: %v", station, last_queued_command(audit))
+			clear(&audit.simulation.player_commands)
+		}
+		// One craft queued, X cancels it.
+		screen_test_frame(audit, &state, {confirm = true})
+		apply_player_commands(&audit.simulation, audit.content)
+		testing.expect_value(t, player.crafting.count, 1)
+		screen_test_frame(audit, &state, {context_action = true})
+		_, cancels := last_queued_command(audit).(Cancel_Craft_Command)
+		testing.expect(t, cancels)
+		// Nothing to craft from: L1 with A queues nothing and toasts.
+		player.crafting = {}
+		slice.fill(player.inventory.slots, EMPTY_STACK)
+		clear(&audit.simulation.player_commands)
+		toasts := len(state.toasts)
+		screen_test_frame(audit, &state, {confirm = true, modifier_most = true})
+		testing.expect_value(t, len(audit.simulation.player_commands), 0)
+		testing.expect_value(t, len(state.toasts), toasts + 1)
+	}
+	audit.views.recipe_browser.station = NO_ENTITY
+}
+
+// Work item 0276: where a screen gives the modifiers no meaning, A with one
+// held acts as A alone: a technology row queues its research, the
+// picker's row chooses its recipe, the pause menu's Resume closes it.
+@(test)
+test_modifiers_where_five_and_most_mean_nothing :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	simulation := &audit.simulation
+	simulation.records.research.queued = false
+	available := NO_TECHNOLOGY
+	for _, index in audit.content.technologies.technologies {
+		if technology_status(audit.content.technologies, simulation.unlocks, index) == .Available {
+			available = index
+			break
+		}
+	}
+	if !testing.expect(t, available != NO_TECHNOLOGY) {
+		return
+	}
+	audit.views.technology_browser.focused = available
+	technologies := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&technologies)
+	push_screen(&technologies.screens, .Technologies)
+	screen_test_frame(audit, &technologies, {})
+	screen_test_frame(audit, &technologies, {})
+	testing.expect_value(t, technologies.focus, technology_row_id(ui_hash(ui_hash(0, "technologies", -1), "technology_list", -1), available))
+	screen_test_frame(audit, &technologies, {confirm = true, modifier_five = true})
+	testing.expect_value(t, last_queued_command(audit).(Research_Command), Research_Command{technology = available})
+	clear(&simulation.player_commands)
+	// The picker.
+	picker := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&picker)
+	for &assembler in simulation.world.entities.assemblers.entries {
+		if !assembler.alive || audit.content.machines.machines[assembler.machine].recipe_choice == .Fixed {
+			continue
+		}
+		push_screen(&picker.screens, .Machine)
+		push_screen(&picker.screens, .Recipes)
+		audit.views.recipe_browser.selecting_for = assembler.handle
+		audit.views.recipe_browser.focused_recipe = NO_RECIPE
+		simulation.players[0].open_machine = assembler.handle
+		screen_test_frame(audit, &picker, {})
+		screen_test_frame(audit, &picker, {})
+		focused := audit.views.recipe_browser.focused_recipe
+		screen_test_frame(audit, &picker, {confirm = true, modifier_most = true})
+		chosen, chooses := last_queued_command(audit).(Assembler_Recipe_Command)
+		testing.expectf(t, chooses && chosen == Assembler_Recipe_Command{assembler = assembler.handle, recipe = focused}, "%v", last_queued_command(audit))
+		testing.expect_value(t, top_screen(picker.screens), Screen.Machine)
+		break
+	}
+	audit.views.recipe_browser.selecting_for = NO_ENTITY
+	// The pause menu: the focus starts on Resume.
+	pause := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&pause)
+	push_screen(&pause.screens, .Pause)
+	screen_test_frame(audit, &pause, {})
+	screen_test_frame(audit, &pause, {confirm = true, modifier_five = true})
+	testing.expect_value(t, pause.screens.count, 0)
+}
+
+// Work item 0276: the tab step (the right stick's flick, `[` and `]`)
+// steps the recipe categories wherever the focus is and drops the tags,
+// with the inventory's strip and in the picker. The window step leaves
+// the picker's screen and category alone.
+@(test)
+test_recipe_categories_follow_the_tab_step :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	browser := &audit.views.recipe_browser
+	strip := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&strip)
+	push_screen(&strip.screens, .Recipes)
+	browser.filter.category, browser.filter.tags = .Materials, {0}
+	screen_test_frame(audit, &strip, {})
+	screen_test_frame(audit, &strip, {tab_next = true})
+	testing.expect_value(t, browser.filter.category, Recipe_Category.Components)
+	testing.expect_value(t, browser.filter.tags, Recipe_Tag_Set{})
+	testing.expect_value(t, top_screen(strip.screens), Screen.Recipes)
+	screen_test_frame(audit, &strip, {tab_previous = true})
+	testing.expect_value(t, browser.filter.category, Recipe_Category.Materials)
+	testing.expect_value(t, top_screen(strip.screens), Screen.Recipes)
+	simulation := &audit.simulation
+	for &assembler in simulation.world.entities.assemblers.entries {
+		if !assembler.alive || audit.content.machines.machines[assembler.machine].recipe_choice == .Fixed {
+			continue
+		}
+		picker := Ui_State{theme = audit.theme}
+		defer destroy_ui_state(&picker)
+		push_screen(&picker.screens, .Machine)
+		push_screen(&picker.screens, .Recipes)
+		browser.selecting_for = assembler.handle
+		simulation.players[0].open_machine = assembler.handle
+		browser.filter.tags = {0}
+		screen_test_frame(audit, &picker, {})
+		screen_test_frame(audit, &picker, {tab_next = true})
+		testing.expect_value(t, browser.filter.category, Recipe_Category.Components)
+		testing.expect_value(t, browser.filter.tags, Recipe_Tag_Set{})
+		screen_test_frame(audit, &picker, {window_next = true})
+		testing.expect_value(t, browser.filter.category, Recipe_Category.Components)
+		testing.expect_value(t, top_screen(picker.screens), Screen.Recipes)
+		testing.expect_value(t, picker.screens.count, 2)
+		screen_test_frame(audit, &picker, {tab_previous = true})
+		testing.expect_value(t, browser.filter.category, Recipe_Category.Materials)
+		break
+	}
+	browser.selecting_for = NO_ENTITY
+}
+
 // Free crafting (0234): every unlocked hand recipe is craftable from an
 // empty inventory, every ingredient shows as held.
 @(test)

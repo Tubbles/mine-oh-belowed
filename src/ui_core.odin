@@ -21,6 +21,9 @@ UI_SAFE_AREA_FRACTION :: 0.05
 UI_REPEAT_INITIAL_SECONDS :: 0.35
 UI_REPEAT_STEP_SECONDS :: 0.08
 UI_STICK_NAVIGATION_THRESHOLD :: 0.5
+// The right stick's flick arms again only once the stick is back this
+// near the centre sideways (right_stick_tab_step, 0276).
+UI_STICK_FLICK_REARM_THRESHOLD :: 0.3
 // Weight of the sideways offset against the distance along the pressed
 // direction, so a widget straight ahead beats a nearer one off to the side.
 UI_FOCUS_PERPENDICULAR_PENALTY :: 2.0
@@ -95,21 +98,22 @@ Ui_Input :: struct {
 	confirm:        bool,
 	back:           bool,
 	pause:          bool,
+	// The tab step: `[` and `]`, or a flick of the right stick
+	// (right_stick_tab_step).
 	tab_previous:   bool,
 	tab_next:       bool,
 	info:           bool,
 	context_action: bool,
-	// L2 or Left Shift: split the focused stack.
-	secondary:      bool,
-	// R2 or Q: quick move the focused stack in a machine panel (0078).
-	quick_move:     bool,
+	// The triggers or Q and E: the previous and the next window (0276).
+	window_previous: bool,
+	window_next:     bool,
 	// Right stick click or X in the inventory: drop the held or focused
 	// stack on the ground (Menu_Drop, 0062).
 	drop:           bool,
-	// Held, not an edge: holding the quick move moves every stack.
-	quick_move_down: bool,
-	// Held, not an edge: Left Control, which makes a click a quick move.
-	quick_move_modifier: bool,
+	// Held, not edges: R1 or Left Control, and L1 or Left Shift, which
+	// change what Confirm or a click does (confirm_modifier_of, 0276).
+	modifier_five:  bool,
+	modifier_most:  bool,
 	open_inventory: bool,
 	open_recipes:   bool,
 	open_journal:   bool,
@@ -156,6 +160,22 @@ Ui_Input :: struct {
 	right_stick:    [2]f32,
 	device:         Input_Device,
 	device_seen:    bool,
+}
+
+// What the bumper held with Confirm makes of it (0276): R1 five (on a
+// slot the quick move), L1 the most (on a slot the split).
+Confirm_Modifier :: enum u8 {
+	None,
+	Five,
+	Most,
+}
+
+// The one bumper held. Both held, or neither, leave Confirm alone.
+confirm_modifier_of :: proc(five, most: bool) -> Confirm_Modifier {
+	if five == most {
+		return .None
+	}
+	return five ? .Five : .Most
 }
 
 Draw_Command_Kind :: enum u8 {
@@ -482,6 +502,12 @@ Ui_State :: struct {
 	navigation_step:  Ui_Direction,
 	confirm:          bool,
 	click:            bool,
+	// The bumper held with this frame's Confirm or click (0276). A drag's
+	// pick up clears it (step_slot_drag).
+	confirm_modifier: Confirm_Modifier,
+	// The pointer rested on a stack this frame, which splits it
+	// (step_slot_drag).
+	pointer_split:    bool,
 	pointer_held:     bool,
 	// The pointer press ended this frame (pointer_tapped reads it).
 	pointer_released: bool,
@@ -834,6 +860,8 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	pad_confirms := input.pad_pressed && pointer_was_hidden && state.pointer_source == .None
 	state.confirm = input.confirm || pad_confirms
 	state.click = input.mouse_pressed || (input.pad_pressed && !pad_confirms)
+	state.confirm_modifier = confirm_modifier_of(input.modifier_five, input.modifier_most)
+	state.pointer_split = false
 	state.pointer_held = input.mouse_down || input.pad_down
 	if !state.pointer_held {
 		state.dragging = 0
@@ -867,17 +895,24 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 // a drag at once when a stack is held already (the gamepad picked it
 // up); while it is down, moving past the slop picks the pressed stack up
 // and resting on a stack of two or more splits it; lifting ends it.
-// A click with Left Control is a quick move of the slot under the
-// pointer, which it focuses, and starts no drag.
+// A click with Left Control or Left Shift held (a confirm modifier) on an
+// item slot is a quick move or a split of that slot, which it focuses,
+// and starts no drag. With a stack held it drags as a plain click. Off
+// the item slots a modified click is a plain one (0276): its modifier is
+// dropped, so no slot screen quick moves or splits the focused stack.
 advance_slot_drag :: proc(state: ^Ui_State) {
 	holding := state.slot_drag.holding
 	state.slot_drag.holding, state.slot_drag.released = false, false
+	modified := state.click && state.confirm_modifier != .None
+	under := widget_under(state.widgets[:], state.pointer)
+	on_slot := widget_is_item_slot(state.widgets[:], under)
+	if modified && !on_slot {
+		state.confirm_modifier = .None
+	}
 	switch {
-	case state.click && state.input.quick_move_modifier:
+	case modified && on_slot && !holding:
 		state.slot_drag = {}
-		if pressed := widget_under(state.widgets[:], state.pointer); pressed != 0 {
-			state.focus = pressed
-		}
+		state.focus = under
 	case state.click:
 		state.slot_drag = start_slot_drag(state^, holding)
 	case state.slot_drag.phase == .None:
@@ -886,6 +921,12 @@ advance_slot_drag :: proc(state: ^Ui_State) {
 	case:
 		step_slot_drag(state)
 	}
+}
+
+// The widget is one of the frame's item slots.
+widget_is_item_slot :: proc(widgets: []Ui_Widget, id: Ui_Id) -> bool {
+	index := widget_index(widgets, id)
+	return index >= 0 && .Item_Slot in widgets[index].flags
 }
 
 start_slot_drag :: proc(state: Ui_State, holding: bool) -> Slot_Drag {
@@ -901,8 +942,10 @@ slot_drag_moved :: proc(press_position, pointer: [2]f32) -> bool {
 	return offset.x * offset.x + offset.y * offset.y > UI_SLOT_DRAG_SLOP * UI_SLOT_DRAG_SLOP
 }
 
-// The pick up is Confirm on the pressed slot, the split Menu_Secondary
-// on it, so every slot screen applies them as it applies the gamepad's.
+// The pick up is a plain Confirm on the pressed slot (a modifier held
+// meanwhile does not make it a quick move or a split), the split the
+// rest's Ui_State.pointer_split on it, so every slot screen applies them
+// as it applies the gamepad's.
 step_slot_drag :: proc(state: ^Ui_State) {
 	drag := &state.slot_drag
 	drag.held_seconds += state.frame_seconds
@@ -913,9 +956,10 @@ step_slot_drag :: proc(state: ^Ui_State) {
 	switch {
 	case drag.moved && drag.count > 0:
 		state.focus, state.confirm = drag.slot, true
+		state.confirm_modifier = .None
 		drag.phase = .Dragging
 	case drag.held_seconds >= TOUCH_HOLD_SECONDS && drag.count >= 2:
-		state.focus, state.input.secondary = drag.slot, true
+		state.focus, state.pointer_split = drag.slot, true
 		state.sound_events += {.Confirm}
 		drag.phase = .Dragging
 	}
@@ -1043,9 +1087,11 @@ ui_resolve :: proc(state: ^Ui_State) {
 
 // An activation this frame, as ui_interact grants it: confirm on the
 // focused widget, or a tap on one under the pointer, which sounds on the
-// release (0132). A tap on an item slot is no activation, a press with
-// Left Control is (the quick move), and so is its drop (0124). The touch
-// row's Back sounds as B (0137).
+// release (0132). A tap on an item slot is no activation, a press with a
+// confirm modifier held is (the quick move or the split), and so is a
+// drag's drop (0124). With a stack held the modified press starts a drag
+// as a plain one does (advance_slot_drag) and sounds only on the drop.
+// The touch row's Back sounds as B (0137).
 ui_frame_sound_events :: proc(state: Ui_State) -> bit_set[Ui_Sound_Event] {
 	if state.back_tapped {
 		return {.Back}
@@ -1055,7 +1101,7 @@ ui_frame_sound_events :: proc(state: Ui_State) -> bit_set[Ui_Sound_Event] {
 	under := state.pointer_source != .None ? widget_index(widgets, widget_under(widgets, state.pointer)) : -1
 	on_slot := under >= 0 && .Item_Slot in widgets[under].flags
 	tapped := under >= 0 && !on_slot && pointer_tapped(state, widgets[under].id)
-	quick_moved := state.click && on_slot && state.input.quick_move_modifier
+	quick_moved := state.click && on_slot && state.confirm_modifier != .None && state.slot_drag.phase == .None
 	dropped := state.slot_drag.released && on_slot
 	return confirmed || tapped || quick_moved || dropped ? {.Confirm} : {}
 }

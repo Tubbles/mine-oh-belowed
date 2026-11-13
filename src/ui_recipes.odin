@@ -5,18 +5,20 @@ import "core:slice"
 import "core:strings"
 
 // The recipe browser (DESIGN.md, User interface): the inventory tab strip
-// on the bumpers (ui_inventory.odin), the category tabs as a focusable
-// row stepped with left and right, the "can craft now" and "unlocked only"
+// on the triggers (ui_inventory.odin), the category tabs as a focusable
+// row stepped with left and right and by the tab step (the right stick's
+// flick, `[` and `]`), the "can craft now" and "unlocked only"
 // toggles and the tag filter on the left, the
 // recipes sorted by name in the middle with the letter wheel on the left
 // pad (letter keys on the keyboard), and the focused recipe's detail on
 // the right, whose "made by" and "used in" lists walk the recipe graph.
-// Confirm on a recipe queues one hand craft, the context action five, the
-// secondary action cancels the newest queued craft; queuing plans the
-// missing hand craftable intermediates ahead (crafting.odin). Each row
-// shows how many of its product the inventory holds. There is no search box.
-// On touch a tap on a recipe selects it and the touch row's Craft, Craft
-// 5 and Cancel last act on the selected recipe (0137).
+// Confirm on a recipe queues one hand craft, with R1 held five and with
+// L1 held the most the inventory affords, and the context action cancels
+// the newest queued craft (0276). Queuing plans the missing hand
+// craftable intermediates ahead (crafting.odin). Each row shows how many
+// of its product the inventory holds. There is no search box. On touch a
+// tap on a recipe selects it and the touch row's Craft, Craft 5, Craft
+// max and Cancel last act on the selected recipe (0137).
 //
 // In the selection mode, opened from an assembler's panel, the list holds
 // the available recipes an assembler makes, and Confirm sets the focused
@@ -158,9 +160,8 @@ recipe_held_count :: proc(inventory: Inventory, recipe: Recipe) -> (held: int, h
 	return inventory_count(inventory, recipe.outputs[0].item), true
 }
 
-// The recipes of the filter. Returns the activated recipe or NO_RECIPE,
-// and whether a row holds the focus.
-recipe_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, visible: []int, craftable: []bool) -> (activated: int, focused: bool) {
+// The recipes of the filter. Returns the activated recipe or NO_RECIPE.
+recipe_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, visible: []int, craftable: []bool) -> (activated: int) {
 	activated = NO_RECIPE
 	if len(visible) == 0 {
 		ui_label(state, {area.x, area.y, area.width, UI_ROW_HEIGHT}, text("recipes_none"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
@@ -173,7 +174,6 @@ recipe_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen
 		if interaction.focused {
 			scroll_list_keep_visible(&list, position)
 			screen_context.views.recipe_browser.focused_recipe = recipe
-			focused = true
 		}
 		if interaction.activated {
 			activated = recipe
@@ -182,7 +182,7 @@ recipe_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen
 		draw_recipe_row(state, row, screen_context, recipe, craftable[recipe])
 	}
 	scroll_list_end(state, &list)
-	return activated, focused
+	return activated
 }
 
 // Recipe names that navigate the graph when activated. Returns the
@@ -214,9 +214,10 @@ recipe_link_list :: proc(state: ^Ui_State, area: Ui_Rectangle, label: string, re
 }
 
 // A focusable row: left and right switch the category while it holds the
-// focus (the bumpers belong to the inventory tab strip). Switching drops
-// the tag filter, since tags belong to the recipes of one category. Only
-// the shown categories get a tab (a station's, 0196).
+// focus, and the tab step (the right stick's flick, `[` and `]`) switches
+// it wherever the focus is, in every mode (0276). Switching drops the tag
+// filter, since tags belong to the recipes of one category. Only the
+// shown categories get a tab (a station's, 0196).
 recipe_category_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, browser: ^Recipe_Browser, shown := ~Recipe_Categories{}) {
 	labels: [len(Recipe_Category)]string
 	icons: [len(Recipe_Category)]Ui_Icon
@@ -233,6 +234,7 @@ recipe_category_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, browser:
 	if count == 0 {
 		return
 	}
+	selected = step_tab_selection(selected, count, state.input.tab_previous, state.input.tab_next)
 	state.selections[ui_id(state, "recipe_tabs")] = selected
 	category := categories[ui_tabs(state, rectangle, "recipe_tabs", labels[:count], icons[:count], .Focus)]
 	if category != browser.filter.category {
@@ -422,27 +424,54 @@ toast_craft_refusal :: proc(state: ^Ui_State, refusal: Craft_Refusal, shortage: 
 	}
 }
 
-// Confirm on a row queues one craft, the context action five of the
-// focused recipe, the secondary action cancels the newest craft; the
-// touch row's Craft and Craft 5 act on the selected recipe (the focused
-// one before the tap moved the focus to the button) while the list shows
-// it, as the context action needs the list's focus; Cancel last as the
-// secondary action.
-apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, list_focused, selected_shown: bool, button: Touch_Button) {
+// The crafts of one press (0276): one, five with R1 held, or with L1
+// held the most the planner accepts (at least one, so a refusal toasts).
+craft_count :: proc(modifier: Confirm_Modifier, most: int) -> int {
+	switch modifier {
+	case .None:
+		return 1
+	case .Five:
+		return RECIPE_CRAFT_MANY_COUNT
+	case .Most:
+		return max(most, 1)
+	}
+	return 1
+}
+
+// The modifier a touch row craft button stands for. found is false for
+// the other buttons.
+craft_button_modifier :: proc(button: Touch_Button) -> (modifier: Confirm_Modifier, found: bool) {
+	#partial switch button {
+	case .Craft:
+		return .None, true
+	case .Craft_Five:
+		return .Five, true
+	case .Craft_Most:
+		return .Most, true
+	}
+	return .None, false
+}
+
+// Confirm on a row queues crafts of it as the held modifier says
+// (craft_count), the context action cancels the newest craft. The touch
+// row's Craft, Craft 5 and Craft max act on the selected recipe (the
+// focused one before the tap moved the focus to the button) while the
+// list shows it, Cancel last as the context action.
+apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, selected_shown: bool, button: Touch_Button) {
 	player := screen_context.player
 	recipes := screen_context.recipes
-	selected := screen_context.views.recipe_browser.focused_recipe
-	crafted := activated
-	if button == .Craft && selected_shown {
-		crafted = selected
+	recipe, modifier := activated, state.confirm_modifier
+	if button_modifier, crafts := craft_button_modifier(button); crafts && selected_shown {
+		recipe, modifier = screen_context.views.recipe_browser.focused_recipe, button_modifier
 	}
-	if crafted != NO_RECIPE {
-		queue_checked_crafts(state, screen_context, crafted, 1)
+	if recipe != NO_RECIPE {
+		most := 0
+		if modifier == .Most {
+			most = planned_craft_count(player.crafting, player.inventory, recipes, screen_context.unlocks^, recipe, screen_craft_makers(screen_context), screen_context.free_crafting)
+		}
+		queue_checked_crafts(state, screen_context, recipe, craft_count(modifier, most))
 	}
-	if (state.input.context_action && list_focused) || (button == .Craft_Five && selected_shown) {
-		queue_checked_crafts(state, screen_context, selected, RECIPE_CRAFT_MANY_COUNT)
-	}
-	cancels := state.input.secondary || button == .Cancel_Craft
+	cancels := state.input.context_action || button == .Cancel_Craft
 	if cancels && player.crafting.count > 0 {
 		if last_craft_cancels(player.crafting, player.inventory, recipes, screen_context.items) {
 			queue_player_command(screen_context.player_commands, screen_context.player_index, Cancel_Craft_Command{})
@@ -661,7 +690,7 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	visible := filter_recipes(screen_context.recipes, screen_context.recipe_order, filter, craftable, screen_context.unlocks.available, context.temp_allocator)
 	list_id := ui_id(state, "recipe_list")
 	letter := letter_input(state, &browser.letter_radial)
-	activated, list_focused := recipe_list(state, list_area, screen_context, visible, craftable)
+	activated := recipe_list(state, list_area, screen_context, visible, craftable)
 	reached := recipe_detail_panel(state, content, screen_context, craftable)
 	ui_panel_end(state)
 	// Before the focus settles: a focus on the row's button belongs to
@@ -695,9 +724,9 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		}
 		return
 	}
-	apply_recipe_craft_input(state, screen_context, activated, list_focused, selected_shown, button)
+	apply_recipe_craft_input(state, screen_context, activated, selected_shown, button)
 	if !touch {
-		recipe_glyph_bar(state)
+		recipe_glyph_bar(state, !at_station)
 	}
 }
 
@@ -706,22 +735,29 @@ recipe_touch_buttons :: proc(selecting: bool) -> Touch_Buttons {
 	if selecting {
 		return {.Choose_Recipe, .Back}
 	}
-	return {.Craft, .Craft_Five, .Cancel_Craft, .Back}
+	return {.Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Back}
 }
 
 recipe_selection_glyph_bar :: proc(state: ^Ui_State) {
-	hints := [?]Glyph_Hint{{.Confirm, text("hint_choose_recipe")}, {.Back, text("hint_back")}}
+	hints := [?]Glyph_Hint{{.Confirm, text("hint_choose_recipe")}, {.Tabs, text("hint_tabs")}, {.Back, text("hint_back")}}
 	ui_glyph_bar(state, hints[:])
 }
 
-recipe_glyph_bar :: proc(state: ^Ui_State) {
-	hints := [?]Glyph_Hint {
-		{.Confirm, text("hint_craft")},
-		{.Context_Action, text("hint_craft_five")},
-		{.Secondary, text("hint_cancel_craft")},
-		{.Tab_Previous, ""},
-		{.Tab_Next, text("hint_tabs")},
-		{.Back, text("hint_close")},
+// The modifiers' glyphs go before their Confirm, unlabelled, so the bar
+// drops each pair together. strip: the inventory's tab strip shows, so
+// the tabs hint names the window step. Without it (a station) it names
+// the categories' tab step.
+recipe_glyph_bar :: proc(state: ^Ui_State, strip: bool) {
+	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
+	append(&hints, Glyph_Hint{.Confirm, text("hint_craft")})
+	append(&hints, Glyph_Hint{.Five, ""}, Glyph_Hint{.Confirm, text("hint_craft_five")})
+	append(&hints, Glyph_Hint{.Most, ""}, Glyph_Hint{.Confirm, text("hint_craft_most")})
+	append(&hints, Glyph_Hint{.Context_Action, text("hint_cancel_craft")})
+	if strip {
+		append(&hints, Glyph_Hint{.Window_Previous, ""}, Glyph_Hint{.Window_Next, text("hint_tabs")})
+	} else {
+		append(&hints, Glyph_Hint{.Tabs, text("hint_tabs")})
 	}
+	append(&hints, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
 }

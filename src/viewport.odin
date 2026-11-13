@@ -31,6 +31,8 @@ Pixel_Rectangle :: struct {
 Viewport_Interaction :: struct {
 	input:              Input_Frame,
 	previous_input:     Input_Frame,
+	// The right stick's flick may step the tabs (make_ui_input, 0276).
+	tab_flick_armed:    bool,
 	// The rumble for this frame, for the viewport's pad.
 	haptic:             Haptic_Request,
 	// World actions still held since a screen closed, see update_world_action_guard.

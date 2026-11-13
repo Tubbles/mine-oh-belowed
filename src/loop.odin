@@ -1544,7 +1544,8 @@ build_viewport_ui :: proc(state: ^Frame_State, index: int) {
 	viewport := &state.viewports[index]
 	ui := &viewport.interaction.ui
 	screen_pixels := [2]f32{f32(viewport.rectangle.width), f32(viewport.rectangle.height)}
-	input := make_ui_input(viewport.interaction.previous_input, viewport.interaction.input)
+	input: Ui_Input
+	input, viewport.interaction.tab_flick_armed = make_ui_input(viewport.interaction.previous_input, viewport.interaction.input, viewport.interaction.tab_flick_armed)
 	// The phone's pointer is its first touch (input_raylib.odin); with the
 	// overlay on, the desktop's mouse stands in for a finger (0124).
 	input.pointer_is_touch = index == 0 && (ODIN_PLATFORM_SUBTARGET == .Android || frame_touch_overlay_on(state))

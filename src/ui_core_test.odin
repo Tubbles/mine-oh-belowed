@@ -330,7 +330,7 @@ test_slider_steps_and_drags :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_tabs_follow_bumpers :: proc(t: ^testing.T) {
+test_tabs_follow_the_tab_step :: proc(t: ^testing.T) {
 	state: Ui_State
 	defer destroy_ui_state(&state)
 	labels := [?]string{"a", "b", "c"}
@@ -341,6 +341,16 @@ test_tabs_follow_bumpers :: proc(t: ^testing.T) {
 	testing.expect_value(t, ui_tabs(&state, strip, "tabs", labels[:]), 0)
 	test_ui_frame(&state, {})
 	testing.expect_value(t, ui_tabs(&state, strip, "tabs", labels[:]), 0)
+}
+
+// Work item 0276: one bumper held changes Confirm, both or neither leave
+// it alone.
+@(test)
+test_confirm_modifier_takes_one_bumper :: proc(t: ^testing.T) {
+	testing.expect_value(t, confirm_modifier_of(false, false), Confirm_Modifier.None)
+	testing.expect_value(t, confirm_modifier_of(true, false), Confirm_Modifier.Five)
+	testing.expect_value(t, confirm_modifier_of(false, true), Confirm_Modifier.Most)
+	testing.expect_value(t, confirm_modifier_of(true, true), Confirm_Modifier.None)
 }
 
 @(test)
@@ -588,7 +598,7 @@ test_focus_tabs_step_on_left_and_right :: proc(t: ^testing.T) {
 	testing.expect_value(t, frame(&state, {navigation = .Left}, labels[:], strip), 0)
 	frame(&state, {}, labels[:], strip)
 	testing.expect_value(t, frame(&state, {navigation = .Left}, labels[:], strip), 2)
-	// The bumpers are not the row's.
+	// The tab step is not the row's (a screen steps it, recipe_category_tabs).
 	testing.expect_value(t, frame(&state, {tab_next = true}, labels[:], strip), 2)
 	testing.expect_value(t, frame(&state, {tab_previous = true}, labels[:], strip), 2)
 	// Down leaves the row.

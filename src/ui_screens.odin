@@ -535,8 +535,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	hints := [?]Glyph_Hint {
 		{.Confirm, text("hint_select")},
 		{.Back, text("hint_back")},
-		{.Tab_Previous, ""},
-		{.Tab_Next, text("hint_tabs")},
+		{.Tabs, text("hint_tabs")},
 		{.Info, text("hint_info")},
 	}
 	ui_glyph_bar_or_back_row(state, hints[:])

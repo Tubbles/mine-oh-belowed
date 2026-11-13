@@ -77,7 +77,9 @@ run_injected_screen_frame :: proc(state: ^Frame_State, audit: ^Ui_Audit, ui: ^Ui
 	viewport.interaction.input = read_injected_input_frame(state.interaction.injected, viewport.interaction.previous_input.pressed, state.interaction.input_bindings, {})
 	advance_injected_input(&state.interaction.injected)
 	if audit != nil {
-		screen_test_frame(audit, ui, make_ui_input(viewport.interaction.previous_input, viewport.interaction.input))
+		input: Ui_Input
+		input, viewport.interaction.tab_flick_armed = make_ui_input(viewport.interaction.previous_input, viewport.interaction.input, viewport.interaction.tab_flick_armed)
+		screen_test_frame(audit, ui, input)
 	}
 }
 
@@ -405,7 +407,9 @@ test_the_none_backend_starts_on_the_gamepads_glyphs :: proc(t: ^testing.T) {
 	for _ in 0 ..< 3 {
 		viewport.interaction.previous_input = viewport.interaction.input
 		viewport.interaction.input = read_input_frame(state, 0, 1.0 / 60)
-		ui_begin(ui, make_ui_input(viewport.interaction.previous_input, viewport.interaction.input), {1920, 1080}, 1.0 / 60, 1, 1)
+		input: Ui_Input
+		input, viewport.interaction.tab_flick_armed = make_ui_input(viewport.interaction.previous_input, viewport.interaction.input, viewport.interaction.tab_flick_armed)
+		ui_begin(ui, input, {1920, 1080}, 1.0 / 60, 1, 1)
 		ui_resolve(ui)
 		testing.expect_value(t, ui.active_device, Input_Device.Gamepad)
 	}

@@ -230,7 +230,7 @@ technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		queue_focused_research(state, screen_context, activated)
 	}
 	if !touch {
-		hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
+		hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Window_Previous, ""}, {.Window_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
 		ui_glyph_bar(state, hints[:])
 	}
 }

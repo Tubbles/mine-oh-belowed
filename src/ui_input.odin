@@ -95,27 +95,54 @@ key_newly_pressed :: proc(previous, current: Raw_Keyboard, key: i32) -> bool {
 	return keyboard_holds_key(current, key) && !keyboard_holds_key(previous, key)
 }
 
-make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
+// The right stick's flick (0276): 1 or -1 when the stick, armed, goes past
+// UI_STICK_NAVIGATION_THRESHOLD to the right or the left, mostly
+// sideways, which disarms it. It arms again once back within
+// UI_STICK_FLICK_REARM_THRESHOLD sideways, so a stick hovering round the
+// threshold steps the tabs once, and up and down stay the lists' scroll.
+// While the letter wheel is open, which the stick steers, a flick is
+// spent without a step.
+right_stick_tab_step :: proc(armed: bool, stick: [2]f32, wheel_open: bool) -> (step: int, armed_after: bool) {
+	if abs(stick.x) <= UI_STICK_FLICK_REARM_THRESHOLD {
+		return 0, true
+	}
+	if !armed || abs(stick.x) <= UI_STICK_NAVIGATION_THRESHOLD || abs(stick.x) <= abs(stick.y) {
+		return 0, armed
+	}
+	if wheel_open {
+		return 0, false
+	}
+	return stick.x > 0 ? 1 : -1, false
+}
+
+// flick_armed is the right stick's flick state (right_stick_tab_step),
+// which the caller keeps from frame to frame beside the previous frame
+// (Viewport_Interaction.tab_flick_armed).
+make_ui_input :: proc(previous, current: Input_Frame, flick_armed: bool) -> (input: Ui_Input, flick_armed_after: bool) {
 	just := current.just_pressed
 	pad_down := right_pad_click_down(current.raw)
 	pad_pressed := pad_down && !right_pad_click_down(previous.raw)
 	mouse_down := current.raw.mouse.button_down[0]
 	device, seen := detect_input_device(previous.raw, current.raw)
-	return Ui_Input {
+	// The letter wheel is held open on Hotbar_Radial's controls and steered
+	// by the stick.
+	tab_step: int
+	tab_step, flick_armed_after = right_stick_tab_step(flick_armed, current.look, .Hotbar_Radial in current.pressed)
+	input = Ui_Input {
 		navigation = navigation_direction(current.pressed, current.move),
 		// The pad click is bound to Confirm too; here it is a pointer click.
 		confirm = .Confirm in just && !pad_pressed,
 		back = .Back in just,
 		pause = .Pause in just,
-		tab_previous = .Tab_Previous in just,
-		tab_next = .Tab_Next in just,
+		tab_previous = .Tab_Previous in just || tab_step < 0,
+		tab_next = .Tab_Next in just || tab_step > 0,
 		info = .Info_Panel in just,
 		context_action = .Context_Action in just,
-		secondary = .Menu_Secondary in just,
-		quick_move = .Menu_Quick_Move in just,
+		window_previous = .Window_Previous in just,
+		window_next = .Window_Next in just,
 		drop = .Menu_Drop in just,
-		quick_move_down = .Menu_Quick_Move in current.pressed,
-		quick_move_modifier = .Menu_Quick_Move_Modifier in current.pressed,
+		modifier_five = .Modifier_Five in current.pressed,
+		modifier_most = .Modifier_Most in current.pressed,
 		confirm_down = .Confirm in current.pressed && !pad_down,
 		open_inventory = .Open_Inventory in just,
 		open_recipes = .Open_Recipes in just,
@@ -147,4 +174,5 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		device = device,
 		device_seen = seen,
 	}
+	return input, flick_armed_after
 }

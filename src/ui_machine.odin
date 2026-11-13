@@ -98,7 +98,8 @@ distribute_command :: proc(machine: Entity_Handle, gesture: Distribute_Gesture, 
 	return command
 }
 
-// L2 splits a machine slot's stack onto the empty cursor, X sorts a chest.
+// L1 with A splits a machine slot's stack onto the empty cursor, X sorts
+// a chest.
 machine_slot_secondary_commands :: proc(machine: Entity_Handle, slots: []Item_Stack, kind: Machine_Kind, held: Held_Stack, input: Machine_Slot_Input, ranks: []u16) -> []Player_Command {
 	commands := make([dynamic]Player_Command, context.temp_allocator)
 	if !stack_is_empty(held.stack) {
@@ -485,11 +486,6 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	slots := entity_slots(&screen_context.world.entities, handle)
-	// Q is also Tab_Previous; while it quick moves it does not turn the
-	// launch pad's tabs.
-	if state.input.quick_move {
-		state.input.tab_previous = false
-	}
 	ui_backdrop(state)
 	// The machine side gets what the player's slots leave of the safe
 	// area's width, wraps its slots to it, and scrolls when the panel is
@@ -515,9 +511,10 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// Laid out for the row with Clear filter on every panel, so Sort and
 	// the others keep their places whether it shows or not.
 	button := touch ? ui_touch_row(state, machine_touch_buttons(machine_slots.filter_shown), machine_touch_buttons(true)) : .None
-	player_slots.activated, machine_slots.activated, machine_slots.hand_activated = apply_quick_move_input(state, screen_context, handle, slots, player_slots, machine_slots)
+	modifiers := slot_modifier_input(state^, stack_is_empty(player.held.stack))
+	player_slots.activated, machine_slots.activated, machine_slots.hand_activated = apply_quick_move_input(state, screen_context, handle, slots, player_slots, machine_slots, modifiers)
 	state.active_slot = active_slot_after_focus(state.active_slot, player_slots.focused, machine_slots.focused)
-	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
+	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots, modifiers)
 	// Not during the Even Distribution gesture, as the slot input.
 	if !state.distribute.active {
 		apply_machine_slot_button(state, screen_context, handle, machine.kind, slots, state.active_slot, button)
@@ -559,15 +556,13 @@ queue_filter_change :: proc(screen_context: Screen_Context, handle: Entity_Handl
 	}
 }
 
-// The quick move (quick_transfer.odin): R2 or Q on a slot, or Left
-// Control with a click on it (advance_slot_drag focuses the pressed
-// slot). Its press takes the slot's activation, since R2 is Confirm too,
-// so the stack is not also picked up; returns the activations left for
-// the ordinary slot input. On an inserter's hand slot it moves the hand
-// into the inventory.
-apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) -> (player_activated, machine_activated: int, hand_activated: bool) {
-	input := state.input
-	modifier_click := input.quick_move_modifier && state.click
+// The quick move (quick_transfer.odin): R1 with A on a slot, Left
+// Control with Enter or a click on it (advance_slot_drag focuses the
+// pressed slot). A modified press, the split's too, takes the slot's
+// activation, so the stack is not also picked up. Returns the
+// activations left for the ordinary slot input. On an inserter's hand
+// slot the quick move moves the hand into the inventory.
+apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result, modifiers: Slot_Modifier_Input) -> (player_activated, machine_activated: int, hand_activated: bool) {
 	target, found := quick_move_target(player_slots, machine_slots.grid)
 	on_hand := quick_move_targets_hand(machine_slots, found)
 	found = found && !on_hand
@@ -577,8 +572,8 @@ apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context,
 	}
 	quick_input := Quick_Move_Input {
 		panel   = handle,
-		pressed = input.quick_move || modifier_click,
-		down    = input.quick_move_down || (input.quick_move_modifier && state.pointer_held),
+		pressed = modifiers.quick_move_pressed,
+		down    = modifiers.quick_move_down,
 		seconds = state.frame_seconds,
 		found   = found,
 		target  = target,
@@ -592,7 +587,7 @@ apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context,
 	if quick_input.pressed && on_hand {
 		queue_slot_command(state, screen_context, Inserter_Hand_Command{inserter = handle, into_inventory = true})
 	}
-	if quick_input.pressed {
+	if modifiers.quick_move_pressed || modifiers.split_pressed {
 		return -1, -1, false
 	}
 	return player_slots.activated, machine_slots.activated, machine_slots.hand_activated
@@ -612,7 +607,7 @@ filter_glyph_bar :: proc(state: ^Ui_State) {
 	ui_glyph_bar(state, hints[:])
 }
 
-apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) {
+apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result, modifiers: Slot_Modifier_Input) {
 	player, items := screen_context.player, screen_context.items
 	recipes, ranks := screen_context.recipes, screen_context.item_sort_ranks
 	input := state.input
@@ -623,7 +618,7 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 		player_input := Inventory_Slot_Input {
 			activated      = player_slots.activated,
 			focused        = player_slots.focused,
-			secondary      = input.secondary,
+			secondary      = modifiers.split_pressed,
 			context_action = sorts && sort_target_grid(state.active_slot.grid) == .Main,
 			drag_drop      = state.slot_drag.released,
 			drag_hand      = dragged_hand_item(screen_context),
@@ -634,7 +629,7 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 		activated      = machine_slots.activated,
 		focused        = machine_slots.focused,
 		confirm_down   = input.confirm_down || state.pointer_held,
-		secondary      = input.secondary,
+		secondary      = modifiers.split_pressed,
 		context_action = sorts && sort_target_grid(state.active_slot.grid) == .Machine,
 		drag_drop      = state.slot_drag.released,
 		drag_hand      = dragged_hand_item(screen_context),
@@ -647,8 +642,8 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 }
 
 // The touch row's slot button (0125) on the active grid: Sort and Split as X
-// and L2 on the active slot, the transfers into the grid the panel pairs
-// it with (transfer_target_grid).
+// and L1 with A on the active slot, the transfers into the grid the panel
+// pairs it with (transfer_target_grid).
 apply_machine_slot_button :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, active: Active_Slot, button: Touch_Button) {
 	player, ranks := screen_context.player, screen_context.item_sort_ranks
 	queue_slot_commands(state, screen_context, player_slot_button_commands(player.inventory, player.held, active, button, ranks))

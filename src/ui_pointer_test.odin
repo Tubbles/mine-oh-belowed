@@ -609,8 +609,8 @@ test_a_tap_outside_ends_a_system_keyboard_entry_first :: proc(t: ^testing.T) {
 	}
 }
 
-// A tap on a recipe selects it and queues nothing; Craft, Craft 5 and
-// Cancel last act on the selected recipe.
+// A tap on a recipe selects it and queues nothing. Craft, Craft 5, Cancel
+// last and Craft max act on the selected recipe.
 @(test)
 test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -657,6 +657,13 @@ test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 	screen_test_frame(audit, &state, {confirm = true, pointer_is_touch = true})
 	run_audit_tick(audit)
 	testing.expect_value(t, queued_craft_count(player.crafting), RECIPE_CRAFT_MANY_COUNT + 1)
+	// Craft max (0276): the most crafts the planner accepts after the queue.
+	screen_context := audit_screen_context(audit)
+	most := planned_craft_count(player.crafting, player.inventory, audit.content.recipes, screen_context.unlocks^, plank, screen_craft_makers(screen_context), screen_context.free_crafting)
+	testing.expect(t, most > 1)
+	tap_widget(audit, &state, slot_button_id("touch_button_craft_most"))
+	run_audit_tick(audit)
+	testing.expect_value(t, queued_craft_count(player.crafting), RECIPE_CRAFT_MANY_COUNT + 1 + most)
 }
 
 // A tap on a technology selects it and starts nothing; Research starts it.
@@ -705,7 +712,7 @@ test_touch_row_buttons_by_screen :: proc(t: ^testing.T) {
 	testing.expect(t, .Clear_Filter not_in machine_touch_buttons(false))
 	testing.expect(t, .Back in machine_touch_buttons(false))
 	testing.expect_value(t, recipe_touch_buttons(true), Touch_Buttons{.Choose_Recipe, .Back})
-	testing.expect_value(t, recipe_touch_buttons(false), Touch_Buttons{.Craft, .Craft_Five, .Cancel_Craft, .Back})
+	testing.expect_value(t, recipe_touch_buttons(false), Touch_Buttons{.Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Back})
 	testing.expect(t, .Drop in INVENTORY_TOUCH_BUTTONS)
 	testing.expect(t, .Research in TECHNOLOGY_TOUCH_BUTTONS)
 	testing.expect_value(t, map_touch_zoom_step(.Zoom_In), -1)
@@ -734,6 +741,7 @@ test_the_row_ignores_a_hidden_selection :: proc(t: ^testing.T) {
 	touch_screen_frame(audit, &state)
 	tap_widget(audit, &state, slot_button_id("touch_button_craft"))
 	tap_widget(audit, &state, slot_button_id("touch_button_craft_five"))
+	tap_widget(audit, &state, slot_button_id("touch_button_craft_most"))
 	testing.expect_value(t, player.crafting.count, 0)
 	destroy_ui_state(&state)
 	// A researched technology, hidden by Hide researched.

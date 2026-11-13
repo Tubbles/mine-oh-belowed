@@ -1,9 +1,10 @@
 package game
 
-// Quick transfer in the machine panel (work item 0078). A quick move (R2,
-// Q, or Left Control with a click) moves the focused stack to the other
-// side: from the inventory into the machine the way an inserter would put
-// it (entity_accepts routes fuel to the fuel slot, ore to the input, and
+// Quick transfer in the machine panel (work item 0078). A quick move (R1
+// with A, or Left Control with Enter or a click, 0276) moves the focused
+// stack to the other side: from the inventory into the machine the way an
+// inserter would put it (entity_accepts routes fuel to the fuel slot, ore
+// to the input, and
 // the insertion limits hold), from a machine slot into the inventory with
 // inventory_add, and from an inserter's hand slot into the inventory
 // (work item 0079). A second press on the same side within

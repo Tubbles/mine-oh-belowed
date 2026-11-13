@@ -2,10 +2,11 @@ package game
 
 import "core:testing"
 
-// The bumpers step the inventory tab strip from each of its screens,
-// wrapping, by replacing the top screen (work item 0094).
+// The triggers (the window step, 0276) step the inventory tab strip from
+// each of its screens, wrapping, by replacing the top screen (work item
+// 0094). The tab step is left to the screen's own tabs.
 @(test)
-test_bumpers_step_the_inventory_tab_strip :: proc(t: ^testing.T) {
+test_the_triggers_step_the_inventory_tab_strip :: proc(t: ^testing.T) {
 	strip := Ui_Rectangle{0, 0, 600, 56}
 	Step :: struct {
 		from, next, previous: Screen,
@@ -16,34 +17,37 @@ test_bumpers_step_the_inventory_tab_strip :: proc(t: ^testing.T) {
 		{.Technologies, .Inventory, .Recipes},
 	}
 	for step in steps {
-		for input in ([2]Ui_Input{{tab_next = true}, {tab_previous = true}}) {
+		for input in ([2]Ui_Input{{window_next = true}, {window_previous = true}}) {
 			state: Ui_State
 			// Opened from a lab's panel: Back returns there.
 			push_screen(&state.screens, .Machine)
 			push_screen(&state.screens, step.from)
 			test_ui_frame(&state, input)
 			inventory_tabs(&state, strip)
-			testing.expect_value(t, top_screen(state.screens), input.tab_next ? step.next : step.previous)
+			testing.expect_value(t, top_screen(state.screens), input.window_next ? step.next : step.previous)
 			testing.expect_value(t, state.screens.count, 2)
 			testing.expect_value(t, state.screens.screens[0], Screen.Machine)
-			// A frame without a bumper keeps the tab.
+			// A frame without a trigger keeps the tab, and so does the tab step.
 			test_ui_frame(&state, {})
 			inventory_tabs(&state, strip)
-			testing.expect_value(t, top_screen(state.screens), input.tab_next ? step.next : step.previous)
+			testing.expect_value(t, top_screen(state.screens), input.window_next ? step.next : step.previous)
+			test_ui_frame(&state, {tab_next = true})
+			inventory_tabs(&state, strip)
+			testing.expect_value(t, top_screen(state.screens), input.window_next ? step.next : step.previous)
 			destroy_ui_state(&state)
 		}
 	}
 }
 
-// On the keyboard E is Open_Inventory and Tab_Next: it closes the strip
-// from any of its screens instead of stepping.
+// On the keyboard E is Open_Inventory and Window_Next: it closes the
+// strip from any of its screens instead of stepping.
 @(test)
 test_open_inventory_closes_the_strip :: proc(t: ^testing.T) {
 	strip := Ui_Rectangle{0, 0, 600, 56}
 	for screen in inventory_tab_screens {
 		state: Ui_State
 		push_screen(&state.screens, screen)
-		test_ui_frame(&state, {open_inventory = true, tab_next = true})
+		test_ui_frame(&state, {open_inventory = true, window_next = true})
 		inventory_tabs(&state, strip)
 		testing.expect_value(t, top_screen(state.screens), screen)
 		handle_screen_keys(&state)
@@ -362,8 +366,8 @@ test_a_slot_emptied_before_the_drag_moves_nothing :: proc(t: ^testing.T) {
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 }
 
-// Left Control with a click quick moves the pressed slot, also when the
-// focus is elsewhere, and starts no drag.
+// Left Control (Modifier_Five) with a click quick moves the pressed slot,
+// also when the focus is elsewhere, and starts no drag.
 @(test)
 test_a_left_control_click_quick_moves_the_pressed_slot :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -377,7 +381,7 @@ test_a_left_control_click_quick_moves_the_pressed_slot :: proc(t: ^testing.T) {
 	at := widget_centre(state, slot)
 	to := widget_centre(state, inventory_slot_id("grid", 4))
 	click := pointer_input(at, true, pressed = true, moved = false)
-	click.quick_move_modifier = true
+	click.modifier_five = true
 	slot_test_frame(audit, &state, click)
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
@@ -385,6 +389,81 @@ test_a_left_control_click_quick_moves_the_pressed_slot :: proc(t: ^testing.T) {
 	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
+}
+
+// Work item 0276: with an empty hand R1 held makes A a quick move and L1
+// held a split. With a stack in hand A acts alone.
+@(test)
+test_slot_act_follows_the_modifier_and_the_hand :: proc(t: ^testing.T) {
+	testing.expect_value(t, slot_act(.None, true), Slot_Act.Primary)
+	testing.expect_value(t, slot_act(.Five, true), Slot_Act.Quick_Move)
+	testing.expect_value(t, slot_act(.Most, true), Slot_Act.Split)
+	testing.expect_value(t, slot_act(.None, false), Slot_Act.Primary)
+	testing.expect_value(t, slot_act(.Five, false), Slot_Act.Primary)
+	testing.expect_value(t, slot_act(.Most, false), Slot_Act.Primary)
+}
+
+// Work item 0276: A with R1 held quick moves the focused stack, with L1
+// held lifts the larger half, with both held lifts the stack. With a
+// stack in hand R1 changes nothing. On a chest's slot R1 with A moves the stack
+// into the inventory, and with the mouse Shift and Ctrl held with a click
+// split and quick move the pressed slot.
+@(test)
+test_modifiers_with_a_on_a_slot :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	player := drag_test_inventory(audit, &state)
+	coal := player.inventory.slots[3]
+	slot := inventory_slot_id("hotbar", 3)
+	state.focus = slot
+	slot_test_frame(audit, &state, {confirm = true, modifier_five = true})
+	testing.expect_value(t, player.held.stack, EMPTY_STACK)
+	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
+	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
+	stone := test_item(audit.content.items, "stone")
+	player.inventory.slots[3] = {stone, 4}
+	slot_test_frame(audit, &state, {confirm = true, modifier_most = true})
+	testing.expect_value(t, player.held.stack, Item_Stack{stone, 2})
+	testing.expect_value(t, player.inventory.slots[3], Item_Stack{stone, 2})
+	player.held = EMPTY_HELD_STACK
+	player.inventory.slots[3] = {stone, 4}
+	slot_test_frame(audit, &state, {confirm = true, modifier_five = true, modifier_most = true})
+	testing.expect_value(t, player.held.stack, Item_Stack{stone, 4})
+	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
+	// The stone in hand: R1 with A places it on the empty slot.
+	slot_test_frame(audit, &state, {confirm = true, modifier_five = true})
+	testing.expect_value(t, player.held.stack, EMPTY_STACK)
+	testing.expect_value(t, player.inventory.slots[3], Item_Stack{stone, 4})
+	// The mouse: Shift with a click lifts the larger half of the pressed
+	// slot, Ctrl with a click quick moves it.
+	at := widget_centre(state, slot)
+	click := pointer_input(at, true, pressed = true, moved = false)
+	click.modifier_most = true
+	slot_test_frame(audit, &state, click)
+	testing.expect_value(t, player.held.stack, Item_Stack{stone, 2})
+	slot_test_frame(audit, &state, pointer_input(at, false, moved = false))
+	player.held = EMPTY_HELD_STACK
+	player.inventory.slots[3] = {stone, 4}
+	// A second quick move within half a second moves every stack of the
+	// first one's item: start afresh.
+	state.quick_move = {}
+	click.modifier_most, click.modifier_five = false, true
+	slot_test_frame(audit, &state, click)
+	testing.expect_value(t, player.held.stack, EMPTY_STACK)
+	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
+	testing.expect_value(t, inventory_count(player.inventory, stone), 4)
+	// A chest's slot.
+	chest := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&chest)
+	chest_player, chest_slots := chest_test_panel(audit, &chest)
+	chest_slots[0] = coal
+	tap_widget(audit, &chest, machine_panel_slot_id("chest", 0))
+	slot_test_frame(audit, &chest, {confirm = true, modifier_five = true})
+	testing.expect_value(t, chest_slots[0], EMPTY_STACK)
+	testing.expect_value(t, chest_player.held.stack, EMPTY_STACK)
+	testing.expect_value(t, inventory_count(chest_player.inventory, coal.item), int(coal.count))
 }
 
 // Confirm sounds on the pick up and on the drop, not on a tap.
@@ -410,6 +489,69 @@ test_a_drag_sounds_on_the_pick_up_and_the_drop :: proc(t: ^testing.T) {
 	testing.expect(t, .Confirm not_in state.sound_events)
 	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect(t, .Confirm in state.sound_events)
+}
+
+// The pointer input with Shift (Most) or Ctrl (Five) held.
+with_confirm_modifier :: proc(input: Ui_Input, modifier: Confirm_Modifier) -> Ui_Input {
+	result := input
+	result.modifier_five, result.modifier_most = modifier == .Five, modifier == .Most
+	return result
+}
+
+// Fix round of 0276: off the item slots a click with Shift or Ctrl held
+// is a plain one. With the focus on a hotbar stack of five, the click on
+// the panel's empty space lifts and moves nothing, and the tap off the
+// panel closes the screen with the stack whole.
+@(test)
+test_a_modified_click_off_the_slots_is_a_plain_click :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	for modifier in ([2]Confirm_Modifier{.Most, .Five}) {
+		state := Ui_State{theme = audit.theme}
+		defer destroy_ui_state(&state)
+		player := drag_test_inventory(audit, &state)
+		coal := player.inventory.slots[3]
+		state.focus = inventory_slot_id("hotbar", 3)
+		panel, found := audit_panel_rectangle(state.panels[:], ui_hash(0, "inventory", -1))
+		testing.expect(t, found)
+		empty := [2]f32{panel.x + 4, panel.y + 4}
+		testing.expect_value(t, widget_under(state.widgets[:], empty), 0)
+		slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(empty, true, pressed = true, moved = false), modifier))
+		slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(empty, false, moved = false), modifier))
+		testing.expectf(t, player.held.stack == EMPTY_STACK, "%v: holds %v", modifier, player.held.stack)
+		testing.expectf(t, player.inventory.slots[3] == coal, "%v: hotbar 3 holds %v", modifier, player.inventory.slots[3])
+		testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+		outside := [2]f32{100, 400}
+		slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(outside, true, pressed = true, moved = false), modifier))
+		slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(outside, false, moved = false), modifier))
+		testing.expectf(t, state.screens.count == 0, "%v: %d screens open", modifier, state.screens.count)
+		testing.expectf(t, player.held.stack == EMPTY_STACK, "%v: holds %v", modifier, player.held.stack)
+		testing.expectf(t, player.inventory.slots[3] == coal, "%v: hotbar 3 holds %v", modifier, player.inventory.slots[3])
+	}
+}
+
+// Fix round of 0276: with a stack in hand a click with Ctrl held drags as
+// a plain one and sounds once, on the drop.
+@(test)
+test_a_modified_click_with_a_stack_in_hand_sounds_on_the_drop :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	player := drag_test_inventory(audit, &state)
+	coal := player.inventory.slots[3]
+	state.focus = inventory_slot_id("hotbar", 3)
+	slot_test_frame(audit, &state, {confirm = true})
+	slot_test_frame(audit, &state, {})
+	testing.expect_value(t, player.held.stack, coal)
+	to := widget_centre(state, inventory_slot_id("grid", 0))
+	state.sound_events = {}
+	slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(to, true, pressed = true), .Five))
+	testing.expect(t, .Confirm not_in state.sound_events)
+	slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(to, false, moved = false), .Five))
+	testing.expect(t, .Confirm in state.sound_events)
+	testing.expect_value(t, player.held.stack, EMPTY_STACK)
+	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
 }
 
 // Work item 0125: the touch row of the slot screens.

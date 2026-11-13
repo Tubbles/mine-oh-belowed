@@ -1,5 +1,6 @@
 package game
 
+import "core:reflect"
 import "core:strings"
 import "core:testing"
 import rl "shared:raylib"
@@ -57,17 +58,17 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_TRIGGER_2, .Mine},
 	{.LEFT_TRIGGER_2, .Place},
 	{.LEFT_TRIGGER_2, .Use_Item},
-	{.LEFT_TRIGGER_2, .Menu_Secondary},
 	{.MIDDLE_LEFT, .Open_Map},
 	{.MIDDLE_RIGHT, .Pause},
-	{.RIGHT_TRIGGER_2, .Confirm},
-	{.RIGHT_TRIGGER_2, .Menu_Quick_Move},
 	{.LEFT_FACE_UP, .Navigate_Up},
 	{.LEFT_FACE_DOWN, .Navigate_Down},
 	{.LEFT_FACE_LEFT, .Navigate_Left},
 	{.LEFT_FACE_RIGHT, .Navigate_Right},
-	{.LEFT_TRIGGER_1, .Tab_Previous},
-	{.RIGHT_TRIGGER_1, .Tab_Next},
+	// The window step and the confirm modifiers (0276).
+	{.LEFT_TRIGGER_2, .Window_Previous},
+	{.RIGHT_TRIGGER_2, .Window_Next},
+	{.LEFT_TRIGGER_1, .Modifier_Most},
+	{.RIGHT_TRIGGER_1, .Modifier_Five},
 	{.RIGHT_FACE_UP, .Info_Panel},
 	{.RIGHT_FACE_LEFT, .Context_Action},
 	{.RIGHT_THUMB, .Menu_Drop},
@@ -90,7 +91,7 @@ reference_keys := [?]Reference_Key {
 	{.ENTER, .Confirm},
 	{.BACKSPACE, .Back},
 	{.LEFT_CONTROL, .Sneak},
-	{.LEFT_SHIFT, .Menu_Secondary},
+	{.LEFT_SHIFT, .Modifier_Most},
 	{.F, .Interact},
 	{.LEFT_SHIFT, .Sprint_Hold},
 	{.LEFT_BRACKET, .Hotbar_Previous},
@@ -121,12 +122,13 @@ reference_keys := [?]Reference_Key {
 	{.DOWN, .Navigate_Down},
 	{.LEFT, .Navigate_Left},
 	{.RIGHT, .Navigate_Right},
-	{.Q, .Tab_Previous},
-	{.E, .Tab_Next},
+	{.Q, .Window_Previous},
+	{.E, .Window_Next},
+	{.LEFT_BRACKET, .Tab_Previous},
+	{.RIGHT_BRACKET, .Tab_Next},
 	{.R, .Info_Panel},
 	{.F, .Context_Action},
-	{.Q, .Menu_Quick_Move},
-	{.LEFT_CONTROL, .Menu_Quick_Move_Modifier},
+	{.LEFT_CONTROL, .Modifier_Five},
 	{.X, .Menu_Drop},
 }
 
@@ -170,8 +172,8 @@ reference_sdl3_buttons := [?]Reference_Sdl3_Button {
 	{.DPAD_DOWN, .Navigate_Down},
 	{.DPAD_LEFT, .Navigate_Left},
 	{.DPAD_RIGHT, .Navigate_Right},
-	{.LEFT_SHOULDER, .Tab_Previous},
-	{.RIGHT_SHOULDER, .Tab_Next},
+	{.LEFT_SHOULDER, .Modifier_Most},
+	{.RIGHT_SHOULDER, .Modifier_Five},
 	{.NORTH, .Info_Panel},
 	{.WEST, .Context_Action},
 	{.LEFT_PADDLE2, .Info_Panel},
@@ -207,7 +209,7 @@ reference_sdl3_bindings :: proc() -> Input_Bindings {
 	for binding in reference_sdl3_buttons {
 		tables.gamepad_buttons[int(binding.button)] += {binding.action}
 	}
-	tables.gamepad_triggers = {.Right = {.Mine, .Confirm, .Menu_Quick_Move}, .Left = {.Place, .Use_Item, .Menu_Secondary}}
+	tables.gamepad_triggers = {.Right = {.Mine, .Window_Next}, .Left = {.Place, .Use_Item, .Window_Previous}}
 	tables.trackpads[LEFT_TOUCHPAD_INDEX] = {.Hotbar_Radial}
 	return tables
 }
@@ -334,6 +336,76 @@ test_binding_errors_name_the_file :: proc(t: ^testing.T) {
 	}
 	_, problem := parse_bindings_file(transmute([]byte)string(`bindings = [{action = "Jump" key = "J"}]`), "data/bindings.sjson")
 	expect_problem_mentions(t, problem, "data/bindings.sjson", "unknown key bindings[0].key")
+}
+
+// Work item 0276: a configuration of an older build that names a removed
+// action loads: the entry is skipped with a log line, and a typo still
+// fails.
+@(test)
+test_a_retired_action_in_a_configuration_is_ignored :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	provenance := make(Configuration_Provenance)
+	provenance["bindings"] = "/config/config.sjson"
+	entries := [?]Binding_Entry {
+		{action = "Menu_Secondary", device = "gamepad", control = "LEFT_TRIGGER", binding_context = "menu"},
+		{action = "Menu_Quick_Move", device = "gamepad", control = "RIGHT_TRIGGER", binding_context = "menu"},
+		{action = "Menu_Quick_Move_Modifier", device = "keyboard", control = "LEFT_CONTROL", binding_context = "menu"},
+		{action = "Jump", device = "keyboard", control = "J", binding_context = "world"},
+	}
+	bindings, problem := resolve_bindings(entries[:], provenance)
+	testing.expect_value(t, problem, "")
+	if testing.expect_value(t, len(bindings), 1) {
+		testing.expect_value(t, bindings[0].action, Action.Jump)
+	}
+	expected := [?]Retired_Action{{"Menu_Secondary", "Modifier_Most"}, {"Menu_Quick_Move", "Modifier_Five"}, {"Menu_Quick_Move_Modifier", "Modifier_Five"}}
+	for pair in expected {
+		replacement, retired := retired_action_replacement(pair.name)
+		testing.expectf(t, retired && replacement == pair.replacement, "%s: %q %v", pair.name, replacement, retired)
+		_, is_action := reflect.enum_from_name(Action, replacement)
+		testing.expectf(t, is_action, "%s is no action", replacement)
+	}
+	_, jump_retired := retired_action_replacement("Jump")
+	testing.expect(t, !jump_retired)
+	typo := [?]Binding_Entry{{action = "Menu_Secondar", device = "gamepad", control = "LEFT_TRIGGER", binding_context = "menu"}}
+	_, typo_problem := resolve_bindings(typo[:], provenance)
+	expect_problem_mentions(t, typo_problem, "/config/config.sjson", "bindings[0]", `unknown action "Menu_Secondar"`)
+}
+
+// The actions a device's control carries in menus: those of the menu and
+// both contexts.
+menu_actions_of :: proc(bindings: []Binding, device: Binding_Device, control: string) -> Action_Set {
+	actions: Action_Set
+	for binding in bindings {
+		if binding.binding_context != .World && binding.device == device && binding.control == control {
+			actions += {binding.action}
+		}
+	}
+	return actions
+}
+
+// Work item 0276: no control carries two meanings in menus, but X (the
+// gamepad's Open_Inventory and Context_Action, handle_screen_keys) and
+// the keyboard's E (Open_Inventory and Window_Next, inventory_tabs),
+// whose screens decide between the two. No control of the window step
+// or a confirm modifier is Confirm too.
+@(test)
+test_no_menu_control_carries_two_menu_meanings :: proc(t: ^testing.T) {
+	bindings := shipped_default_bindings(t)
+	without_confirm := Action_Set{.Window_Previous, .Window_Next, .Modifier_Five, .Modifier_Most}
+	for binding in bindings {
+		actions := menu_actions_of(bindings, binding.device, binding.control)
+		switch {
+		case binding.device == .Gamepad && binding.control == "WEST":
+			testing.expect_value(t, actions, Action_Set{.Open_Inventory, .Context_Action})
+		case binding.device == .Keyboard && binding.control == "E":
+			testing.expect_value(t, actions, Action_Set{.Open_Inventory, .Window_Next})
+		case:
+			testing.expectf(t, card(actions) <= 1, "%v %s carries %v in menus", binding.device, binding.control, actions)
+		}
+		if binding.action in without_confirm {
+			testing.expectf(t, .Confirm not_in actions, "%v %s carries %v and Confirm", binding.device, binding.control, binding.action)
+		}
+	}
 }
 
 @(test)

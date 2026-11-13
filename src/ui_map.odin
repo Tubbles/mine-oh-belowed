@@ -21,9 +21,9 @@ import "core:slice"
 // for the entities and records. The biome of every pixel comes from the
 // generator (sample_column, pure), sampled only when the frame changes and
 // reused for the pixels a pan keeps; the legend lists the biomes shown
-// and marks the player's. Bumpers, the mouse wheel or the right
-// stick zoom, the left stick, the movement keys or a pointer drag pan, B
-// or Open_Map closes.
+// and marks the player's. The right stick (up and down, or a flick), `[`
+// and `]` or the mouse wheel zoom, the left stick, the movement keys or a
+// pointer drag pan, B or Open_Map closes.
 
 MAP_IMAGE_SIZE :: 256
 MAP_ZOOM_LEVEL_COUNT :: 5
@@ -377,9 +377,12 @@ paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, records: ^Ga
 
 // Input.
 
-// Bumpers and the wheel step at once, the right stick steps while held.
-// The right bumper, the wheel up and the stick up zoom in (fewer blocks
-// per pixel).
+// The tab step (the right stick's flick, `[` and `]`) and the wheel step
+// at once, the right stick up or down steps while held. The flick right,
+// `]`, the wheel up and the stick up zoom in (fewer blocks per pixel).
+// On the flick's frame (a tab step with the stick sideways) the stick's
+// vertical part does not zoom as well: the flick's step starts the
+// stick's repeat wait instead (0276).
 map_zoom_step :: proc(view: ^Map_View, input: Ui_Input, seconds: f32) -> int {
 	step := 0
 	if input.tab_previous || input.scroll_wheel < 0 {
@@ -388,13 +391,16 @@ map_zoom_step :: proc(view: ^Map_View, input: Ui_Input, seconds: f32) -> int {
 	if input.tab_next || input.scroll_wheel > 0 {
 		step -= 1
 	}
-	stick := input.right_stick.y
-	if abs(stick) < MAP_STICK_ZOOM_THRESHOLD {
+	stick := input.right_stick
+	if abs(stick.y) < MAP_STICK_ZOOM_THRESHOLD {
 		view.stick_zoom_seconds = 0
 		return step
 	}
+	flicked := (input.tab_previous || input.tab_next) && abs(stick.x) > abs(stick.y)
 	if view.stick_zoom_seconds <= 0 {
-		step += stick > 0 ? -1 : 1
+		if !flicked {
+			step += stick.y > 0 ? -1 : 1
+		}
 		view.stick_zoom_seconds = MAP_STICK_ZOOM_SECONDS
 	}
 	view.stick_zoom_seconds -= seconds
@@ -603,14 +609,14 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		view.zoom = clamp(view.zoom + map_touch_zoom_step(ui_touch_row(state, MAP_TOUCH_BUTTONS)), 0, MAP_ZOOM_LEVEL_COUNT - 1)
 		return
 	}
-	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_zoom")}, {.Back, text("hint_close")}}
+	hints := [?]Glyph_Hint{{.Tabs, text("hint_zoom")}, {.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])
 }
 
-// The touch row (0137): the bumpers' zoom as buttons.
+// The touch row (0137): the zoom steps as buttons.
 MAP_TOUCH_BUTTONS :: Touch_Buttons{.Zoom_In, .Zoom_Out, .Back}
 
-// Zoom in shows fewer blocks per pixel, as the right bumper.
+// Zoom in shows fewer blocks per pixel, as the tab step's next.
 map_touch_zoom_step :: proc(button: Touch_Button) -> int {
 	#partial switch button {
 	case .Zoom_In:

@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:reflect"
 import "core:strings"
+import "platform"
 import rl "shared:raylib"
 import sdl "vendor:sdl3"
 
@@ -230,12 +231,37 @@ resolve_binding :: proc(entry: Binding_Entry, key_path, source: string) -> (bind
 	return Binding{action = action, device = device, control = entry.control, binding_context = binding_context, backends = backends, source = source}, ""
 }
 
-// The source of each entry comes from the provenance of its key path.
+// An action a configuration of an older build may still name (0276), and
+// the action that took its place.
+Retired_Action :: struct {
+	name, replacement: string,
+}
+
+@(rodata)
+retired_actions := [?]Retired_Action{{"Menu_Secondary", "Modifier_Most"}, {"Menu_Quick_Move", "Modifier_Five"}, {"Menu_Quick_Move_Modifier", "Modifier_Five"}}
+
+retired_action_replacement :: proc(name: string) -> (replacement: string, retired: bool) {
+	for action in retired_actions {
+		if action.name == name {
+			return action.replacement, true
+		}
+	}
+	return "", false
+}
+
+// The source of each entry comes from the provenance of its key path. An
+// entry naming a retired action is skipped with a log line, as a retired
+// settings key is: a press became a held modifier, so it is not remapped.
 resolve_bindings :: proc(entries: []Binding_Entry, provenance: Configuration_Provenance, allocator := context.allocator) -> (bindings: []Binding, problem: string) {
 	resolved := make([dynamic]Binding, 0, len(entries), allocator)
 	for entry, index in entries {
 		key_path := fmt.tprintf("bindings[%d]", index)
-		binding, binding_problem := resolve_binding(entry, key_path, source_of_key_path(provenance, key_path))
+		source := source_of_key_path(provenance, key_path)
+		if replacement, retired := retired_action_replacement(entry.action); retired {
+			platform.log_printf("%s: %s.action: %s is no longer used and is ignored (%s took its place)", source, key_path, entry.action, replacement)
+			continue
+		}
+		binding, binding_problem := resolve_binding(entry, key_path, source)
 		if binding_problem != "" {
 			return nil, binding_problem
 		}

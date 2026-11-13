@@ -16,8 +16,9 @@ INVENTORY_ROWS :: PLAYER_GRID_SLOT_COUNT / INVENTORY_COLUMNS
 HELD_STACK_FOCUS_OFFSET :: [2]f32{UI_SLOT_SIZE * 0.4, -UI_SLOT_SIZE * 0.4}
 
 // What one frame of the screen did to the player's slots, as inventory
-// indices (-1 for none). drag_drop: the activation is a pointer drag's
-// drop (Slot_Drag.released), of a stack of drag_hand (dragged_hand_item).
+// indices (-1 for none). secondary: the split (L1 with A, or the
+// pointer's rest). drag_drop: the activation is a pointer drag's drop
+// (Slot_Drag.released), of a stack of drag_hand (dragged_hand_item).
 Inventory_Slot_Input :: struct {
 	activated:      int,
 	focused:        int,
@@ -27,7 +28,7 @@ Inventory_Slot_Input :: struct {
 	drag_hand:      Item_Id,
 }
 
-// A on a slot, else L2 (split) on the focused slot and X (sort), as the
+// A on a slot, else the split on the focused slot and X (sort), as the
 // slot commands the screen queues (player_command_slots.odin), read off
 // the hand and the slots the frame shows. A press that queues A queues
 // nothing else, since the split and the sort need the hand the A leaves.
@@ -281,11 +282,6 @@ selected_hotbar_slot_id :: proc(state: ^Ui_State, player: ^Player) -> Ui_Id {
 
 inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
-	// Q is also Tab_Previous; while it quick moves it does not step the
-	// tab strip.
-	if state.input.quick_move {
-		state.input.tab_previous = false
-	}
 	ui_backdrop(state)
 	// The heading repeats the first tab's name, so it goes where the panel
 	// would not fit the area.
@@ -310,7 +306,8 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	slots := player_slot_region(state, content, player, items)
 	ui_panel_end(state)
-	slots.activated = apply_inventory_quick_move_input(state, screen_context, slots)
+	modifiers := slot_modifier_input(state^, stack_is_empty(player.held.stack))
+	slots.activated = apply_inventory_quick_move_input(state, screen_context, slots, modifiers)
 	state.active_slot = active_slot_after_focus(state.active_slot, slots.focused, -1)
 	active := state.active_slot
 	touch := touch_row_shows(state)
@@ -323,7 +320,7 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	slot_input := Inventory_Slot_Input {
 		activated      = slots.activated,
 		focused        = slots.focused,
-		secondary      = state.input.secondary,
+		secondary      = modifiers.split_pressed,
 		context_action = state.input.context_action && !configures && sort_target_grid(active.grid) == .Main,
 		drag_drop      = state.slot_drag.released,
 		drag_hand      = dragged_hand_item(screen_context),
@@ -424,9 +421,9 @@ slot_button_transfer :: proc(screen: Slot_Screen_Kind, active: Active_Slot, acti
 	return {}
 }
 
-// Sort and Split on the player's active slot, as X and L2 on it: Sort
-// sorts the main grid from the main grid and from the hotbar, which keeps
-// its order (sort_target_grid).
+// Sort and Split on the player's active slot, as X and L1 with A on it:
+// Sort sorts the main grid from the main grid and from the hotbar, which
+// keeps its order (sort_target_grid).
 player_slot_button_commands :: proc(inventory: Inventory, held: Held_Stack, active: Active_Slot, button: Touch_Button, ranks: []u16) -> []Player_Command {
 	on_player := active.grid == .Hotbar || active.grid == .Main
 	input := Inventory_Slot_Input {
@@ -438,19 +435,59 @@ player_slot_button_commands :: proc(inventory: Inventory, held: Held_Stack, acti
 	return inventory_slot_commands(inventory, held, input, ranks)
 }
 
-// The quick move between the hotbar and the backpack: R2 or Q on the
-// focused slot, or Left Control with a click on a slot, as
-// apply_quick_move_input in the machine panel. Its press takes the
-// slot's activation, since R2 is Confirm too; returns the activation
-// left for the ordinary slot input.
-apply_inventory_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, slots: Slot_Grid_Result) -> (activated: int) {
-	input := state.input
+// What A does on a slot (0276): with an empty hand R1 held quick moves
+// and L1 held splits. With a stack in hand A acts alone.
+Slot_Act :: enum u8 {
+	Primary,
+	Quick_Move,
+	Split,
+}
+
+slot_act :: proc(modifier: Confirm_Modifier, hand_empty: bool) -> Slot_Act {
+	if !hand_empty {
+		return .Primary
+	}
+	switch modifier {
+	case .None:
+		return .Primary
+	case .Five:
+		return .Quick_Move
+	case .Most:
+		return .Split
+	}
+	return .Primary
+}
+
+// One frame of the modified A on the slot screens: the quick move's
+// press and hold, and the split, the pointer's rest on a stack included.
+Slot_Modifier_Input :: struct {
+	quick_move_pressed: bool,
+	quick_move_down:    bool,
+	split_pressed:      bool,
+}
+
+slot_modifier_input :: proc(state: Ui_State, hand_empty: bool) -> Slot_Modifier_Input {
+	pressed := state.confirm || state.click
+	act := slot_act(state.confirm_modifier, hand_empty)
+	return Slot_Modifier_Input {
+		quick_move_pressed = pressed && act == .Quick_Move,
+		quick_move_down = (state.input.confirm_down || state.pointer_held) && act == .Quick_Move,
+		split_pressed = (pressed && act == .Split) || state.pointer_split,
+	}
+}
+
+// The quick move between the hotbar and the backpack: R1 with A (Left
+// Control with Enter or a click) on a slot, as apply_quick_move_input in
+// the machine panel. A modified press takes the slot's activation, so
+// neither the quick move nor the split also picks up. Returns the
+// activation left for the ordinary slot input.
+apply_inventory_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, slots: Slot_Grid_Result, modifiers: Slot_Modifier_Input) -> (activated: int) {
 	inventory := screen_context.player.inventory
 	target, found := inventory_quick_move_target(slots.activated >= 0 ? slots.activated : slots.focused)
 	quick_input := Quick_Move_Input {
 		panel   = NO_ENTITY,
-		pressed = input.quick_move || (input.quick_move_modifier && state.click),
-		down    = input.quick_move_down || (input.quick_move_modifier && state.pointer_held),
+		pressed = modifiers.quick_move_pressed,
+		down    = modifiers.quick_move_down,
 		seconds = state.frame_seconds,
 		found   = found,
 		target  = target,
@@ -461,7 +498,7 @@ apply_inventory_quick_move_input :: proc(state: ^Ui_State, screen_context: Scree
 	if step.kind != .None {
 		queue_slot_command(state, screen_context, Quick_Move_Command{machine = NO_ENTITY, step = step})
 	}
-	return quick_input.pressed ? -1 : slots.activated
+	return modifiers.quick_move_pressed || modifiers.split_pressed ? -1 : slots.activated
 }
 
 // The screens of the inventory tab strip, in its order.
@@ -479,18 +516,21 @@ inventory_tab_index :: proc(screen: Screen) -> int {
 }
 
 // The tab strip over the inventory, the recipe browser and the
-// technology screen (work item 0094), drawn by all three: the bumpers
-// (or a click) step between them, wrapping, by replacing the top screen,
-// so Back from any tab returns to what was under the strip. The
-// selection follows the top screen. On the keyboard E is both
-// Open_Inventory and Tab_Next, and there it closes the strip instead
-// (handle_screen_keys).
+// technology screen (work item 0094), drawn by all three: the window step
+// (LT and RT, Q and E, 0276) or a click step between them, wrapping, by
+// replacing the top screen, so Back from any tab returns to what was
+// under the strip. Until 0385's window carousel replaces the strip it
+// reads the window step as its tab step, so the right stick's flick and
+// `[` `]` leave it to the screen's own tabs. The selection follows the
+// top screen. On the keyboard E is both Open_Inventory and Window_Next,
+// and there it closes the strip instead (handle_screen_keys).
 inventory_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) {
 	labels := [?]string{text("inventory_tab_inventory"), text("inventory_tab_recipes"), text("inventory_tab_technologies")}
 	icons := [?]Ui_Icon{.Inventory, .Recipes, .Technologies}
 	current := inventory_tab_index(top_screen(state.screens))
 	state.selections[ui_id(state, "inventory_tabs")] = current
 	input := state.input
+	state.input.tab_previous, state.input.tab_next = input.window_previous, input.window_next
 	if input.open_inventory {
 		state.input.tab_previous, state.input.tab_next = false, false
 	}
@@ -568,9 +608,11 @@ draw_held_stack :: proc(state: ^Ui_State, stack: Item_Stack, items: Item_Registr
 	}
 }
 
-// quick_move: the R2 or Q hint on a focused stack. drop: the Drop hint
+// quick_move: the R1 with A hint on a focused stack. drop: the Drop hint
 // on a focused or held stack (the inventory screen). configure: the
 // context action opens the configure pop-up instead of sorting (0202).
+// A modifier's glyph goes before its Confirm, unlabelled, so the bar
+// drops the pair together (glyph_hints_that_fit).
 inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false, drop := false, configure := false) {
 	if !stack_is_empty(held) {
 		hints := make([dynamic]Glyph_Hint, context.temp_allocator)
@@ -585,13 +627,13 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_m
 	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 	append(&hints, Glyph_Hint{.Confirm, text("hint_pick_up")})
 	if quick_move && !stack_is_empty(focused) {
-		append(&hints, Glyph_Hint{.Quick_Move, text("hint_quick_move")})
+		append(&hints, Glyph_Hint{.Five, ""}, Glyph_Hint{.Confirm, text("hint_quick_move")})
 	}
 	if drop && !stack_is_empty(focused) {
 		append(&hints, Glyph_Hint{.Drop, text("hint_drop")})
 	}
 	if focused.count >= 2 {
-		append(&hints, Glyph_Hint{.Secondary, text("hint_split")})
+		append(&hints, Glyph_Hint{.Most, ""}, Glyph_Hint{.Confirm, text("hint_split")})
 	}
 	append(&hints, Glyph_Hint{.Context_Action, text(configure ? "hint_configure" : "hint_sort")}, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])

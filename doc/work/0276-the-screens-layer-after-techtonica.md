@@ -1,6 +1,6 @@
 # 0276: The screens layer after Techtonica
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 ## Goal
 
@@ -256,3 +256,14 @@ Every screen as today but its controls: the strip on the triggers, the tabs on t
 ### Decisions (2026-11-13)
 
 User: B pops one level (unchanged here); Craft max as a third button; Y keeps the info panel. Main agent: `[` and `]`; the right stick keeps scrolling; X cancels the last craft; LT and RT, Q and E resize. Design, approved: removed actions in an old configuration are skipped with a log line, not remapped; with a stack in hand the modifiers are ignored; Shift+click splits; a flick steps the map's zoom.
+
+### Deviations (implementation, 2026-11-13)
+
+- The bindings comment and header split the specification's semicolon sentences in two.
+- `doc/code_map.md` counts its fields from its own baseline (`Ui_State` two more, `Viewport_Interaction` one more), which was behind the structs already.
+- `craft_button_modifier(button)` maps the touch row's craft buttons to their modifier.
+- `right_stick_tab_step :: proc(armed: bool, stick: [2]f32, wheel_open: bool) -> (step: int, armed_after: bool)` replaces the edge test on the previous look: a step needs the flick armed and |x| over `UI_STICK_NAVIGATION_THRESHOLD` with |x| > |y|, and disarms it. |x| at or under the new `UI_STICK_FLICK_REARM_THRESHOLD` (0.3, `ui_core.odin`) arms it. A flick while the letter wheel is open disarms without a step.
+- `make_ui_input(previous, current, flick_armed) -> (input, flick_armed_after)`. The armed bool lives in `Viewport_Interaction.tab_flick_armed` beside `previous_input`, written back by `build_viewport_ui` and the two harnesses in `command_input_test.odin`.
+- `map_zoom_step`: on a frame whose tab step comes with the stick mostly sideways (the flick) the stick's vertical part does not zoom, and the flick's step starts the held stick's repeat wait.
+- `advance_slot_drag` takes the modified branch only on a widget with `.Item_Slot` (new `widget_is_item_slot`). Off the slots it clears `confirm_modifier` for the frame, so the click is a plain one and `slot_modifier_input` reports nothing.
+- `ui_frame_sound_events`: `quick_moved` also needs `slot_drag.phase == .None`, which is how the hand shows there: with a stack held the modified press started a drag, which sounds on the drop.

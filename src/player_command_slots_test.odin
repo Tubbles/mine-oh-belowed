@@ -24,7 +24,7 @@ test_a_slot_transfer_applies_at_the_next_tick_and_not_before :: proc(t: ^testing
 	coal := player.inventory.slots[3]
 	// The focus is on the selected hotbar slot 0; the tap focuses slot 3.
 	tap_widget(audit, &state, inventory_slot_id("hotbar", 3))
-	screen_test_frame(audit, &state, {quick_move = true})
+	screen_test_frame(audit, &state, {confirm = true, modifier_five = true})
 	testing.expect_value(t, len(audit.simulation.player_commands), 1)
 	screen_test_frame(audit, &state, {})
 	testing.expect_value(t, player.inventory.slots[3], coal)
@@ -48,7 +48,7 @@ test_a_slot_command_for_a_removed_machine_is_refused :: proc(t: ^testing.T) {
 	coal := Item_Stack{test_item(audit.content.items, "coal"), 4}
 	chest_slots[0] = coal
 	tap_widget(audit, &state, machine_panel_slot_id("chest", 0))
-	screen_test_frame(audit, &state, {quick_move = true})
+	screen_test_frame(audit, &state, {confirm = true, modifier_five = true})
 	testing.expect_value(t, len(audit.simulation.player_commands), 1)
 	inventory_before := make([]Item_Stack, len(player.inventory.slots), context.temp_allocator)
 	copy(inventory_before, player.inventory.slots)

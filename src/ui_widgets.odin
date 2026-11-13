@@ -73,20 +73,25 @@ Slider_Range :: struct {
 Glyph_Button :: enum u8 {
 	Confirm,
 	Back,
-	Tab_Previous,
-	Tab_Next,
+	// The tab step: the right stick on the gamepad, one key cap with both
+	// keys on the keyboard (tabs_glyph, 0276).
+	Tabs,
+	// The window step (0276): LT and RT, Q and E.
+	Window_Previous,
+	Window_Next,
 	Info,
 	Context_Action,
 	Pause,
 	Inventory,
-	Secondary,
 	Interact,
 	// The world's Place control, which reads a selected schematic.
 	Use_Item,
 	// The stick click that toggles sprinting (0044).
 	Sprint,
-	// R2 or Q in a machine panel (0078).
-	Quick_Move,
+	// The confirm modifiers (0276), shown before a Confirm hint: R1 or
+	// Left Control, L1 or Left Shift.
+	Five,
+	Most,
 	// Menu_Drop in the inventory (0090): the right stick click.
 	Drop,
 	// The world's Mine control: a frame cell's pick up (0195).
@@ -599,14 +604,15 @@ draw_tab_label :: proc(state: ^Ui_State, tab: Ui_Rectangle, label: string, icon:
 	}
 }
 
-// How a tab strip is stepped. Bumpers: the bumpers cycle the tabs and the
-// strip is not a focus target, so the stick moves only between the
-// widgets of the open tab. Focus: the strip is one focusable row, left
-// and right step the tabs while it holds the focus, up and down leave it,
-// and the bumpers are left to another strip (the recipe categories under
-// the inventory tab strip, work item 0094).
+// How a tab strip is stepped. Stepped: the tab step (Ui_Input.tab_previous
+// and tab_next) cycles the tabs and the strip is not a focus target, so
+// the stick moves only between the widgets of the open tab. Focus: the
+// strip is one focusable row, left and right step the tabs while it holds
+// the focus, up and down leave it (the recipe categories, which step on
+// the tab step too, recipe_category_tabs, and the configure pop-up's
+// strips).
 Ui_Tabs_Mode :: enum u8 {
-	Bumpers,
+	Stepped,
 	Focus,
 }
 
@@ -625,7 +631,7 @@ step_tab_selection :: proc(selected, count: int, previous, next: bool) -> int {
 // The pointer picks a tab in either mode. The selection lives in the UI
 // state under the tab strip's id. icons, when given, holds one icon per
 // tab, drawn before its label.
-ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string, icons: []Ui_Icon = nil, mode := Ui_Tabs_Mode.Bumpers) -> int {
+ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string, icons: []Ui_Icon = nil, mode := Ui_Tabs_Mode.Stepped) -> int {
 	id := ui_id(state, label)
 	count := len(labels)
 	if count == 0 {
@@ -633,7 +639,7 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 	}
 	selected := clamp(state.selections[id], 0, count - 1)
 	switch mode {
-	case .Bumpers:
+	case .Stepped:
 		selected = step_tab_selection(selected, count, state.input.tab_previous, state.input.tab_next)
 	case .Focus:
 		interaction := ui_interact(state, id, rectangle, {.Adjusts_Horizontally})
@@ -896,25 +902,26 @@ Glyph :: struct {
 
 @(rodata)
 glyph_button_actions := [Glyph_Button]Action {
-	.Confirm        = .Confirm,
-	.Back           = .Back,
-	.Tab_Previous   = .Tab_Previous,
-	.Tab_Next       = .Tab_Next,
-	.Info           = .Info_Panel,
-	.Context_Action = .Context_Action,
-	.Pause          = .Pause,
-	.Inventory      = .Open_Inventory,
-	.Secondary      = .Menu_Secondary,
-	.Interact       = .Interact,
-	.Use_Item       = .Use_Item,
-	.Sprint         = .Sprint,
-	.Quick_Move     = .Menu_Quick_Move,
-	.Drop           = .Menu_Drop,
-	.Mine           = .Mine,
-	.Rotate         = .Rotate_Building,
-	.Nudge          = .Placement_Nudge_Away,
-	.Tools          = .Pipette,
-	.Torchlight     = .Toggle_Torchlight,
+	.Confirm         = .Confirm,
+	.Back            = .Back,
+	.Tabs            = .Tab_Next,
+	.Window_Previous = .Window_Previous,
+	.Window_Next     = .Window_Next,
+	.Info            = .Info_Panel,
+	.Context_Action  = .Context_Action,
+	.Pause           = .Pause,
+	.Inventory       = .Open_Inventory,
+	.Interact        = .Interact,
+	.Use_Item        = .Use_Item,
+	.Sprint          = .Sprint,
+	.Five            = .Modifier_Five,
+	.Most            = .Modifier_Most,
+	.Drop            = .Menu_Drop,
+	.Mine            = .Mine,
+	.Rotate          = .Rotate_Building,
+	.Nudge           = .Placement_Nudge_Away,
+	.Tools           = .Pipette,
+	.Torchlight      = .Toggle_Torchlight,
 }
 
 // The action whose control a glyph shows first. On the keyboard Back shows
@@ -1011,6 +1018,8 @@ control_label_keys := [?]Control_Label_Key {
 	{.Keyboard, "ESCAPE", "glyph_keyboard_escape"},
 	{.Keyboard, "LEFT_SHIFT", "glyph_keyboard_left_shift"},
 	{.Keyboard, "LEFT_CONTROL", "glyph_keyboard_left_control"},
+	{.Keyboard, "LEFT_BRACKET", "glyph_keyboard_left_bracket"},
+	{.Keyboard, "RIGHT_BRACKET", "glyph_keyboard_right_bracket"},
 	{.Mouse, "LEFT", "glyph_mouse_left"},
 	{.Mouse, "RIGHT", "glyph_mouse_right"},
 	{.Mouse, "MIDDLE", "glyph_mouse_middle"},
@@ -1059,8 +1068,11 @@ control_label :: proc(binding: Binding) -> string {
 
 // The glyph of the control bound to the button's action on the active
 // device (0151): the pad button's icon where it has one, else a key cap
-// with the control's label.
+// with the control's label. Tabs has a glyph of its own (tabs_glyph).
 glyph :: proc(state: ^Ui_State, button: Glyph_Button) -> Glyph {
+	if button == .Tabs {
+		return tabs_glyph(state)
+	}
 	binding, found := first_binding_on_device(state.bindings, glyph_action(state.active_device, button), state.active_device, state.input_backend)
 	if !found {
 		binding, found = first_binding_on_device(state.bindings, glyph_button_actions[button], state.active_device, state.input_backend)
@@ -1072,6 +1084,21 @@ glyph :: proc(state: ^Ui_State, button: Glyph_Button) -> Glyph {
 		return {icon, ""}
 	}
 	return {.Key, control_label(binding)}
+}
+
+// The tab step's glyph (0276): the right stick on the gamepad, whose
+// flick has no binding. On the keyboard one key cap with the first keys
+// of Tab_Previous and Tab_Next ("[ ]"), unbound when either has none.
+tabs_glyph :: proc(state: ^Ui_State) -> Glyph {
+	if state.active_device == .Gamepad {
+		return {.Stick_Right, ""}
+	}
+	previous, previous_found := first_binding_on_device(state.bindings, .Tab_Previous, .Keyboard_Mouse, state.input_backend)
+	next, next_found := first_binding_on_device(state.bindings, .Tab_Next, .Keyboard_Mouse, state.input_backend)
+	if !previous_found || !next_found {
+		return {.Key, text("glyph_unbound")}
+	}
+	return {.Key, fmt.tprintf("%s %s", control_label(previous), control_label(next))}
 }
 
 UI_GLYPH_BAR_HEIGHT :: UI_GLYPH_TEXT_SIZE + 2 * UI_GAP
@@ -1109,8 +1136,8 @@ glyph_bar_width :: proc(state: ^Ui_State, hints: []Glyph_Hint) -> f32 {
 
 // The hints that fit the width. Hints go from the end of the list, but
 // the last one (Back by convention) stays; an unlabelled hint paired with
-// a dropped one (the left bumper of a bumper pair) goes with it. In the
-// temp allocator.
+// a dropped one (LT of the window pair, a modifier before its Confirm)
+// goes with it. In the temp allocator.
 glyph_hints_that_fit :: proc(state: ^Ui_State, hints: []Glyph_Hint, width: f32) -> []Glyph_Hint {
 	kept := make([dynamic]Glyph_Hint, 0, len(hints), context.temp_allocator)
 	append(&kept, ..hints)
@@ -1248,6 +1275,8 @@ Touch_Button :: enum u8 {
 	Drop,
 	Craft,
 	Craft_Five,
+	// The most crafts the inventory affords, as L1 with A (0276).
+	Craft_Most,
 	Cancel_Craft,
 	Choose_Recipe,
 	Research,
@@ -1273,6 +1302,7 @@ touch_button_keys := [Touch_Button]string {
 	.Drop                 = "touch_button_drop",
 	.Craft                = "touch_button_craft",
 	.Craft_Five           = "touch_button_craft_five",
+	.Craft_Most           = "touch_button_craft_most",
 	.Cancel_Craft         = "touch_button_cancel_craft",
 	.Choose_Recipe        = "touch_button_choose_recipe",
 	.Research             = "touch_button_research",

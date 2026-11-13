@@ -403,6 +403,6 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 }
 
 journal_glyph_bar :: proc(state: ^Ui_State) {
-	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_chapters")}, {.Back, text("hint_close")}}
+	hints := [?]Glyph_Hint{{.Tabs, text("hint_chapters")}, {.Back, text("hint_close")}}
 	ui_glyph_bar_or_back_row(state, hints[:])
 }

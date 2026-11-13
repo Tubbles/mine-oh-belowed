@@ -19,7 +19,9 @@
 // bindings once at start. The sticks (move, look) and WASD are not bindings.
 // One control may carry several actions, a world and a menu meaning: A is
 // Jump and Confirm, X is Open_Inventory and Interact in the world and
-// Context_Action in menus (work item 0233). Open_Inventory opens the
+// Context_Action in menus (work item 0233). The keyboard's E is
+// Open_Inventory and Window_Next, and on the inventory's strip the
+// Open_Inventory press wins (inventory_tabs). Open_Inventory opens the
 // targeted machine's panel instead of the inventory, and on a target
 // Interact acts on (a power switch, a schematic crate) a press of both is
 // Interact's alone (route_open_inventory_press in src/input_actions.odin).
@@ -72,7 +74,6 @@ bindings = [
 	{action = "Confirm" device = "gamepad" control = "SOUTH" context = "menu"}
 	{action = "Confirm" device = "gamepad" control = "LEFT_PADDLE1" context = "menu"}
 	{action = "Confirm" device = "gamepad" control = "MISC2" context = "menu"}
-	{action = "Confirm" device = "gamepad" control = "RIGHT_TRIGGER" context = "menu"}
 	{action = "Back" device = "gamepad" control = "EAST" context = "menu"}
 	{action = "Back" device = "gamepad" control = "RIGHT_PADDLE1" context = "menu"}
 	{action = "Context_Action" device = "gamepad" control = "WEST" context = "menu"}
@@ -83,12 +84,12 @@ bindings = [
 	{action = "Navigate_Down" device = "gamepad" control = "DPAD_DOWN" context = "menu"}
 	{action = "Navigate_Left" device = "gamepad" control = "DPAD_LEFT" context = "menu"}
 	{action = "Navigate_Right" device = "gamepad" control = "DPAD_RIGHT" context = "menu"}
-	{action = "Tab_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "menu"}
-	{action = "Tab_Next" device = "gamepad" control = "RIGHT_SHOULDER" context = "menu"}
-	{action = "Menu_Secondary" device = "gamepad" control = "LEFT_TRIGGER" context = "menu"}
-	// R2 stays Confirm too: on a slot of a machine panel it quick moves
-	// instead (work item 0078), elsewhere it confirms.
-	{action = "Menu_Quick_Move" device = "gamepad" control = "RIGHT_TRIGGER" context = "menu"}
+	// The triggers step the windows. The bumpers held with Confirm are R1
+	// five and L1 the most (0276).
+	{action = "Window_Previous" device = "gamepad" control = "LEFT_TRIGGER" context = "menu"}
+	{action = "Window_Next" device = "gamepad" control = "RIGHT_TRIGGER" context = "menu"}
+	{action = "Modifier_Most" device = "gamepad" control = "LEFT_SHOULDER" context = "menu"}
+	{action = "Modifier_Five" device = "gamepad" control = "RIGHT_SHOULDER" context = "menu"}
 	// The inventory's Drop (work item 0062).
 	{action = "Menu_Drop" device = "gamepad" control = "RIGHT_STICK" context = "menu"}
 
@@ -142,20 +143,20 @@ bindings = [
 	// Keyboard, in menus.
 	{action = "Confirm" device = "keyboard" control = "ENTER" context = "menu"}
 	{action = "Back" device = "keyboard" control = "BACKSPACE" context = "menu"}
-	{action = "Menu_Secondary" device = "keyboard" control = "LEFT_SHIFT" context = "menu"}
 	{action = "Navigate_Up" device = "keyboard" control = "UP" context = "menu"}
 	{action = "Navigate_Down" device = "keyboard" control = "DOWN" context = "menu"}
 	{action = "Navigate_Left" device = "keyboard" control = "LEFT" context = "menu"}
 	{action = "Navigate_Right" device = "keyboard" control = "RIGHT" context = "menu"}
-	{action = "Tab_Previous" device = "keyboard" control = "Q" context = "menu"}
-	{action = "Tab_Next" device = "keyboard" control = "E" context = "menu"}
+	{action = "Window_Previous" device = "keyboard" control = "Q" context = "menu"}
+	{action = "Window_Next" device = "keyboard" control = "E" context = "menu"}
+	{action = "Tab_Previous" device = "keyboard" control = "LEFT_BRACKET" context = "menu"}
+	{action = "Tab_Next" device = "keyboard" control = "RIGHT_BRACKET" context = "menu"}
 	{action = "Info_Panel" device = "keyboard" control = "R" context = "menu"}
 	{action = "Context_Action" device = "keyboard" control = "F" context = "menu"}
-	// Q is Tab_Previous too; the machine panel drops the tab step while it
-	// quick moves (work item 0078).
-	{action = "Menu_Quick_Move" device = "keyboard" control = "Q" context = "menu"}
-	// Held with a left click: a quick move with the mouse.
-	{action = "Menu_Quick_Move_Modifier" device = "keyboard" control = "LEFT_CONTROL" context = "menu"}
+	// Held with Enter or a click: Left Control five (the quick move), Left
+	// Shift the most (the split).
+	{action = "Modifier_Five" device = "keyboard" control = "LEFT_CONTROL" context = "menu"}
+	{action = "Modifier_Most" device = "keyboard" control = "LEFT_SHIFT" context = "menu"}
 	{action = "Menu_Drop" device = "keyboard" control = "X" context = "menu"}
 
 	// Mouse.

@@ -128,7 +128,7 @@ test_the_touch_layout_editor_with_the_gamepad :: proc(t: ^testing.T) {
 	screen_test_frame(audit, &state, {navigation = .Right})
 	testing.expect_value(t, editor.draft.elements[index].position, before.position - {10, 0})
 	testing.expect_value(t, state.focus, ui_hash(scope, "touch_element", index))
-	screen_test_frame(audit, &state, {tab_next = true})
+	screen_test_frame(audit, &state, {window_next = true})
 	testing.expect_value(t, editor.draft.elements[index].size, before.size + 10)
 	// Default does not change.
 	state.focus = ui_hash(scope, text("touch_layout_save"), -1)

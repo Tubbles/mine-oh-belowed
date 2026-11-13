@@ -43,7 +43,8 @@ apply_slot_primary :: proc(inventory: Inventory, held: Held_Stack, index: int, r
 	return result
 }
 
-// L2 (Menu_Secondary) splits the slot's stack in half onto the cursor.
+// L1 with A (Modifier_Most) splits the slot's stack in half onto the
+// cursor.
 apply_slot_split :: proc(inventory: Inventory, held: Held_Stack, index: int) -> Held_Stack {
 	if index < 0 || !stack_is_empty(held.stack) || stack_is_empty(inventory.slots[index]) {
 		return held

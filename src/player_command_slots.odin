@@ -70,7 +70,7 @@ Slot_Primary_Command :: struct {
 	keeps_origin: bool,
 }
 
-// L2: half the slot's stack onto the empty hand.
+// L1 with A: half the slot's stack onto the empty hand.
 Slot_Split_Command :: struct {
 	target:  Slot_Command_Target,
 	expects: Held_Expectation,

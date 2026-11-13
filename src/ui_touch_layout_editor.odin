@@ -326,7 +326,7 @@ touch_layout_editor_screen :: proc(state: ^Ui_State, screen_context: Screen_Cont
 	ui_panel_end(state)
 	// On touch its own buttons (Close among them) are the row.
 	if !touch_row_shows(state) {
-		hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_touch_layout_size")}, {.Back, text("hint_back")}}
+		hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Window_Previous, ""}, {.Window_Next, text("hint_touch_layout_size")}, {.Back, text("hint_back")}}
 		ui_glyph_bar(state, hints[:])
 	}
 }
@@ -409,9 +409,9 @@ draw_touch_layout_element :: proc(state: ^Ui_State, layout: Touch_Overlay_Layout
 	draw_focus_outline(state, rectangle, id)
 }
 
-// L1 and R1 (Q and E) resize the selected element wherever the focus is.
+// LT and RT (Q and E) resize the selected element wherever the focus is.
 resize_selected_touch_element :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, screen_size: [2]f32) {
-	steps := f32(int(state.input.tab_next) - int(state.input.tab_previous))
+	steps := f32(int(state.input.window_next) - int(state.input.window_previous))
 	if steps != 0 && editor.selected >= 0 && editor.selected < len(editor.draft.elements) {
 		element := editor.draft.elements[editor.selected]
 		editor.draft.elements[editor.selected] = constrain_touch_element(editor.draft, resize_touch_element(element, steps), screen_size)
