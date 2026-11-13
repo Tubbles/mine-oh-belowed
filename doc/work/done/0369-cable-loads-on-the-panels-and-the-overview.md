@@ -1,6 +1,6 @@
 # 0369: Cable loads on the panels and the overview
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 5ad746bc)
 
 Part C of 0355's specification (`doc/work/done/0355-cables-and-the-power-netlist.md`): a cable's load against its capacity and the bottleneck, on the junction box's panel and the power overview. The specification below is this item's own, brought up to `main` on 2026-11-13 (0368, 0383, 0384, 0385); an implementer never opens 0355.
 
