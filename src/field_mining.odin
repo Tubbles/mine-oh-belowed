@@ -128,6 +128,9 @@ Field_Edit_Refusal :: enum u8 {
 	Not_Enough_Cable,
 	Not_A_Connector,
 	Cable_End_Gone,
+	// An offshore pump's intake on a field frame meets less water than the
+	// start depth (0376, field_offshore_pump_refusal).
+	No_Water_At_Intake,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -165,6 +168,7 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Not_Enough_Cable  = "field_refused_not_enough_cable",
 	.Not_A_Connector   = "field_refused_not_a_connector",
 	.Cable_End_Gone    = "field_refused_cable_end_gone",
+	.No_Water_At_Intake = "field_refused_no_water_at_intake",
 }
 
 Queued_Field_Edit :: struct {
@@ -683,11 +687,12 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 
 // The edits, the placements, the buckets and the pumps (0295), then the
 // water (0172), so a hole dug or a pour made this tick moves on the next,
-// then the light (0173) within its budget. The tick's water events (0294)
-// are dropped first, so the digs, the pours and the pumps' intakes reach
-// the surface waves beside the step's own. Runs after every player queued
-// its edits (simulation_field.odin). A profile gets the three parts
-// (0342).
+// then the offshore pumps' intakes read the water as it now stands
+// (0376), then the light (0173) within its budget. The tick's water
+// events (0294) are dropped first, so the digs, the pours and the pumps'
+// intakes reach the surface waves beside the step's own. Runs after every
+// player queued its edits (simulation_field.odin). A profile gets the
+// three parts (0342).
 finish_field_tick :: proc(state: ^Simulation_State, content: Simulation_Content, profile: ^Tick_Profile = nil) {
 	clock := profile_now(profile)
 	clear(&state.field.world.water_events)
@@ -697,6 +702,7 @@ finish_field_tick :: proc(state: ^Simulation_State, content: Simulation_Content,
 	tick_water_pumps(state, content)
 	clock = profile_section(profile, .Field_Edits, clock)
 	step_field_water_keeping_events(&state.field.world, content.field.water, state.tick)
+	refresh_offshore_pump_sources(state, content)
 	clock = profile_section(profile, .Field_Water, clock)
 	tick_field_light(&state.field.world, content.field.light)
 	profile_section(profile, .Field_Light, clock)

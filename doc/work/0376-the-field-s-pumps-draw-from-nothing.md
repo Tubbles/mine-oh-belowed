@@ -1,6 +1,6 @@
 # 0376: The field's pumps draw from nothing
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 Found by 0356's design: on the field the offshore pump and the tar pit pump have no source check and produce their fluid wherever they stand.
 
@@ -132,3 +132,10 @@ No data keys.
 3. Chapter 4 on a field world needing a lake or the sea, the nearest at least 250 m from the home: accepted, with `quest_steam_text_field` naming the water.
 4. Hysteresis after all (replaces design decision 4 above): a pump with water keeps it while the walk holds at least 0.5 m, a pump without needs 0.75 m to start again, both as data keys beside the depth key with the same bounds, and placement asks for the starting depth. `Fluid_Machine.source` already carries which side the pump is on, so no state is added. A wave at the threshold must not blink the pump's state and model every tick. One test: a surface stepping between 0.45 m and 0.55 m every tick leaves the pump's state unchanged from either side.
 5. Approved with these.
+
+### Deviations (implementation, 2026-11-13)
+
+1. Decision 4's depths are `field_water.offshore_pump_keep_depth_millimetres = 500` and `offshore_pump_start_depth_millimetres = 750` (`data/game.sjson`, each 1 to the reach, the start at least the keep, `field_water_problem`, content.md), in place of the constant `FIELD_OFFSHORE_INTAKE_DEPTH_MILLIMETRES`; the reach constant sits in `data_load.odin` so the content check needs no simulation name. `read_offshore_pump_intake` takes the depth and answers Wet once the sum reaches it. Present reads the keep depth, Missing the start depth, Unread the keep depth (an old save's pump ran before the load).
+2. Decision 4's test: a 0.45/0.55 m wave straddles the keep depth, so a pump with water stops once and then holds; `test_a_surface_waving_at_a_depth_does_not_switch_the_pump` asserts that and adds a 0.55/0.70 m wave inside the band, where neither side moves.
+3. The settled teleport pond holds a fill in the layer over its top (its level crosses that layer on the sphere), so the 127/126 case and the wave empty that layer first.
+4. `tools/code_graph.py` maps `field_offshore_pump.odin` to simulation (the prefix `field_` alone maps to world).

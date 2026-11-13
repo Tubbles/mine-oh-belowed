@@ -167,6 +167,12 @@ field_brushes = [
 // at 1 m spacing) over the brush round the aimed sample, nearest first,
 // and a held Place does it again every bucket_repeat_ticks ticks (1 to
 // 255; 6 is ten times a second).
+// The offshore pump on a field frame (work item 0376, doc/fluids.md): the
+// water within 2 m under its intake cell's centre. A pump with water
+// keeps running while it holds offshore_pump_keep_depth_millimetres; one
+// without, and a placement, need offshore_pump_start_depth_millimetres.
+// Each 1 to 2000, the start at least the keep, so a surface waving at
+// one of them does not switch the pump every tick.
 field_water = {
 	fill_rate_per_tick = 64
 	spring_fill_per_tick = 64
@@ -185,6 +191,8 @@ field_water = {
 	flood_rise_samples = 64
 	bucket_fill_per_press = 254
 	bucket_repeat_ticks = 6
+	offshore_pump_keep_depth_millimetres = 500
+	offshore_pump_start_depth_millimetres = 750
 }
 // The chunks every machine of a session simulates: this many chunks
 // around each player's chunk across and up and down (work item 0177).

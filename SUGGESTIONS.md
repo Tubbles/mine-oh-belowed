@@ -526,3 +526,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `slot_command_stale` could refuse a `Grid_Transfer_Command` with `NO_ENTITY`, which nothing sends any more.
 - The cluster table's Files and Lines columns in `doc/code_map.md` are stale (simulation says 54 files, the tool counts 68).
 - The name line under the toolbars is drawn unfitted; a very long item name could pass the screen edge in a split screen quarter.
+
+## Suggestions from the offshore pump's water (0376, 2026-11-13)
+
+- The walk under the intake runs a whole number of samples, so at a spacing of 333 mm it reaches 2.33 m where the docs and data comments say at most 2 m. Floor the step count or reword.
+- The tests place piers at a 1000 mm pitch; the shipped pitch is 500 mm (the review probed it and it works). A test at 500 would cover what ships.
+- An old save's pump outside the loaded set reads the generated water, not an edited chunk's saved bytes, and a pump that reads Missing needs the start depth: a pump at a pond the player dug 0.5 to 0.75 m deep stays idle after the load.
+- The load's line reads "1 offshore pumps".
+- `refresh_offshore_pump_sources` finds each pump's frame by a linear scan every tick, as `tick_water_pumps` does: pumps times frames.

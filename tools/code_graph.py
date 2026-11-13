@@ -97,6 +97,7 @@ FILE_CLUSTERS = {
     "field_trees.odin": "simulation",
     "field_water_tools.odin": "simulation",
     "field_water_pump.odin": "simulation",
+    "field_offshore_pump.odin": "simulation",
     "viewport.odin": "loop",
 }
 

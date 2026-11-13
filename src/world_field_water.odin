@@ -143,6 +143,11 @@ Field_Water_Tuning :: struct {
 	// ticks between pours while Place is held.
 	bucket_fill_per_press:          i32,
 	bucket_repeat_ticks:            u8,
+	// The field's offshore pumps (0376, field_offshore_pump.odin): the
+	// depth a pump with water keeps running on and the depth one without
+	// needs to start. Zero in a hand built tuning, which every intake meets.
+	offshore_pump_keep_depth_millimetres:  i64,
+	offshore_pump_start_depth_millimetres: i64,
 }
 
 // The last tick's pressure pulls (Field_World.water_pressure): the
@@ -253,6 +258,8 @@ make_field_water_tuning :: proc(config: Field_Water_Config) -> Field_Water_Tunin
 		flood_rise_samples = i32(config.flood_rise_samples),
 		bucket_fill_per_press = i32(config.bucket_fill_per_press),
 		bucket_repeat_ticks = u8(config.bucket_repeat_ticks),
+		offshore_pump_keep_depth_millimetres = i64(config.offshore_pump_keep_depth_millimetres),
+		offshore_pump_start_depth_millimetres = i64(config.offshore_pump_start_depth_millimetres),
 	}
 }
 

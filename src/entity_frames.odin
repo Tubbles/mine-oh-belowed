@@ -426,7 +426,9 @@ snapped_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_
 	return frame_placement_refusal(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
 }
 
-// The refusal of a queued placement, None when it may go ahead.
+// The refusal of a queued placement, None when it may go ahead. An
+// offshore pump also needs water at its intake, on bare ground and on a
+// frame alike (0376, field_offshore_pump_refusal), checked last.
 field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Content, player: Player, placement: Field_Placement) -> Field_Edit_Refusal {
 	entities := &state.world.entities
 	frame, cell, found := field_placement_frame(&entities.frames, placement, content.field.foundation_pitch_millimetres)
@@ -434,7 +436,10 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 		return .Unknown_Frame
 	}
 	if placement.new_frame && content.machines.machines[placement.machine].kind != .Foundation {
-		return bare_ground_placement_refusal(state, content, player, placement, frame)
+		if refusal := bare_ground_placement_refusal(state, content, player, placement, frame); refusal != .None {
+			return refusal
+		}
+		return field_offshore_pump_refusal(state, content, placement.machine, frame, cell, placement.rotation)
 	}
 	if content.machines.machines[placement.machine].kind == .Foundation {
 		return foundation_block_refusal(state, content, player, placement, frame)
@@ -459,7 +464,7 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 	if field_footprint_buries_a_player(state, content, frame, placement, cell) {
 		return .Would_Bury_Player
 	}
-	return .None
+	return field_offshore_pump_refusal(state, content, placement.machine, frame, cell, placement.rotation)
 }
 
 // The counts a Too_Few_Foundations refusal of player names: the refused
@@ -531,9 +536,10 @@ apply_foundation_block :: proc(state: ^Simulation_State, content: Simulation_Con
 // A queued placement that field_placement_refusal let through: a
 // foundation block, a machine on bare ground on a frame of its own
 // (0201), a drill with its vein, any other machine on its frame, a water
-// pump then settled on the water (0295, settle_water_pump). Each
-// placed machine counts for the quests (record_placed). Returns the
-// machines placed, one item each.
+// pump then settled on the water (0295, settle_water_pump), an offshore
+// pump marked with the water its refusal found (0376). Each placed
+// machine counts for the quests (record_placed). Returns the machines
+// placed, one item each.
 apply_field_placement :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) -> (placed: int) {
 	entities := &state.world.entities
 	placed = 1
@@ -552,6 +558,7 @@ apply_field_placement :: proc(state: ^Simulation_State, content: Simulation_Cont
 	if content.machines.machines[placement.machine].kind == .Water_Pump {
 		settle_water_pump(state, content, handle)
 	}
+	mark_offshore_pump_source_present(entities, content.machines, handle)
 	for _ in 0 ..< placed {
 		record_placed(&state.records.statistics, placement.machine)
 	}

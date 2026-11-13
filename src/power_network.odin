@@ -408,12 +408,15 @@ pump_wants_power :: proc(pump: Fluid_Machine, machine: Machine) -> bool {
 }
 
 // Pumps while they can move fluid, offshore and tar pit pumps while
-// there is room, flare stacks while they relieve gas.
+// there is room (an offshore pump on a field frame only with water at its
+// intake, 0376), flare stacks while they relieve gas.
 fluid_machine_wants_power :: proc(fluid_machine: Fluid_Machine, machine: Machine, fluids: Fluid_Registry) -> bool {
 	#partial switch machine.kind {
 	case .Pump:
 		return pump_wants_power(fluid_machine, machine)
-	case .Offshore_Pump, .Tar_Pit_Pump:
+	case .Offshore_Pump:
+		return fluid_machine.source != .Missing && source_pump_has_room(fluid_machine, machine)
+	case .Tar_Pit_Pump:
 		return source_pump_has_room(fluid_machine, machine)
 	case .Flare_Stack:
 		return flare_stack_is_relieving(fluid_machine, machine, fluids)

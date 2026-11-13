@@ -538,6 +538,8 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return "  a vessel takes a cable on its connector"
 	case .Cable_End_Gone:
 		return "  the cable's first end is gone"
+	case .No_Water_At_Intake:
+		return "  an offshore pump needs water in front of its intake"
 	}
 	return ""
 }

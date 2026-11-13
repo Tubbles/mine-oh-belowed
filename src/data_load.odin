@@ -449,6 +449,11 @@ Field_Water_Config :: struct {
 	// ticks between pours while Place is held.
 	bucket_fill_per_press:          int,
 	bucket_repeat_ticks:            int,
+	// The field's offshore pumps (0376): the water under the intake a pump
+	// with water keeps running on, and the water a pump without needs to
+	// start, which placement asks for.
+	offshore_pump_keep_depth_millimetres:  int,
+	offshore_pump_start_depth_millimetres: int,
 }
 
 // A full water sample's fill: FIELD_WATER_FULL - MAXIMUM_DENSITY maps the
@@ -473,6 +478,11 @@ MAXIMUM_FIELD_WATER_FLOOD_VISITS :: 1_000_000
 MAXIMUM_FIELD_WATER_FLOOD_RISE :: 256
 // A bucket press's fill at most, 64 full samples (0295).
 MAXIMUM_FIELD_WATER_BUCKET_FILL :: 64 * FIELD_WATER_FULL
+// How far under its intake cell's centre a field offshore pump reads the
+// water (0376, field_offshore_pump.odin): the block world's "its height or
+// one below" over two 1 m blocks, and the most either depth may ask. Here
+// so the content checks need not reach into the simulation.
+FIELD_OFFSHORE_INTAKE_REACH_MILLIMETRES :: 2000
 
 // The shapes of a field brush (work item 0171, world_field_edit.odin): a
 // sphere round the hit, or the level mode, which flattens the sphere
@@ -1523,11 +1533,18 @@ field_water_problem :: proc(water: Field_Water_Config) -> string {
 		{"flood_rise_samples", water.flood_rise_samples, 1, MAXIMUM_FIELD_WATER_FLOOD_RISE},
 		{"bucket_fill_per_press", water.bucket_fill_per_press, 1, MAXIMUM_FIELD_WATER_BUCKET_FILL},
 		{"bucket_repeat_ticks", water.bucket_repeat_ticks, 1, 255},
+		{"offshore_pump_keep_depth_millimetres", water.offshore_pump_keep_depth_millimetres, 1, FIELD_OFFSHORE_INTAKE_REACH_MILLIMETRES},
+		{"offshore_pump_start_depth_millimetres", water.offshore_pump_start_depth_millimetres, 1, FIELD_OFFSHORE_INTAKE_REACH_MILLIMETRES},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {
 			return fmt.tprintf("field_water.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
 		}
+	}
+	// A start under the keep would stop a pump and start it again on the
+	// same water, every tick.
+	if water.offshore_pump_start_depth_millimetres < water.offshore_pump_keep_depth_millimetres {
+		return fmt.tprintf("field_water.offshore_pump_start_depth_millimetres %d is under offshore_pump_keep_depth_millimetres %d", water.offshore_pump_start_depth_millimetres, water.offshore_pump_keep_depth_millimetres)
 	}
 	return ""
 }

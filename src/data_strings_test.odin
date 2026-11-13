@@ -152,7 +152,7 @@ names_no_drop_capsule :: proc(value: string) -> bool {
 	return !strings.contains(lower, "landing pad") && strings.count(lower, "capsule") == strings.count(lower, "cargo capsule")
 }
 
-FIELD_VARIANT_BASE_KEYS :: [?]string{"quest_arrival_text", "note_the_contractor_text", "note_the_capsule_title", "note_the_capsule_text", "catalogue_ordered", "developer_teleport"}
+FIELD_VARIANT_BASE_KEYS :: [?]string{"quest_arrival_text", "note_the_contractor_text", "note_the_capsule_title", "note_the_capsule_text", "catalogue_ordered", "developer_teleport", "quest_steam_text"}
 
 @(test)
 test_shipped_field_variants_have_a_base_and_name_the_pod :: proc(t: ^testing.T) {

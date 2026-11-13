@@ -225,7 +225,10 @@
 // there is room and it has electric_power_kilowatts (work item 0140),
 // scaled by its network's satisfaction like the pump. Placed with the
 // cell in front of its +x end (its intake, the end without the port), at
-// its height or one below, a water source.
+// its height or one below, a water source; on a field frame, the field's
+// water within 2 m under its intake cell's centre, as deep as field_water's
+// offshore_pump_start_depth_millimetres of data/game.sjson to place or
+// start, and it stops under offshore_pump_keep_depth_millimetres (0376).
 // Boiler: turns fluid_litres_per_second of its input port's fluid into as
 // much of its output port's fluid, burning fuel_power_kilowatts from its
 // fuel slot only while it does.

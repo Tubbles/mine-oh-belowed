@@ -60,6 +60,14 @@ fluid_machine_state_keys := [Fluid_Machine_State]string {
 	.Generating  = "machine_state_generating",
 }
 
+// An offshore pump's water on a field frame (0376,
+// field_offshore_pump.odin): not read yet, at its intake, or gone.
+Pump_Source :: enum u8 {
+	Unread,
+	Present,
+	Missing,
+}
+
 // buffers and closed are per fluid port. closed marks a port the network
 // shut because it would mix two fluids. power is a pump's share of its
 // network (power_machine.odin). A steam engine keeps the energy of steam
@@ -90,6 +98,11 @@ Fluid_Machine :: struct {
 	// every other kind. Saved by name as a nested struct: a save from
 	// before 0295 reads zeros.
 	water_pump:         Water_Pump,
+	// An offshore pump's water on a field frame (0376,
+	// field_offshore_pump.odin); Unread on the block frame, for every other
+	// kind, and in a save from before 0376 until the first field tick.
+	// Saved by name.
+	source:             Pump_Source,
 }
 
 make_pipe :: proc(common: Entity_Common) -> Pipe {
@@ -135,11 +148,14 @@ add_to_buffer :: proc(buffer: ^Fluid_Buffer, fluid: Fluid_Id, litres: i32) {
 // room, and only with power (0140). Like the tar pit pump it pumps a full
 // tick's litres once per power credit step, so over a second it yields
 // its rate times its network's satisfaction, and it counts as producing
-// on the ticks in between.
+// on the ticks in between. On a field frame without water at its intake
+// (0376) it says no water whatever its power and fills nothing.
 advance_offshore_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
 	port := machine.fluid_ports[0]
 	buffer := &pump.buffers[0]
 	switch {
+	case pump.source == .Missing:
+		pump.state = .No_Water
 	case !power_is_on(pump.power):
 		pump.state = .Unpowered
 	case !source_pump_has_room(pump^, machine):

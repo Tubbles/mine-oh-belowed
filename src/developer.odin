@@ -564,8 +564,9 @@ set_field_seat_for_developer :: proc(state: ^Simulation_State, content: Simulati
 }
 
 // A machine with its minimum corner at a frame's cell (0183), by the
-// frame's rules and the field's (no trunk in a cell, no player buried),
-// without taking an item or counting a placement, as place_for_developer.
+// frame's rules and the field's (no trunk in a cell, no player buried, an
+// offshore pump's water at its intake, 0376, the refusal's key), without
+// taking an item or counting a placement, as place_for_developer.
 // A foundation takes one cell and no rotation. Runs, vessel parts (0361:
 // a slot or a face places them), and a machine no item places, are
 // refused, as is frame 0, the block world's, and any of them on a
@@ -602,10 +603,14 @@ place_on_frame_for_developer :: proc(state: ^Simulation_State, content: Simulati
 	if field_footprint_buries_a_player(state, content, record, placement, origin) {
 		return "it would bury a player"
 	}
+	if refusal := field_offshore_pump_refusal(state, content, machine, record, origin, placement.rotation); refusal != .None {
+		return field_refusal_keys[refusal]
+	}
 	if definition.kind == .Drill {
 		place_drill_on_frame(&state.world.entities, content.machines, state.world.veins[:], machine, frame, origin, placement.rotation)
 	} else {
-		place_on_frame(&state.world.entities, content.machines, machine, frame, origin, placement.rotation)
+		handle, _ := place_on_frame(&state.world.entities, content.machines, machine, frame, origin, placement.rotation)
+		mark_offshore_pump_source_present(&state.world.entities, content.machines, handle)
 	}
 	return ""
 }
