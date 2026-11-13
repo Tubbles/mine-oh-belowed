@@ -17,3 +17,7 @@ A fluid rate in data means what it says down to about 0.1 L/s, and the shipped f
 ## Verify
 
 - The checks and the suite, with a rate under a litre a tick delivering its litres over a minute to the litre.
+
+## Direction (user, 2026-11-13)
+
+A shifted fixed point counter, 64 bit, at about a decilitre. The main agent proposes the unit 1/600 L (a decilitre a second for one tick at 60 Hz), so every rate given in whole decilitres a second is a whole number of units a tick and needs no credits; a plain decilitre unit would still truncate 0.1 L/s to nothing in a tick.
