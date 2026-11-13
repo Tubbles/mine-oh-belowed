@@ -1,8 +1,8 @@
 # 0384: The cable's look
 
-Status: designed (2026-11-13)
+Status: implementing (2026-11-13)
 
-Step 3 of 0368's specification (`0368-cables-junction-boxes-and-the-poles-removal.md`, Steps and "The draw", step 3), split off at its approval. 0368 draws a cable as a line along its sag.
+Step 3 of 0368's specification (`done/0368-cables-junction-boxes-and-the-poles-removal.md`, Steps and "The draw", step 3), split off at its approval. 0368 draws a cable as a line along its sag.
 
 ## Goal
 

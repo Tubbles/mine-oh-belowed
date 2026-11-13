@@ -1,8 +1,8 @@
 # 0383: Batteries and the control unit on the netlist
 
-Status: designed (2026-11-13)
+Status: implementing (2026-11-13)
 
-Step 2 of 0368's specification (`0368-cables-junction-boxes-and-the-poles-removal.md`, Steps and "Batteries and the control unit (step 2)"), split off at its approval. Until it lands a vessel part with a power port is a node that only passes power on.
+Step 2 of 0368's specification (`done/0368-cables-junction-boxes-and-the-poles-removal.md`, Steps and "Batteries and the control unit (step 2)"), split off at its approval. Until it lands a vessel part with a power port is a node that only passes power on.
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # 0368: Cables, junction boxes and the poles' removal
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 88ef621)
 
 Part B of 0355's specification (`doc/work/done/0355-cables-and-the-power-netlist.md`), split off at its approval: the cable table and the ports, the run under the lockstep, the junction box (4 ports) and the cabinet (8), the poles deleted from the content and from old saves, the draw, and the quests, kits, technologies, recipes, blueprints, strings and models that follow. The specification below is this item's own, brought up to `main` on 2026-11-13; an implementer never opens 0355.
 
