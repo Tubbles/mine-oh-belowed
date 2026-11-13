@@ -137,6 +137,8 @@ Ui_Audit_Case :: struct {
 	notice:       string,
 	// The item the configure pop-up configures (0202).
 	configure_item: Item_Id,
+	// The toolbar edit mode's cursor, carousel and held shortcut (0279).
+	toolbar_edit:   Toolbar_Edit,
 	// The tools radial held and steered to the placement editor's entry
 	// (0215).
 	tools_radial: bool,
@@ -558,6 +560,7 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 		push_screen(&state.screens, screen)
 	}
 	state.configure.item = audit_case.configure_item
+	state.toolbar_edit = audit_case.toolbar_edit
 	state.crafting_half = audit_case.schematics ? .Schematics : .Inventory
 	// The tab cases step from the first tab at every size.
 	audit.views.crafting_view.tab = 0
@@ -1355,6 +1358,34 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "configure foundation block", screens = {.Inventory, .Configure}, configure_item = foundation, walk_focus = true})
 	audit_case(audit, {name = "configure foundation block touch row", screens = {.Inventory, .Configure}, configure_item = foundation, hud = true, touch = true})
 	audit_case(audit, {name = "inventory foundation touch row", screens = {.Inventory}, hud = true, touch = true})
+	audit_toolbar_edit(audit)
+}
+
+// The toolbar edit mode (0279): the shipped one toolbar, then four with
+// every slot named and one kind the inventory lacks (its shade), one held
+// from the second toolbar and the cursor on the top row's last slot, and
+// the touch row over the HUD's four rows.
+audit_toolbar_edit :: proc(audit: ^Ui_Audit) {
+	audit_case(audit, {name = "toolbar edit", screens = {.Inventory, .Toolbar_Edit}, walk_focus = true})
+	player := &audit.simulation.players[0]
+	saved_toolbars, saved_count := player.toolbars, audit.content.toolbar_count
+	defer player.toolbars, audit.content.toolbar_count = saved_toolbars, saved_count
+	audit.content.toolbar_count = MAXIMUM_TOOLBAR_COUNT
+	item_count := len(audit.content.items.items)
+	for &toolbar, toolbar_index in player.toolbars {
+		for &slot, slot_index in toolbar {
+			slot = Item_Id((toolbar_index * HOTBAR_SLOT_COUNT + slot_index) % item_count)
+		}
+	}
+	for item in 0 ..< item_count {
+		if inventory_count(player.inventory, Item_Id(item)) == 0 {
+			player.toolbars[0][1] = Item_Id(item)
+			break
+		}
+	}
+	held := Toolbar_Edit{row = 3, slot = 7, holding = true, origin = {1, 3}}
+	audit_case(audit, {name = "toolbar edit, four toolbars, one held", screens = {.Inventory, .Toolbar_Edit}, toolbar_edit = held, walk_focus = true})
+	audit_case(audit, {name = "toolbar edit touch row", screens = {.Inventory, .Toolbar_Edit}, hud = true, touch = true})
 }
 
 @(test) // slow

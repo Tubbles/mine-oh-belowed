@@ -127,6 +127,8 @@ Player_Command_Tag :: enum u8 {
 	Clear_Craft_Queue,
 	// Y in the crafting view names a toolbar slot's kind (0278).
 	Toolbar_Assign,
+	// The toolbar edit mode's carousel (0279).
+	Active_Toolbar,
 }
 
 // A player a client's machine drives, on the host: the newest tick
@@ -316,6 +318,8 @@ encode_player_command :: proc(bytes: ^[dynamic]byte, command: Player_Command) {
 		write_tagged_command(bytes, .Hotbar_Slot, variant)
 	case Toolbar_Assign_Command:
 		write_tagged_command(bytes, .Toolbar_Assign, variant)
+	case Active_Toolbar_Command:
+		write_tagged_command(bytes, .Active_Toolbar, variant)
 	case Close_Machine_Command:
 		write_tagged_command(bytes, .Close_Machine, variant)
 	case Debug_Remove_Block_Command:
@@ -425,6 +429,8 @@ decode_player_command :: proc(reader: ^Byte_Reader) -> (command: Player_Command,
 		return read_command_value(reader, Clear_Craft_Queue_Command)
 	case .Toolbar_Assign:
 		return read_command_value(reader, Toolbar_Assign_Command)
+	case .Active_Toolbar:
+		return read_command_value(reader, Active_Toolbar_Command)
 	}
 	return nil, false
 }

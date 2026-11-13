@@ -116,6 +116,10 @@ Ui_Input :: struct {
 	tab_next:       bool,
 	info:           bool,
 	context_action: bool,
+	// Held, not edges: Y's hold opens the toolbar edit mode from the
+	// crafting view, X's clears a toolbar row in it (0279).
+	info_down:           bool,
+	context_action_down: bool,
 	// The triggers or Q and E: the previous and the next window (0276).
 	window_previous: bool,
 	window_next:     bool,
@@ -285,6 +289,9 @@ Screen :: enum u8 {
 	Map,
 	// The configure pop-up over the inventory (ui_inventory.odin, 0202).
 	Configure,
+	// The toolbar edit mode over the crafting view (ui_toolbar_edit.odin,
+	// 0279).
+	Toolbar_Edit,
 	// The touch layout editor (ui_touch_layout_editor.odin, 0121), above
 	// the settings.
 	Touch_Layout,
@@ -492,6 +499,10 @@ Ui_State :: struct {
 	crafting_half:    Crafting_Half,
 	// The configure pop-up's item (0202), forgotten with the focus.
 	configure:        Configure_Popup,
+	// The crafting view's Y and touch Assign press, a tap or a hold
+	// (0279), and the toolbar edit mode's state, forgotten with the focus.
+	toolbar_entry:    Button_Hold,
+	toolbar_edit:     Toolbar_Edit,
 	toasts:           [dynamic]Toast,
 	// Mission Control's panel and the discovery card (ui_mission_control.odin).
 	mission_control:  Mission_Control_State,
@@ -880,6 +891,11 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	state.confirm = input.confirm || pad_confirms
 	state.click = input.mouse_pressed || (input.pad_pressed && !pad_confirms)
 	state.confirm_modifier = confirm_modifier_of(input.modifier_five, input.modifier_most)
+	// The toolbar edit mode gives the bumpers no meaning: A and a click
+	// stay plain there (0279).
+	if top_screen(state.screens) == .Toolbar_Edit {
+		state.confirm_modifier = .None
+	}
 	state.pointer_split = false
 	state.pointer_held = input.mouse_down || input.pad_down
 	if !state.pointer_held {
@@ -893,8 +909,9 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	clear(&state.draw_list)
 	// Y rotates the held building in the world, so it opens the info panel
 	// only on a screen; in the crafting view it assigns a toolbar slot
-	// (0278, inventory_screen), so there it opens none either.
-	if state.screens.count == 0 || top_screen(state.screens) == .Inventory {
+	// (0278, inventory_screen), so there it opens none either, nor in the
+	// toolbar edit mode, where it does nothing (0279).
+	if top := top_screen(state.screens); state.screens.count == 0 || top == .Inventory || top == .Toolbar_Edit {
 		state.tooltip_open = false
 	} else if input.info && state.keyboard.field == 0 {
 		state.tooltip_open = !state.tooltip_open
@@ -1277,7 +1294,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map, .Configure:
+	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map, .Configure, .Toolbar_Edit:
 		return false
 	case .Pause, .Settings, .Developer, .Textures, .Data_Files, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete, .Multiplayer, .Tech_Demos, .Tech_Demo:
 		return true

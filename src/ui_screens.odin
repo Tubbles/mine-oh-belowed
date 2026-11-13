@@ -249,6 +249,7 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		state.focus = 0
 		state.active_slot = {}
 		state.configure = {}
+		state.toolbar_edit = {}
 	}
 	if screen_context.waiting_for_player {
 		keep_waiting_player_screens(&state.screens)
@@ -287,6 +288,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		map_screen(state, screen_context)
 	case .Configure:
 		configure_screen(state, screen_context)
+	case .Toolbar_Edit:
+		toolbar_edit_screen(state, screen_context)
 	case .Touch_Layout:
 		touch_layout_editor_screen(state, screen_context)
 	case .Title:

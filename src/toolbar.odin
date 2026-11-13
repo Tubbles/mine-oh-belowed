@@ -7,7 +7,8 @@ package game
 // and Drop_Stack take from. toolbar_count of them (data/game.sjson) are
 // shown, stacked on the HUD with the active one lowest (toolbar_at_row).
 // Player.selected_hotbar_slot is the selected slot of the active toolbar.
-// Y in the crafting view names a kind on it (Toolbar_Assign_Command); a
+// Y in the crafting view names a kind on it (Toolbar_Assign_Command), Y
+// held there opens the toolbar edit mode (ui_toolbar_edit.odin, 0279); a
 // kit and a tool or machine arriving name their kinds on an empty slot
 // (take_toolbar_slot).
 
@@ -94,9 +95,15 @@ Toolbar_Entry :: struct {
 }
 
 toolbar_entries :: proc(player: Player, toolbar: int) -> [HOTBAR_SLOT_COUNT]Toolbar_Entry {
+	return toolbar_entries_of(player.toolbars[toolbar], player.inventory)
+}
+
+// A toolbar's slots as drawn, of a toolbar the player may not hold yet
+// (the toolbar edit mode's, with the commands on their way, 0279).
+toolbar_entries_of :: proc(toolbar: Toolbar, inventory: Inventory) -> [HOTBAR_SLOT_COUNT]Toolbar_Entry {
 	entries: [HOTBAR_SLOT_COUNT]Toolbar_Entry
-	for item, slot in player.toolbars[toolbar] {
-		entries[slot] = {item, item == NO_ITEM ? 0 : inventory_count(player.inventory, item)}
+	for item, slot in toolbar {
+		entries[slot] = {item, item == NO_ITEM ? 0 : inventory_count(inventory, item)}
 	}
 	return entries
 }

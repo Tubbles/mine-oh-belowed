@@ -472,7 +472,8 @@ shown_slot :: proc(simulation: ^Simulation_State, player: int, machine: Entity_H
 // hand onto the cursor and returns it; player 1 takes it into the
 // inventory. Both then pick up and drag drop a stack with its return,
 // drop and split on the inserter's fuel slot, spread a split over it,
-// quick move into it, name a kind on a toolbar slot (0278), sort, press
+// quick move into it, name a kind on a toolbar slot (0278) and set the
+// active toolbar (0279), sort, press
 // Fill, transfer the inventory into the inserter and drop a stack on the
 // ground. The sort takes its order from the sender's own state.
 slot_test_commands :: proc(simulation: ^Simulation_State, player, frame: int, inserter: Entity_Handle, stone: Item_Id, ranks: []u16) {
@@ -504,6 +505,7 @@ slot_test_commands :: proc(simulation: ^Simulation_State, player, frame: int, in
 	case 64:
 		queue_player_command(list, player, Quick_Move_Command{machine = inserter, step = {kind = .All, target = {.Inventory, -1}, item = state.inventory.slots[HOTBAR_SLOT_COUNT + 5].item}})
 		queue_player_command(list, player, Toolbar_Assign_Command{toolbar = 0, slot = 2, item = stone})
+		queue_player_command(list, player, Active_Toolbar_Command{0})
 	case 70:
 		// The sort first: Fill changes the slots the sort's order covers.
 		queue_player_command(list, player, slot_sort_command(NO_ENTITY, state.inventory.slots, ranks))

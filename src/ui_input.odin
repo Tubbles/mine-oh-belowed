@@ -138,6 +138,8 @@ make_ui_input :: proc(previous, current: Input_Frame, flick_armed: bool) -> (inp
 		tab_next = .Tab_Next in just || tab_step > 0,
 		info = .Info_Panel in just,
 		context_action = .Context_Action in just,
+		info_down = .Info_Panel in current.pressed,
+		context_action_down = .Context_Action in current.pressed,
 		window_previous = .Window_Previous in just,
 		window_next = .Window_Next in just,
 		drop = .Menu_Drop in just,

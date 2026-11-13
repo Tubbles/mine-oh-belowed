@@ -1,6 +1,6 @@
 # 0279: The toolbar edit mode
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 ## Goal
 
@@ -106,7 +106,7 @@ On touch the cursor is the last focused cell: a tap focuses its cell, and the ro
 
 ### Commands and lockstep
 
-- Every change is a `Toolbar_Assign_Command` (0278's, unchanged); a move, a swap and a merge are two, queued in one frame. The frame's commands reach the local member together (`hold_local_commands`) and its next record takes all of them (`stamp_local_record`); offline the next tick takes the whole list. So every machine applies both at the start of one tick, in order, before anything reads the toolbars, and no machine runs a tick between them; the state between them (one kind on two slots) is valid anyway (0278, Settled 3). No swap command.
+- Every change is a `Toolbar_Assign_Command` (0278's, unchanged); a move and a swap are two, queued in one frame, a merge one. The frame's commands reach the local member together (`hold_local_commands`) and its next record takes all of them (`stamp_local_record`); offline the next tick takes the whole list. So every machine applies both at the start of one tick, in order, before anything reads the toolbars, and no machine runs a tick between them; the state between them (one kind on two slots) is valid anyway (0278, Settled 3). No swap command.
 - P1: `Active_Toolbar_Command :: struct {toolbar: int}` after `Toolbar_Assign_Command` in the union, valid when `index_in_range(toolbar, toolbar_count(content))`, applied as `players[p].active_toolbar = toolbar`; `Player_Command_Tag.Active_Toolbar` after `.Toolbar_Assign` (`session_network.odin:129`) with its encode and decode cases, no tag renumbering. No save change: `active_toolbar` is saved since 0278.
 
 ### Sizes
@@ -194,3 +194,8 @@ None is obsolete; the crafting view's cases draw the new Y hint.
 4. P1, yes: the carousel past the lowest row makes that row the active toolbar through `Active_Toolbar_Command`, which is the item's "the rows shift as a carousel" and "the HUD follows". No world control switches toolbars; that stays 0280's.
 5. P2, yes: on touch a long press on the crafting view's Assign button opens the mode, the button's own hold as Y's.
 6. The pointer drags a shortcut as it drags a stack (the Controls section's open point).
+
+### Deviations (implementation, 2026-11-13)
+
+1. With a shortcut held every press is a drag (`Slot_Drag` starts `.Dragging`), so `end_slot_drag` makes a tap off the panel a drop, never Back. Step 7 adds: a release that did not move, pressed and released off the screen's content (`slot_drag.outside`, `pointer_outside_screen`), backs out with B's sound, which `test_backing_out_puts_the_held_shortcut_back` asks for.
+2. `run_screens` forgets `Ui_State.toolbar_edit` with the configure pop-up's state on the first frame without a screen, so a return focus whose view closed before the focus landed does not steer the next opening.

@@ -534,3 +534,12 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - An old save's pump outside the loaded set reads the generated water, not an edited chunk's saved bytes, and a pump that reads Missing needs the start depth: a pump at a pond the player dug 0.5 to 0.75 m deep stays idle after the load.
 - The load's line reads "1 offshore pumps".
 - `refresh_offshore_pump_sources` finds each pump's frame by a linear scan every tick, as `tick_water_pumps` does: pumps times frames.
+
+## Suggestions from the toolbar edit mode (0279, 2026-11-13)
+
+- The glyph bar has no short form for a hint, so "Assign, hold to edit toolbars" is dropped whole where it does not fit: on the schematics half at the Deck's size, at 1280x800 above scale 1 and at the largest text nothing tells the player the mode exists. A second, shorter label a hint falls back to ("Assign") would keep the assign visible there.
+- Online, an assign writes an absolute value: a hand craft that names a free toolbar slot inside the latency window is overwritten by a drop on that slot, and a Y tap right after a carousel shift assigns to the toolbar that was active before it. Commands that say what they expect to replace would refuse both.
+- The hold's frame time is not clamped: a hitch of 0.25 s turns a Y tap into a hold. The other holds share it.
+- Touch has no way to clear a whole row, and a mouse alone has no way into the mode.
+- A carousel shift makes no sound, since the focused widget's id does not change.
+- `lockstep_test.odin` queues `Active_Toolbar_Command{0}` at one toolbar, a value that changes nothing; a swap pair and a second toolbar would test the path.

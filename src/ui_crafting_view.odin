@@ -15,7 +15,8 @@ import "core:slice"
 // five, with L1 held the most. The context action clears the crafting
 // queue on the schematics half and sorts or configures on the inventory
 // half. Y assigns the focused slot's or schematic's item to the active
-// toolbar's selected slot (0278, toolbar_assignment). The
+// toolbar's selected slot (0278, toolbar_assignment), and held opens the
+// toolbar edit mode (0279, ui_toolbar_edit.odin). The
 // recipe browser (ui_recipes.odin) keeps the picker and the station modes.
 
 Crafting_Half :: enum u8 {
@@ -339,7 +340,9 @@ crafting_view_queue_act :: proc(context_action: bool, button: Touch_Button) -> C
 // The schematics half's glyph bar: on a cell A crafts with its modifier
 // pairs, which the bar drops together, and on the toggle and the graph
 // rows A selects. Y assigns while the cell's recipe has an item to name
-// (assigns, toolbar_assignment). The context action clears the queue.
+// (assigns, toolbar_assignment), and held opens the toolbar edit mode
+// (0279); its hint stands last before Close, so the bar drops it first.
+// The context action clears the queue.
 crafting_view_glyph_bar :: proc(state: ^Ui_State, on_cell, assigns: bool) {
 	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 	if on_cell {
@@ -349,13 +352,17 @@ crafting_view_glyph_bar :: proc(state: ^Ui_State, on_cell, assigns: bool) {
 	} else {
 		append(&hints, Glyph_Hint{.Confirm, text("hint_select")})
 	}
-	if assigns {
-		append(&hints, Glyph_Hint{.Info, text("hint_assign")})
-	}
 	append(&hints, Glyph_Hint{.Context_Action, text("hint_clear_craft_queue")})
 	append(&hints, Glyph_Hint{.Tabs, text("hint_tabs")})
+	append(&hints, Glyph_Hint{.Info, text(toolbar_hint_key(assigns))})
 	append(&hints, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
+}
+
+// Y's hint in the crafting view: the assign and the hold where Y names
+// something, else the hold alone (0279).
+toolbar_hint_key :: proc(assigns: bool) -> string {
+	return assigns ? "hint_assign_or_edit_toolbars" : "hint_edit_toolbars"
 }
 
 // What Y assigns to the active toolbar's selected slot (0278): on the

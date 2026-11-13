@@ -9,8 +9,9 @@ import "core:slice"
 // click, X on the keyboard) puts the cursor's stack, or the focused one
 // with nothing held, onto the ground in front of the player
 // (loose_item.odin). Y assigns the focused slot's item to the active
-// toolbar's selected slot (queue_toolbar_assign). It does not pause the
-// simulation.
+// toolbar's selected slot (queue_toolbar_assign) on its release, and held
+// opens the toolbar edit mode (ui_toolbar_edit.odin, 0279). It does not
+// pause the simulation.
 
 INVENTORY_COLUMNS :: 9
 INVENTORY_ROWS :: PLAYER_INVENTORY_SLOT_COUNT / INVENTORY_COLUMNS
@@ -275,13 +276,23 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	crafting_view_frame(state, panel, layout)
 	ui_panel_begin(state, "inventory", layout.inventory, art = false)
 	inventory_panel := state.current_panel
-	// Back from the configure pop-up focuses the slot that opened it, once:
-	// the frame after the focus landed there the view prefers the first
-	// stack of the selected kind again (a window step there and back).
+	// Back from the configure pop-up or the toolbar edit mode focuses the
+	// slot that opened it, once: the frame after the focus landed there the
+	// view prefers the first stack of the selected kind again (a window step
+	// there and back).
 	if state.focus == state.configure.return_focus {
 		state.configure.return_focus = 0
 	}
-	slot_preferred := state.configure.return_focus != 0 ? state.configure.return_focus : selected_kind_slot_id(state, player)
+	if state.focus == state.toolbar_edit.return_focus {
+		state.toolbar_edit.return_focus = 0
+	}
+	slot_preferred := selected_kind_slot_id(state, player)
+	switch {
+	case state.configure.return_focus != 0:
+		slot_preferred = state.configure.return_focus
+	case state.toolbar_edit.return_focus != 0:
+		slot_preferred = state.toolbar_edit.return_focus
+	}
 	slots := player_slot_region(state, layout.inventory, player, items)
 	ui_panel_end(state)
 	schematics := schematics_half(state, screen_context, layout)
@@ -303,6 +314,11 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// Before the focus settles: a focus on the row's button belongs to
 	// neither half, so the half and the selection stay.
 	button := touch ? crafting_view_touch_row(state, on_schematics, configurable != NO_ITEM) : .None
+	// Y, or a finger on the row's Assign: a tap assigns on its release, a
+	// hold opens the toolbar edit mode (0279).
+	entry_event: Button_Hold_Event
+	entry_press := toolbar_edit_entry_press(state^, touch_row_button_id(state, .Assign_Toolbar))
+	state.toolbar_entry, entry_event = advance_button_hold(state.toolbar_entry, entry_press, state.frame_count, state.frame_seconds, TOUCH_HOLD_SECONDS)
 	// On touch a tap on a cell selects the recipe and the row's buttons
 	// commit, on the gamepad the focused cell is the recipe.
 	selected_shown := slice.contains(schematics.visible, browser.focused_recipe)
@@ -335,11 +351,11 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	queue_slot_commands(state, screen_context, inventory_slot_commands(player.inventory, player.held, slot_input, screen_context.item_sort_ranks))
 	queue_slot_commands(state, screen_context, player_slot_button_commands(player.inventory, player.held, active, button, screen_context.item_sort_ranks))
-	// Y (or the row's Assign) names the slot's or the recipe's item on the
-	// active toolbar's selected slot (0278).
+	// Y's tap (or the row's Assign) names the slot's or the recipe's item
+	// on the active toolbar's selected slot (0278).
 	assigned_stack := touch ? active_slot_stack(player.inventory, nil, active) : (slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK)
 	assignment := toolbar_assignment(state.crafting_half, assigned_stack, on_cell, browser.focused_recipe, screen_context.recipes, screen_context.unlocks.available)
-	if assignment != NO_ITEM && ((state.input.info && state.keyboard.field == 0) || button == .Assign_Toolbar) {
+	if assignment != NO_ITEM && entry_event == .Tap {
 		queue_toolbar_assign(state, screen_context, assignment)
 	}
 	// The row's craft buttons act on the selected recipe while the grid
@@ -362,6 +378,8 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	if configures {
 		open_configure_popup(state, configurable)
+	} else if entry_event == .Hold {
+		open_toolbar_edit(state, player^)
 	}
 }
 
@@ -573,9 +591,11 @@ draw_held_stack :: proc(state: ^Ui_State, stack: Item_Stack, items: Item_Registr
 // quick_move: the R1 with A hint on a focused stack. drop: the Drop hint
 // on a focused or held stack (the inventory screen). configure: the
 // context action opens the configure pop-up instead of sorting (0202).
-// assign: Y's Assign on a focused stack (the crafting view, 0278).
-// A modifier's glyph goes before its Confirm, unlabelled, so the bar
-// drops the pair together (glyph_hints_that_fit).
+// assign: Y's hint in the crafting view (0278, 0279), which names the
+// assign on a focused stack and the toolbar edit mode's hold always
+// (toolbar_hint_key); it stands last before Close, so it is the hint the
+// bar drops first. A modifier's glyph goes before its Confirm,
+// unlabelled, so the bar drops the pair together (glyph_hints_that_fit).
 inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false, drop := false, configure := false, assign := false) {
 	if !stack_is_empty(held) {
 		hints := make([dynamic]Glyph_Hint, context.temp_allocator)
@@ -583,8 +603,8 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_m
 		if drop {
 			append(&hints, Glyph_Hint{.Drop, text("hint_drop")})
 		}
-		if assign && !stack_is_empty(focused) {
-			append(&hints, Glyph_Hint{.Info, text("hint_assign")})
+		if assign {
+			append(&hints, Glyph_Hint{.Info, text(toolbar_hint_key(!stack_is_empty(focused)))})
 		}
 		append(&hints, Glyph_Hint{.Back, text("hint_close")})
 		ui_glyph_bar(state, hints[:])
@@ -598,12 +618,13 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_m
 	if drop && !stack_is_empty(focused) {
 		append(&hints, Glyph_Hint{.Drop, text("hint_drop")})
 	}
-	if assign && !stack_is_empty(focused) {
-		append(&hints, Glyph_Hint{.Info, text("hint_assign")})
-	}
 	if focused.count >= 2 {
 		append(&hints, Glyph_Hint{.Most, ""}, Glyph_Hint{.Confirm, text("hint_split")})
 	}
-	append(&hints, Glyph_Hint{.Context_Action, text(configure ? "hint_configure" : "hint_sort")}, Glyph_Hint{.Back, text("hint_close")})
+	append(&hints, Glyph_Hint{.Context_Action, text(configure ? "hint_configure" : "hint_sort")})
+	if assign {
+		append(&hints, Glyph_Hint{.Info, text(toolbar_hint_key(!stack_is_empty(focused)))})
+	}
+	append(&hints, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
 }

@@ -108,6 +108,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `ui_tech_demo.odin`: the Tech demos list (0302) and the Tech demo screen (0291), `Tech_Demo_Setup` and its rows' steps, the tech demo request, the bare flag's screens (`push_tech_demo_menu`).
   - `ui_inventory.odin`, `quick_transfer.odin`: the inventory screen, `finish_slot_drag` and `queue_slot_command`; the quick move state machine and the transfer buttons, which queue slot commands.
   - `ui_crafting_view.odin`: the crafting view's layout, its schematics half (tabs, grid, detail), the seam's focus step and its glyph bar (0277), drawn by `inventory_screen`.
+  - `ui_toolbar_edit.odin`: the toolbar edit mode over the crafting view (0279), `Button_Hold` (a button's tap or hold) and `shown_toolbars`.
   - `ui_machine.odin`: the machine panel frame, furnace, inserter, drill and splitter sections.
   - `ui_crafting_machines.odin`, `ui_fluid.odin`, `ui_power.odin`, `ui_launch_pad.odin`, `ui_prospecting.odin`, `ui_contracts.odin`: the panel sections for assemblers and labs, fluids, power, launch pads, prospecting, the venture.
   - `ui_recipes.odin`, `ui_recipe_browser.odin`: the recipe screen of the picker and the station; its pure filtering and detail.

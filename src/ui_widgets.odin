@@ -1316,7 +1316,8 @@ Touch_Button :: enum u8 {
 	Transfer_All_Of_Type,
 	Drop,
 	// Y's place in the crafting view (0278): names the active slot's or
-	// the selected recipe's item on the toolbar.
+	// the selected recipe's item on the toolbar; a long press opens the
+	// toolbar edit mode (0279).
 	Assign_Toolbar,
 	Craft,
 	Craft_Five,
@@ -1330,6 +1331,9 @@ Touch_Button :: enum u8 {
 	Research,
 	Zoom_In,
 	Zoom_Out,
+	// The toolbar edit mode's X, and its Back (0279).
+	Clear_Toolbar_Slot,
+	Done,
 	Back,
 }
 
@@ -1358,6 +1362,8 @@ touch_button_keys := [Touch_Button]string {
 	.Research             = "touch_button_research",
 	.Zoom_In              = "touch_button_zoom_in",
 	.Zoom_Out             = "touch_button_zoom_out",
+	.Clear_Toolbar_Slot   = "touch_button_clear_toolbar_slot",
+	.Done                 = "touch_button_done",
 	.Back                 = "touch_button_back",
 }
 
@@ -1389,9 +1395,10 @@ tap_selects_only :: proc(state: ^Ui_State) -> bool {
 // The buttons in Touch_Button's order along the bottom of
 // touch_row_strip, chosen for the layout's buttons (the widest row the
 // screen can show, so a button that comes and goes moves no other); the
-// one tapped this frame, .None for none. Back sets the frame's Back,
-// which handle_screen_keys takes after the screen as it takes B, so it
-// closes every screen as B does, with B's sound (Ui_State.back_tapped).
+// one tapped this frame, .None for none. Back (and Done, the toolbar edit
+// mode's Back) sets the frame's Back, which handle_screen_keys takes
+// after the screen as it takes B, so it closes every screen as B does,
+// with B's sound (Ui_State.back_tapped).
 ui_touch_row :: proc(state: ^Ui_State, buttons: Touch_Buttons, layout: Touch_Buttons = {}) -> Touch_Button {
 	shown := make([dynamic]Touch_Button, 0, len(Touch_Button), context.temp_allocator)
 	labels := make([dynamic]string, 0, len(Touch_Button), context.temp_allocator)
@@ -1404,10 +1411,15 @@ ui_touch_row :: proc(state: ^Ui_State, buttons: Touch_Buttons, layout: Touch_But
 	if pressed < 0 {
 		return .None
 	}
-	if shown[pressed] == .Back {
+	if shown[pressed] == .Back || shown[pressed] == .Done {
 		state.input.back, state.back_tapped = true, true
 	}
 	return shown[pressed]
+}
+
+// A row button's id, at the depth the row was drawn.
+touch_row_button_id :: proc(state: ^Ui_State, button: Touch_Button) -> Ui_Id {
+	return ui_id(state, text(touch_button_keys[button]))
 }
 
 // The row's width with every label whole: the natural widths and the gaps.

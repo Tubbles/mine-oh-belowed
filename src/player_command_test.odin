@@ -343,3 +343,29 @@ test_the_toolbar_assign_command_round_trips_and_applies :: proc(t: ^testing.T) {
 	simulation_tick(&simulation, content, {})
 	testing.expect_value(t, player.toolbars[0][5], NO_ITEM)
 }
+
+// Work item 0279: the toolbar edit mode's carousel survives the wire and
+// sets the active toolbar at the next tick, refused past the count.
+@(test)
+test_the_active_toolbar_command_round_trips_and_applies :: proc(t: ^testing.T) {
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	command := Active_Toolbar_Command{toolbar = 1}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	encode_player_command(&bytes, command)
+	reader := Byte_Reader{data = bytes[:]}
+	decoded, ok := decode_player_command(&reader)
+	testing.expect(t, ok)
+	testing.expect_value(t, decoded.(Active_Toolbar_Command), command)
+	one := content
+	one.toolbar_count = 1
+	testing.expect(t, !player_command_valid(command, one))
+	two := content
+	two.toolbar_count = 2
+	testing.expect(t, player_command_valid(command, two))
+	player := &simulation.players[0]
+	testing.expect_value(t, player.active_toolbar, 0)
+	queue_player_command(&simulation.player_commands, 0, command)
+	simulation_tick(&simulation, two, {})
+	testing.expect_value(t, player.active_toolbar, 1)
+}

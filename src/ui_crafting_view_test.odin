@@ -672,7 +672,7 @@ test_y_assigns_the_focused_slot_or_schematic_to_the_selected_slot :: proc(t: ^te
 
 // The bars say Assign on Y where Y names something: a stack on the
 // inventory half, an available schematic's cell; not on an empty slot or
-// a locked recipe.
+// a locked recipe. Y's hold to edit the toolbars shows everywhere (0279).
 @(test)
 test_the_crafting_view_bars_offer_assign :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -681,6 +681,7 @@ test_the_crafting_view_bars_offer_assign :: proc(t: ^testing.T) {
 	player.held = EMPTY_HELD_STACK
 	player.inventory.slots[5] = {test_item(audit.content.items, "log"), 7}
 	player.inventory.slots[6] = EMPTY_STACK
+	assigns, edits := text("hint_assign_or_edit_toolbars"), text("hint_edit_toolbars")
 	{
 		state: Ui_State
 		defer destroy_ui_state(&state)
@@ -688,23 +689,98 @@ test_the_crafting_view_bars_offer_assign :: proc(t: ^testing.T) {
 		state.focus = inventory_slot_id("grid", 5)
 		screen_test_frame(audit, &state, {})
 		screen_test_frame(audit, &state, {})
-		testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_assign")))
+		testing.expect(t, draw_list_has_text(state.draw_list[:], assigns))
 		state.focus = inventory_slot_id("grid", 6)
 		screen_test_frame(audit, &state, {})
 		screen_test_frame(audit, &state, {})
-		testing.expect(t, !draw_list_has_text(state.draw_list[:], text("hint_assign")))
+		testing.expect(t, !draw_list_has_text(state.draw_list[:], assigns))
+		testing.expect(t, draw_list_has_text(state.draw_list[:], edits))
 	}
 	{
 		state: Ui_State
 		defer destroy_ui_state(&state)
 		open_crafting_view_on_recipe(audit, &state, test_recipe(audit.content.recipes, "plank"))
-		testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_assign")))
+		testing.expect(t, draw_list_has_text(state.draw_list[:], assigns))
 	}
 	{
 		state: Ui_State
 		defer destroy_ui_state(&state)
 		open_crafting_view_on_recipe(audit, &state, locked_item_recipe(audit))
-		testing.expect(t, !draw_list_has_text(state.draw_list[:], text("hint_assign")))
+		testing.expect(t, !draw_list_has_text(state.draw_list[:], assigns))
+		testing.expect(t, draw_list_has_text(state.draw_list[:], edits))
+	}
+}
+
+// The glyph bar draws the label whole.
+glyph_bar_has_label :: proc(commands: []Draw_Command, label: string) -> bool {
+	for command in commands {
+		if command.panel == UI_GLYPH_BAR_PANEL && command.kind == .Text && command.text == label {
+			return true
+		}
+	}
+	return false
+}
+
+// One frame of the screens at an audit size.
+crafting_view_frame_at_size :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size) {
+	ui_begin(state, {}, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
+	run_screens(state, audit_screen_context(audit))
+	ui_resolve(state)
+}
+
+// 0279's fix round: Y's longer hint stands last before Close, so it is
+// the hint the bars drop first. At every audit size, text scale and set
+// of glyphs, each half's bar still shows every hint 0278's bar (Assign
+// before X's hint) kept there.
+@(test) // slow
+test_the_y_hint_gives_way_first_in_the_crafting_view_bars :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	text_scale := audit.settings.text_scale
+	defer audit.settings.text_scale = text_scale
+	player := &audit.simulation.players[0]
+	player.held = EMPTY_HELD_STACK
+	player.inventory.slots[5] = {test_item(audit.content.items, "log"), 7}
+	plank := test_recipe(audit.content.recipes, "plank")
+	Bar_Size :: struct {
+		size:       Ui_Audit_Size,
+		text_scale: f32,
+	}
+	bar_sizes := make([dynamic]Bar_Size, context.temp_allocator)
+	for scale in UI_AUDIT_TEXT_SCALES {
+		for size in UI_AUDIT_SIZES {
+			append(&bar_sizes, Bar_Size{size, scale})
+		}
+	}
+	append(&bar_sizes, Bar_Size{UI_AUDIT_DECK_SIZE, DECK_PRESET_TEXT_SCALE})
+	// 0278's bars over a log stack and on plank's cell.
+	inventory_bar := [?]Glyph_Hint{{.Confirm, text("hint_pick_up")}, {.Drop, text("hint_drop")}, {.Info, "Assign"}, {.Most, ""}, {.Confirm, text("hint_split")}, {.Context_Action, text("hint_sort")}, {.Back, text("hint_close")}}
+	schematics_bar := [?]Glyph_Hint{{.Confirm, text("hint_craft")}, {.Five, ""}, {.Confirm, text("hint_craft_five")}, {.Most, ""}, {.Confirm, text("hint_craft_most")}, {.Info, "Assign"}, {.Context_Action, text("hint_clear_craft_queue")}, {.Tabs, text("hint_tabs")}, {.Back, text("hint_close")}}
+	for bar_size in bar_sizes {
+		audit.settings.text_scale = bar_size.text_scale
+		for device in Input_Device {
+			for half in Crafting_Half {
+				state := Ui_State{theme = audit.theme, active_device = device, bindings = audit.bindings, crafting_half = half}
+				audit.views.crafting_view = {tab = crafting_view_test_tab(audit.content.recipes, plank), available_only = false}
+				audit.views.recipe_browser.focused_recipe = plank
+				push_screen(&state.screens, .Inventory)
+				crafting_view_frame_at_size(audit, &state, bar_size.size)
+				if half == .Inventory {
+					state.focus = inventory_slot_id("grid", 5)
+				}
+				crafting_view_frame_at_size(audit, &state, bar_size.size)
+				crafting_view_frame_at_size(audit, &state, bar_size.size)
+				focused := half == .Inventory ? inventory_slot_id("grid", 5) : schematic_cell_id(plank)
+				testing.expectf(t, state.focus == focused, "%v text %.1f %v %v: the focus is not on the log or plank", bar_size.size, bar_size.text_scale, device, half)
+				old_bar := half == .Inventory ? inventory_bar[:] : schematics_bar[:]
+				for hint in glyph_hints_that_fit(&state, old_bar, ui_safe_area(&state).width) {
+					if hint.label != "" && hint.label != "Assign" {
+						testing.expectf(t, glyph_bar_has_label(state.draw_list[:], hint.label), "%v text %.1f %v %v: %q dropped", bar_size.size, bar_size.text_scale, device, half, hint.label)
+					}
+				}
+				destroy_ui_state(&state)
+			}
+		}
 	}
 }
 

@@ -42,7 +42,7 @@ A `Pending` finger becomes:
 | Constant | Value | Meaning |
 | --- | --- | --- |
 | `TOUCH_TAP_SLOP` | 12 | Pixels at 1080 high, scaled like the layout; beyond it a finger drags |
-| `TOUCH_HOLD_SECONDS` | 0.25 | Rest that makes a hold, a hotbar long press, a slot split ([ui.md](ui.md)) |
+| `TOUCH_HOLD_SECONDS` | 0.25 | Rest that makes a hold, a hotbar long press, a slot split, the crafting view Assign's long press that opens the toolbar edit mode, as Y held does ([ui.md](ui.md)) |
 | `TOUCH_DOUBLE_TAP_SECONDS` | 0.3 | Window for a latching double tap |
 | `TOUCH_OVERLAY_ELEMENT_CAPACITY` | 64 | Elements per layout (the latches are a bit set) |
 

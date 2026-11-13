@@ -90,6 +90,12 @@ Toolbar_Assign_Command :: struct {
 	item:    Item_Id,
 }
 
+// The toolbar edit mode's carousel (0279): the toolbar its lowest row,
+// and the HUD's, shows.
+Active_Toolbar_Command :: struct {
+	toolbar: int,
+}
+
 // The foundation block the configure pop-up picks (0193, 0202; opened
 // with Context_Action on a highlighted foundation in the inventory view):
 // indices into the field content's foundation_sizes and
@@ -170,6 +176,7 @@ Player_Command :: union {
 	Splitter_Side_Command,
 	Hotbar_Slot_Command,
 	Toolbar_Assign_Command,
+	Active_Toolbar_Command,
 	Foundation_Block_Command,
 	Close_Machine_Command,
 	Debug_Remove_Block_Command,
@@ -323,6 +330,8 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 		state.players[queued.player].selected_hotbar_slot = clamp(command.slot, 0, HOTBAR_SLOT_COUNT - 1)
 	case Toolbar_Assign_Command:
 		state.players[queued.player].toolbars[command.toolbar][command.slot] = command.item
+	case Active_Toolbar_Command:
+		state.players[queued.player].active_toolbar = command.toolbar
 	case Foundation_Block_Command:
 		field := &state.players[queued.player].field
 		field.foundation_size_index, field.foundation_height_index = u8(command.size_index), u8(command.height_index)
@@ -498,6 +507,8 @@ player_command_valid :: proc(command: Player_Command, content: Simulation_Conten
 		return item_valid(value.filter, content.items, true)
 	case Toolbar_Assign_Command:
 		return index_in_range(value.toolbar, toolbar_count(content)) && index_in_range(value.slot, HOTBAR_SLOT_COUNT) && item_valid(value.item, content.items, true)
+	case Active_Toolbar_Command:
+		return index_in_range(value.toolbar, toolbar_count(content))
 	case Splitter_Priorities_Command:
 		return enum_in_range(value.input) && enum_in_range(value.output)
 	case Splitter_Side_Command:
