@@ -1,6 +1,6 @@
 # 0390: The solve's fed regions replayed
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, dd44fc03)
 
 Found by 0373's review. The solve's pool reruns every inner fed region's capped greedy in each walk above it, so its work is quartic in the depth of nested fed regions that each have a cheap feeder: a chain of 321 nodes nested that way costs 28 million node visits a tick, one of 641 costs 445 million. Ordinary netlists do not nest so (2,701 nodes with every chain edge saturated and generators behind thin cables: 1.3 million), but a long line of generator and consumer pairs joined by thin cables does, and the solve runs every tick on every machine of a session. After 0373, in the same file, before or with 0389.
 
