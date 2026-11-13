@@ -1,6 +1,6 @@
 # 0279: The toolbar edit mode
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, f095647f)
 
 ## Goal
 
