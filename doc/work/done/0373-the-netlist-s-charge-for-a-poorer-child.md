@@ -1,6 +1,6 @@
 # 0373: The netlist's charge for a poorer child
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 453ef0a1)
 
 Found by 0355's review. In the solve's slow path (`src/netlist/solve.odin`, `add_clamped_response`, `region_levels`) the region that feeds a poorer one across a limiting edge is charged the edge's full capacity, while the poorer region at its whole per mille level takes less. The difference is withheld from the feeding region, and when its demand is small that is tens of per mille with its own generation idle: a box with one 13 kW machine and a 12 kW generator on a light cable that passes on to an overloaded box runs its machine at 92.5 percent where full power is reachable. The main agent had accepted the charge as "a few per mille" before the review measured it; that was wrong. Under the poles it cannot occur (every edge unlimited), so 0355 landed with it named.
 
