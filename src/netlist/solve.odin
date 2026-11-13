@@ -12,7 +12,11 @@ package netlist
 // level, a saturated edge splitting its tree into regions: the side short
 // of power gets the lower level and the side with spare power keeps its
 // higher one (region_levels), and where an edge blocks the dispatch the
-// generation moves inside the limit (repair_dispatch).
+// generation moves inside the limit (repair_dispatch). A region fed across
+// a saturated edge charges the region feeding it only the whole joules it
+// takes (0373). Every spare joule, a region's slack at its level or the
+// room a fed region leaves on its edge, goes a level at a time to the
+// poorest region that can reach it (the pool: fed_fill, settle_levels).
 //
 // Phase 2 charges the stores that supplied nothing from what phase 1 left
 // of the other offers and of every edge, by the same solve.
@@ -60,10 +64,32 @@ Response :: struct {
 }
 
 // The largest levels from 0 to LEVEL_FULL at which a subtree's response
-// exceeds the edge's upper bound, reaches it, and reaches the lower one;
-// -1 for none.
+// reaches the edge's upper bound and its lower one; -1 for none.
 Level_Thresholds :: struct {
-	rich_until, rich_level, poor_level: i32,
+	rich_level, poor_level: i32,
+}
+
+// A child against its parent region's level: in the region, feeding it
+// across its saturated edge (a candidate of the pool), or fed by it.
+Child_State :: enum u8 {
+	Joined,
+	Feeder,
+	Fed,
+}
+
+// The slow path's scratch by position, in whole joules: net what a region
+// node's part sends up its edge (a fed region's top: minus its take),
+// passed what draws sent down that edge, source a domain root's or a fed
+// top's spare not yet drawn, export what a feeder sends up its edge; ends
+// one past each position's subtree in pre-order; domain and candidates
+// the lists of the last walk_domain.
+Pools :: struct {
+	state:                       []Child_State,
+	level:                       []u32,
+	export, net, passed, source: []i64,
+	ends:                        []i32,
+	done:                        []bool,
+	domain, candidates:          [dynamic]i32,
 }
 
 Node_Position :: struct {
@@ -227,20 +253,27 @@ uniform_levels :: proc(phase: ^Phase) {
 }
 
 // Whether region_levels would give every node the pooled level, from the
-// responses at 0, at the pooled level and one above it: the root's level
-// is the pooled one and no child saturates its edge there, poorer or
-// richer. Rounding can keep the dispatch's flows inside an edge whose
-// subtree, at its full offer, would exceed it: the slow path then
+// responses at 0, at the pooled level and one above it (made
+// non-increasing): the root's level is the pooled one and no child
+// saturates its edge there, poorer or richer. A child poor one level
+// above is charged there the whole joules its subtree then takes (whole,
+// the whole joule net at the pooled level), as the slow path charges it.
+// Rounding can keep the dispatch's flows inside an edge whose subtree, at
+// its full offer, would exceed it, and a child reaching its edge outwards
+// below full is a candidate the pool may raise: the slow path then
 // answers, so the fast path never gives what the slow path would not.
 pooled_level_holds :: proc(phase: Phase) -> bool {
 	count := len(phase.nodes)
 	level := i64(phase.level[0])
 	levels := [3]i64{0, level, min(level + 1, LEVEL_FULL)}
 	responses := make([][3]i64, count, context.temp_allocator)
+	whole := make([]i64, count, context.temp_allocator)
 	for position := count - 1; position >= 0; position -= 1 {
 		for &value, index in responses[position] {
 			value += LEVEL_FULL * phase.offer[position] - phase.demand[position] * levels[index]
 		}
+		whole[position] += LEVEL_FULL * (phase.offer[position] - delivered_at(phase.demand[position], u32(level)))
+		responses[position][2] = min(responses[position][1], responses[position][2])
 		if position == 0 {
 			break
 		}
@@ -249,9 +282,11 @@ pooled_level_holds :: proc(phase: Phase) -> bool {
 		if !child_keeps_level(response, low, high, level) {
 			return false
 		}
-		for value, index in response {
-			responses[phase.parent[position]][index] += clamp(value, low, high)
-		}
+		parent := phase.parent[position]
+		responses[parent][0] += clamp(response[0], low, high)
+		responses[parent][1] += clamp(response[1], low, high)
+		responses[parent][2] += response[2] < low ? min(whole[position], 0) : clamp(response[2], low, high)
+		whole[parent] += clamp(whole[position], low, high)
 	}
 	root := responses[0]
 	if root[0] == 0 {
@@ -260,10 +295,10 @@ pooled_level_holds :: proc(phase: Phase) -> bool {
 	return root[1] >= 0 && (level == LEVEL_FULL || root[2] < 0)
 }
 
-// At its parent's level (response[1]; response[2] one above it) the child
-// is not poorer and, when its edge saturates outwards, not richer either.
+// At its parent's level (response[1]) the child is not poorer and, below
+// full, does not reach its edge outwards.
 child_keeps_level :: proc(response: [3]i64, low, high, level: i64) -> bool {
-	return response[1] >= low && (response[1] <= high || level == LEVEL_FULL || response[2] < high)
+	return response[1] >= low && (response[1] < high || level == LEVEL_FULL)
 }
 
 // The tree's total delivered shared over the offers by order ascending,
@@ -368,13 +403,13 @@ take_table :: proc(spare_tables: ^[dynamic][]i64) -> []i64 {
 	return make([]i64, RESPONSE_LEVELS, context.temp_allocator)
 }
 
-// Adds a child's response, clamped to its edge's bounds, to its parent's.
-// The sum stays a line while every child is a line whose clamp does not
-// bite on 0 to LEVEL_FULL, else it becomes a table of every level.
-// Known defect (0373): a poor child is charged its edge's full capacity,
-// though at its whole per mille level it takes less, so the feeding region
-// loses the rest: tens of per mille when its own demand is small.
-add_clamped_response :: proc(target: ^Response, child: Response, low, high: i64, spare_tables: ^[dynamic][]i64) {
+// Adds a child's response to its parent's: up to its poor level clamped to
+// its edge's bounds, above it the whole joules the child then takes, what
+// its room spends raising its domain's candidates to one level under the
+// parent's (fill, nil for none) beyond its own net. The sum stays a line
+// while every child is a line whose clamp does not bite on 0 to LEVEL_FULL
+// (poor_level is then LEVEL_FULL), else it becomes a table of every level.
+add_child_response :: proc(target: ^Response, child: Response, low, high: i64, poor_level: i32, own_net: i64, fill: []i64, spare_tables: ^[dynamic][]i64) {
 	clamp_bites := response_at(child, 0) > high || response_at(child, LEVEL_FULL) < low
 	if target.table == nil && child.table == nil && !clamp_bites {
 		target.a += child.a
@@ -388,28 +423,247 @@ add_clamped_response :: proc(target: ^Response, child: Response, low, high: i64,
 		}
 	}
 	for &value, level in target.table {
-		value += clamp(response_at(child, level), low, high)
+		if level <= int(poor_level) {
+			value += clamp(response_at(child, level), low, high)
+			continue
+		}
+		drawn := fill != nil ? fill[level - 1] : 0
+		value -= LEVEL_FULL * max(drawn - own_net, 0)
 	}
 }
 
-// A child's level from its parent's: richer when its edge would carry
-// more than it may out, poorer when more than it may in, else the same.
-child_level :: proc(thresholds: Level_Thresholds, parent_level: u32) -> u32 {
-	switch {
-	case i32(parent_level) <= thresholds.rich_until:
-		return u32(thresholds.rich_level)
-	case i32(parent_level) > thresholds.poor_level:
-		return u32(max(thresholds.poor_level, 0))
+// Each entry from level 1 up becomes the least of itself and the one
+// below. A whole joule take can lie above the exact need at a poor level,
+// so a parent's table can rise there: a region stops at the first level
+// it cannot afford (progressive filling).
+make_non_increasing :: proc(table: []i64) {
+	for level in 1 ..< len(table) {
+		table[level] = min(table[level], table[level - 1])
 	}
-	return parent_level
+}
+
+// A child against its parent region's level: a feeder up to its rich
+// level, fed above its poor level, else joined.
+child_state :: proc(thresholds: Level_Thresholds, region_level: u32) -> Child_State {
+	switch {
+	case i32(region_level) <= thresholds.rich_level:
+		return .Feeder
+	case i32(region_level) > thresholds.poor_level:
+		return .Fed
+	}
+	return .Joined
+}
+
+// The pools of a phase in the temp allocator, ends from the subtree sizes.
+make_pools :: proc(phase: Phase) -> Pools {
+	count := len(phase.nodes)
+	pools := Pools {
+		state      = make([]Child_State, count, context.temp_allocator),
+		level      = make([]u32, count, context.temp_allocator),
+		export     = make([]i64, count, context.temp_allocator),
+		net        = make([]i64, count, context.temp_allocator),
+		passed     = make([]i64, count, context.temp_allocator),
+		source     = make([]i64, count, context.temp_allocator),
+		ends       = make([]i32, count, context.temp_allocator),
+		done       = make([]bool, count, context.temp_allocator),
+		domain     = make([dynamic]i32, 0, count, context.temp_allocator),
+		candidates = make([dynamic]i32, 0, count, context.temp_allocator),
+	}
+	for position := count - 1; position >= 0; position -= 1 {
+		pools.ends[position] += 1
+		if position > 0 {
+			pools.ends[phase.parent[position]] += pools.ends[position]
+		}
+	}
+	for &end, position in pools.ends {
+		end += i32(position)
+	}
+	return pools
+}
+
+// The domain of top at level: top's region and the regions fed from it,
+// recursively, each node's state and level from its parent's. The feeders
+// met are its candidates, each at its rich level with its edge's capacity
+// as its export, their subtrees skipped. Both lists come out in pre-order.
+walk_domain :: proc(phase: Phase, thresholds: []Level_Thresholds, pools: ^Pools, top: i32, level: u32) {
+	clear(&pools.domain)
+	clear(&pools.candidates)
+	pools.level[top] = level
+	append(&pools.domain, top)
+	for position := top + 1; position < pools.ends[top]; {
+		parent_level := pools.level[phase.parent[position]]
+		state := child_state(thresholds[position], parent_level)
+		pools.state[position] = state
+		pools.source[position] = 0
+		if state == .Feeder {
+			pools.level[position] = u32(thresholds[position].rich_level)
+			pools.export[position] = phase.upper[position]
+			append(&pools.candidates, position)
+			position = pools.ends[position]
+			continue
+		}
+		pools.level[position] = state == .Joined ? parent_level : u32(max(thresholds[position].poor_level, 0))
+		pools.passed[position] = 0
+		append(&pools.domain, position)
+		position += 1
+	}
+}
+
+// The run of candidates with positions in [first, end), contiguous in
+// pre-order.
+candidates_below :: proc(candidates: []i32, first, end: i32) -> []i32 {
+	start, _ := slice.binary_search(candidates, first)
+	stop, _ := slice.binary_search(candidates, end)
+	return candidates[start:stop]
+}
+
+// The nets of the last walk's domain, bottom-up: each node's offer less
+// its delivery, its candidates' exports, its joined children's nets up to
+// their edges' capacities. A fed region first spends its room (its net
+// plus its capacity) on its candidates below its parent's level, takes
+// what that spent beyond its net, and keeps the surplus its parent cannot
+// take as a source. Inner fed regions settle first.
+settle_domain :: proc(phase: Phase, responses: []Response, pools: ^Pools) {
+	for position in pools.domain {
+		pools.net[position] = 0
+	}
+	for candidate in pools.candidates {
+		pools.net[phase.parent[candidate]] += pools.export[candidate]
+	}
+	for index := len(pools.domain) - 1; index >= 0; index -= 1 {
+		position := pools.domain[index]
+		pools.net[position] += phase.offer[position] - delivered_at(phase.demand[position], pools.level[position])
+		if index == 0 {
+			continue
+		}
+		parent := phase.parent[position]
+		if pools.state[position] != .Fed {
+			pools.net[parent] += min(pools.net[position], phase.upper[position])
+			continue
+		}
+		own := pools.net[position]
+		room := own - phase.lower[position]
+		pools.source[position] = room
+		below := candidates_below(pools.candidates[:], position, pools.ends[position])
+		greedy(phase, responses, pools, below, i32(pools.level[parent]) - 1, position, nil)
+		drawn := room - pools.source[position]
+		pools.source[position] = max(own - drawn, 0)
+		pools.net[position] = -max(drawn - own, 0)
+		pools.net[parent] += pools.net[position]
+	}
+}
+
+// What the sources from the candidate's parent up to bound can bring it.
+// A source joins below its own edge, so the least, over the edges on the
+// path, of the edge's room towards the candidate plus the sources below
+// it. The room is a feeder's export, or down to its lower bound when the
+// feeder sits at its parent's level (the edge is open both ways there),
+// else the edge's planned flow above its lower bound.
+reachable :: proc(phase: Phase, pools: Pools, candidate, bound: i32) -> i64 {
+	sources: i64
+	least := max(i64)
+	for position := phase.parent[candidate]; position != bound; position = phase.parent[position] {
+		sources += pools.source[position]
+		room := pools.export[position]
+		if pools.state[position] != .Feeder {
+			room = min(pools.net[position], phase.upper[position]) - phase.lower[position] - pools.passed[position]
+		} else if pools.level[position] == pools.level[phase.parent[position]] {
+			room = pools.export[position] - phase.lower[position]
+		}
+		least = min(least, room + sources)
+	}
+	return min(least, pools.source[bound] + sources)
+}
+
+// Takes amount for the candidate from the sources on its path, nearest
+// first; what a source does not cover crosses that position's edge
+// towards the candidate (a feeder exports less, below 0 at its parent's
+// level). The rest comes out of bound's source and is returned.
+draw :: proc(phase: Phase, pools: ^Pools, candidate, bound: i32, amount: i64) -> (from_bound: i64) {
+	from_bound = amount
+	for position := phase.parent[candidate]; position != bound; position = phase.parent[position] {
+		taken := min(pools.source[position], from_bound)
+		pools.source[position] -= taken
+		from_bound -= taken
+		if pools.state[position] == .Feeder {
+			pools.export[position] -= from_bound
+		} else {
+			pools.passed[position] += from_bound
+		}
+	}
+	pools.source[bound] -= from_bound
+	return
+}
+
+// Raises the candidates a level at a time with what the sources up to
+// bound can bring them: the least level first, then the cheapest next
+// level, then the first in pre-order; none above cap_level. A level costs
+// what the candidate's export falls by, and the candidate then sits at the
+// highest level its export allows. With fill, what each level bought drew
+// from bound's source is added at that level.
+greedy :: proc(phase: Phase, responses: []Response, pools: ^Pools, candidates: []i32, cap_level, bound: i32, fill: []i64) {
+	for candidate in candidates {
+		pools.done[candidate] = false
+	}
+	for {
+		chosen, chosen_need := i32(-1), i64(0)
+		for candidate in candidates {
+			level := pools.level[candidate]
+			if pools.done[candidate] || i32(level) + 1 > cap_level {
+				continue
+			}
+			next := response_at(responses[candidate], int(level) + 1)
+			need := pools.export[candidate] - next / LEVEL_FULL
+			if next < 0 || need > reachable(phase, pools^, candidate, bound) {
+				pools.done[candidate] = true
+				continue
+			}
+			if chosen < 0 || level < pools.level[chosen] || (level == pools.level[chosen] && need < chosen_need) {
+				chosen, chosen_need = candidate, need
+			}
+		}
+		if chosen < 0 {
+			return
+		}
+		bought := pools.level[chosen] + 1
+		pools.export[chosen] -= chosen_need
+		pools.level[chosen] = u32(largest_level_at_least(responses[chosen], LEVEL_FULL * pools.export[chosen]))
+		from_bound := draw(phase, pools, chosen, bound, chosen_need)
+		if fill != nil {
+			fill[bought] += from_bound
+		}
+	}
+}
+
+// A fed child's domain at its poor level, settled, and its own net; with
+// candidates, its room (its net plus its capacity) spent on them by the
+// greedy without a cap, fill[μ] what that spends with the candidates
+// capped at μ (the running sums of what each level bought).
+fed_fill :: proc(phase: Phase, thresholds: []Level_Thresholds, responses: []Response, pools: ^Pools, position: i32, spare_tables: ^[dynamic][]i64) -> (own_net: i64, fill: []i64) {
+	walk_domain(phase, thresholds, pools, position, u32(max(thresholds[position].poor_level, 0)))
+	settle_domain(phase, responses, pools)
+	own_net = pools.net[position]
+	if len(pools.candidates) == 0 {
+		return
+	}
+	pools.source[position] = own_net - phase.lower[position]
+	fill = take_table(spare_tables)
+	slice.zero(fill)
+	greedy(phase, responses, pools, pools.candidates[:], LEVEL_FULL, position, fill)
+	for level in 1 ..< len(fill) {
+		fill[level] += fill[level - 1]
+	}
+	return
 }
 
 // The slow path's levels. Bottom-up, each subtree's response for every
 // level: R(level) = LEVEL_FULL * offer - demand * level plus its
-// children's responses clamped to LEVEL_FULL times their edges' bounds,
-// what the subtree gives its parent with its region at that level. The
-// root takes the largest level its region can afford, each child its
-// parent's unless its edge saturates (child_level).
+// children's, each clamped to LEVEL_FULL times its edge's bounds up to its
+// poor level and above it charged the whole joules it takes after its
+// fill (fed_fill), made non-increasing: what the subtree gives its parent
+// with its region at that level. The root takes the largest level its
+// region can afford; top-down each domain hands its spare joules to its
+// feeders (settle_levels). A response never rises with the level.
 region_levels :: proc(phase: ^Phase) {
 	count := len(phase.nodes)
 	responses := make([]Response, count, context.temp_allocator)
@@ -418,26 +672,58 @@ region_levels :: proc(phase: ^Phase) {
 	}
 	thresholds := make([]Level_Thresholds, count, context.temp_allocator)
 	spare_tables := make([dynamic][]i64, 0, 16, context.temp_allocator)
+	pools := make_pools(phase^)
 	for position := count - 1; position > 0; position -= 1 {
 		response := responses[position]
+		if response.table != nil {
+			make_non_increasing(response.table)
+		}
 		low, high := LEVEL_FULL * phase.lower[position], LEVEL_FULL * phase.upper[position]
 		thresholds[position] = {
-			rich_until = largest_level_at_least(response, high + 1),
 			rich_level = largest_level_at_least(response, high),
 			poor_level = largest_level_at_least(response, low),
 		}
-		add_clamped_response(&responses[phase.parent[position]], response, low, high, &spare_tables)
-		if response.table != nil {
+		own_net: i64
+		fill: []i64
+		if thresholds[position].poor_level < LEVEL_FULL {
+			own_net, fill = fed_fill(phase^, thresholds, responses, &pools, i32(position), &spare_tables)
+		}
+		add_child_response(&responses[phase.parent[position]], response, low, high, thresholds[position].poor_level, own_net, fill, &spare_tables)
+		if fill != nil {
+			append(&spare_tables, fill)
+		}
+		// A child that never feeds is never a candidate: no greedy reads its
+		// table again.
+		if response.table != nil && thresholds[position].rich_level < 0 {
 			append(&spare_tables, response.table)
 		}
 	}
 	root := responses[0]
-	phase.level[0] = response_at(root, 0) == 0 ? 0 : u32(largest_level_at_least(root, 0))
-	for position in 1 ..< count {
-		phase.level[position] = child_level(thresholds[position], phase.level[phase.parent[position]])
+	if root.table != nil {
+		make_non_increasing(root.table)
 	}
+	root_level := response_at(root, 0) == 0 ? 0 : u32(largest_level_at_least(root, 0))
+	settle_levels(phase^, thresholds, responses, &pools, root_level)
+	copy(phase.level, pools.level)
 	for position in 0 ..< count {
 		phase.delivered[position] = delivered_at(phase.demand[position], phase.level[position])
+	}
+}
+
+// Top-down in pre-order, each domain root once its level is final, the
+// root and every feeder the walk above it met: its domain walked and
+// settled at that level, its slack (its net less its export) a source,
+// and the greedy over its candidates with every source up to the root.
+// What a source has left stays for the later greedies below it.
+settle_levels :: proc(phase: Phase, thresholds: []Level_Thresholds, responses: []Response, pools: ^Pools, root_level: u32) {
+	for position in 0 ..< i32(len(phase.nodes)) {
+		if position > 0 && pools.state[position] != .Feeder {
+			continue
+		}
+		walk_domain(phase, thresholds, pools, position, position == 0 ? root_level : pools.level[position])
+		settle_domain(phase, responses, pools)
+		pools.source[position] = pools.net[position] - (position > 0 ? pools.export[position] : 0)
+		greedy(phase, responses, pools, pools.candidates[:], LEVEL_FULL, 0, nil)
 	}
 }
 

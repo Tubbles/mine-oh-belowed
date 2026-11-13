@@ -482,3 +482,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `Ui_Icon.Inventory`, `.Recipes` and `.Technologies` have no caller left but the theme test. The title row could show the window's icon beside its name, or the icons could go.
 - The keyboard's E no longer closes the inventory, it steps to the next window. If the toggle is missed, the step could move to other keys and E go back to closing.
 - At 720p the inventory's glyph bar draws over the HUD's hotbar (seen in the captures, older than this item).
+
+## Suggestions from the netlist's pool (0373, 2026-11-13)
+
+- `tick_lamps` sets `lit` from the satisfaction without checking `broken`, and a broken entity asks nothing, so a broken lamp on a node that reports a level above half would light. Whether lamps can break was not checked.
+- An idle offshore or tar pit pump with a full output on a node at level 0 shows Unpowered where Output full is the truer word: the pumps check power before room.
+- `test_solve_matches_brute_force_on_small_netlists` takes 13 s in the suite, each region table being 1,001 entries per assignment.
+- The power tests print `strings: missing key "fuel_efficiency"` and `"fuel_burn_time"`.
+- A reference that shares nothing with the solver (the reviewer's probe did this from the output alone) would let the brute force test check the greedy and the pool, which today only the definition test and the hand cases guard.
