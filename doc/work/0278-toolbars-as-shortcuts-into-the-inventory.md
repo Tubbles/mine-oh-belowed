@@ -1,6 +1,6 @@
 # 0278: Toolbars as shortcuts into the inventory
 
-Status: designed (2026-11-13)
+Status: implementing (2026-11-13)
 
 ## Goal
 
