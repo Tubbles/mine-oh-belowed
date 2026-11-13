@@ -1,6 +1,6 @@
 # 0276: The screens layer after Techtonica
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 04ee414)
 
 ## Goal
 
