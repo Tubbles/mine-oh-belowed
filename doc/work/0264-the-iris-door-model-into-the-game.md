@@ -100,3 +100,8 @@ No save change: the record's motion is presentation only (`hatch_open_fraction` 
 
 - The 0.7 m aperture stays for now.
 - All model work is paused, this item with it.
+
+## Notes for the modeller (user, 2026-11-13)
+
+- Half open, the lines on the blades stop short of the frame, so the door reads as a spiral and not as a camera shutter: the lines must run out to the edge of the door.
+- The outside views do not show the whole door and cannot be judged; the next round needs outside cameras that frame all of it.

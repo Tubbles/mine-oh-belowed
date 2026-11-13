@@ -35,3 +35,4 @@ The world layer, gamepad. Every line is a proposal until the user approves the i
 - The tools radial gets a second home on R1 held.
 - A interacts and X jumps.
 - Open still: whether a world drop is wanted, and which button opens the crafting view.
+- No world drop: a stack is dropped from the crafting view and by the touch long press only.
