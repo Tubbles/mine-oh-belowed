@@ -69,7 +69,6 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		direct_placement_limit = {i32(config.direct_placement_limit.width), i32(config.direct_placement_limit.height), i32(config.direct_placement_limit.depth)},
 		belt_pole = find_machine_of_kind(machines, .Belt_Pole),
 		run_belt = find_belt_machine(machines, .Flat),
-		run_pipe = find_machine_of_kind(machines, .Pipe),
 		belt_runs = make_belt_run_constraints(config.belt_runs),
 		torch_item = torch_found ? torch_item : NO_ITEM,
 		torch_level = u8(torch_level),
@@ -151,7 +150,8 @@ field_tick_input :: proc(frame: Input_Frame, tick_rate: int) -> Field_Player_Inp
 // What an item held in the hotbar lets Place do (Field_Held_Tool), with
 // the material or the machine it names. An item with a tool_role is the
 // Tool (0265), the buckets' roles the Water and the Drain (0295); a
-// role-less tool (the hammer) is the hand; a cable item the Cable (0368).
+// role-less tool (the hammer) is the hand; a cable item the Cable (0368),
+// a pipe item the Pipe (0374).
 field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool: Field_Held_Tool, material: Field_Material, machine: Machine_Id) {
 	if item == NO_ITEM {
 		return .Hand, .Air, NO_MACHINE
@@ -177,6 +177,9 @@ field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool
 	if item_is_cable(content.items, item) {
 		return .Cable, .Air, NO_MACHINE
 	}
+	if item_is_pipe(content.items, item) {
+		return .Pipe, .Air, NO_MACHINE
+	}
 	machine = item_places_machine(content.machines, item)
 	if machine == NO_MACHINE {
 		return .Hand, .Air, NO_MACHINE
@@ -186,8 +189,6 @@ field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool
 		return .Foundation, .Air, machine
 	case .Belt, .Belt_Pole:
 		return .Belt_Run, .Air, machine
-	case .Pipe:
-		return .Pipe_Run, .Air, machine
 	case .Vessel_Part, .Vessel_Control_Unit:
 		return .Vessel_Part, .Air, machine
 	}

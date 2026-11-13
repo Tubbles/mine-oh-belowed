@@ -279,6 +279,12 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 		if definition.fluid_litres_per_minute <= 0 || definition.electric_power_kilowatts <= 0 {
 			return fmt.tprintf("tar pit pump %q needs a positive fluid_litres_per_minute and electric_power_kilowatts", definition.id)
 		}
+	case .Fluid_Junction:
+		// Drawn as draw_pole's fallback box in its colour until its model
+		// (0392); its ports are checked by validate_ports_of_kind.
+		if !foundation_color_is_valid(definition.color) {
+			return fmt.tprintf("fluid junction %q needs a color of three channels from 0 to 255", definition.id)
+		}
 	}
 	return ""
 }

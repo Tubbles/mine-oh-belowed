@@ -519,9 +519,10 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 	return ""
 }
 
-// A cable between the power ports at two cells (0368), the entities found
-// again on their frames, refused as a hand run is but with no metres
-// taken (the refusal's key), laid with its measured metres and counted.
+// A cable between the power ports at two cells (0368), or a pipe between
+// the fluid ports (0374), the entities found again on their frames,
+// refused as a hand run is but with no metres taken (the refusal's key),
+// laid with its measured metres and, a cable, counted.
 place_cable_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request) -> string {
 	entities := &state.world.entities
 	cells := [2]World_Coordinate{request.cell, request.second_cell}
@@ -535,7 +536,9 @@ place_cable_for_developer :: proc(state: ^Simulation_State, content: Simulation_
 	}
 	metres := port_span_metres(entities, content.machines, placement.ends[0], placement.ends[1])
 	add_cable(entities, content, Cable{ends = placement.ends, item = placement.item, metres = u16(metres)})
-	state.records.statistics.cables_run += 1
+	if item_is_cable(content.items, placement.item) {
+		state.records.statistics.cables_run += 1
+	}
 	return ""
 }
 
@@ -646,7 +649,7 @@ add_vein_for_developer :: proc(world: ^World, generator: ^Generator, type_index,
 // The refusal of a machine the place command does not put on a frame
 // (machine_takes_placement_command), on either world.
 not_placed_on_a_frame_text :: proc(definition: Machine) -> string {
-	return fmt.tprintf("%s is not placed on a frame (a run's belt, pole or pipe, a vessel part, or a machine no item places)", definition.id)
+	return fmt.tprintf("%s is not placed on a frame (a run's belt or pole, a pipe, a vessel part, or a machine no item places)", definition.id)
 }
 
 // By the rules of the player's ghost and through the player's commit,

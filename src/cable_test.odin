@@ -29,7 +29,7 @@ shipped_item_definition :: proc(id: string) -> Item_Definition {
 // least its rating, on its footprint's surface and off its explicit fluid
 // ports' faces, an inserter's on neither its pickup nor its drop face;
 // the junction box has 4, the cabinet 8, the switch 2; no other kind but
-// the vessel kinds lists a port.
+// the vessel kinds lists a power port.
 @(test)
 test_shipped_power_ports_resolve :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -37,7 +37,7 @@ test_shipped_power_ports_resolve :: proc(t: ^testing.T) {
 		watts := i64(max(machine.electric_power_watts, machine.electric_output_watts))
 		switch {
 		case watts > 0:
-			if !testing.expectf(t, machine.port_count == 1 && machine_port_is_power(machine, 0), "%s has %d ports", machine.id, machine.port_count) {
+			if !testing.expectf(t, machine_power_port_count(machine) == 1 && machine_port_is_power(machine, 0), "%s has %d power ports", machine.id, machine_power_port_count(machine)) {
 				continue
 			}
 			port := machine.ports[0]
@@ -52,7 +52,7 @@ test_shipped_power_ports_resolve :: proc(t: ^testing.T) {
 		case machine.kind == .Junction_Box || machine.kind == .Power_Switch:
 			testing.expectf(t, machine_power_port_count(machine) == machine.port_count, "%s lists a port that is no power port", machine.id)
 		case !machine_kind_is_vessel(machine.kind):
-			testing.expectf(t, machine.port_count == 0, "%s lists %d ports", machine.id, machine.port_count)
+			testing.expectf(t, machine_power_port_count(machine) == 0, "%s lists %d power ports", machine.id, machine_power_port_count(machine))
 		}
 	}
 	expected := [?]struct {
@@ -1088,8 +1088,7 @@ test_cable_instances_follow_the_curve :: proc(t: ^testing.T) {
 	if !testing.expect(t, found) {
 		return
 	}
-	item := content.items.items[cable.item]
-	color := cable_draw_color(item, cable, {1, 1, 1})
+	color := cable_draw_color(content.items.items[cable.item].cable_color, cable, {1, 1, 1})
 	testing.expect_value(t, look.color, color)
 	testing.expect_value(t, look.thickness_metres, f32(0.024))
 	segments := make([dynamic]matrix[4, 4]f32, context.temp_allocator)
@@ -1118,14 +1117,44 @@ test_cable_instances_follow_the_curve :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, look.points[CABLE_CURVE_STEPS / 2] != (look.points[0] + look.points[CABLE_CURVE_STEPS]) / 2, "the cable does not sag")
 
+	testing.expect_value(t, look.box_metres, f32(CABLE_BOX_METRES))
 	minimum, maximum := cable_draw_box(look.points, look.thickness_metres)
 	view := Model_View{eye = look.points[CABLE_CURVE_STEPS / 2], transform = 1}
-	testing.expect(t, cable_box_is_near(&view, minimum, maximum))
+	testing.expect(t, cable_box_is_near(&view, minimum, maximum, look.box_metres))
 	view.eye = maximum + {0, 40, 0}
-	testing.expect(t, !cable_box_is_near(&view, minimum, maximum))
+	testing.expect(t, !cable_box_is_near(&view, minimum, maximum, look.box_metres))
 	view.eye = maximum + {0, CABLE_BOX_METRES - 1, 0}
-	testing.expect(t, cable_box_is_near(&view, minimum, maximum))
-	testing.expect(t, !cable_box_is_near(nil, minimum, maximum))
+	testing.expect(t, cable_box_is_near(&view, minimum, maximum, look.box_metres))
+	testing.expect(t, !cable_box_is_near(nil, minimum, maximum, look.box_metres))
+}
+
+// The box distance follows the line's thickness (0374): every shipped
+// cable keeps CABLE_BOX_METRES, the 150 mm pipe draws its boxes until they
+// are a pixel wide at 1080 lines under 70 degrees (115.7 m), and the
+// thickest pipe stops at CABLE_BOX_MAXIMUM_METRES.
+@(test)
+test_a_lines_box_distance_follows_its_thickness :: proc(t: ^testing.T) {
+	content := make_test_content()
+	for id in ([]string{"light_cable", "heavy_cable", "trunk_cable"}) {
+		figures, found := item_line_figures(content.items, test_item(content.items, id))
+		testing.expect(t, found, id)
+		testing.expectf(t, cable_box_metres(cable_thickness_metres(figures)) == CABLE_BOX_METRES, "%s draws its boxes to %v m", id, cable_box_metres(cable_thickness_metres(figures)))
+	}
+	pipe, found := item_line_figures(content.items, test_item(content.items, "pipe"))
+	testing.expect(t, found)
+	pipe_metres := cable_box_metres(cable_thickness_metres(pipe))
+	testing.expectf(t, abs(pipe_metres - 115.7) < 0.1, "the pipe draws its boxes to %v m", pipe_metres)
+	testing.expect_value(t, cable_box_metres(f32(MAXIMUM_PIPE_THICKNESS_MILLIMETRES) / MILLIMETRES_PER_METRE), f32(CABLE_BOX_MAXIMUM_METRES))
+	// A pipe's box seen from 100 m is near, from 120 m not.
+	points: Cable_Draw_Points
+	for &point, step in points {
+		point = {f32(step), 0, 0}
+	}
+	minimum, maximum := cable_draw_box(points, 0.15)
+	view := Model_View{eye = maximum + {0, 100, 0}, transform = 1}
+	testing.expect(t, cable_box_is_near(&view, minimum, maximum, pipe_metres))
+	view.eye = maximum + {0, 120, 0}
+	testing.expect(t, !cable_box_is_near(&view, minimum, maximum, pipe_metres))
 }
 
 // A box corner's offset from the centre of the box's end face.
@@ -1451,4 +1480,314 @@ test_energy_produced_counts_the_charge_and_no_discharge :: proc(t: ^testing.T) {
 	testing.expect_value(t, statistics.energy_produced_joules, produced)
 	testing.expect_value(t, statistics.energy_consumed_joules, 110)
 	testing.expect_value(t, pool_get(&entities.vessel_parts, vessel.battery).stored_joules, charge - 10)
+}
+
+// Pipes (0374): records of the same table, told by their item.
+
+// Every record with fluid_ports outside the vessel kinds meets each buffer
+// with a fluid port of its ports: the boiler's out is port 1 on buffer 1,
+// the tank's four ports meet its one buffer; the fluid junction lists four
+// fluid ports and no power port.
+@(test)
+test_shipped_fluid_ports_resolve :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	for &machine in machines.machines {
+		if machine.fluid_port_count == 0 || machine_kind_is_vessel(machine.kind) {
+			continue
+		}
+		met: [MAXIMUM_FLUID_PORTS]bool
+		for port in machine.ports[:machine.port_count] {
+			if port.kind == .Fluid && port.fluid_buffer >= 0 {
+				met[port.fluid_buffer] = true
+			}
+		}
+		for buffer in 0 ..< machine.fluid_port_count {
+			testing.expectf(t, met[buffer], "%s: no fluid port meets buffer %d", machine.id, buffer)
+		}
+	}
+	boiler := machines.machines[test_machine(machines, "boiler")]
+	testing.expect_value(t, boiler.ports[1].id, "out")
+	testing.expect_value(t, boiler.ports[1].fluid_buffer, 1)
+	tank := machines.machines[test_machine(machines, "storage_tank")]
+	testing.expect_value(t, tank.port_count, 4)
+	for port in tank.ports[:tank.port_count] {
+		testing.expectf(t, port.kind == .Fluid && port.fluid_buffer == 0, "the tank's port %s meets buffer %d", port.id, port.fluid_buffer)
+	}
+	junction := machines.machines[test_machine(machines, "fluid_junction")]
+	testing.expect_value(t, junction.port_count, 4)
+	testing.expect_value(t, machine_power_port_count(junction), 0)
+	for port, index in junction.ports[:junction.port_count] {
+		testing.expectf(t, port.kind == .Fluid && port.fluid_buffer == -1 && machine_port_takes_line(junction, index), "the junction's port %s", port.id)
+	}
+}
+
+// A pipe item missing a key, at 59 or 1,000,001 L/s, with a span of 0, 101
+// or above its stack, 19 or 401 mm thick, an all zero or an overflowing
+// colour, or with cable keys too; a fluid port meeting no buffer, one on a
+// lamp or a junction box, a fluid junction with one port or a power port,
+// a boiler's port at 59 L/s, under a litre a tick (60 loads): each
+// refused, naming it.
+@(test)
+test_malformed_pipe_items_and_fluid_ports_are_refused :: proc(t: ^testing.T) {
+	pipe := shipped_item_definition("pipe")
+	testing.expect_value(t, validate_item_definition({pipe}, 0), "")
+	light := shipped_item_definition("light_cable")
+	missing, slow, fast, no_span, long_span, short_stack, thin, thick, dark, bright, both := pipe, pipe, pipe, pipe, pipe, pipe, pipe, pipe, pipe, pipe, pipe
+	missing.pipe_thickness_millimetres = 0
+	slow.pipe_litres_per_second = 59
+	fast.pipe_litres_per_second = 1_000_001
+	no_span.pipe_span_metres = 0
+	long_span.pipe_span_metres = 101
+	short_stack.stack_size = 19
+	thin.pipe_thickness_millimetres = 19
+	thick.pipe_thickness_millimetres = 401
+	dark.pipe_color = {}
+	bright.pipe_color = {256, 0, 0}
+	both.cable_kilowatts, both.cable_span_metres = light.cable_kilowatts, light.cable_span_metres
+	both.cable_thickness_millimetres, both.cable_color = light.cable_thickness_millimetres, light.cable_color
+	item_cases := [?]struct {
+		definition: Item_Definition,
+		words:      string,
+	} {
+		{missing, `pipe "pipe" needs all of`},
+		{slow, `pipe "pipe" has pipe_litres_per_second 59 outside 60 to 1000000`},
+		{fast, `pipe "pipe" has pipe_litres_per_second 1000001 outside 60 to 1000000`},
+		{no_span, `pipe "pipe" needs all of`},
+		{long_span, `pipe "pipe" has pipe_span_metres 101 outside 1 to 100`},
+		{short_stack, `pipe "pipe" has pipe_span_metres 20 outside 1 to 100 or above its stack_size`},
+		{thin, `pipe "pipe" has pipe_thickness_millimetres 19 outside 20 to 400`},
+		{thick, `pipe "pipe" has pipe_thickness_millimetres 401 outside 20 to 400`},
+		{dark, `pipe "pipe" needs all of`},
+		{bright, `pipe "pipe" needs a pipe_color of three channels`},
+		{both, `item "pipe" cannot be both a cable and a pipe`},
+	}
+	for entry in item_cases {
+		problem := validate_item_definition({entry.definition}, 0)
+		testing.expectf(t, strings.contains(problem, entry.words), "%q lacks %q", problem, entry.words)
+	}
+
+	boiler := shipped_machine_definition("boiler")
+	lamp := shipped_machine_definition("lamp")
+	box := shipped_machine_definition("junction_box")
+	junction := shipped_machine_definition("fluid_junction")
+	testing.expect_value(t, resolve_test_machines({boiler, junction}), "")
+	spare := Machine_Port_Definition{id = "spare", kind = "fluid", cell = {y = 1}, face = "positive_y", capacity_litres_per_second = 1200}
+	power := Machine_Port_Definition{id = "power", kind = "power", cell = {y = 0}, face = "positive_y", capacity_watts = 1000}
+	unmet, fluid_lamp, fluid_box, lone, powered, trickle := boiler, lamp, box, junction, junction, boiler
+	unmet.ports = {boiler.ports[0], boiler.ports[1], spare}
+	trickle.ports = {boiler.ports[0], boiler.ports[1]}
+	trickle.ports[0].capacity_litres_per_second = MINIMUM_PIPE_LITRES_PER_SECOND
+	testing.expect_value(t, resolve_test_machines({trickle}), "")
+	trickle.ports[0].capacity_litres_per_second = MINIMUM_PIPE_LITRES_PER_SECOND - 1
+	fluid_lamp.ports = {lamp.ports[0], {id = "spare", kind = "fluid", face = "positive_y", capacity_litres_per_second = 1200}}
+	fluid_box.ports = {box.ports[0], box.ports[1], {id = "spare", kind = "fluid", face = "positive_y", capacity_litres_per_second = 1200}}
+	lone.ports = junction.ports[:1]
+	powered.ports = {junction.ports[0], junction.ports[1], power}
+	machine_cases := [?]struct {
+		definition: Machine_Definition,
+		words:      string,
+	} {
+		{unmet, `machine "boiler" fluid port "spare" meets none of its fluid_ports`},
+		{fluid_lamp, `machine "lamp" port "spare" is a fluid port, which only a machine with fluid_ports, a fluid junction or a vessel part may list`},
+		{fluid_box, `machine "junction_box" port "spare" is a fluid port`},
+		{lone, `fluid junction "fluid_junction" needs 2 to 8 fluid ports and no power port`},
+		{powered, `fluid junction "fluid_junction" needs 2 to 8 fluid ports and no power port`},
+		{trickle, `machine "boiler" port "in" has capacity_litres_per_second 59 outside 60 to 1000000000`},
+	}
+	for entry in machine_cases {
+		problem := resolve_test_machines({entry.definition})
+		testing.expectf(t, strings.contains(problem, entry.words), "%q lacks %q", problem, entry.words)
+	}
+}
+
+// The pipe run on a pad with a boiler, a tank and a lamp: Place on the
+// boiler's +x face begins it on the free fluid port nearest the aimed face
+// and the tool line shows the span left; Place on the lamp refuses
+// No_Free_Port and keeps it; Place on the tank lays the pipe, takes its
+// metres and counts no cable; Mine takes a run back; another slot ends
+// one; a lamp's power port never starts a pipe run and the boiler's fluid
+// ports never a cable run.
+@(test)
+test_field_pipe_run_controls :: proc(t: ^testing.T) {
+	simulation, content, items := make_pick_up_test()
+	defer destroy_simulation(&simulation)
+	use_shipped_strings()
+	defer thread_string_table = nil
+	entities := &simulation.world.entities
+	frame := lay_cable_test_pad(&simulation, content)
+	boiler := place_on_test_pad(&simulation, content, frame, "boiler", {2, 1, 0})
+	tank := place_on_test_pad(&simulation, content, frame, "storage_tank", {2, 1, -4})
+	lamp_cell := World_Coordinate{6, 1, 3}
+	place_on_test_pad(&simulation, content, frame, "lamp", lamp_cell)
+	stand_test_player_on_cell(&simulation, content, items, frame, {7, 0, 0}, {"pipe", 100}, {"light_cable", 100})
+	player := &simulation.players[0]
+	hold_test_item(player, content, "pipe")
+	testing.expect_value(t, player.field.tool, Field_Held_Tool.Pipe)
+	pipe := test_item(items, "pipe")
+	beside_inlet := frame_face_centre(frame, {4, 1, 0}, .Positive_X)
+	beside_outlet := frame_face_centre(frame, {4, 1, 1}, .Positive_X)
+
+	look_test_player_at(&simulation, content, beside_inlet)
+	press_test_input(&simulation, content, TEST_PRESS_PLACE)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect(t, player.field.cable_run, "Place on the boiler begins a run")
+	testing.expect_value(t, player.field.cable_start, Port_End{boiler, 0})
+	named := content
+	named.fluids = make_test_fluids()
+	line, shown := field_tool_line(player.field, named, .None, 1000, entities, pipe)
+	testing.expectf(t, shown && strings.has_prefix(line, "Pipe from Boiler, water in: ") && strings.has_suffix(line, " m of the span left"), "the tool line %q", line)
+	testing.expect_value(t, pipe_run_port_words(entities, content.machines, named.fluids, {boiler, 1}), "steam out")
+	testing.expect_value(t, pipe_run_port_words(entities, content.machines, named.fluids, {tank, 2}), "port c")
+
+	look_test_player_at(&simulation, content, frame_cell_centre(frame, lamp_cell))
+	press_test_input(&simulation, content, TEST_PRESS_PLACE)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.No_Free_Port)
+	testing.expect(t, player.field.cable_run, "a refused Place keeps the run")
+
+	look_test_player_at(&simulation, content, frame_face_centre(frame, {4, 1, -3}, .Positive_X))
+	press_test_input(&simulation, content, TEST_PRESS_PLACE)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect(t, !player.field.cable_run, "the pipe laid ends the run")
+	table := &entities.cables
+	if !testing.expect_value(t, len(table.cables), 1) {
+		return
+	}
+	testing.expect_value(t, table.kinds[0], Machine_Port_Kind.Fluid)
+	testing.expect_value(t, table.capacity[0], 1200)
+	testing.expect_value(t, port_end_cable(table, {boiler, 0}), 0)
+	testing.expect_value(t, port_end_cable(table, {tank, 1}), 0)
+	metres := int(table.cables[0].metres)
+	testing.expect_value(t, i64(metres), port_span_metres(entities, content.machines, {boiler, 0}, {tank, 1}))
+	testing.expect_value(t, inventory_count(player.inventory, pipe), 100 - metres)
+	testing.expect_value(t, simulation.records.statistics.cables_run, 0)
+	networks := &entities.fluid_networks
+	testing.expect(t, fluid_netlist_of(networks, boiler, 0) == fluid_netlist_of(networks, tank, 0), "the pipe joins the inlet to the tank")
+
+	look_test_player_at(&simulation, content, beside_outlet)
+	press_test_input(&simulation, content, TEST_PRESS_PLACE)
+	testing.expect_value(t, player.field.cable_start, Port_End{boiler, 1})
+	press_test_input(&simulation, content, TEST_PRESS_DIG)
+	testing.expect(t, !player.field.cable_run, "Mine takes the run back")
+	testing.expect_value(t, len(table.cables), 1)
+
+	press_test_input(&simulation, content, TEST_PRESS_PLACE)
+	testing.expect(t, player.field.cable_run)
+	player.selected_hotbar_slot = 1
+	press_test_input(&simulation, content, {})
+	testing.expect(t, !player.field.cable_run, "another slot ends the run")
+	player.selected_hotbar_slot = 0
+
+	look_test_player_at(&simulation, content, frame_cell_centre(frame, lamp_cell))
+	press_test_input(&simulation, content, TEST_PRESS_PLACE)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.No_Free_Port)
+	testing.expect(t, !player.field.cable_run, "a power port starts no pipe run")
+
+	player.selected_hotbar_slot = 1
+	hold_test_item(player, content, "light_cable")
+	look_test_player_at(&simulation, content, beside_outlet)
+	press_test_input(&simulation, content, TEST_PRESS_PLACE)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.No_Free_Port)
+	testing.expect(t, !player.field.cable_run, "a fluid port starts no cable run")
+}
+
+// Mine held for PICK_UP_SECONDS on a pipe between two fluid junctions takes
+// it up and adds its metres; a junction picked up comes with its pipe's
+// metres and leaves the fluid netlist.
+@(test)
+test_taking_up_a_pipe_returns_its_metres :: proc(t: ^testing.T) {
+	simulation, content, items := make_pick_up_test()
+	defer destroy_simulation(&simulation)
+	entities := &simulation.world.entities
+	frame := lay_cable_test_pad(&simulation, content)
+	south := place_on_test_pad(&simulation, content, frame, "fluid_junction", {2, 1, -3})
+	north := place_on_test_pad(&simulation, content, frame, "fluid_junction", {2, 1, 3})
+	ends := [2]Port_End{{south, 3}, {north, 2}}
+	lay_test_cable(&simulation.world, content, "pipe", ends[0], ends[1])
+	metres := int(entities.cables.cables[0].metres)
+	middle := test_cable_middle(entities, content.machines, 0)
+	stand_test_player_on_cell(&simulation, content, items, frame, {6, 0, 0}, {"wooden_shovel", 1})
+	player := &simulation.players[0]
+	hold_test_item(player, content, "wooden_shovel")
+	pipe := test_item(items, "pipe")
+	networks := &entities.fluid_networks
+	testing.expect(t, fluid_netlist_of(networks, south, -1) == fluid_netlist_of(networks, north, -1), "the pipe joins the junctions")
+	look_test_player_at(&simulation, content, middle)
+	tick_field_simulation(&simulation, content, {})
+	testing.expect_value(t, field_aimed_cable(entities, content.machines, player.field, content.field.tuning), 0)
+	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS - 1)
+	testing.expect_value(t, len(entities.cables.cables), 1)
+	hold_test_mine(&simulation, content, 1)
+	testing.expect_value(t, len(entities.cables.cables), 0)
+	testing.expect_value(t, inventory_count(player.inventory, pipe), metres)
+	testing.expect(t, fluid_netlist_of(networks, south, -1) != fluid_netlist_of(networks, north, -1), "the junctions part")
+
+	lay_test_cable(&simulation.world, content, "pipe", ends[0], ends[1])
+	append(&simulation.field.placements, Queued_Field_Placement{player = 0, placement = Field_Placement{kind = .Pick_Up, frame = frame.id, cell = {2, 1, -3}}})
+	drain_field_placements(&simulation, content)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, entity_at(entities, {2, 1, -3}, frame.id), NO_ENTITY)
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "fluid_junction")), 1)
+	testing.expect_value(t, inventory_count(player.inventory, pipe), 2 * metres)
+	testing.expect_value(t, len(entities.cables.cables), 0)
+	testing.expect_value(t, len(networks.nodes), 1)
+	testing.expect_value(t, fluid_node_of(networks, south, -1), -1)
+	testing.expect(t, fluid_node_of(networks, north, -1) >= 0, "the north junction keeps its node")
+}
+
+// cable_down_and_sag gives a fluid record no sag and a power one its sag
+// between the same two points; a laid pipe's curve is its chord.
+@(test)
+test_a_pipe_is_straight_and_a_cable_sags :: proc(t: ^testing.T) {
+	content := make_test_content()
+	machines := content.machines
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame := lay_test_pad(&entities, machines, 0, 0, {-4, 0, -4}, {6, 0, 4})
+	record := Cable {
+		ends = {{{kind = .Pole, index = 1}, 0}, {{kind = .Pole, index = 2}, 1}},
+	}
+	first, second := frame_cell_centre(frame, {0, 1, -3}), frame_cell_centre(frame, {0, 1, 3})
+	cable_down, cable_sag := cable_down_and_sag(record, .Power, frame, frame, first, second)
+	pipe_down, pipe_sag := cable_down_and_sag(record, .Fluid, frame, frame, first, second)
+	testing.expect(t, cable_sag > 0, "the cable sags")
+	testing.expect_value(t, pipe_sag, 0)
+	testing.expect_value(t, pipe_down, cable_down)
+
+	junction := test_machine(machines, "fluid_junction")
+	south, _ := place_on_frame(&entities, machines, junction, frame.id, {0, 1, -3}, 0)
+	north, _ := place_on_frame(&entities, machines, junction, frame.id, {0, 1, 3}, 0)
+	add_cable(&entities, content, Cable{ends = {{south, 3}, {north, 2}}, item = test_item(content.items, "pipe"), metres = 3})
+	start, end, _, sag, found := cable_curve(&entities, machines, entities.cables.cables[0])
+	testing.expect(t, found && sag == 0, "a laid pipe sags none")
+	testing.expect_value(t, test_cable_middle(&entities, machines, 0), start + (end - start) / 2)
+}
+
+// A pump with a light cable on its power port and a pipe on its outlet:
+// one table holds both, told power and fluid; the power netlist takes the
+// cable alone and the fluid netlist the pipe alone; the pipe has no cable
+// load.
+@(test)
+test_cables_and_pipes_share_the_table_but_not_the_netlists :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	records := make_test_records(content)
+	frame := lay_pipe_test_pad(&world, content)
+	pump := place_on_pipe_pad(&world, content, frame, "pump", {0, 1, 0})
+	box := place_on_pipe_pad(&world, content, frame, "junction_box", {1, 1, 3})
+	tank := place_on_pipe_pad(&world, content, frame, "storage_tank", {5, 1, -1})
+	lay_test_cable(&world, content, "light_cable", test_port_end(&world, content, pump, "power"), {box, 0})
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, pump, "out"), test_port_end(&world, content, tank, "d"))
+	entities := &world.entities
+	table := &entities.cables
+	testing.expect_value(t, len(table.cables), 2)
+	testing.expect(t, slice.equal(table.kinds[:], []Machine_Port_Kind{.Power, .Fluid}), "the kinds")
+	// The cable's the pump's 30 kW port, the pipe's its item's 1200 L/s.
+	testing.expect(t, slice.equal(table.capacity[:], []i64{30_000, 1200}), "the capacities")
+	testing.expect_value(t, len(cable_edges(&entities.electric_networks, entities)), 1)
+	testing.expect_value(t, len(pipe_edges(&entities.fluid_networks, entities, content.machines)), 1)
+	tick_test_entities(&world, &records, content, 1)
+	_, cable_found := cable_load(&entities.electric_networks, table, 0)
+	_, pipe_found := cable_load(&entities.electric_networks, table, 1)
+	testing.expect(t, cable_found, "the cable has a load")
+	testing.expect(t, !pipe_found, "the pipe has none")
 }

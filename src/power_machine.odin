@@ -26,10 +26,11 @@ Power_State :: struct {
 	credit:       u32,
 }
 
-// The pool of the junction boxes, the junction cabinets and the power
-// switches (0368: it held the electric poles, whose name it keeps, since
-// the save matches pools by position and a handle's kind by name). on
-// only matters for a power switch; a box is always on.
+// The pool of the junction boxes, the junction cabinets, the power
+// switches and the fluid junctions (0374) (0368: it held the electric
+// poles, whose name it keeps, since the save matches pools by position and
+// a handle's kind by name). on only matters for a power switch; a box is
+// always on.
 Pole :: struct {
 	using common: Entity_Common,
 	on:           bool,
@@ -50,8 +51,8 @@ make_lamp :: proc(common: Entity_Common) -> Lamp {
 }
 
 // Junction boxes: a colour for their box (their ports are checked by
-// validate_power_ports_of_kind). Power switches: 1 by 1 by 1. Lamps: 1 by
-// 1 by 1, electric power and a light level.
+// validate_ports_of_kind). Power switches: 1 by 1 by 1. Lamps: 1 by 1 by
+// 1, electric power and a light level.
 validate_power_machine_definition :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
 	footprint := definition.footprint
 	#partial switch kind {
@@ -100,6 +101,17 @@ machine_power_port_count :: proc(machine: Machine) -> int {
 
 machine_port_is_power :: proc(machine: Machine, port: int) -> bool {
 	return port >= 0 && port < machine.port_count && machine.ports[port].kind == .Power
+}
+
+// A cable or a pipe may end on it (0374): a power port, a fluid port that
+// meets a buffer, or any port of a fluid junction. A vessel part's fluid
+// port takes none until 0375 gives it a node.
+machine_port_takes_line :: proc(machine: Machine, port: int) -> bool {
+	if port < 0 || port >= machine.port_count {
+		return false
+	}
+	entry := machine.ports[port]
+	return entry.kind == .Power || entry.fluid_buffer >= 0 || machine.kind == .Fluid_Junction
 }
 
 // Integer division like fuel: 13 kW at 60 ticks per second is 216 J.

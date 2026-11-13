@@ -1,6 +1,6 @@
 # 0374: Hand run pipes on the field
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 Part B of 0356's specification (`doc/work/0356-the-pipes-netlist.md`): on the field every pipe is run by hand from port to port as a cable is (the user, 2026-11-11: "by hand yes"), a fluid junction, fluid ports in 0361's `ports` key, `machine_port_is_linked` for fluid ports, and the pipe run tool between belt poles removed.
 
@@ -111,13 +111,13 @@ The four tank ports meet one buffer, so they are one node: two pipes from one ta
 ### 8. Drawing (render_cables.odin)
 
 - `cable_draw_points` uses `port_end_point`; `cable_look` and `cable_run_look` use `item_is_line` and `item_line_figures` (span, thickness, colour); `cable_draw_color` takes the base colour instead of the item; `cable_thickness_metres` takes the figures.
-- `cable_down_and_sag` gains `kind: Machine_Port_Kind`: a fluid record sags 0, so a pipe is a straight cylinder from port to port (`cable_side_axis` already serves a straight curve). The carried run's look past the span keeps `BELT_RUN_REFUSED_COLOR`.
+- `cable_down_and_sag` gains `kind: Machine_Port_Kind`: a fluid record sags 0, so a pipe runs straight from port to port (`cable_side_axis` already serves a straight curve). The carried run's look past the span keeps `BELT_RUN_REFUSED_COLOR`.
 
 ### 9. HUD, panel and strings
 
 - HUD, aimed record (hud.odin:792): a fluid record's line is `pipe_status_text(entities, machines, items, fluids, index, tick_rate) -> string` (ui_fluid.odin), `fluid_pipe_load`, in the text colour; a cable's is unchanged. Held: `held_glyph_hints` shows `hint_run_pipe` with a pipe held and no run, `hint_connect` and `hint_take_back` during a run as for a cable; `field_tool_line` serves `.Pipe` as `.Cable` (`cable_run_line` with `item_is_line` and the figures' span). Aimed fluid junction: `entity_status_text`'s `.Pole` case gives `fluid_junction_status_text(world, machines, fluids, handle, name) -> string`, "{name}  {fluid}" with its netlist's fluid.
-- Panel: `fluid_junction_area_size() -> [2]f32` and `fluid_junction_panel_region(state, area, handle, screen_context)` (ui_fluid.odin), routed from `machine_area_width`, `machine_area_height` and `machine_slot_region` (ui_machine.odin:435) by the machine's kind before the `.Pole` power branch: the netlist's fluid, then one line per port (at most 8), `fluid_port_free` dim or `fluid_port_pipe`. Other machines' panels are unchanged (their buffer lines already show the flow).
-- Strings, data/strings/en.sjson. New: `item_fluid_junction` and `machine_fluid_junction` "Fluid junction"; `describe_item_fluid_junction` and `describe_machine_fluid_junction` "Four ports. Joins and branches pipes."; `hint_run_pipe` "Run pipe"; `fluid_pipe_load` "{pipe}: {fluid}, {flow} of {capacity}" (both rates through `format_second_litres_per_minute`); `fluid_port_free` "Port {port}: free"; `fluid_port_pipe` "Port {port}: {flow}, {pipe} to {peer}". Changed: `describe_item_pipe` "One iron plate rolled into a metre of pipe. Run it by hand from one fluid port to another, up to 20 m a span; it carries 1200 litres a second."; `describe_item_belt_pole` "A post a belt hangs from. Place it, aim at the next and place again: the run between them curves by itself."; `describe_machine_belt_pole` "Belts run between poles, inclining or turning but never both at once."; `field_refused_no_free_port` "No free port for it there"; `field_refused_same_thing` "Run it to a second thing"; `field_refused_cable_too_short` "Too long for one span"; `field_refused_not_enough_cable` "Not enough held for the span"; `field_refused_cable_end_gone` "The run's first end is gone"; `quest_steam_text`'s "a boiler fed by it and a steam engine fed by the boiler" becomes "a boiler piped from it and a steam engine piped from the boiler". The planet preview's refusal texts (loop_planet_preview.odin:529 to 540) follow the same wording; `field_held_name` gives `.Pipe` "pipe, run carried" or "pipe".
+- Panel: `fluid_junction_area_size() -> [2]f32` and `fluid_junction_panel_region(state, area, handle, screen_context)` (ui_fluid.odin), routed from `machine_area_width`, `machine_area_height` and `machine_slot_region` (ui_machine.odin:435) by the machine's kind before the `.Pole` power branch: the netlist's fluid, then one line per port (at most 8), `fluid_port_free` dim or `fluid_port_out` and `fluid_port_in` by the last second's flow. Other machines' panels are unchanged (their buffer lines already show the flow).
+- Strings, data/strings/en.sjson. New: `item_fluid_junction` and `machine_fluid_junction` "Fluid junction"; `describe_item_fluid_junction` and `describe_machine_fluid_junction` "Four ports. Joins and branches pipes."; `hint_run_pipe` "Run pipe"; `fluid_pipe_load` "{pipe}: {fluid}, {flow} of {capacity}" (both rates through `format_second_litres_per_minute`); `fluid_port_free` "Port {port}: free"; `fluid_port_out` "Port {port}: {flow}, {pipe} to {peer}" and `fluid_port_in` with "from". Changed: `describe_item_pipe` "One iron plate rolled into a metre of pipe. Run it by hand from one fluid port to another, up to 20 m a span; it carries 1200 litres a second."; `describe_item_belt_pole` "A post a belt hangs from. Place it, aim at the next and place again: the run between them curves by itself."; `describe_machine_belt_pole` "Belts run between poles, inclining or turning but never both at once."; `field_refused_no_free_port` "No free port for it there"; `field_refused_same_thing` "Run it to a second thing"; `field_refused_cable_too_short` "Too long for one span"; `field_refused_not_enough_cable` "Not enough held for the span"; `field_refused_cable_end_gone` "The run's first end is gone"; `quest_steam_text`'s "a boiler fed by it and a steam engine fed by the boiler" becomes "a boiler piped from it and a steam engine piped from the boiler". The planet preview's refusal texts (loop_planet_preview.odin:529 to 540) follow the same wording; `field_held_name` gives `.Pipe` "pipe, run carried" or "pipe".
 
 ### 10. Developer command (command.odin, command_field.odin, developer.odin)
 
@@ -173,7 +173,7 @@ The fluid junction gets its `machine fluid_junction` case from `place_missing_ma
 
 ### 16. Captures (Verify)
 
-A `--dev` field pad at noon and at dusk: an offshore pump at the water, a fuel generator with coal cabled to it, a fluid junction, two boilers with coal, two steam engines, a junction box and a lamp cabled to the engines; pipes pump to junction, junction to each boiler, each boiler to an engine. Shots at 5, 20 and 60 m; a pipe run carried within and past 20 m; the HUD on an aimed pipe; the junction's panel.
+A `--dev` field pad at noon and at dusk, standing at a shore (0376: an offshore pump is placed only with water in front of its intake): an offshore pump at the pad's edge, its intake over the water, a fuel generator with coal cabled to it, a fluid junction, two boilers with coal, two steam engines, a junction box and a lamp cabled to the engines; pipes pump to junction, junction to each boiler, each boiler to an engine. Shots at 5, 20 and 60 m; a pipe run carried within and past 20 m; the HUD on an aimed pipe; the junction's panel.
 
 ### 17. Questions decided here
 
@@ -198,7 +198,7 @@ A `--dev` field pad at noon and at dusk: an offshore pump at the water, a fuel g
 ### 19. 0375, 0376, 0377
 
 - 0375 (vessel tanks and pipes across docking): prepared, not designed. A vessel part's fluid port has `fluid_buffer` -1, so it takes no pipe until 0375 gives it a node in `pipe_end_node` and `machine_port_takes_line`; the connector rule in `cable_placement_refusal` already serves any kind.
-- 0376 (the field's pumps draw from nothing): untouched. Field pumps still make fluid from nothing; pipes now carry it.
+- 0376 (the field's pumps draw from nothing): untouched. Since 0376 the offshore pump on a field frame needs water in front of its intake; the tar pit pump still makes crude oil from nothing until 0391. Pipes now carry what they make.
 - 0377 (netlists that carry loops): untouched. A pipe loop lays a chord that carries nothing, as a cable loop does.
 
 ### Decisions (main agent, 2026-11-13)
@@ -207,3 +207,15 @@ A `--dev` field pad at noon and at dusk: an offshore pump at the water, a fuel g
 2. The seven questions: yes to each as the designer answered (no band on a hand run pipe, straight pipes, the existing `pipe` item, the dev kits' counts, the neutral refusal wording, the `cable` developer command for both).
 3. The fluid junction ships as the fallback box, as the junction box did; its model is item 0392, which waits for the user's reference sheet as 0387 and 0388 do.
 4. The line "Not started before the user has seen the proposal" under Change: the main agent reads the user's queueing of this item on 2026-11-12 as the go ahead and says so in its report to the user, since it cannot show from the record that the proposal itself was read.
+
+### Deviations (implementation, 2026-11-13)
+
+1. `tick_fluid_networks` takes `machines` where it dropped `limit`: `pipe_end_node` reads each port's `fluid_buffer` from the registry.
+2. `fluid_junction_area_size` takes the machine and sizes to its port count (at most 8), not a fixed 8 lines.
+3. A run also ends silently when the held line's kind is not its first port's (a slot's stack swapped between a cable and a pipe), where the drain would otherwise toast "The run's first end is gone".
+4. `test_a_pipe_carries_its_capacity_a_tick` feeds two boilers, not three: the junction has four ports, and three boilers with two pipes from the tank need five.
+5. `test_a_pipe_netlist_is_deterministic` compares the flows tick for tick between the two orders, and the state hash between two worlds laid in the same order: the hash is the save's bytes and the table is written in its order, so two orders cannot hash alike.
+6. Outside the named files: `render_belt_runs_test.odin` drops the tube check (its test renamed `test_a_belt_run_box_holds_its_surface_and_items`), `model_mesh_test.odin` lists the fluid junction among the machines without a model, `data/textures/items/fluid_junction.png` is generated by `tools/make_placeholder_textures.py` (every item needs an icon), and the shipped count tests (170 items, 72 machines, 147 recipes) follow.
+7. Fix round: a fluid port's `capacity_litres_per_second` starts at 60 (`MINIMUM_PIPE_LITRES_PER_SECOND`) on every record, the vessel parts' too, so the iron tank's 10 and the docking connector's 20 L/s became 60; neither port takes a pipe before 0375.
+8. Fix round: the junction's port lines are `fluid_port_out` and `fluid_port_in`, chosen by the last second's litres, which `pipe_record_litres` now counts signed from the record's first end.
+9. Fix round: the box distance (`cable_box_metres`) is computed once per line each frame from its thickness and kept in its `Cable_Look`, not stored per item.

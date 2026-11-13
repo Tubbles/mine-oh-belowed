@@ -74,7 +74,8 @@ kits = [
 			{item = "fuel_generator", count = 1}
 			{item = "boiler", count = 2}
 			{item = "steam_engine", count = 2}
-			{item = "pipe", count = 20}
+			{item = "pipe", count = 60}
+			{item = "fluid_junction", count = 4}
 			{item = "light_cable", count = 200}
 			{item = "junction_box", count = 10}
 			{item = "iron_plate", count = 200}
@@ -102,7 +103,8 @@ kits = [
 			{item = "boiler", count = 3}
 			{item = "offshore_pump", count = 2}
 			{item = "fuel_generator", count = 1}
-			{item = "pipe", count = 50}
+			{item = "pipe", count = 100}
+			{item = "fluid_junction", count = 6}
 			{item = "iron_chest", count = 10}
 			{item = "iron_plate", count = 200}
 			{item = "copper_plate", count = 100}
@@ -129,7 +131,8 @@ kits = [
 			{item = "belt", count = 60}
 			{item = "light_cable", count = 300}
 			{item = "junction_box", count = 15}
-			{item = "pipe", count = 100}
+			{item = "pipe", count = 200}
+			{item = "fluid_junction", count = 10}
 			{item = "pump", count = 2}
 			{item = "storage_tank", count = 2}
 			{item = "steel", count = 100}
@@ -158,7 +161,8 @@ kits = [
 			{item = "light_cable", count = 200}
 			{item = "junction_box", count = 10}
 			{item = "heavy_cable", count = 200}
-			{item = "pipe", count = 100}
+			{item = "pipe", count = 200}
+			{item = "fluid_junction", count = 10}
 			{item = "pump", count = 4}
 			{item = "storage_tank", count = 4}
 			{item = "refinery", count = 2}

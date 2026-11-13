@@ -339,7 +339,7 @@ tick_fluids :: proc(entities: ^Entities, content: Simulation_Content, tick_rate:
 			}
 		}
 	}
-	tick_fluid_networks(entities, content.fluids, pipe_flow_per_tick(content.machines, tick_rate), tick_rate, statistics)
+	tick_fluid_networks(entities, content.fluids, content.machines, tick_rate, statistics)
 }
 
 // Fuel burned, fluids drawn and made, and the flare stack's gas as voided.
@@ -356,15 +356,6 @@ record_fluid_machine_tick :: proc(statistics: ^Statistics, machine: Machine, bef
 		record_fluid_voided(statistics, before.buffers[0].fluid, int(flared))
 		statistics.flared_litres += u64(max(flared, 0))
 	}
-}
-
-// The litres one joint carries a tick come from the pipe prototype.
-pipe_flow_per_tick :: proc(machines: Machine_Registry, tick_rate: int) -> i32 {
-	pipe := find_machine_of_kind(machines, .Pipe)
-	if pipe == NO_MACHINE {
-		return 0
-	}
-	return litres_per_tick(machines.machines[pipe].flow_litres_per_second, tick_rate)
 }
 
 boiler_burn_fraction :: proc(boiler: Fluid_Machine) -> f32 {

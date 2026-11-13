@@ -206,29 +206,45 @@ frame_loaded :: proc(loaded_world, original_world: ^World) -> bool {
 }
 
 // Three free poles in a row with a belt run carrying plates from the
-// first to the second and a pipe run from the second to the third (work
-// item 0176).
-lay_save_test_runs :: proc(world: ^World, content: Simulation_Content) {
+// first to the second (work item 0176); the third waited for a pipe run,
+// which 0374 removed. Returns the poles' endpoints.
+lay_save_test_runs :: proc(world: ^World, content: Simulation_Content) -> (endpoints: [3]Belt_Run_Endpoint) {
 	entities := &world.entities
 	machines := content.machines
 	metre := i64(POSITION_UNITS_PER_METRE)
 	hits := [3]World_Position{SAVE_TEST_FRAME_HIT + {0, 0, 3 * metre}, SAVE_TEST_FRAME_HIT + {8 * metre, 0, 3 * metre}, SAVE_TEST_FRAME_HIT + {16 * metre, 0, 3 * metre}}
 	chord := [3]i64{metre, 0, 0}
-	endpoints: [3]Belt_Run_Endpoint
 	for hit, index in hits {
 		pole, _ := place_free_belt_pole(entities, machines, test_machine(machines, "belt_pole"), hit, chord, 500)
-		endpoints[index], _ = belt_pole_endpoint(entities, pole, chord, .Belt, BELT_RUN_START)
+		endpoints[index], _ = belt_pole_endpoint(entities, pole, chord, BELT_RUN_START)
 	}
 	constraints := data_belt_run_constraints()
-	belt_run, belt_refusal := add_belt_run(entities, machines, constraints, .Belt, find_belt_machine(machines, .Flat), {endpoints[0], endpoints[1]})
-	_, pipe_refusal := add_belt_run(entities, machines, constraints, .Pipe, find_machine_of_kind(machines, .Pipe), {endpoints[1], endpoints[2]})
-	assert(belt_refusal == .None && pipe_refusal == .None)
+	belt_run, belt_refusal := add_belt_run(entities, machines, constraints, find_belt_machine(machines, .Flat), {endpoints[0], endpoints[1]})
+	assert(belt_refusal == .None)
 	run := pool_get(&entities.belt_runs, belt_run)
 	line := &entities.belt_network.lines[run.line]
 	start := belt_line_segment_start(line^, run.line_index)
 	for index in i32(0) ..< 3 {
 		lane_insert(&line.lanes[.Right], test_item(content.items, "iron_plate"), start + BELT_INSERT_OFFSET + index * BELT_ITEM_SPACING)
 	}
+	return
+}
+
+// The belt run's plates stand on it: its line's right lane holds three on
+// its segment.
+belt_run_items_loaded :: proc(entities: ^Entities) -> bool {
+	for run in entities.belt_runs.entries {
+		if !run.alive {
+			continue
+		}
+		line := entities.belt_network.lines[run.line]
+		on_run := 0
+		for entry in line.lanes[.Right] {
+			on_run += belt_line_segment_at(line, entry.position) == run.line_index ? 1 : 0
+		}
+		return on_run == 3
+	}
+	return false
 }
 
 // The poles with their frames and the runs with their control points
@@ -236,7 +252,7 @@ lay_save_test_runs :: proc(world: ^World, content: Simulation_Content) {
 // stand on it.
 belt_runs_loaded :: proc(loaded_world, original_world: ^World) -> bool {
 	loaded, original := &loaded_world.entities, &original_world.entities
-	if len(loaded.belt_poles.entries) != 3 || len(loaded.belt_runs.entries) != 2 {
+	if len(loaded.belt_poles.entries) != 3 || len(loaded.belt_runs.entries) != 1 {
 		return false
 	}
 	for pole, index in loaded.belt_poles.entries {
@@ -246,17 +262,11 @@ belt_runs_loaded :: proc(loaded_world, original_world: ^World) -> bool {
 	}
 	for run, index in loaded.belt_runs.entries {
 		before := original.belt_runs.entries[index]
-		if run.endpoints != before.endpoints || run.control_points != before.control_points || run.curve != before.curve || run.kind != before.kind {
+		if run.endpoints != before.endpoints || run.control_points != before.control_points || run.curve != before.curve {
 			return false
 		}
 	}
-	belt_run := loaded.belt_runs.entries[0]
-	line := loaded.belt_network.lines[belt_run.line]
-	on_run := 0
-	for entry in line.lanes[.Right] {
-		on_run += belt_line_segment_at(line, entry.position) == belt_run.line_index ? 1 : 0
-	}
-	return on_run == 3
+	return belt_run_items_loaded(loaded)
 }
 
 // The pad kept its assembly and cargo, the shipment and its statistics
@@ -1177,7 +1187,7 @@ test_cables_save_and_load :: proc(t: ^testing.T) {
 		testing.expect_value(t, loaded.field.enabled, field_world)
 		original_table, loaded_table := &original.world.entities.cables, &loaded.world.entities.cables
 		testing.expect(t, len(original_table.cables) > 10 && slice.equal(loaded_table.cables[:], original_table.cables[:]), "the cables come back")
-		testing.expect(t, slice.equal(loaded_table.watts[:], original_table.watts[:]), "their watts come back")
+		testing.expect(t, slice.equal(loaded_table.capacity[:], original_table.capacity[:]) && slice.equal(loaded_table.kinds[:], original_table.kinds[:]), "their capacities and kinds come back")
 		testing.expect_value(t, port_end_cable(loaded_table, {far, 0}), port_end_cable(original_table, {far, 0}))
 		testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(entities.electric_networks.networks))
 		testing.expect_value(t, simulation_state_hash(&loaded), simulation_state_hash(&original))
@@ -1252,6 +1262,120 @@ test_cables_save_and_load :: proc(t: ^testing.T) {
 		problem := decode_entities(&loaded, content, encode_entities(&original, content, header), "entities.bin", header, &remap)
 		testing.expectf(t, strings.contains(problem, "the save has a cable whose end is gone"), "%q", problem)
 	}
+}
+
+// Work item 0374: a field world's tank piped to a fluid junction piped to
+// a boiler round trips to the table, its capacities and kinds, the fluid
+// netlist and the state hash.
+@(test)
+test_pipes_save_and_load :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	header := make_save_header()
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	enable_test_field_tables(&original)
+	world := &original.world
+	frame := lay_pipe_test_pad(world, content)
+	tank := place_on_pipe_pad(world, content, frame, "storage_tank", {-4, 1, -1})
+	test_fluid_machine(world, tank).buffers[0] = {fluid = test_fluid(content, "water"), level = 5000}
+	junction := place_on_pipe_pad(world, content, frame, "fluid_junction", {3, 1, 0})
+	boiler := place_on_pipe_pad(world, content, frame, "boiler", {7, 1, -1})
+	lay_test_cable(world, content, "pipe", test_port_end(world, content, tank, "b"), test_port_end(world, content, junction, "a"))
+	lay_test_cable(world, content, "pipe", test_port_end(world, content, junction, "b"), test_port_end(world, content, boiler, "in"))
+	tick_test_entities(world, &original.records, content, 3)
+
+	remap: Content_Remap
+	loaded := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&loaded)
+	testing.expect_value(t, decode_entities(&loaded, content, encode_entities(&original, content, header), "entities.bin", header, &remap), "")
+	original_table, loaded_table := &world.entities.cables, &loaded.world.entities.cables
+	testing.expect(t, len(original_table.cables) == 2 && slice.equal(loaded_table.cables[:], original_table.cables[:]), "the pipes come back")
+	testing.expect(t, slice.equal(loaded_table.capacity[:], original_table.capacity[:]) && slice.equal(loaded_table.kinds[:], original_table.kinds[:]), "their capacities and kinds come back")
+	testing.expect(t, slice.equal(loaded_table.kinds[:], []Machine_Port_Kind{.Fluid, .Fluid}), "both are pipes")
+	networks := &loaded.world.entities.fluid_networks
+	testing.expect_value(t, len(networks.nodes), len(world.entities.fluid_networks.nodes))
+	testing.expect(t, fluid_netlist_of(networks, junction, -1) == fluid_netlist_of(networks, tank, 0) && fluid_netlist_of(networks, junction, -1) == fluid_netlist_of(networks, boiler, 0), "the pipes join the tank, the junction and the inlet")
+	testing.expect_value(t, simulation_state_hash(&loaded), simulation_state_hash(&original))
+}
+
+// Work item 0374: an old save's pipe run between belt poles, a run of the
+// pipe machine as a build before 0374 laid it, is dropped on load; the
+// three poles and the belt run with its plates stay.
+@(test)
+test_old_saves_lose_their_pipe_runs :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	header := make_save_header()
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	entities := &original.world.entities
+	endpoints := lay_save_test_runs(&original.world, content)
+	pool_add(&entities.belt_runs, .Belt_Run, Belt_Run{machine = test_machine(content.machines, "pipe"), endpoints = {endpoints[1], endpoints[2]}})
+
+	remap: Content_Remap
+	loaded := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&loaded)
+	testing.expect_value(t, decode_entities(&loaded, content, encode_entities(&original, content, header), "entities.bin", header, &remap), "")
+	testing.expect_value(t, pool_live_count(&loaded.world.entities.belt_runs), 1)
+	testing.expect_value(t, pool_live_count(&loaded.world.entities.belt_poles), 3)
+	testing.expect(t, belt_run_items_loaded(&loaded.world.entities), "the belt run's plates stand on it")
+	testing.expect_value(t, drop_pipe_runs(entities, content.machines), 1)
+}
+
+// A run as a build before 0374 wrote it, with the kind field the codec
+// now skips (from the 0374 review's probe).
+Old_Belt_Run_Kind :: enum u8 {
+	Belt,
+	Pipe,
+}
+
+Old_Belt_Run :: struct {
+	handle:         Entity_Handle,
+	alive:          bool,
+	kind:           Old_Belt_Run_Kind,
+	machine:        Machine_Id,
+	endpoints:      [2]Belt_Run_Endpoint,
+	control_points: [4]World_Position,
+}
+
+// Work item 0374: an old run pool written with the kind field reads into
+// this build's Belt_Run with every field after the kind intact and the
+// bytes after the pool read right; drop_pipe_runs then removes the pipe
+// run and keeps the belt run.
+@(test)
+test_an_old_run_pools_kind_is_skipped :: proc(t: ^testing.T) {
+	content := make_test_content()
+	pipe, belt := test_machine(content.machines, "pipe"), test_machine(content.machines, "belt")
+	old := [3]Old_Belt_Run {
+		{handle = {kind = .Belt_Run, index = 0}, alive = true, kind = .Belt, machine = belt, endpoints = {{frame = 3, cell = {1, 2, 3}, facing = 1}, {frame = 4, cell = {4, 5, 6}, facing = 2}}, control_points = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}},
+		{handle = {kind = .Belt_Run, index = 1}, alive = true, kind = .Pipe, machine = pipe, endpoints = {{frame = 5, cell = {7, 8, 9}, facing = 3}, {frame = 6, cell = {1, 1, 1}, facing = 0}}, control_points = {{13, 14, 15}, {16, 17, 18}, {19, 20, 21}, {22, 23, 24}}},
+		{handle = {kind = .Belt_Run, index = 2}, alive = false, kind = .Pipe, machine = pipe},
+	}
+	free := [1]u32{2}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	write_list(&bytes, old[:])
+	write_list(&bytes, free[:])
+	append_u32(&bytes, 0xfeed_0374)
+	reader := Byte_Reader{data = bytes[:]}
+	pool: Entity_Pool(Belt_Run)
+	defer destroy_pool(&pool)
+	if !testing.expect(t, read_pool(&reader, &pool, .Belt_Run, content.machines), "the old pool reads") {
+		return
+	}
+	sentinel, ok := read_u32(&reader)
+	testing.expect(t, ok && sentinel == 0xfeed_0374, "the bytes after the pool read right")
+	testing.expect_value(t, len(pool.entries), 3)
+	for entry, index in pool.entries {
+		testing.expectf(t, entry.handle == old[index].handle && entry.alive == old[index].alive && entry.machine == old[index].machine && entry.endpoints == old[index].endpoints && entry.control_points == old[index].control_points, "run %d reads as written", index)
+	}
+	entities: Entities
+	defer destroy_entities(&entities)
+	for entry in pool.entries {
+		append(&entities.belt_runs.entries, entry)
+	}
+	testing.expect_value(t, drop_pipe_runs(&entities, content.machines), 1)
+	testing.expect(t, entities.belt_runs.entries[0].alive && !entities.belt_runs.entries[1].alive, "the belt run stays, the pipe run goes")
 }
 
 // A player as a build before the toolbars (0278) wrote one: 44 slots,

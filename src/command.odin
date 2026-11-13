@@ -163,7 +163,7 @@ command_usages := [?]Command_Usage {
 	{"free_crafting <on|off>", "crafts take no ingredients"},
 	{"vein <type> <x> <z> [size_class]", "a new surface vein centred on the column"},
 	{"place <machine> <x> <y> <z> <rotation> | place <machine> <frame> <x> <y> <z> <rotation>", "a machine by its minimum corner (on the field on a frame's cell), by the player's rules, no item taken"},
-	{"cable <item> <x> <y> <z> <port id> <x> <y> <z> <port id> | cable <item> <frame> <x> <y> <z> <port id> <frame> <x> <y> <z> <port id>", "a cable between the power ports of those ids on the things at the two cells, by the hand run's rules, no item taken"},
+	{"cable <item> <x> <y> <z> <port id> <x> <y> <z> <port id> | cable <item> <frame> <x> <y> <z> <port id> <frame> <x> <y> <z> <port id>", "a cable between the power ports of those ids on the things at the two cells, or a pipe between their fluid ports, by the hand run's rules, no item taken"},
 	{"remove <x> <y> <z>", "the entity or block there, contents discarded"},
 	{"block <block> <x> <y> <z>", "set a block"},
 	{"insert <item> <count> <x> <y> <z>", "items into the entity there, as an inserter would"},
@@ -792,8 +792,9 @@ command_place :: proc(command_context: Command_Context, arguments: []string) -> 
 }
 
 // cable <item> <x> <y> <z> <port id> <x> <y> <z> <port id> (0368): a cable
-// between the power ports of those ids at the two cells, refused as a
-// hand run is but with no metres taken; the answer names its metres.
+// between the power ports of those ids at the two cells, or a pipe between
+// the fluid ports (0374), refused as a hand run is but with no metres
+// taken; the answer names its metres.
 command_cable :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
 	usage :: "cable <item> <x> <y> <z> <port id> <x> <y> <z> <port id>"
 	if len(arguments) != 9 {
@@ -814,18 +815,20 @@ Cable_Command_End :: struct {
 	port_id: string,
 }
 
-// Both world forms of cable: the item a cable, each end's cell an entity
-// with a power port of that id; then the request, served as a tick's.
+// Both world forms of cable: the item a cable or a pipe, each end's cell
+// an entity with a port of that id and the item's kind; then the request,
+// served as a tick's.
 command_cable_request :: proc(command_context: Command_Context, item_word: string, ends: [2]Cable_Command_End) -> Command_Response {
 	items := command_context.content.items
 	item, found := find_item_id(items, item_word)
-	if !found || !item_is_cable(items, item) {
-		return command_error("%q is not a cable item", item_word)
+	figures, is_line := item_line_figures(items, item)
+	if !found || !is_line {
+		return command_error("%q is not a cable or pipe item", item_word)
 	}
 	entities := &command_context.simulation.world.entities
 	request := Developer_Request{action = .Place_Cable, item = item, cell = ends[0].cell, frame = ends[0].frame, second_cell = ends[1].cell, second_frame = ends[1].frame}
 	for end, role in ends {
-		port, problem := command_cable_port(entities, command_context.content.machines, end)
+		port, problem := command_cable_port(entities, command_context.content.machines, end, figures.kind)
 		if problem != "" {
 			return command_error("%s", problem)
 		}
@@ -838,19 +841,20 @@ command_cable_request :: proc(command_context: Command_Context, item_word: strin
 	return command_ok("cable %s %d m", item_word, entities.cables.cables[port_end_cable(&entities.cables, laid)].metres)
 }
 
-// The index of the power port of that id on the entity at the end's cell.
-command_cable_port :: proc(entities: ^Entities, machines: Machine_Registry, end: Cable_Command_End) -> (port: u8, problem: string) {
+// The index of the port of that id and kind on the entity at the end's
+// cell.
+command_cable_port :: proc(entities: ^Entities, machines: Machine_Registry, end: Cable_Command_End, kind: Machine_Port_Kind) -> (port: u8, problem: string) {
 	common := entity_common(entities, entity_at(entities, end.cell, end.frame))
 	if common == nil {
 		return 0, fmt.tprintf("no entity at %d %d %d", end.cell.x, end.cell.y, end.cell.z)
 	}
 	machine := machines.machines[common.machine]
 	for index in 0 ..< machine.port_count {
-		if machine.ports[index].id == end.port_id && machine.ports[index].kind == .Power {
+		if machine.ports[index].id == end.port_id && machine.ports[index].kind == kind {
 			return u8(index), ""
 		}
 	}
-	return 0, fmt.tprintf("the %s at %d %d %d has no power port %q", machine.id, end.cell.x, end.cell.y, end.cell.z, end.port_id)
+	return 0, fmt.tprintf("the %s at %d %d %d has no %s port %q", machine.id, end.cell.x, end.cell.y, end.cell.z, machine_port_kind_names[kind], end.port_id)
 }
 
 // A request whose only argument is the cell.

@@ -74,7 +74,7 @@ Field_Edit_Refusal :: enum u8 {
 	Frame_Cell_Taken,
 	// The frame a foundation snaps to is gone.
 	Unknown_Frame,
-	// A belt or pipe run was refused (0176): the reason is the player's
+	// A belt run was refused (0176): the reason is the player's
 	// field_run_refusal.
 	Run_Refused,
 	// A torch's sample holds a torch already or turned to ground (0179).
@@ -258,13 +258,11 @@ Field_Content :: struct {
 	// placement editor is on (0215, data/game.sjson), x the width, y the
 	// height, z the depth as a footprint; only the presentation reads it.
 	direct_placement_limit: [3]i32,
-	// The run tools (0176, belt_run_placement.odin): the pole a new
-	// endpoint places, the belt a belt run moves at, the pipe a pipe run
-	// looks like (each read through field_content_machine) and the
-	// constraints of data/game.sjson.
+	// The run tool (0176, belt_run_placement.odin): the pole a new
+	// endpoint places, the belt a belt run moves at (each read through
+	// field_content_machine) and the constraints of data/game.sjson.
 	belt_pole: Machine_Id,
 	run_belt:  Machine_Id,
-	run_pipe:  Machine_Id,
 	belt_runs: Belt_Run_Constraints,
 	// The torch (0179): its item (NO_ITEM without one) and the level of
 	// the torch emitter of data/lighting.sjson.

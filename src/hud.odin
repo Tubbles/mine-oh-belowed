@@ -3,6 +3,7 @@ package game
 import "core:fmt"
 import "core:math"
 import "core:slice"
+import "core:strings"
 
 // The world HUD, drawn through the UI draw list under any open screen:
 // crosshair, under it the targeted entity's name and state or the
@@ -788,12 +789,19 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		vein_status = ghost_line
 	}
 	// An entity's line is its state, a block's only says what it is. An
-	// aimed cable's is its load (0369), in the accent colour while it limits.
+	// aimed cable's is its load (0369), in the accent colour while it limits;
+	// an aimed pipe's its fluid and flow (0374).
 	name_color := player.target.entity == NO_ENTITY ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR
 	if cable := hud.aimed_cable.? or_else -1; cable >= 0 {
-		limits: bool
-		name_status, limits = cable_status_text(&screen_context.world.entities, items, cable, screen_context.tick_rate)
-		name_color = limits ? UI_ACCENT_COLOR : UI_TEXT_COLOR
+		entities := &screen_context.world.entities
+		if cable < len(entities.cables.kinds) && entities.cables.kinds[cable] == .Fluid {
+			name_status = pipe_status_text(entities, screen_context.machines, items, screen_context.fluids, cable, screen_context.tick_rate)
+			name_color = UI_TEXT_COLOR
+		} else {
+			limits: bool
+			name_status, limits = cable_status_text(entities, items, cable, screen_context.tick_rate)
+			name_color = limits ? UI_ACCENT_COLOR : UI_TEXT_COLOR
+		}
 	}
 	line := draw_target_status(state, name_status, 0, name_color)
 	line = draw_target_status(state, tool_status, line, tool_color)
@@ -913,18 +921,20 @@ append_field_interact_hints :: proc(list: ^[dynamic]Glyph_Hint, screen_context: 
 }
 
 // The held item's hints on the field (0219): Place with a placeable
-// tool (a cable's Run cable, or during its run Connect and Mine's Take
-// back, 0368), Tools with any item (Torch in the tech demo, where the
-// control is the torchlight's, 0297; Pipette while a tap picks something,
-// pipette, 0216), then Turn with a machine (Next_Brush turns it) or Brush
-// where Next_Brush cycles the brush. In the temp allocator.
+// tool (a cable's Run cable or a pipe's Run pipe, or during its run
+// Connect and Mine's Take back, 0368 and 0374), Tools with any item
+// (Torch in the tech demo, where the control is the torchlight's, 0297;
+// Pipette while a tap picks something, pipette, 0216), then Turn with a
+// machine (Next_Brush turns it) or Brush where Next_Brush cycles the
+// brush. In the temp allocator.
 held_glyph_hints :: proc(tool: Field_Held_Tool, cable_run: bool, tech_demo := false, pipette := false) -> []Glyph_Hint {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
+	kind, runs := field_tool_line_kind(tool)
 	switch {
-	case tool == .Cable && cable_run:
+	case runs && cable_run:
 		append(&list, Glyph_Hint{.Use_Item, text("hint_connect")}, Glyph_Hint{.Mine, text("hint_take_back")})
-	case tool == .Cable:
-		append(&list, Glyph_Hint{.Use_Item, text("hint_run_cable")})
+	case runs:
+		append(&list, Glyph_Hint{.Use_Item, text(kind == .Fluid ? "hint_run_pipe" : "hint_run_cable")})
 	case field_held_tool_places(tool):
 		append(&list, Glyph_Hint{.Use_Item, text("hint_place")})
 	}
@@ -1260,6 +1270,9 @@ entity_status_text :: proc(world: ^World, core_samples: []Core_Sample, machines:
 	case .Pipe, .Fluid_Machine:
 		return fluid_status_text(world, machines, fluids, handle, name)
 	case .Pole, .Lamp:
+		if machines.machines[common.machine].kind == .Fluid_Junction {
+			return fluid_junction_status_text(world, machines, fluids, handle, name)
+		}
 		return power_entity_status_text(world, machines, handle, name)
 	case .Assembler:
 		assembler := pool_get(&world.entities.assemblers, handle)
@@ -1339,7 +1352,7 @@ field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare:
 		return bucket_litres_line("field_tool_water_bucket", player.poured_fill, spacing_millimetres), true
 	case .Drain:
 		return bucket_litres_line("field_tool_drain_bucket", player.drained_fill, spacing_millimetres), true
-	case .Cable:
+	case .Cable, .Pipe:
 		if player.cable_run && entities != nil {
 			return cable_run_line(player, content, entities, held_item)
 		}
@@ -1348,16 +1361,47 @@ field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare:
 }
 
 // "Light cable: 12 m of the span left" or "Light cable: 3 m past the
-// span" (0368): the item's span against chord_metres from the run's first
-// end to the hand. In the temp allocator.
+// span" (0368); a pipe's names its first end's machine and port (0374):
+// "Pipe from Boiler, steam out: 17 m of the span left". The item's span
+// against chord_metres from the run's first end to the hand. In the temp
+// allocator.
 cable_run_line :: proc(player: Field_Player, content: Simulation_Content, entities: ^Entities, item: Item_Id) -> (line: string, shown: bool) {
-	if !item_is_cable(content.items, item) {
-		return "", false
+	figures := item_line_figures(content.items, item) or_return
+	start := port_end_point(entities, content.machines, player.cable_start) or_return
+	left := figures.span_metres - chord_metres(start, cable_hand_point(player, content.field.tuning))
+	if figures.kind == .Fluid {
+		line = text(left >= 0 ? "field_tool_pipe_run" : "field_tool_pipe_past")
+		line = replace_message_mark(line, "{machine}", port_end_machine_name(entities, content.machines, player.cable_start))
+		line = replace_message_mark(line, "{port}", pipe_run_port_words(entities, content.machines, content.fluids, player.cable_start))
+	} else {
+		line = text(left >= 0 ? "field_tool_cable_run" : "field_tool_cable_past")
 	}
-	start := power_port_point(entities, content.machines, player.cable_start) or_return
-	left := i64(content.items.items[item].cable_span_metres) - chord_metres(start, cable_hand_point(player, content.field.tuning))
-	line = replace_message_mark(text(left >= 0 ? "field_tool_cable_run" : "field_tool_cable_past"), "{name}", item_name(content.items, item))
+	line = replace_message_mark(line, "{name}", item_name(content.items, item))
 	return replace_message_mark(line, "{metres}", fmt.tprint(abs(left))), true
+}
+
+// A fluid port in a few words (0374): its buffer's fluid, lower case, and
+// direction ("steam out", "water in", "water" both ways), else its id
+// ("port c": a fluid junction's, or a buffer with no fluid set). In the
+// temp allocator.
+pipe_run_port_words :: proc(entities: ^Entities, machines: Machine_Registry, fluids: Fluid_Registry, end: Port_End) -> string {
+	common := entity_common(entities, end.entity)
+	if common == nil || int(end.port) >= machines.machines[common.machine].port_count {
+		return ""
+	}
+	machine := machines.machines[common.machine]
+	port := machine.ports[end.port]
+	buffers := fluid_ports_of(machine)
+	if port.fluid_buffer < 0 || int(port.fluid_buffer) >= len(buffers) || int(buffers[port.fluid_buffer].filter) >= len(fluids.fluids) {
+		return replace_message_mark(text("field_tool_pipe_port"), "{port}", port.id)
+	}
+	buffer := buffers[port.fluid_buffer]
+	keys := [Fluid_Port_Direction]string {
+		.Input  = "field_tool_pipe_port_in",
+		.Output = "field_tool_pipe_port_out",
+		.Both   = "field_tool_pipe_port_both",
+	}
+	return replace_message_mark(text(keys[buffer.direction]), "{fluid}", strings.to_lower(fluid_name(fluids, buffer.filter), context.temp_allocator))
 }
 
 // "Water bucket, 1000 L poured": the fill in litres at the spacing (0 L

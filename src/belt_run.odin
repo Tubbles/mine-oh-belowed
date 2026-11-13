@@ -2,8 +2,8 @@ package game
 
 import "core:fmt"
 
-// Belt and pipe runs between poles (work item 0176, doc/logistics.md,
-// Runs): Satisfactory's free belts. A run joins two endpoints, each a belt
+// Belt runs between poles (work item 0176, doc/logistics.md, Runs):
+// Satisfactory's free belts. A run joins two endpoints, each a belt
 // pole or a frame cell's belt end, along a curve the game derives from
 // their positions and facings: a cubic Hermite whose tangents lie along
 // the facings, a share of the span long, kept as its four Bezier control
@@ -18,8 +18,9 @@ import "core:fmt"
 // long as its arc length in line units at the start frame's pitch
 // (belt.odin, append_belt_segment), so items keep their distance along
 // the line across it; the shape only maps a distance to a point
-// (belt_run_point_at) for the renderer. A pipe run carries the pipe's
-// look only: the fluid networks do not connect through runs yet.
+// (belt_run_point_at) for the renderer. The pipe run between poles is
+// gone (0374): pipes are run by hand from port to port (cable.odin), and
+// an old save's pipe runs are dropped (drop_pipe_runs).
 //
 // A belt pole is an entity (Machine_Kind.Belt_Pole): placed free it is a
 // one cell frame of its own, its facing the frame's forward; snapped it
@@ -45,11 +46,6 @@ BELT_RUN_FINE_SHIFT :: 8
 BELT_POLE_FREE_ROTATION :: 1
 MINIMUM_BELT_POLE_HEIGHT_MILLIMETRES :: 250
 MAXIMUM_BELT_POLE_HEIGHT_MILLIMETRES :: 4000
-
-Belt_Run_Kind :: enum u8 {
-	Belt,
-	Pipe,
-}
 
 Belt_Pole :: struct {
 	using common: Entity_Common,
@@ -80,11 +76,12 @@ Belt_Run_Curve :: struct {
 	length_units: i32,
 }
 
+// An old save's kind field (belt or pipe, before 0374) is skipped by the
+// codec; drop_pipe_runs removes the pipe runs by their machine.
 Belt_Run :: struct {
 	handle:         Entity_Handle,
 	alive:          bool,
-	kind:           Belt_Run_Kind,
-	// The belt whose speed the run moves at, or the pipe it looks like.
+	// The belt whose speed the run moves at.
 	machine:        Machine_Id,
 	endpoints:      [2]Belt_Run_Endpoint,
 	control_points: [4]World_Position,
@@ -387,9 +384,9 @@ belt_run_point_at :: proc(run: Belt_Run, distance: i32) -> (point: World_Positio
 
 // The pool.
 
-// A belt run in the belt lines; pipe runs are not.
+// A live run is in the belt lines.
 belt_run_in_lines :: proc(run: Belt_Run) -> bool {
-	return run.alive && run.kind == .Belt
+	return run.alive
 }
 
 same_run_endpoint :: proc(first, second: Belt_Run_Endpoint) -> bool {
@@ -399,24 +396,24 @@ same_run_endpoint :: proc(first, second: Belt_Run_Endpoint) -> bool {
 	return first.frame == second.frame && first.cell == second.cell
 }
 
-// Whether a live run of the kind already starts (role 0) or ends (role 1)
-// at the endpoint's pole or belt end.
-belt_run_endpoint_taken :: proc(entities: ^Entities, kind: Belt_Run_Kind, endpoint: Belt_Run_Endpoint, role: int) -> bool {
+// Whether a live run already starts (role 0) or ends (role 1) at the
+// endpoint's pole or belt end.
+belt_run_endpoint_taken :: proc(entities: ^Entities, endpoint: Belt_Run_Endpoint, role: int) -> bool {
 	for run in entities.belt_runs.entries {
-		if run.alive && run.kind == kind && same_run_endpoint(run.endpoints[role], endpoint) {
+		if run.alive && same_run_endpoint(run.endpoints[role], endpoint) {
 			return true
 		}
 	}
 	return false
 }
 
-// The facing a pole's other run of the kind fixes for the role: a leaving
-// run takes the facing the arriving run left the pole with, an arriving
-// run the facing the leaving run starts with.
-belt_pole_fixed_facing :: proc(entities: ^Entities, kind: Belt_Run_Kind, pole: Entity_Handle, role: int) -> (facing: u8, found: bool) {
+// The facing a pole's other run fixes for the role: a leaving run takes
+// the facing the arriving run left the pole with, an arriving run the
+// facing the leaving run starts with.
+belt_pole_fixed_facing :: proc(entities: ^Entities, pole: Entity_Handle, role: int) -> (facing: u8, found: bool) {
 	other := BELT_RUN_END - role
 	for run in entities.belt_runs.entries {
-		if run.alive && run.kind == kind && run.endpoints[other].pole == pole {
+		if run.alive && run.endpoints[other].pole == pole {
 			return run.endpoints[other].facing, true
 		}
 	}
@@ -426,8 +423,8 @@ belt_pole_fixed_facing :: proc(entities: ^Entities, kind: Belt_Run_Kind, pole: E
 // A pole's facing for a run against its other run's: it must be that
 // facing and must not point against the chord, or items would turn round
 // on the pole.
-belt_pole_refusal :: proc(entities: ^Entities, kind: Belt_Run_Kind, endpoint: Belt_Run_Endpoint, role: int, chord: [3]i64) -> Belt_Run_Refusal {
-	fixed, found := belt_pole_fixed_facing(entities, kind, endpoint.pole, role)
+belt_pole_refusal :: proc(entities: ^Entities, endpoint: Belt_Run_Endpoint, role: int, chord: [3]i64) -> Belt_Run_Refusal {
+	fixed, found := belt_pole_fixed_facing(entities, endpoint.pole, role)
 	if !found {
 		return .None
 	}
@@ -455,23 +452,20 @@ belt_end_refusal :: proc(entities: ^Entities, endpoint: Belt_Run_Endpoint, role:
 	return .None
 }
 
-// What refuses an existing endpoint of a run of the kind: a run on that
-// side already, a pole the run would cross backwards, a belt fed or
-// feeding already.
-belt_run_endpoint_refusal :: proc(entities: ^Entities, kind: Belt_Run_Kind, endpoint: Belt_Run_Endpoint, role: int, chord: [3]i64) -> Belt_Run_Refusal {
+// What refuses an existing endpoint of a run: a run on that side already,
+// a pole the run would cross backwards, a belt fed or feeding already.
+belt_run_endpoint_refusal :: proc(entities: ^Entities, endpoint: Belt_Run_Endpoint, role: int, chord: [3]i64) -> Belt_Run_Refusal {
 	switch {
-	case belt_run_endpoint_taken(entities, kind, endpoint, role):
+	case belt_run_endpoint_taken(entities, endpoint, role):
 		return .Endpoint_Taken
 	case endpoint.pole != NO_ENTITY:
-		return belt_pole_refusal(entities, kind, endpoint, role, chord)
-	case kind == .Belt:
-		return belt_end_refusal(entities, endpoint, role)
+		return belt_pole_refusal(entities, endpoint, role, chord)
 	}
-	return .None
+	return belt_end_refusal(entities, endpoint, role)
 }
 
 // Everything that refuses a run between two existing endpoints.
-belt_run_refusal :: proc(entities: ^Entities, machines: Machine_Registry, constraints: Belt_Run_Constraints, kind: Belt_Run_Kind, endpoints: [2]Belt_Run_Endpoint) -> Belt_Run_Refusal {
+belt_run_refusal :: proc(entities: ^Entities, machines: Machine_Registry, constraints: Belt_Run_Constraints, endpoints: [2]Belt_Run_Endpoint) -> Belt_Run_Refusal {
 	geometry, found := belt_run_geometry(entities, machines, endpoints)
 	switch {
 	case !found:
@@ -481,23 +475,22 @@ belt_run_refusal :: proc(entities: ^Entities, machines: Machine_Registry, constr
 	}
 	chord := cast([3]i64)(geometry.positions[BELT_RUN_END] - geometry.positions[BELT_RUN_START])
 	for endpoint, role in endpoints {
-		if refusal := belt_run_endpoint_refusal(entities, kind, endpoint, role, chord); refusal != .None {
+		if refusal := belt_run_endpoint_refusal(entities, endpoint, role, chord); refusal != .None {
 			return refusal
 		}
 	}
 	return belt_run_shape_refusal(geometry, constraints)
 }
 
-// A run between two existing endpoints after belt_run_refusal; a belt run
+// A run between two existing endpoints after belt_run_refusal; it
 // rebuilds the lines, keeping the items on them.
-add_belt_run :: proc(entities: ^Entities, machines: Machine_Registry, constraints: Belt_Run_Constraints, kind: Belt_Run_Kind, machine: Machine_Id, endpoints: [2]Belt_Run_Endpoint) -> (handle: Entity_Handle, refusal: Belt_Run_Refusal) {
-	if refusal = belt_run_refusal(entities, machines, constraints, kind, endpoints); refusal != .None {
+add_belt_run :: proc(entities: ^Entities, machines: Machine_Registry, constraints: Belt_Run_Constraints, machine: Machine_Id, endpoints: [2]Belt_Run_Endpoint) -> (handle: Entity_Handle, refusal: Belt_Run_Refusal) {
+	if refusal = belt_run_refusal(entities, machines, constraints, endpoints); refusal != .None {
 		return NO_ENTITY, refusal
 	}
 	geometry, _ := belt_run_geometry(entities, machines, endpoints)
 	control_points := belt_run_control_points(geometry)
 	run := Belt_Run {
-		kind           = kind,
 		machine        = machine,
 		endpoints      = endpoints,
 		control_points = control_points,
@@ -505,9 +498,7 @@ add_belt_run :: proc(entities: ^Entities, machines: Machine_Registry, constraint
 	}
 	records := belt_cell_items(entities)
 	handle = pool_add(&entities.belt_runs, .Belt_Run, run)
-	if kind == .Belt {
-		rebuild_belt_lines(entities, machines, records)
-	}
+	rebuild_belt_lines(entities, machines, records)
 	return handle, .None
 }
 
@@ -516,16 +507,34 @@ remove_belt_run :: proc(entities: ^Entities, machines: Machine_Registry, handle:
 	if run == nil {
 		return false
 	}
-	kind, endpoints := run.kind, run.endpoints
+	endpoints := run.endpoints
 	records := belt_cell_items(entities)
 	pool_remove(&entities.belt_runs, handle)
-	if kind == .Belt {
-		rebuild_belt_lines(entities, machines, records)
-	}
+	rebuild_belt_lines(entities, machines, records)
 	for endpoint in endpoints {
 		release_empty_frame(entities, endpoint.frame)
 	}
 	return true
+}
+
+// Old saves (0374): every live run whose machine is not a belt was a pipe
+// run between belt poles, which carried no fluid; it is removed and
+// counted. Its poles stay, so no frame is left empty: a pipe run ended on
+// poles only. A run took no item, only its new poles, so nothing is owed.
+// Before rebuild_loaded_world, which builds the lines.
+drop_pipe_runs :: proc(entities: ^Entities, machines: Machine_Registry) -> int {
+	count := 0
+	for run in entities.belt_runs.entries {
+		if run.alive && machines.machines[run.machine].kind != .Belt {
+			pool_remove(&entities.belt_runs, run.handle)
+			count += 1
+		}
+	}
+	return count
+}
+
+pipe_runs_line :: proc(count: int) -> string {
+	return fmt.tprintf("save: removed %d pipe runs between belt poles, which carried no fluid; pipes are run by hand from port to port since 0374", count)
 }
 
 // Before a pole goes: the runs on it go with it.
@@ -545,17 +554,16 @@ place_free_belt_pole :: proc(entities: ^Entities, machines: Machine_Registry, ma
 	return add_entity(entities, machines, machine, {}, BELT_POLE_FREE_ROTATION, frame), frame
 }
 
-// An existing pole as the role's endpoint of a run of the kind: facing
-// the way its other run fixes (belt_pole_fixed_facing), else the way
-// nearer the chord.
-belt_pole_endpoint :: proc(entities: ^Entities, pole: Entity_Handle, chord: [3]i64, kind: Belt_Run_Kind, role: int) -> (endpoint: Belt_Run_Endpoint, found: bool) {
+// An existing pole as the role's endpoint of a run: facing the way its
+// other run fixes (belt_pole_fixed_facing), else the way nearer the chord.
+belt_pole_endpoint :: proc(entities: ^Entities, pole: Entity_Handle, chord: [3]i64, role: int) -> (endpoint: Belt_Run_Endpoint, found: bool) {
 	entry := pool_get(&entities.belt_poles, pole)
 	if entry == nil {
 		return {}, false
 	}
 	frame := find_frame(&entities.frames, entry.frame) or_return
 	facing := belt_pole_facing_towards(frame, entry.rotation, chord)
-	if fixed, fixed_found := belt_pole_fixed_facing(entities, kind, pole, role); fixed_found {
+	if fixed, fixed_found := belt_pole_fixed_facing(entities, pole, role); fixed_found {
 		facing = fixed
 	}
 	return Belt_Run_Endpoint{pole = pole, frame = entry.frame, cell = entry.origin, facing = facing}, true

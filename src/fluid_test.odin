@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+import "core:strings"
 import "core:testing"
 
 // Fluid worlds stand on the stone floor of make_floor_world (top at y 1).
@@ -69,7 +71,7 @@ test_fluid_data_loads :: proc(t: ^testing.T) {
 	testing.expect(t, fluid_is_gas(content.fluids, steam))
 	pipe := content.machines.machines[test_machine(content.machines, "pipe")]
 	testing.expect_value(t, pipe.kind, Machine_Kind.Pipe)
-	testing.expect_value(t, pipe_flow_per_tick(content.machines, TEST_TICK_RATE), 20)
+	testing.expect_value(t, block_joint_litres_per_second(content.machines), 1200)
 	testing.expect_value(t, pipe.item, test_item(content.items, "pipe"))
 	boiler := content.machines.machines[test_machine(content.machines, "boiler")]
 	testing.expect_value(t, boiler.footprint, [3]i32{3, 2, 2})
@@ -976,4 +978,216 @@ test_pipe_placed_over_ground_cover_replaces_it :: proc(t: ^testing.T) {
 	commit_placement(&world, content.machines, placement)
 	testing.expect_value(t, world_get_block(&world, {0, 1, 0}), AIR_BLOCK)
 	testing.expect_value(t, entity_at(&world.entities, {0, 1, 0}).kind, Entity_Kind.Pipe)
+}
+
+// Hand run pipes (0374) on a field pad: the cable tests' pad, frame cells
+// -4 to 16 along x and -4 to 4 along z, laid on a floor world's entities.
+lay_pipe_test_pad :: proc(world: ^World, content: Simulation_Content) -> Frame {
+	return lay_test_pad(&world.entities, content.machines, 0, 0, {-4, 0, -4}, {16, 0, 4})
+}
+
+place_on_pipe_pad :: proc(world: ^World, content: Simulation_Content, frame: Frame, id: string, cell: World_Coordinate) -> Entity_Handle {
+	handle, refusal := place_on_frame(&world.entities, content.machines, test_machine(content.machines, id), frame.id, cell, 0)
+	assert(refusal == .None, id)
+	return handle
+}
+
+// The entity's port of that id.
+test_port_end :: proc(world: ^World, content: Simulation_Content, handle: Entity_Handle, id: string) -> Port_End {
+	machine := content.machines.machines[entity_common(&world.entities, handle).machine]
+	for port in 0 ..< machine.port_count {
+		if machine.ports[port].id == id {
+			return {handle, u8(port)}
+		}
+	}
+	panic(id)
+}
+
+// Chapter 4's line run by hand on a field pad: a powered offshore pump
+// piped to a boiler with 20 coal, its steam piped into a tank. Once
+// running the boiler produces every tick and the tank gains its litre a
+// tick, as on the block world's pipes.
+@(test)
+test_a_hand_run_boiler_line_runs_at_its_rate :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	frame := lay_pipe_test_pad(&world, content)
+	pump := place_on_pipe_pad(&world, content, frame, "offshore_pump", {-4, 1, -4})
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
+	boiler := place_on_pipe_pad(&world, content, frame, "boiler", {0, 1, -1})
+	test_fluid_machine(&world, boiler).slots[BOILER_FUEL_SLOT] = Item_Stack{item = test_item(content.items, "coal"), count = 20}
+	tank := place_on_pipe_pad(&world, content, frame, "storage_tank", {6, 1, -1})
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, pump, "out"), test_port_end(&world, content, boiler, "in"))
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, boiler, "out"), test_port_end(&world, content, tank, "a"))
+	testing.expect_value(t, fluid_netlist_count(&world.entities.fluid_networks), 2)
+	tick_test_fluids(&world, content, 120)
+	before := test_fluid_machine(&world, tank).buffers[0].level
+	producing := 0
+	for _ in 0 ..< 600 {
+		tick_test_fluids(&world, content, 1)
+		producing += test_fluid_machine(&world, boiler).state == .Producing ? 1 : 0
+	}
+	testing.expect_value(t, producing, 600)
+	testing.expect_value(t, test_fluid_machine(&world, tank).buffers[0].level - before, 600)
+}
+
+// A pipe carries its litres a second over the tick rate a tick: a full
+// water tank piped to a fluid junction piped to two boilers without fuel.
+// Through the one pipe from the tank the boilers gain 20 L together in a
+// tick, through two 40 L, and the two bundle into one edge of 2400 L/s.
+@(test)
+test_a_pipe_carries_its_capacity_a_tick :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	frame := lay_pipe_test_pad(&world, content)
+	tank := place_on_pipe_pad(&world, content, frame, "storage_tank", {-4, 1, -1})
+	test_fluid_machine(&world, tank).buffers[0] = {fluid = test_fluid(content, "water"), level = 25_000}
+	junction := place_on_pipe_pad(&world, content, frame, "fluid_junction", {3, 1, 0})
+	boilers := [2]Entity_Handle{place_on_pipe_pad(&world, content, frame, "boiler", {7, 1, -4}), place_on_pipe_pad(&world, content, frame, "boiler", {7, 1, 2})}
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, tank, "b"), test_port_end(&world, content, junction, "a"))
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, junction, "c"), test_port_end(&world, content, boilers[0], "in"))
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, junction, "d"), test_port_end(&world, content, boilers[1], "in"))
+	inlets :: proc(world: ^World, boilers: [2]Entity_Handle) -> i32 {
+		return test_fluid_machine(world, boilers[0]).buffers[0].level + test_fluid_machine(world, boilers[1]).buffers[0].level
+	}
+	tick_test_fluids(&world, content, 1)
+	testing.expect_value(t, inlets(&world, boilers), 20)
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, tank, "c"), test_port_end(&world, content, junction, "b"))
+	tick_test_fluids(&world, content, 1)
+	testing.expect_value(t, inlets(&world, boilers), 60)
+	networks := &world.entities.fluid_networks
+	child, _ := cable_tree_child(networks.topology, fluid_node_of(networks, tank, 0), fluid_node_of(networks, junction, -1))
+	if testing.expect(t, child >= 0, "the tank and the junction share an edge") {
+		testing.expect_value(t, networks.topology.capacity[child], 2400)
+	}
+}
+
+// A fluid junction branches a line: a powered offshore pump piped to a
+// junction piped to three boilers' inlets; in 30 ticks the pump's 600 L
+// fill every inlet to its 200 L.
+@(test)
+test_a_fluid_junction_branches_a_line :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	frame := lay_pipe_test_pad(&world, content)
+	pump := place_on_pipe_pad(&world, content, frame, "offshore_pump", {-4, 1, 0})
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
+	junction := place_on_pipe_pad(&world, content, frame, "fluid_junction", {2, 1, 0})
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, pump, "out"), test_port_end(&world, content, junction, "a"))
+	boilers: [3]Entity_Handle
+	for z, index in ([3]i32{-4, -1, 2}) {
+		boilers[index] = place_on_pipe_pad(&world, content, frame, "boiler", {7, 1, z})
+		lay_test_cable(&world, content, "pipe", {junction, u8(index + 1)}, test_port_end(&world, content, boilers[index], "in"))
+	}
+	networks := &world.entities.fluid_networks
+	tick_test_fluids(&world, content, 30)
+	for boiler, index in boilers {
+		testing.expectf(t, fluid_netlist_of(networks, boiler, 0) == fluid_netlist_of(networks, pump, 0), "boiler %d is on the pump's netlist", index)
+		testing.expectf(t, test_fluid_machine(&world, boiler).buffers[0].level == 200, "boiler %d holds %d L", index, test_fluid_machine(&world, boiler).buffers[0].level)
+	}
+}
+
+// On a field pad: a powered offshore pump, a fluid junction, two boilers
+// with coal and a tank; the pipes pump to junction, junction to each
+// boiler's inlet and each boiler's outlet to the tank, in that order.
+lay_pipe_test_line :: proc(world: ^World, content: Simulation_Content) -> (pipes: [5][2]Port_End) {
+	frame := lay_pipe_test_pad(world, content)
+	pump := place_on_pipe_pad(world, content, frame, "offshore_pump", {-4, 1, 0})
+	test_fluid_machine(world, pump).power.satisfaction = POWER_FULL
+	junction := place_on_pipe_pad(world, content, frame, "fluid_junction", {1, 1, 0})
+	boilers := [2]Entity_Handle{place_on_pipe_pad(world, content, frame, "boiler", {4, 1, -4}), place_on_pipe_pad(world, content, frame, "boiler", {4, 1, 2})}
+	tank := place_on_pipe_pad(world, content, frame, "storage_tank", {10, 1, -1})
+	for boiler in boilers {
+		test_fluid_machine(world, boiler).slots[BOILER_FUEL_SLOT] = Item_Stack{item = test_item(content.items, "coal"), count = 20}
+	}
+	pipes[0] = {test_port_end(world, content, pump, "out"), test_port_end(world, content, junction, "a")}
+	pipes[1] = {test_port_end(world, content, junction, "c"), test_port_end(world, content, boilers[0], "in")}
+	pipes[2] = {test_port_end(world, content, junction, "d"), test_port_end(world, content, boilers[1], "in")}
+	pipes[3] = {test_port_end(world, content, boilers[0], "out"), test_port_end(world, content, tank, "a")}
+	pipes[4] = {test_port_end(world, content, boilers[1], "out"), test_port_end(world, content, tank, "c")}
+	return
+}
+
+// The same pipes laid in two orders move the same litres tick for tick:
+// the topology does not depend on the table's order. The state hash,
+// which writes the table in its order, is compared between two worlds laid
+// alike.
+@(test)
+test_a_pipe_netlist_is_deterministic :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	states: [3]Simulation_State
+	for &state, index in states {
+		state = make_save_test_simulation(&generator, content)
+		pipes := lay_pipe_test_line(&state.world, content)
+		for position in 0 ..< len(pipes) {
+			pipe := index == 1 ? pipes[len(pipes) - 1 - position] : pipes[position]
+			lay_test_cable(&state.world, content, "pipe", pipe[0], pipe[1])
+		}
+	}
+	defer {
+		for &state in states {
+			destroy_simulation(&state)
+		}
+	}
+	for tick in 0 ..< 600 {
+		for &state in states {
+			tick_test_fluids(&state.world, content, 1)
+			state.tick += 1
+		}
+		laid, reversed := states[0].world.entities.fluid_machines.entries, states[1].world.entities.fluid_machines.entries
+		for machine, index in laid {
+			other := reversed[index]
+			if !testing.expectf(t, machine.buffers == other.buffers && machine.fuel_joules == other.fuel_joules && machine.state == other.state, "tick %d: fluid machine %d parts", tick, index) {
+				return
+			}
+		}
+	}
+	// The pump, the two boilers, then the tank; the junction is a pole.
+	tank := states[0].world.entities.fluid_machines.entries[3]
+	testing.expect(t, tank.buffers[0].fluid == test_fluid(content, "steam") && tank.buffers[0].level > 0, "the steam reaches the tank")
+	testing.expect_value(t, simulation_state_hash(&states[0]), simulation_state_hash(&states[2]))
+}
+
+// The fluid junction's port lines with ports a and b piped and c and d
+// free, its HUD line, and a pipe's HUD line, after a second of the pump's
+// 20 L a tick through them: the water comes from the pump and goes to the
+// tank; before it moves both piped ports read "to".
+@(test)
+test_fluid_junction_panel_lines :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	frame := lay_pipe_test_pad(&world, content)
+	pump := place_on_pipe_pad(&world, content, frame, "offshore_pump", {-4, 1, 0})
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
+	junction := place_on_pipe_pad(&world, content, frame, "fluid_junction", {1, 1, 0})
+	tank := place_on_pipe_pad(&world, content, frame, "storage_tank", {5, 1, -1})
+	lay_test_cable(&world, content, "pipe", test_port_end(&world, content, pump, "out"), {junction, 0})
+	lay_test_cable(&world, content, "pipe", {junction, 1}, test_port_end(&world, content, tank, "d"))
+	entities := &world.entities
+	// Nothing moved yet: "to" on both piped ports.
+	for port in 0 ..< 2 {
+		line, _ := fluid_port_text(entities, content.machines, content.items, {junction, u8(port)})
+		peer := port == 0 ? "Offshore pump" : "Storage tank"
+		testing.expectf(t, strings.has_suffix(line, fmt.tprintf("Pipe to %s", peer)), "port %d before the first second: %q", port, line)
+	}
+	tick_test_fluids(&world, content, TEST_TICK_RATE)
+	expected := [4]struct {
+		line:  string,
+		piped: bool,
+	} {
+		{"Port a: 72.0 kL/min, Pipe from Offshore pump", true},
+		{"Port b: 72.0 kL/min, Pipe to Storage tank", true},
+		{"Port c: free", false},
+		{"Port d: free", false},
+	}
+	for entry, port in expected {
+		line, piped := fluid_port_text(entities, content.machines, content.items, {junction, u8(port)})
+		testing.expectf(t, line == entry.line && piped == entry.piped, "port %d: %q piped %v", port, line, piped)
+	}
+	testing.expect_value(t, fluid_junction_status_text(&world, content.machines, content.fluids, junction, "Fluid junction"), "Fluid junction  Water")
+	pipe := port_end_cable(&entities.cables, {junction, 0})
+	testing.expect_value(t, pipe_status_text(entities, content.machines, content.items, content.fluids, pipe, TEST_TICK_RATE), "Pipe: Water, 72.0 kL/min of 72.0 kL/min")
 }

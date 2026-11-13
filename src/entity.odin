@@ -694,7 +694,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.pipes, .Pipe, make_pipe(common))
 	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine, .Water_Pump:
 		handle = pool_add(&entities.fluid_machines, .Fluid_Machine, make_fluid_machine(common, machines.machines[machine]))
-	case .Junction_Box, .Power_Switch:
+	case .Junction_Box, .Power_Switch, .Fluid_Junction:
 		handle = pool_add(&entities.poles, .Pole, make_pole(common))
 	case .Lamp:
 		handle = pool_add(&entities.lamps, .Lamp, make_lamp(common))
@@ -724,7 +724,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 	if machines.machines[machine].kind == .Foundation {
 		refresh_founded_above(entities, machines, common)
 	}
-	if handle.kind == .Pipe || machines.machines[machine].fluid_port_count > 0 {
+	if machine_touches_fluids(machines.machines[machine]) {
 		rebuild_fluid_networks(entities, machines)
 	}
 	if machine_touches_power(machines.machines[machine]) {
@@ -782,7 +782,12 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		rebuild_fluid_networks(entities, machines)
 		return true
 	case .Pole:
-		return pool_remove(&entities.poles, handle)
+		touches_fluids := machine_touches_fluids(machines.machines[common.machine])
+		removed := pool_remove(&entities.poles, handle)
+		if touches_fluids {
+			rebuild_fluid_networks(entities, machines)
+		}
+		return removed
 	case .Lamp:
 		return pool_remove(&entities.lamps, handle)
 	case .Assembler:

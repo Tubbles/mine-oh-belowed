@@ -97,8 +97,8 @@ Game_Config :: struct {
 	// The largest footprint Place puts down in one press while the
 	// placement editor is on (work item 0215, ui_placement_editor.odin).
 	direct_placement_limit: Placement_Limit_Config,
-	// The constraints of a belt or pipe run between poles (work item
-	// 0176, belt_run.odin).
+	// The constraints of a belt run between poles (work item 0176,
+	// belt_run.odin).
 	belt_runs:            Belt_Runs_Config,
 	// The field session's simulated chunks and its torch (work item 0179,
 	// simulation_field_chunk_set.odin, simulation_field.odin).

@@ -549,3 +549,10 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The Pipette hint is hidden wherever its wider label would push another hint out (the largest text at most sizes). A glyph bar that can shorten or wrap would show it; the same limit hides the toolbar edit mode's hint (0279).
 - Torches cannot be pipetted: the HUD has no torch target.
 - Plausible and not traced (from 0215's ordering): a tap released in the frame a screen opens may still pipette under that screen, since `tools_radial_world_frame` adds Pipette back after `world_input` removed the world actions.
+
+## Suggestions from the hand run pipes (0374, 2026-11-13)
+
+- The journal's detail drops objective rows of the steam quest at UI scale 1.2 and above (one more row since the pipe sentence). A detail pane that scrolls, or shorter chapter 4 texts, would show them all.
+- The iron tank's and the docking connector's fluid ports were raised to 60 L/s only to meet the new minimum. Their real figures belong to 0375.
+- Before the first Place a held pipe's hint names no port, since the HUD does not hold the assist's port. Naming it there would say which of a machine's ports the run will start on.
+- `test_a_snapshot_hashes_to_the_direct_state_hash` (session_hash_test.odin) ran 3.2 s in the unit tier during this item's runs and is not marked slow.

@@ -7,16 +7,21 @@ import "netlist"
 // Fluid netlists (doc/fluids.md, Fluid netlists, work item 0356): the
 // pipes simulated as a netlist like power, with no gravity in a pipe. A
 // node is a machine's fluid port (in pool and port order: the fluid
-// machines, the crafting machines, the drills, the launch pads) or a
-// junction, the block world's pipes that touch, one node per group after
-// the ports. Pipes hold nothing. A joint is a face where a port meets a
-// pipe or another port facing back, an edge of the pipe's
-// flow_litres_per_second a tick; joints between one pair bundle (a tank on
+// machines, the crafting machines, the drills, the launch pads), a
+// junction of the block world's pipes that touch, one node per group after
+// the ports, or a fluid junction (0374), one node each after those in the
+// poles' pool order. Pipes and junctions hold nothing. A joint is a face
+// where a port meets a pipe or another port facing back, an edge of the
+// pipe's flow_litres_per_second; joints between one pair bundle (a tank on
 // a pipe by three faces carries three). Joints are looked up on the block
-// frame only, so a machine on a field frame is a netlist of its own ports
-// (decision 8). The netlist is rebuilt whenever a pipe or a machine with
-// ports is placed or removed; the litres live in the port buffers, so a
-// rebuild keeps them.
+// frame only. On the field a hand run pipe (0374, a record of the cable
+// table) is an edge of its litres a second between the nodes its two
+// ports meet (pipe_edges). Edge capacities are litres a second; each
+// node's capacity a tick is its bundled edge's over the tick rate, floored
+// (scale_fluid_capacities). The netlist is rebuilt whenever a pipe, a
+// fluid junction or a machine with ports is placed or removed, and when a
+// hand run pipe is laid or taken up; the litres live in the port buffers,
+// so a rebuild keeps them.
 //
 // Per tick, in whole litres: an output port offers what it holds at
 // FLUID_PRODUCER_ORDER, an input port asks for its room, a storage tank's
@@ -42,8 +47,8 @@ import "netlist"
 FLUID_PRODUCER_ORDER :: 0
 FLUID_STORE_ORDER :: 1
 
-// port is -1 for a junction, whose owner is its first pipe in pool order.
-// relief marks a flare stack's port.
+// port is -1 for a junction, whose owner is its first pipe in pool order,
+// or the fluid junction itself (0374). relief marks a flare stack's port.
 Fluid_Node :: struct {
 	owner:        Entity_Handle,
 	port:         i32,
@@ -54,25 +59,28 @@ Fluid_Node :: struct {
 	relief:       bool,
 }
 
-// Derived, never saved. The topology's capacities count joints; capacity
-// is litres a tick on each node's edge to its parent and connection on
-// all its tree edges, both at scaled_limit (-1 until scaled);
-// netlist_fluids is per tree.
+// Derived, never saved. The topology's capacities are litres a second;
+// capacity is litres a tick on each node's edge to its parent and
+// connection on all its tree edges, both at scaled_tick_rate (-1 until
+// scaled); netlist_fluids is per tree. junction_of maps a block world pipe
+// to its group's node and a fluid junction to its own.
 Fluid_Networks :: struct {
 	nodes:            [dynamic]Fluid_Node,
 	first_port_node:  map[Entity_Handle]u32,
-	junction_of_pipe: map[Entity_Handle]u32,
+	junction_of:      map[Entity_Handle]u32,
 	topology:         netlist.Topology,
 	capacity:         [dynamic]i64,
 	connection:       [dynamic]i64,
-	scaled_limit:     i64,
+	scaled_tick_rate: i64,
 	netlist_fluids:   [dynamic]Fluid_Id,
 	inputs:           [dynamic]netlist.Node_Input,
 	outputs:          [dynamic]netlist.Node_Output,
-	// Presentation only, kept across rebuilds: per pipe pool slot, and the
-	// ticks of the running second.
-	pipe_seconds:     [dynamic]Pipe_Second,
-	second_tick:      int,
+	// Presentation only, kept across rebuilds: per pipe pool slot, per
+	// hand run pipe by its table index (0374), and the ticks of the running
+	// second.
+	pipe_seconds:      [dynamic]Pipe_Second,
+	pipe_line_seconds: [dynamic]Pipe_Line_Second,
+	second_tick:       int,
 	// Zero means context.allocator; tests use the temp allocator.
 	allocator:        runtime.Allocator,
 }
@@ -86,6 +94,17 @@ Pipe_Second :: struct {
 	last:    i64,
 }
 
+// The litres through a hand run pipe (0374) over the running second and
+// the last full one, by its table index, positive from the record's first
+// end towards its second (pipe_record_litres); end is the record's first
+// end, so a record moved into a removed one's index starts afresh. Never
+// saved or hashed.
+Pipe_Line_Second :: struct {
+	end:     Port_End,
+	running: i64,
+	last:    i64,
+}
+
 fluid_allocator :: proc(networks: ^Fluid_Networks) -> runtime.Allocator {
 	return networks.allocator.procedure != nil ? networks.allocator : context.allocator
 }
@@ -94,13 +113,14 @@ destroy_fluid_networks :: proc(networks: ^Fluid_Networks) {
 	netlist.destroy_topology(&networks.topology, fluid_allocator(networks))
 	delete(networks.nodes)
 	delete(networks.first_port_node)
-	delete(networks.junction_of_pipe)
+	delete(networks.junction_of)
 	delete(networks.capacity)
 	delete(networks.connection)
 	delete(networks.netlist_fluids)
 	delete(networks.inputs)
 	delete(networks.outputs)
 	delete(networks.pipe_seconds)
+	delete(networks.pipe_line_seconds)
 }
 
 clear_fluid_networks :: proc(networks: ^Fluid_Networks) {
@@ -109,15 +129,15 @@ clear_fluid_networks :: proc(networks: ^Fluid_Networks) {
 		networks.nodes.allocator, networks.capacity.allocator = allocator, allocator
 		networks.connection.allocator, networks.netlist_fluids.allocator = allocator, allocator
 		networks.inputs.allocator, networks.outputs.allocator = allocator, allocator
-		networks.pipe_seconds.allocator = allocator
+		networks.pipe_seconds.allocator, networks.pipe_line_seconds.allocator = allocator, allocator
 		networks.first_port_node = make(map[Entity_Handle]u32, allocator)
-		networks.junction_of_pipe = make(map[Entity_Handle]u32, allocator)
+		networks.junction_of = make(map[Entity_Handle]u32, allocator)
 	}
 	netlist.destroy_topology(&networks.topology, allocator)
 	clear(&networks.nodes)
 	clear(&networks.first_port_node)
-	clear(&networks.junction_of_pipe)
-	networks.scaled_limit = -1
+	clear(&networks.junction_of)
+	networks.scaled_tick_rate = -1
 }
 
 // The live entries' ports, in pool and port order.
@@ -167,7 +187,7 @@ union_find_root :: proc(parents: []int, index: int) -> int {
 
 // The block frame's pipes joined face to face, one junction node per group
 // after the ports, in the order of each group's first pipe; fills
-// junction_of_pipe. Returns the pipe cells, in the temp allocator.
+// junction_of. Returns the pipe cells, in the temp allocator.
 collect_pipe_junctions :: proc(entities: ^Entities) -> map[World_Coordinate]Entity_Handle {
 	networks := &entities.fluid_networks
 	pipes := entities.pipes.entries[:]
@@ -201,13 +221,80 @@ collect_pipe_junctions :: proc(entities: ^Entities) -> map[World_Coordinate]Enti
 		}
 		root := union_find_root(parents, index)
 		if root == index {
-			networks.junction_of_pipe[pipe.handle] = u32(len(networks.nodes))
+			networks.junction_of[pipe.handle] = u32(len(networks.nodes))
 			append(&networks.nodes, Fluid_Node{owner = pipe.handle, port = -1, direction = .Both, filter = NO_FLUID})
 		} else {
-			networks.junction_of_pipe[pipe.handle] = networks.junction_of_pipe[pipes[root].handle]
+			networks.junction_of[pipe.handle] = networks.junction_of[pipes[root].handle]
 		}
 	}
 	return pipe_cells
+}
+
+// One node per live fluid junction (0374) in the poles' pool order, after
+// the block junctions; it holds nothing.
+collect_fluid_junctions :: proc(entities: ^Entities, machines: Machine_Registry) {
+	networks := &entities.fluid_networks
+	for pole in entities.poles.entries {
+		if !pole.alive || machines.machines[pole.machine].kind != .Fluid_Junction {
+			continue
+		}
+		networks.junction_of[pole.handle] = u32(len(networks.nodes))
+		append(&networks.nodes, Fluid_Node{owner = pole.handle, port = -1, direction = .Both, filter = NO_FLUID})
+	}
+}
+
+// Placing or removing it changes the fluid netlist's nodes (0374): a block
+// world pipe, a machine with fluid ports or a fluid junction.
+machine_touches_fluids :: proc(machine: Machine) -> bool {
+	return machine.kind == .Pipe || machine.fluid_port_count > 0 || machine.kind == .Fluid_Junction
+}
+
+// The node a hand run pipe's end meets (0374): a fluid junction's own, else
+// the node of the buffer the port meets (Machine_Port.fluid_buffer); -1
+// for none.
+pipe_end_node :: proc(networks: ^Fluid_Networks, entities: ^Entities, machines: Machine_Registry, end: Port_End) -> int {
+	if junction, found := networks.junction_of[end.entity]; found && end.entity.kind == .Pole {
+		return int(junction)
+	}
+	common := entity_common(entities, end.entity)
+	if common == nil {
+		return -1
+	}
+	machine := machines.machines[common.machine]
+	if int(end.port) >= machine.port_count || machine.ports[end.port].fluid_buffer < 0 {
+		return -1
+	}
+	return fluid_node_of(networks, end.entity, int(machine.ports[end.port].fluid_buffer))
+}
+
+// One edge of its litres a second per hand run pipe whose two ends have
+// nodes (0374), in the table's order (the topology is the same for any
+// order). A loop of pipes lays a chord that carries nothing until 0377.
+// In the temp allocator.
+pipe_edges :: proc(networks: ^Fluid_Networks, entities: ^Entities, machines: Machine_Registry) -> []netlist.Edge {
+	table := &entities.cables
+	edges := make([dynamic]netlist.Edge, 0, len(table.cables), context.temp_allocator)
+	for cable, index in table.cables {
+		if table.kinds[index] != .Fluid {
+			continue
+		}
+		first := pipe_end_node(networks, entities, machines, cable.ends[0])
+		second := pipe_end_node(networks, entities, machines, cable.ends[1])
+		if first >= 0 && second >= 0 && first != second {
+			append(&edges, netlist.Edge{u32(first), u32(second), table.capacity[index]})
+		}
+	}
+	return edges[:]
+}
+
+// The litres a second one joint of the block world carries: the pipe
+// machine's flow_litres_per_second, 0 without one.
+block_joint_litres_per_second :: proc(machines: Machine_Registry) -> i64 {
+	pipe := find_machine_of_kind(machines, .Pipe)
+	if pipe == NO_MACHINE {
+		return 0
+	}
+	return i64(machines.machines[pipe].flow_litres_per_second)
 }
 
 // The node that meets face of cell from outside on the block frame, or
@@ -215,7 +302,7 @@ collect_pipe_junctions :: proc(entities: ^Entities) -> map[World_Coordinate]Enti
 // that way.
 fluid_node_at_face :: proc(entities: ^Entities, machines: Machine_Registry, networks: ^Fluid_Networks, pipe_cells: map[World_Coordinate]Entity_Handle, cell: World_Coordinate, face: Direction) -> int {
 	if pipe, found := pipe_cells[cell]; found {
-		return int(networks.junction_of_pipe[pipe])
+		return int(networks.junction_of[pipe])
 	}
 	handle := entity_at(entities, cell)
 	first, found := networks.first_port_node[handle]
@@ -238,18 +325,20 @@ fluid_port_faces :: proc(entities: ^Entities, machines: Machine_Registry, node: 
 	return placed_port_faces(common^, machine, machine.fluid_ports[node.port])
 }
 
-// Every joint once, an edge of capacity 1: through the positive faces of
-// each block frame pipe and port only, since the partner meets the same
-// joint through a negative one. In the temp allocator.
-fluid_joint_edges :: proc(entities: ^Entities, machines: Machine_Registry, networks: ^Fluid_Networks, pipe_cells: map[World_Coordinate]Entity_Handle) -> []netlist.Edge {
+// Every joint once, an edge of the block joint's litres a second: through
+// the positive faces of each block frame pipe and port only, since the
+// partner meets the same joint through a negative one. In the temp
+// allocator.
+fluid_joint_edges :: proc(entities: ^Entities, machines: Machine_Registry, networks: ^Fluid_Networks, pipe_cells: map[World_Coordinate]Entity_Handle) -> [dynamic]netlist.Edge {
 	edges := make([dynamic]netlist.Edge, 0, len(networks.nodes), context.temp_allocator)
+	joint := block_joint_litres_per_second(machines)
 	for pipe in entities.pipes.entries {
-		junction, found := networks.junction_of_pipe[pipe.handle]
+		junction, found := networks.junction_of[pipe.handle]
 		if !pipe.alive || !found {
 			continue
 		}
 		for face in Direction {
-			append_fluid_joint(&edges, entities, machines, networks, pipe_cells, int(junction), Cell_Face{pipe.origin, face})
+			append_fluid_joint(&edges, entities, machines, networks, pipe_cells, int(junction), Cell_Face{pipe.origin, face}, joint)
 		}
 	}
 	for node, index in networks.nodes {
@@ -257,20 +346,20 @@ fluid_joint_edges :: proc(entities: ^Entities, machines: Machine_Registry, netwo
 			continue
 		}
 		for face in fluid_port_faces(entities, machines, node) {
-			append_fluid_joint(&edges, entities, machines, networks, pipe_cells, index, face)
+			append_fluid_joint(&edges, entities, machines, networks, pipe_cells, index, face, joint)
 		}
 	}
-	return edges[:]
+	return edges
 }
 
-append_fluid_joint :: proc(edges: ^[dynamic]netlist.Edge, entities: ^Entities, machines: Machine_Registry, networks: ^Fluid_Networks, pipe_cells: map[World_Coordinate]Entity_Handle, node: int, face: Cell_Face) {
+append_fluid_joint :: proc(edges: ^[dynamic]netlist.Edge, entities: ^Entities, machines: Machine_Registry, networks: ^Fluid_Networks, pipe_cells: map[World_Coordinate]Entity_Handle, node: int, face: Cell_Face, joint: i64) {
 	if !is_positive_direction(face.face) {
 		return
 	}
 	neighbour := face.cell + World_Coordinate(direction_offsets[face.face])
 	partner := fluid_node_at_face(entities, machines, networks, pipe_cells, neighbour, opposite_directions[face.face])
 	if partner >= 0 && partner != node {
-		append(edges, netlist.Edge{u32(node), u32(partner), 1})
+		append(edges, netlist.Edge{u32(node), u32(partner), joint})
 	}
 }
 
@@ -279,9 +368,11 @@ rebuild_fluid_networks :: proc(entities: ^Entities, machines: Machine_Registry) 
 	clear_fluid_networks(networks)
 	collect_fluid_nodes(entities, machines)
 	pipe_cells := collect_pipe_junctions(entities)
+	collect_fluid_junctions(entities, machines)
 	edges := fluid_joint_edges(entities, machines, networks, pipe_cells)
+	append(&edges, ..pipe_edges(networks, entities, machines))
 	node_count := len(networks.nodes)
-	networks.topology = netlist.build_topology(node_count, edges, fluid_allocator(networks))
+	networks.topology = netlist.build_topology(node_count, edges[:], fluid_allocator(networks))
 	resize(&networks.capacity, node_count)
 	resize(&networks.connection, node_count)
 	resize(&networks.inputs, node_count)
@@ -289,14 +380,16 @@ rebuild_fluid_networks :: proc(entities: ^Entities, machines: Machine_Registry) 
 	resize(&networks.netlist_fluids, len(networks.topology.trees))
 }
 
-// Litres a tick: each edge's joints times the limit, and each node's
-// connection, its own edge's and its children's.
-scale_fluid_capacities :: proc(networks: ^Fluid_Networks, limit: i64) {
-	if limit == networks.scaled_limit {
+// Litres a tick: each bundled edge's litres a second over the tick rate,
+// floored after bundling, and each node's connection, its own edge's and
+// its children's.
+scale_fluid_capacities :: proc(networks: ^Fluid_Networks, tick_rate: int) {
+	rate := i64(max(tick_rate, 1))
+	if rate == networks.scaled_tick_rate {
 		return
 	}
 	for node in 0 ..< len(networks.nodes) {
-		networks.capacity[node] = networks.topology.capacity[node] * limit
+		networks.capacity[node] = networks.topology.capacity[node] / rate
 		networks.connection[node] = networks.capacity[node]
 	}
 	for node in 0 ..< len(networks.nodes) {
@@ -304,7 +397,7 @@ scale_fluid_capacities :: proc(networks: ^Fluid_Networks, limit: i64) {
 			networks.connection[parent] += networks.capacity[node]
 		}
 	}
-	networks.scaled_limit = limit
+	networks.scaled_tick_rate = rate
 }
 
 // A port's buffer and closed flag, nil for a junction or a gone entity.
@@ -452,8 +545,9 @@ apply_fluid_outputs :: proc(entities: ^Entities, networks: ^Fluid_Networks) {
 
 // Pipes hold nothing: each block frame pipe shows its netlist's fluid and
 // the litres entering its junction this tick, in and out, which also count
-// towards its second.
-show_pipe_flows :: proc(entities: ^Entities, networks: ^Fluid_Networks, tick_rate: int) {
+// towards its second; each hand run pipe's litres this tick
+// (pipe_record_litres) count towards its own (0374).
+show_pipe_flows :: proc(entities: ^Entities, networks: ^Fluid_Networks, machines: Machine_Registry, tick_rate: int) {
 	entering := make([]i64, len(networks.nodes), context.temp_allocator)
 	for node in 0 ..< len(networks.nodes) {
 		if parent := networks.topology.parent[node]; parent != netlist.NO_NODE {
@@ -463,7 +557,7 @@ show_pipe_flows :: proc(entities: ^Entities, networks: ^Fluid_Networks, tick_rat
 		}
 	}
 	for &pipe in entities.pipes.entries {
-		junction, found := networks.junction_of_pipe[pipe.handle]
+		junction, found := networks.junction_of[pipe.handle]
 		if !pipe.alive || !found {
 			continue
 		}
@@ -472,7 +566,85 @@ show_pipe_flows :: proc(entities: ^Entities, networks: ^Fluid_Networks, tick_rat
 		pipe.buffer = Fluid_Buffer{fluid = fluid, level = 0, flow_in = litres, flow_out = litres}
 		count_pipe_second(networks, pipe.handle, i64(litres))
 	}
+	table := &entities.cables
+	// A world whose netlists were never rebuilt (cables only) has not set
+	// the allocator yet (clear_fluid_networks).
+	if networks.pipe_line_seconds.allocator.procedure == nil {
+		networks.pipe_line_seconds.allocator = fluid_allocator(networks)
+	}
+	resize(&networks.pipe_line_seconds, len(table.cables))
+	for cable, index in table.cables {
+		if table.kinds[index] != .Fluid {
+			continue
+		}
+		second := &networks.pipe_line_seconds[index]
+		if second.end != cable.ends[0] {
+			second^ = {end = cable.ends[0]}
+		}
+		second.running += pipe_record_litres(networks, table, entities, machines, index)
+	}
 	roll_pipe_seconds(networks, tick_rate)
+}
+
+// A hand run pipe's share of its bundle's flow this tick, as cable_load
+// takes a cable's: the bundle's flow times its capacity over the bundle's,
+// positive from the record's first end towards its second and negative
+// the other way; 0 for a chord, an end without a node or a record that is
+// no pipe.
+pipe_record_litres :: proc(networks: ^Fluid_Networks, table: ^Cable_Table, entities: ^Entities, machines: Machine_Registry, index: int) -> i64 {
+	if index < 0 || index >= len(table.cables) || table.kinds[index] != .Fluid || len(networks.outputs) != len(networks.nodes) {
+		return 0
+	}
+	cable := table.cables[index]
+	first := pipe_end_node(networks, entities, machines, cable.ends[0])
+	second := pipe_end_node(networks, entities, machines, cable.ends[1])
+	if first < 0 || second < 0 {
+		return 0
+	}
+	child, child_end := cable_tree_child(networks.topology, first, second)
+	if child < 0 {
+		return 0
+	}
+	bundled := networks.topology.capacity[child]
+	if bundled <= 0 {
+		return 0
+	}
+	flow := networks.outputs[child].flow
+	litres := i64(i128(abs(flow)) * i128(table.capacity[index]) / i128(bundled))
+	// A positive flow leaves the child for its parent (show_pipe_flows).
+	return (flow > 0) == (child_end == 0) ? litres : -litres
+}
+
+// The litres through a hand run pipe in the last full second, positive
+// from its first end towards its second; 0 before its first roll or for a
+// record whose seconds belong to another.
+pipe_line_net_litres_last_second :: proc(networks: ^Fluid_Networks, table: ^Cable_Table, index: int) -> i64 {
+	if index < 0 || index >= len(table.cables) || index >= len(networks.pipe_line_seconds) {
+		return 0
+	}
+	second := networks.pipe_line_seconds[index]
+	return second.end == table.cables[index].ends[0] ? second.last : 0
+}
+
+// The litres through a hand run pipe in the last full second, either way.
+pipe_line_litres_last_second :: proc(networks: ^Fluid_Networks, table: ^Cable_Table, index: int) -> i64 {
+	return abs(pipe_line_net_litres_last_second(networks, table, index))
+}
+
+// The netlist fluid of a hand run pipe's tree, NO_FLUID without a node.
+pipe_record_fluid :: proc(networks: ^Fluid_Networks, table: ^Cable_Table, entities: ^Entities, machines: Machine_Registry, index: int) -> Fluid_Id {
+	if index < 0 || index >= len(table.cables) {
+		return NO_FLUID
+	}
+	node := pipe_end_node(networks, entities, machines, table.cables[index].ends[0])
+	if node < 0 || node >= len(networks.topology.tree_of) {
+		return NO_FLUID
+	}
+	tree := networks.topology.tree_of[node]
+	if int(tree) >= len(networks.netlist_fluids) {
+		return NO_FLUID
+	}
+	return networks.netlist_fluids[tree]
 }
 
 // A slot taken by another pipe starts its seconds afresh.
@@ -496,6 +668,9 @@ roll_pipe_seconds :: proc(networks: ^Fluid_Networks, tick_rate: int) {
 	}
 	networks.second_tick = 0
 	for &second in networks.pipe_seconds {
+		second.last, second.running = second.running, 0
+	}
+	for &second in networks.pipe_line_seconds {
 		second.last, second.running = second.running, 0
 	}
 }
@@ -559,12 +734,12 @@ reset_fluid_flows :: proc(entities: ^Entities) {
 	}
 }
 
-// Every tick over every port. limit is the pipe's litres a tick on one
-// joint. A nil statistics (tests) records no mixing refusals.
-tick_fluid_networks :: proc(entities: ^Entities, fluids: Fluid_Registry, limit: i32, tick_rate: int, statistics: ^Statistics = nil) {
+// Every tick over every port. A nil statistics (tests) records no mixing
+// refusals.
+tick_fluid_networks :: proc(entities: ^Entities, fluids: Fluid_Registry, machines: Machine_Registry, tick_rate: int, statistics: ^Statistics = nil) {
 	reset_fluid_flows(entities)
 	networks := &entities.fluid_networks
-	scale_fluid_capacities(networks, i64(limit))
+	scale_fluid_capacities(networks, tick_rate)
 	decide_netlist_fluids(entities, networks)
 	refusals := close_mixing_ports(entities, networks, fluids)
 	if statistics != nil {
@@ -585,14 +760,14 @@ tick_fluid_networks :: proc(entities: ^Entities, fluids: Fluid_Registry, limit: 
 	topology.capacity = networks.capacity[:]
 	netlist.solve(topology, networks.inputs[:], networks.outputs[:], top_up = true)
 	apply_fluid_outputs(entities, networks)
-	show_pipe_flows(entities, networks, tick_rate)
+	show_pipe_flows(entities, networks, machines, tick_rate)
 }
 
-// The node of a machine's port, or of a pipe's junction for port -1; -1
-// for none.
+// The node of a machine's port, or for port -1 of a block pipe's junction
+// or a fluid junction; -1 for none.
 fluid_node_of :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: int) -> int {
 	if port < 0 {
-		junction, found := networks.junction_of_pipe[owner]
+		junction, found := networks.junction_of[owner]
 		return found ? int(junction) : -1
 	}
 	first, found := networks.first_port_node[owner]
@@ -603,7 +778,8 @@ fluid_node_of :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: int
 	return node
 }
 
-// The netlist (tree) of a pipe or a machine port, or -1.
+// The netlist (tree) of a pipe, a fluid junction (port -1) or a machine
+// port, or -1.
 fluid_netlist_of :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: int) -> int {
 	node := fluid_node_of(networks, owner, port)
 	return node < 0 ? -1 : int(networks.topology.tree_of[node])

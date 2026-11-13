@@ -78,16 +78,18 @@ Field_Player_Button :: enum u8 {
 }
 
 // What the selected hotbar stack holds (0179, field_tool_for_item): a
-// material's item, the foundation (0174), a belt or a pipe for the run
-// tools (0176), another machine to place on a frame, the torch, nothing
-// Place uses (the hand, which digs nothing), or a shovel, pickaxe or axe
-// (0265), whose role and tier the player carries; a vessel part (0361,
+// material's item, the foundation (0174), a belt for the run tool (0176),
+// another machine to place on a frame, the torch, nothing Place uses (the
+// hand, which digs nothing), or a shovel, pickaxe or axe (0265), whose
+// role and tier the player carries; a vessel part (0361,
 // vessel_placement.odin) goes to a vessel's face or slot or starts one.
+// Saved by name: a save's Pipe_Run (the pipe run between belt poles,
+// removed by 0374) reads as Material and is derived again on the first
+// tick.
 Field_Held_Tool :: enum u8 {
 	Material,
 	Foundation,
 	Belt_Run,
-	Pipe_Run,
 	Machine,
 	Torch,
 	Hand,
@@ -100,6 +102,21 @@ Field_Held_Tool :: enum u8 {
 	// A cable (0368, cable_field.odin): Place runs it from one power port
 	// to another.
 	Cable,
+	// A pipe (0374, cable_field.odin): Place runs it from one fluid port to
+	// another, as a cable.
+	Pipe,
+}
+
+// The port kind a held line runs between: power for a cable, fluid for a
+// pipe; runs is false for every other tool.
+field_tool_line_kind :: proc(tool: Field_Held_Tool) -> (kind: Machine_Port_Kind, runs: bool) {
+	#partial switch tool {
+	case .Cable:
+		return .Power, true
+	case .Pipe:
+		return .Fluid, true
+	}
+	return .Power, false
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]

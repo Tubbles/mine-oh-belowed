@@ -4,15 +4,14 @@ import "core:math/linalg"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
 
-// Belt and pipe runs between poles (work item 0176, belt_run.odin): the
-// belt's surface and its sides swept along the run's polyline, one quad
+// Belt runs between poles (work item 0176, belt_run.odin): the belt's
+// surface and its sides swept along the run's polyline, one quad
 // per subdivision, each oriented along its segment with the endpoints' frame
 // ups blended between the ends; the texture runs a cell of the start
 // frame's pitch per repeat and scrolls with the belt's speed as the belt
 // meshes do. Items stand at their distance along the line through
-// belt_run_point_at, offset across the run to their lane. A pipe run is a
-// tube of the pipe's colour per subdivision; a pole a post from its cell's
-// bottom to its run end. The field's scene (0347, Belt_Run_Draw) draws a
+// belt_run_point_at, offset across the run to their lane. A pole is a post
+// from its cell's bottom to its run end. The field's scene (0347, Belt_Run_Draw) draws a
 // run, a pole and an item only where its view shows the box round it, and
 // the items in one instanced draw; the runs and poles go through the
 // model shader's flat batch, hazed (0360, begin_flat_batch). Floats are
@@ -21,9 +20,6 @@ import "shared:raylib/rlgl"
 BELT_RUN_POLE_COLOR :: rl.Color{120, 122, 128, 255}
 BELT_RUN_POLE_RADIUS_METRES :: 0.06
 BELT_RUN_POLE_SIDES :: 8
-// A pipe run's radius as a share of the start frame's pitch.
-PIPE_RUN_RADIUS_SHARE :: 0.25
-PIPE_RUN_SIDES :: 8
 // The belt's sides reach this share of the pitch below its surface.
 BELT_RUN_SIDE_DEPTH_SHARE :: 0.2
 BELT_RUN_SIDE_COLOR :: rl.Color{44, 44, 50, 255}
@@ -122,14 +118,6 @@ draw_belt_run_sides :: proc(sections: Belt_Run_Sections, pitch_metres: f32, colo
 	rlgl.End()
 }
 
-draw_pipe_run :: proc(sections: Belt_Run_Sections, pitch_metres: f32) {
-	radius := pitch_metres * PIPE_RUN_RADIUS_SHARE
-	for step in 0 ..< BELT_RUN_SUBDIVISIONS {
-		first, second := sections[step], sections[step + 1]
-		rl.DrawCylinderEx(first.centre + first.up * radius, second.centre + second.up * radius, radius, radius, PIPE_RUN_SIDES, PIPE_COLOR)
-	}
-}
-
 // A run's frame facts read once a pass (belt_run_facts) and whether the
 // pass's view shows its box (0347).
 Belt_Run_View :: struct {
@@ -152,7 +140,7 @@ Belt_Run_Draw :: struct {
 
 // The polyline's points in metres widened by a pitch: everything drawn
 // lies within 0.71 of a pitch of its section's point (half a pitch across,
-// the tube's top half a pitch up, an item 0.35 across and 0.23 up).
+// an item 0.35 across and 0.23 up).
 belt_run_box :: proc(curve: Belt_Run_Curve, pitch_metres: f32) -> (minimum, maximum: [3]f32) {
 	minimum, maximum = world_position_to_metres(curve.polyline[0]), world_position_to_metres(curve.polyline[0])
 	for point in curve.polyline {
@@ -309,14 +297,9 @@ draw_belt_runs :: proc(renderer: ^Belt_Renderer, entities: ^Entities, machines: 
 		}
 		ups, pitch_metres := views[index].ups, views[index].pitch_metres
 		sections := belt_run_sections(run.curve, ups)
-		switch run.kind {
-		case .Belt:
-			units_per_tick := machines.machines[run.machine].belt_speed_units_per_second / u32(max(tick_rate, 1))
-			draw_belt_run_surface(renderer.texture, renderer.ready, sections, pitch_metres, belt_scroll_offset(tick, 0, units_per_tick), rl.WHITE)
-			draw_belt_run_sides(sections, pitch_metres, BELT_RUN_SIDE_COLOR)
-		case .Pipe:
-			draw_pipe_run(sections, pitch_metres)
-		}
+		units_per_tick := machines.machines[run.machine].belt_speed_units_per_second / u32(max(tick_rate, 1))
+		draw_belt_run_surface(renderer.texture, renderer.ready, sections, pitch_metres, belt_scroll_offset(tick, 0, units_per_tick), rl.WHITE)
+		draw_belt_run_sides(sections, pitch_metres, BELT_RUN_SIDE_COLOR)
 	}
 	// Before the items, whose instanced draw sets the switches itself.
 	end_flat_batch(draw.models)

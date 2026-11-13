@@ -75,7 +75,7 @@ The shape of an entity:
 - Shared by all 16: `Entity_Common` (handle, machine, origin, rotation, size, alive), embedded as `using common` and the first field of every kind struct.
 - Per kind fields beyond it: Chest 2, Capsule 1, Furnace 7, Belt 4, Inserter 12, Drill 15, Splitter 8, Pipe 1, Fluid_Machine 12, Pole 1, Lamp 2, Assembler 14, Lab 7, Schematic_Crate 1, Core_Sample_Drill 3, Launch_Pad 11.
 - Derived caches stored on entities and saved with them: `Belt.line` and `line_index`, the splitter's `input_lines` and `output_lines` (set by `rebuild_belt_lines`); `Power_State.satisfaction` (copied from the network each tick); `Inserter.reach`, the `slot_count` of chests, inserters, drills, fluid machines and labs, the assembler's slot counts and `lets_water_through` (copied from the `Machine` at creation); `Machine_Output_Rate` on furnaces, drills and assemblers (statistics on the entity).
-- Network membership is kept three ways: on the entity (belt lines), in a map on the network (`Electric_Networks.memberships`), and as derived segments owned by handle, found by a scan (since 0356 the fluid netlist's nodes, found through `first_port_node` and `junction_of_pipe`).
+- Network membership is kept three ways: on the entity (belt lines), in a map on the network (`Electric_Networks.memberships`), and as derived segments owned by handle, found by a scan (since 0356 the fluid netlist's nodes, found through `first_port_node` and `junction_of`).
 
 Other state:
 

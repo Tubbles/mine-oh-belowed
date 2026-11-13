@@ -254,8 +254,9 @@ test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 		// Foundations are drawn per cell by the frame renderer (render_frames.odin),
 		// belt poles as posts (render_belt_runs.odin), vessel parts as a box
 		// per held cell until their models come (draw_vessel_part, 0361), the
-		// junction box and cabinet as a box of their color (draw_pole, 0368).
-		without_model := machine.kind == .Belt || machine.kind == .Pipe || machine.kind == .Foundation || machine.kind == .Belt_Pole || machine.kind == .Junction_Box || machine_kind_is_vessel(machine.kind)
+		// junction box and cabinet as a box of their color (draw_pole, 0368),
+		// the fluid junction too until its model (0374, 0392).
+		without_model := machine.kind == .Belt || machine.kind == .Pipe || machine.kind == .Foundation || machine.kind == .Belt_Pole || machine.kind == .Junction_Box || machine.kind == .Fluid_Junction || machine_kind_is_vessel(machine.kind)
 		testing.expectf(t, (machine.model == "") == without_model, "%s: model %q", machine.id, machine.model)
 		if machine.motion.kind == .Arm {
 			for layers, part in mesh.arm {

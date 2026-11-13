@@ -504,7 +504,7 @@ test_the_block_world_refuses_vessel_parts :: proc(t: ^testing.T) {
 	test := make_command_test()
 	defer destroy_command_test(test)
 	world := &test.simulation.world
-	words := "iron_truss is not placed on a frame (a run's belt, pole or pipe, a vessel part, or a machine no item places)"
+	words := "iron_truss is not placed on a frame (a run's belt or pole, a pipe, a vessel part, or a machine no item places)"
 	response := expect_command_error(t, test, "place iron_truss 5 1 5 0")
 	testing.expect_value(t, response.text, words)
 	blueprint := Blueprint {
@@ -551,7 +551,7 @@ test_the_cable_command_lays_and_refuses :: proc(t: ^testing.T) {
 	testing.expect_value(t, expect_command_ok(t, test, "cable light_cable 2 1 2 b 6 1 2 a").text, "cable light_cable 3 m")
 	testing.expect_value(t, len(entities.cables.cables), 1)
 	testing.expect_value(t, test.simulation.records.statistics.cables_run, 1)
-	testing.expect_value(t, expect_command_error(t, test, "cable copper_wire 2 1 2 c 6 1 2 b").text, `"copper_wire" is not a cable item`)
+	testing.expect_value(t, expect_command_error(t, test, "cable copper_wire 2 1 2 c 6 1 2 b").text, `"copper_wire" is not a cable or pipe item`)
 	testing.expect_value(t, expect_command_error(t, test, "cable light_cable 2 1 2 z 6 1 2 b").text, `the junction_box at 2 1 2 has no power port "z"`)
 	testing.expect_value(t, expect_command_error(t, test, "cable light_cable 9 1 2 a 6 1 2 b").text, "no entity at 9 1 2")
 	// From x 7 to x 30: past the light cable's 20 m, within the trunk's 50.
@@ -578,6 +578,33 @@ test_the_cable_command_lays_and_refuses :: proc(t: ^testing.T) {
 	words, problem := expand_blueprint_command("cable light_cable 1 0 1 b 2 0 2 a", {10, 20, 30})
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, strings.join(words, " ", context.temp_allocator), "cable light_cable 11 20 31 b 12 20 32 a")
+}
+
+// Work item 0374: cable lays a pipe between a boiler's inlet and a tank's
+// port on a frame, counted as no cable; a pipe onto a power port id and a
+// cable onto a fluid port id are refused naming the kind.
+@(test)
+test_the_cable_command_lays_a_pipe :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	entities := &test.simulation.world.entities
+	machines := test.content.machines
+	test.simulation.field.enabled = true
+	defer test.simulation.field.enabled = false
+	origin, axes := free_frame_at(TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame := add_frame(&entities.frames, origin, axes, 500)
+	boiler := add_entity(entities, machines, test_machine(machines, "boiler"), {0, 0, 0}, 0, frame)
+	tank := add_entity(entities, machines, test_machine(machines, "storage_tank"), {6, 0, 0}, 0, frame)
+	add_entity(entities, machines, test_machine(machines, "junction_box"), {12, 0, 0}, 0, frame)
+	metres := port_span_metres(entities, machines, {boiler, 0}, {tank, 0})
+	testing.expect_value(t, expect_command_ok(t, test, fmt.tprintf("cable pipe %d 0 0 0 in %d 6 0 0 a", frame, frame)).text, fmt.tprintf("cable pipe %d m", metres))
+	if testing.expect_value(t, len(entities.cables.cables), 1) {
+		testing.expect_value(t, entities.cables.kinds[0], Machine_Port_Kind.Fluid)
+	}
+	testing.expect_value(t, test.simulation.records.statistics.cables_run, 0)
+	testing.expect_value(t, expect_command_error(t, test, fmt.tprintf("cable pipe %d 0 0 0 out %d 12 0 0 a", frame, frame)).text, `the junction_box at 12 0 0 has no fluid port "a"`)
+	testing.expect_value(t, expect_command_error(t, test, fmt.tprintf("cable light_cable %d 0 0 0 out %d 12 0 0 a", frame, frame)).text, `the boiler at 0 0 0 has no power port "out"`)
+	testing.expect_value(t, len(entities.cables.cables), 1)
 }
 
 // The shipped blueprint places on a flat floor with an iron vein and

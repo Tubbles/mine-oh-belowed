@@ -109,7 +109,7 @@ Machine_Kind :: enum u8 {
 	// The solid cells of a foundation frame that machines stand on
 	// (entity_frames.odin, work item 0174): one cell thick.
 	Foundation,
-	// A post a belt or pipe run ends on (belt_run.odin, work item 0176):
+	// A post a belt run ends on (belt_run.odin, work item 0176):
 	// one cell, its run end height_millimetres over its bottom.
 	Belt_Pole,
 	// The player's start on the field (entity_pod.odin, work item 0179):
@@ -147,6 +147,10 @@ Machine_Kind :: enum u8 {
 	Vessel_Part,
 	// A vessel's control unit (0361): equipment, one a vessel.
 	Vessel_Control_Unit,
+	// Joins the hand run pipes on its fluid ports (work item 0374,
+	// fluid_network.odin): one node of the fluid netlist that holds
+	// nothing. The poles' pool, beside the junction boxes.
+	Fluid_Junction,
 }
 
 @(rodata)
@@ -188,6 +192,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Charge_Controller = "charge_controller",
 	.Vessel_Part   = "vessel_part",
 	.Vessel_Control_Unit = "vessel_control_unit",
+	.Fluid_Junction = "fluid_junction",
 }
 
 // The kinds of a vessel's parts (0361).
@@ -617,7 +622,7 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_drill_definition(definition)
 	case .Splitter:
 		return validate_splitter_definition(definition)
-	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine, .Water_Pump:
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine, .Water_Pump, .Fluid_Junction:
 		return validate_fluid_machine_definition(definition, kind)
 	case .Junction_Box, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)
@@ -1566,6 +1571,9 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 			machine.part_slots, machine.part_slot_count = resolve_part_slots(definition.part_slots)
 			machine.ports, machine.port_count = resolve_machine_ports(definition.ports)
 			problem = resolve_fluid_ports(&machine, definition, fluids)
+		}
+		if problem == "" {
+			problem = link_fluid_ports_to_buffers(&machine, definition.id)
 		}
 		if problem == "" {
 			problem = resolve_launch_parts(&machine, definition, items)

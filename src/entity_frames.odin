@@ -635,7 +635,7 @@ frame_cell_holds_machine :: proc(entities: ^Entities, machines: Machine_Registry
 	return common != nil && machines.machines[common.machine].kind != .Foundation
 }
 
-// A belt or pipe run ends in the cell (a pole's or a belt end's cell).
+// A belt run ends in the cell (a pole's or a belt end's cell).
 frame_cell_holds_run_end :: proc(entities: ^Entities, frame: Frame_Id, cell: World_Coordinate) -> bool {
 	for run in entities.belt_runs.entries {
 		if !run.alive {

@@ -349,8 +349,9 @@ command_field_place :: proc(command_context: Command_Context, arguments: []strin
 }
 
 // cable <item> <frame> <x> <y> <z> <port id> <frame> <x> <y> <z> <port id>
-// (0368): the block world's cable with each end on a frame's cell. The
-// block world's nine words or a frame 0 answer NO_BLOCK_WORLD_PROBLEM.
+// (0368): the block world's cable (or pipe, 0374) with each end on a
+// frame's cell. The block world's nine words or a frame 0 answer
+// NO_BLOCK_WORLD_PROBLEM.
 command_field_cable :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
 	usage :: "cable <item> <frame> <x> <y> <z> <port id> <frame> <x> <y> <z> <port id>"
 	if len(arguments) == 9 {

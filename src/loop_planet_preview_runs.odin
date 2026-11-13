@@ -70,8 +70,8 @@ lay_planet_preview_run :: proc(preview: ^Planet_Preview, first_frame: Frame_Id) 
 	entities := &planet_preview_simulation(preview).world.entities
 	pitch := content.field.foundation_pitch_millimetres
 	first, found := find_frame(&entities.frames, first_frame)
-	kind, machine, tool_found := field_run_tool(content, .Belt_Run)
-	if !found || !tool_found || kind != .Belt {
+	machine, tool_found := field_run_tool(content, .Belt_Run)
+	if !found || !tool_found {
 		return
 	}
 	lay_planet_preview_second_pad(preview, first)
@@ -82,9 +82,9 @@ lay_planet_preview_run :: proc(preview: ^Planet_Preview, first_frame: Frame_Id) 
 	chord := cast([3]i64)(end_hit - start_hit)
 	start, _ := place_free_belt_pole(entities, content.machines, content.field.belt_pole, start_hit, chord, pitch)
 	end, _ := place_free_belt_pole(entities, content.machines, content.field.belt_pole, end_hit, chord, pitch)
-	start_endpoint, _ := belt_pole_endpoint(entities, start, chord, kind, BELT_RUN_START)
-	end_endpoint, _ := belt_pole_endpoint(entities, end, chord, kind, BELT_RUN_END)
-	run, refusal := add_belt_run(entities, content.machines, content.field.belt_runs, kind, machine, {start_endpoint, end_endpoint})
+	start_endpoint, _ := belt_pole_endpoint(entities, start, chord, BELT_RUN_START)
+	end_endpoint, _ := belt_pole_endpoint(entities, end, chord, BELT_RUN_END)
+	run, refusal := add_belt_run(entities, content.machines, content.field.belt_runs, machine, {start_endpoint, end_endpoint})
 	if refusal != .None {
 		platform.log_printf("planet preview: the run between the pads is refused: %v", refusal)
 		return

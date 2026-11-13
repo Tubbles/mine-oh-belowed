@@ -16,7 +16,7 @@ import "platform"
 // terrain and its cover, the globe and the water (0349), the foundations,
 // the machines on their frames (draw_entities, lit by the open sky, a
 // pod's box at its interior light share), the trees (0197,
-// draw_field_trees), the belt and pipe runs, the torches, the
+// draw_field_trees), the belt runs, the torches, the
 // players' bodies and the viewing player's placement ghost. The planet preview draws the same scene
 // (draw_field_scene).
 

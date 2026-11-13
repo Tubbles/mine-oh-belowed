@@ -84,12 +84,17 @@
 // older build: a save naming one loads it as this item, with one log line
 // (doc/architecture.md, Saves). A former id is never a current id of the
 // table, nor listed twice.
-// Cables (work item 0368, doc/content.md, Cables and power ports): an item
+// Cables (work item 0368, doc/content.md, Cables, pipes and ports): an item
 // with cable_kilowatts (1 to 1000000) is a cable, one item a metre, run
 // by hand from one power port to another. cable_span_metres (1 to 100, at
 // most the stack size) is the longest span one cable makes,
 // cable_thickness_millimetres (5 to 100) and cable_color ([r, g, b], 0 to
 // 255, not all zero) its look. All four keys or none.
+// Pipes (work item 0374): an item with pipe_litres_per_second (60 to
+// 1000000) is a pipe, one item a metre, run by hand on the field from one
+// fluid port to another; pipe_span_metres (as cable_span_metres),
+// pipe_thickness_millimetres (20 to 400) and pipe_color as the cable's.
+// All four keys or none, and never with the cable keys.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", description_key = "describe_item_log", category = "raw", stack_size = 50, places_block = "log", mined_from = ["birch_log", "pine_log", "palm_log", "dead_log"], fuel_megajoules = 2, cannot_recycle = true, price = 1}
@@ -148,7 +153,7 @@ items = [
 	{id = "iron_rod", name_key = "item_iron_rod", description_key = "describe_item_iron_rod", category = "intermediate", stack_size = 100, price = 1}
 	{id = "copper_wire", name_key = "item_copper_wire", description_key = "describe_item_copper_wire", category = "intermediate", stack_size = 100, price = 1}
 	{id = "electronic_circuit", name_key = "item_electronic_circuit", description_key = "describe_item_electronic_circuit", category = "intermediate", stack_size = 100, price = 6}
-	{id = "pipe", name_key = "item_pipe", description_key = "describe_item_pipe", category = "intermediate", stack_size = 100, price = 2}
+	{id = "pipe", name_key = "item_pipe", description_key = "describe_item_pipe", category = "intermediate", stack_size = 100, price = 2, pipe_litres_per_second = 1200, pipe_span_metres = 20, pipe_thickness_millimetres = 150, pipe_color = [110, 112, 118]}
 	{id = "science_pack_1", name_key = "item_science_pack_1", description_key = "describe_item_science_pack_1", category = "intermediate", stack_size = 100, price = 7}
 	{id = "plastic_bar", name_key = "item_plastic_bar", description_key = "describe_item_plastic_bar", category = "intermediate", stack_size = 100, cannot_recycle = true, price = 5}
 	{id = "sulfur", name_key = "item_sulfur", description_key = "describe_item_sulfur", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 3}
@@ -197,6 +202,7 @@ items = [
 	{id = "offshore_pump", name_key = "item_offshore_pump", description_key = "describe_item_offshore_pump", category = "machine", stack_size = 50, price = 20}
 	{id = "pump", name_key = "item_pump", description_key = "describe_item_pump", category = "machine", stack_size = 50, price = 20}
 	{id = "storage_tank", name_key = "item_storage_tank", description_key = "describe_item_storage_tank", category = "machine", stack_size = 50, price = 250}
+	{id = "fluid_junction", name_key = "item_fluid_junction", description_key = "describe_item_fluid_junction", category = "machine", stack_size = 100, price = 6}
 	{id = "boiler", name_key = "item_boiler", description_key = "describe_item_boiler", category = "machine", stack_size = 50, price = 13}
 	{id = "fuel_generator", name_key = "item_fuel_generator", description_key = "describe_item_fuel_generator", category = "machine", stack_size = 50, price = 31}
 	{id = "steam_engine", name_key = "item_steam_engine", description_key = "describe_item_steam_engine", category = "machine", stack_size = 50, price = 62}

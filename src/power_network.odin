@@ -171,13 +171,16 @@ append_power_nodes :: proc(networks: ^Electric_Networks, pool: ^Entity_Pool($T),
 }
 
 // The edges of the cables between the nodes of their ends, in the temp
-// allocator.
+// allocator; the table's pipes (0374) are the fluid netlist's.
 cable_edges :: proc(networks: ^Electric_Networks, entities: ^Entities) -> []netlist.Edge {
 	edges := make([dynamic]netlist.Edge, 0, len(entities.cables.cables), context.temp_allocator)
 	for cable, index in entities.cables.cables {
+		if entities.cables.kinds[index] != .Power {
+			continue
+		}
 		first, second := power_port_node(networks, cable.ends[0]), power_port_node(networks, cable.ends[1])
 		if first >= 0 && second >= 0 {
-			append(&edges, netlist.Edge{u32(first), u32(second), entities.cables.watts[index]})
+			append(&edges, netlist.Edge{u32(first), u32(second), entities.cables.capacity[index]})
 		}
 	}
 	return edges[:]
@@ -299,7 +302,7 @@ balance_electric_energy :: proc(networks: ^Electric_Networks, tick_rate: int) {
 
 // A cable's load in the last balance (0369, doc/fluids.md, Power):
 // joules_per_tick its share of its bundle's flow in proportion to its
-// watts, rounded down; watts its own (Cable_Table.watts); at_capacity its
+// watts, rounded down; watts its own (Cable_Table.capacity); at_capacity its
 // bundle has no room for another level of what it feeds (the region the
 // flow enters and, through cables at capacity carrying it on, the regions
 // beyond); limits raising it, together with the other cables at capacity
@@ -331,10 +334,11 @@ cable_tree_child :: proc(topology: netlist.Topology, first, second: int) -> (chi
 }
 
 // Not found before the first balance after a rebuild, for an index
-// outside the table or an end without a node. Two map lookups and
-// constant work: the panels, the overview and the HUD read it each frame.
+// outside the table, a pipe (0374) or an end without a node. Two map
+// lookups and constant work: the panels, the overview and the HUD read it
+// each frame.
 cable_load :: proc(networks: ^Electric_Networks, table: ^Cable_Table, index: int) -> (load: Cable_Load, found: bool) {
-	if !networks.balance_current || index < 0 || index >= len(table.cables) {
+	if !networks.balance_current || index < 0 || index >= len(table.cables) || table.kinds[index] != .Power {
 		return {}, false
 	}
 	cable := table.cables[index]
@@ -343,7 +347,7 @@ cable_load :: proc(networks: ^Electric_Networks, table: ^Cable_Table, index: int
 		return {}, false
 	}
 	topology := networks.topology
-	load.watts = table.watts[index]
+	load.watts = table.capacity[index]
 	load.network = int(networks.network_of_tree[topology.tree_of[first]])
 	child, child_end := cable_tree_child(topology, first, second)
 	if child < 0 {

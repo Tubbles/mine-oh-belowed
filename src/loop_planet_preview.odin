@@ -527,17 +527,17 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 	case .Inside_A_Vessel:
 		return "  that is inside a vessel"
 	case .No_Free_Port:
-		return "  no free power port there"
+		return "  no free port for it there"
 	case .Same_Thing:
-		return "  the cable needs a second thing"
+		return "  run it to a second thing"
 	case .Cable_Too_Short:
-		return "  the cable is too short"
+		return "  too long for one span"
 	case .Not_Enough_Cable:
-		return "  not enough cable"
+		return "  not enough held for the span"
 	case .Not_A_Connector:
 		return "  a vessel takes a cable on its connector"
 	case .Cable_End_Gone:
-		return "  the cable's first end is gone"
+		return "  the run's first end is gone"
 	case .No_Water_At_Intake:
 		return "  an offshore pump needs water in front of its intake"
 	}
@@ -553,8 +553,6 @@ field_held_name :: proc(player: Field_Player) -> string {
 		return "foundation"
 	case .Belt_Run:
 		return player.run_started ? "belt run, start picked" : "belt run"
-	case .Pipe_Run:
-		return player.run_started ? "pipe run, start picked" : "pipe run"
 	case .Machine:
 		return fmt.tprintf("machine, %d quarter turns", player.placement_rotation)
 	case .Torch:
@@ -571,6 +569,8 @@ field_held_name :: proc(player: Field_Player) -> string {
 		return fmt.tprintf("vessel part, %d quarter turns", player.placement_rotation)
 	case .Cable:
 		return player.cable_run ? "cable, run carried" : "cable"
+	case .Pipe:
+		return player.cable_run ? "pipe, run carried" : "pipe"
 	}
 	return ""
 }

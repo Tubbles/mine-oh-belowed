@@ -120,6 +120,10 @@ Item_Definition :: struct {
 	cable_span_metres:           int,
 	cable_thickness_millimetres: int,
 	cable_color:                 [3]int,
+	pipe_litres_per_second:      int,
+	pipe_span_metres:            int,
+	pipe_thickness_millimetres:  int,
+	pipe_color:                  [3]int,
 }
 
 Items_File :: struct {
@@ -143,7 +147,9 @@ Items_File :: struct {
 // former_ids are the ids the item had in an older build, which a save
 // may still name (save_remap.odin, work item 0196). A cable (0368,
 // cable.odin) has cable_kilowatts, the most it carries, the longest span
-// one cable makes, its thickness and colour; 0 for every other item.
+// one cable makes, its thickness and colour; a pipe run by hand (0374)
+// the same in pipe_litres_per_second and the other pipe keys; 0 for every
+// other item.
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -166,6 +172,10 @@ Item :: struct {
 	cable_span_metres:           u16,
 	cable_thickness_millimetres: u16,
 	cable_color:                 [3]u8,
+	pipe_litres_per_second:      u32,
+	pipe_span_metres:            u16,
+	pipe_thickness_millimetres:  u16,
+	pipe_color:                  [3]u8,
 }
 
 Item_Registry :: struct {
@@ -237,6 +247,9 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	if problem := validate_cable_item(definition); problem != "" {
 		return problem
 	}
+	if problem := validate_pipe_item(definition); problem != "" {
+		return problem
+	}
 	return validate_item_use(definition)
 }
 
@@ -271,6 +284,72 @@ validate_cable_item :: proc(definition: Item_Definition) -> string {
 
 item_is_cable :: proc(registry: Item_Registry, item: Item_Id) -> bool {
 	return int(item) < len(registry.items) && registry.items[item].cable_kilowatts > 0
+}
+
+// A litre a tick at 60 Hz.
+MINIMUM_PIPE_LITRES_PER_SECOND :: 60
+MAXIMUM_PIPE_LITRES_PER_SECOND :: 1_000_000
+MINIMUM_PIPE_THICKNESS_MILLIMETRES :: 20
+MAXIMUM_PIPE_THICKNESS_MILLIMETRES :: 400
+
+// A pipe run by hand (0374) lists all four pipe keys or none, as a cable
+// its cable keys, and is never a cable too.
+validate_pipe_item :: proc(definition: Item_Definition) -> string {
+	listed := [4]bool{definition.pipe_litres_per_second != 0, definition.pipe_span_metres != 0, definition.pipe_thickness_millimetres != 0, definition.pipe_color != {}}
+	all_listed, none_listed := [4]bool{true, true, true, true}, [4]bool{}
+	if listed == none_listed {
+		return ""
+	}
+	if listed != all_listed {
+		return fmt.tprintf("pipe %q needs all of pipe_litres_per_second, pipe_span_metres, pipe_thickness_millimetres and pipe_color", definition.id)
+	}
+	switch {
+	case definition.cable_kilowatts != 0 || definition.cable_span_metres != 0 || definition.cable_thickness_millimetres != 0 || definition.cable_color != {}:
+		return fmt.tprintf("item %q cannot be both a cable and a pipe", definition.id)
+	case definition.pipe_litres_per_second < MINIMUM_PIPE_LITRES_PER_SECOND || definition.pipe_litres_per_second > MAXIMUM_PIPE_LITRES_PER_SECOND:
+		return fmt.tprintf("pipe %q has pipe_litres_per_second %d outside %d to %d", definition.id, definition.pipe_litres_per_second, MINIMUM_PIPE_LITRES_PER_SECOND, MAXIMUM_PIPE_LITRES_PER_SECOND)
+	case definition.pipe_span_metres < 1 || definition.pipe_span_metres > MAXIMUM_CABLE_SPAN_METRES || definition.pipe_span_metres > definition.stack_size:
+		return fmt.tprintf("pipe %q has pipe_span_metres %d outside 1 to %d or above its stack_size", definition.id, definition.pipe_span_metres, MAXIMUM_CABLE_SPAN_METRES)
+	case definition.pipe_thickness_millimetres < MINIMUM_PIPE_THICKNESS_MILLIMETRES || definition.pipe_thickness_millimetres > MAXIMUM_PIPE_THICKNESS_MILLIMETRES:
+		return fmt.tprintf("pipe %q has pipe_thickness_millimetres %d outside %d to %d", definition.id, definition.pipe_thickness_millimetres, MINIMUM_PIPE_THICKNESS_MILLIMETRES, MAXIMUM_PIPE_THICKNESS_MILLIMETRES)
+	case !foundation_color_is_valid(definition.pipe_color):
+		return fmt.tprintf("pipe %q needs a pipe_color of three channels from 0 to 255, not all zero", definition.id)
+	}
+	return ""
+}
+
+item_is_pipe :: proc(registry: Item_Registry, item: Item_Id) -> bool {
+	return int(item) < len(registry.items) && registry.items[item].pipe_litres_per_second > 0
+}
+
+// A cable or a pipe: an item a run lays from port to port.
+item_is_line :: proc(registry: Item_Registry, item: Item_Id) -> bool {
+	return item_is_cable(registry, item) || item_is_pipe(registry, item)
+}
+
+// What a cable or a pipe item lays: its port kind, its capacity (watts for
+// a cable, litres a second for a pipe), its longest span, its thickness
+// and colour.
+Line_Figures :: struct {
+	kind:                  Machine_Port_Kind,
+	capacity:              i64,
+	span_metres:           i64,
+	thickness_millimetres: int,
+	color:                 [3]u8,
+}
+
+// Every reader of the cable or pipe keys outside this file goes through
+// here; found is false for an item that is neither.
+item_line_figures :: proc(registry: Item_Registry, item: Item_Id) -> (figures: Line_Figures, found: bool) {
+	switch {
+	case item_is_cable(registry, item):
+		entry := registry.items[item]
+		return {kind = .Power, capacity = i64(entry.cable_kilowatts) * 1000, span_metres = i64(entry.cable_span_metres), thickness_millimetres = int(entry.cable_thickness_millimetres), color = entry.cable_color}, true
+	case item_is_pipe(registry, item):
+		entry := registry.items[item]
+		return {kind = .Fluid, capacity = i64(entry.pipe_litres_per_second), span_metres = i64(entry.pipe_span_metres), thickness_millimetres = int(entry.pipe_thickness_millimetres), color = entry.pipe_color}, true
+	}
+	return {}, false
 }
 
 // A tool role names a known role, on a tool of tier 1 or more.
@@ -364,6 +443,10 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		cable_span_metres = u16(definition.cable_span_metres),
 		cable_thickness_millimetres = u16(definition.cable_thickness_millimetres),
 		cable_color     = {u8(definition.cable_color[0]), u8(definition.cable_color[1]), u8(definition.cable_color[2])},
+		pipe_litres_per_second = u32(definition.pipe_litres_per_second),
+		pipe_span_metres = u16(definition.pipe_span_metres),
+		pipe_thickness_millimetres = u16(definition.pipe_thickness_millimetres),
+		pipe_color      = {u8(definition.pipe_color[0]), u8(definition.pipe_color[1]), u8(definition.pipe_color[2])},
 	}
 	return item, ""
 }

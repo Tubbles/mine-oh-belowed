@@ -298,7 +298,8 @@ Touch_Overlay_State :: struct {
 // press that frame sent. target_takes_interaction: the first player's
 // target after that tick takes Interact; target_has_panel: it has a
 // panel the inventory binding opens (both aimed_target_calls_for, 0194).
-// cable_held: the first player's selected stack is a cable (0368).
+// cable_held: the first player's selected stack is a cable (0368) or a
+// pipe (0374).
 // hotbar_slots: the HUD's hotbar slots in render pixels
 // (hud_hotbar_pixel_rectangles), and the slot the first player selected.
 Touch_Interaction_Frame :: struct {
@@ -1847,7 +1848,7 @@ touch_interaction_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_I
 		ticked = touch_context.frame_tick_count > 0,
 		target_takes_interaction = takes_interaction,
 		target_has_panel = has_panel,
-		cable_held = item_is_cable(touch_context.content.items, selected_hotbar_stack(simulation.players[touch_context.local_player]).item),
+		cable_held = item_is_line(touch_context.content.items, selected_hotbar_stack(simulation.players[touch_context.local_player]).item),
 		hotbar_slots = hud_hotbar_pixel_rectangles(touch_context.ui, selected),
 		selected_hotbar_slot = selected,
 		double_tap_latches = touch_context.settings.sneak_hold == .Hold,

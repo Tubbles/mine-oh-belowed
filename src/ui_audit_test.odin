@@ -929,6 +929,31 @@ audit_cable_loads :: proc(audit: ^Ui_Audit) {
 	entities.electric_networks.balance_current = false
 }
 
+// A fluid junction away from the site with ports a and b piped to a tank
+// each and c and d free (0374): its panel's fluid line and port lines at
+// every size, the pipes' last full second set at their 1200 L and the
+// netlist's fluid at water. Returns the junction, whose port c the held
+// pipe's case starts a run on.
+audit_fluid_junction :: proc(audit: ^Ui_Audit) -> Entity_Handle {
+	world := &audit.simulation.world
+	content := audit.content
+	junction := place_test_entity(world, content, "fluid_junction", {200, 1, 240})
+	west := place_test_entity(world, content, "storage_tank", {195, 1, 239})
+	east := place_test_entity(world, content, "storage_tank", {203, 1, 239})
+	lay_test_cable(world, content, "pipe", {junction, 0}, test_port_end(world, content, west, "b"))
+	lay_test_cable(world, content, "pipe", {junction, 1}, test_port_end(world, content, east, "d"))
+	networks, table := &world.entities.fluid_networks, &world.entities.cables
+	resize(&networks.pipe_line_seconds, len(table.cables))
+	for cable, index in table.cables {
+		if table.kinds[index] == .Fluid {
+			networks.pipe_line_seconds[index] = {end = cable.ends[0], last = 1200}
+		}
+	}
+	networks.netlist_fluids[networks.topology.tree_of[fluid_node_of(networks, junction, -1)]] = test_fluid(content, "water")
+	audit_case(audit, {name = "fluid junction with pipes", screens = {.Machine}, machine = junction, walk_focus = true})
+	return junction
+}
+
 // The box's panel at one size, settled: each limiting port's line is drawn
 // in the accent colour and starts with its port's prefix ("Port b"), so
 // the letter shows however much of the line is cut.
@@ -1304,6 +1329,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_waiting_inserter(audit)
 	audit_broken_furnace(audit)
 	audit_cable_loads(audit)
+	fluid_junction := audit_fluid_junction(audit)
 	audit_recipe_ingredient_states(audit)
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if assembler.alive && audit.content.machines.machines[assembler.machine].recipe_choice != .Fixed {
@@ -1364,6 +1390,13 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	}
 	assert(aimed_chest != NO_ENTITY)
 	audit_case(audit, {name = "hud field pipette target", hud = true, field_session = true, aimed = aimed_chest})
+	// A pipe held with a run carried from the fluid junction's port c
+	// (0374): Connect and Take back on the bar and the tool line.
+	hold_test_stack(player, Item_Stack{test_item(audit.content.items, "pipe"), 100})
+	player.field.cable_run, player.field.cable_start = true, Port_End{fluid_junction, 2}
+	audit_case(audit, {name = "hud field pipe held", hud = true, field_session = true})
+	player.field.cable_run = false
+	hold_test_stack(player, Item_Stack{furnace, 1})
 	// Two toolbars (0278), both rows named, the furnace held.
 	count_before := audit.content.toolbar_count
 	audit.content.toolbar_count = 2

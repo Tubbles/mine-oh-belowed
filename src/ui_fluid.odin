@@ -9,7 +9,8 @@ import "core:fmt"
 // second), the fuel slot of the boiler (with its burn bar) and of the
 // combustion generator with its Fill button, the machine state, a
 // generator's output, and a combustion generator's efficiency and burn
-// time left.
+// time left. A hand run pipe's HUD line and a fluid junction's panel, its
+// netlist's fluid and a line per port (0374).
 
 FLUID_AREA_WIDTH :: 480
 // A level line and a flow line per buffer.
@@ -136,6 +137,75 @@ fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_ma
 		detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	}
 	return result
+}
+
+// "Pipe: Water, 1.2 kL/min of 72.0 kL/min" (0374): an aimed hand run
+// pipe's item, its netlist's fluid, the litres through it in the last full
+// second and its capacity, both a minute. In the temp allocator.
+pipe_status_text :: proc(entities: ^Entities, machines: Machine_Registry, items: Item_Registry, fluids: Fluid_Registry, index: int, tick_rate: int) -> string {
+	table := &entities.cables
+	networks := &entities.fluid_networks
+	line := replace_message_mark(text("fluid_pipe_load"), "{pipe}", item_name(items, table.cables[index].item))
+	line = replace_message_mark(line, "{fluid}", fluid_name(fluids, pipe_record_fluid(networks, table, entities, machines, index)))
+	line = replace_message_mark(line, "{flow}", format_second_litres_per_minute(pipe_line_litres_last_second(networks, table, index)))
+	return replace_message_mark(line, "{capacity}", format_second_litres_per_minute(table.capacity[index]))
+}
+
+// The netlist fluid of a fluid junction (0374), NO_FLUID without a node.
+fluid_junction_fluid :: proc(networks: ^Fluid_Networks, handle: Entity_Handle) -> Fluid_Id {
+	tree := fluid_netlist_of(networks, handle, -1)
+	if tree < 0 || tree >= len(networks.netlist_fluids) {
+		return NO_FLUID
+	}
+	return networks.netlist_fluids[tree]
+}
+
+// The HUD line of an aimed fluid junction: its name and its netlist's
+// fluid.
+fluid_junction_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, handle: Entity_Handle, name: string) -> string {
+	return fmt.tprintf("%s  %s", name, fluid_name(fluids, fluid_junction_fluid(&world.entities.fluid_networks, handle)))
+}
+
+// The fluid line and a line per port, at most MAXIMUM_MACHINE_PORTS, as
+// wide as a junction box's port lines (POWER_PORT_AREA_WIDTH).
+fluid_junction_area_size :: proc(machine: Machine) -> [2]f32 {
+	return {POWER_PORT_AREA_WIDTH, UI_ROW_HEIGHT + f32(min(machine.port_count, MAXIMUM_MACHINE_PORTS)) * UI_LINE_HEIGHT}
+}
+
+// A fluid junction's panel (0374): its netlist's fluid, then a line per
+// port in port order, dim while free.
+fluid_junction_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_Handle, screen_context: Screen_Context) {
+	content := area
+	entities := &screen_context.world.entities
+	common := entity_common(entities, handle)
+	if common == nil {
+		return
+	}
+	detail_line(state, &content, fluid_name(screen_context.fluids, fluid_junction_fluid(&entities.fluid_networks, handle)))
+	machine := screen_context.machines.machines[common.machine]
+	for port in 0 ..< min(machine.port_count, MAXIMUM_MACHINE_PORTS) {
+		line, piped := fluid_port_text(entities, screen_context.machines, screen_context.items, {handle, u8(port)})
+		detail_line(state, &content, line, piped ? UI_TEXT_COLOR : UI_DIM_TEXT_COLOR, UI_LINE_HEIGHT)
+	}
+}
+
+// "Port a: 1.2 kL/min, Pipe to Boiler", "to" where the last second's
+// litres left the port or none moved, "from" where they entered (as
+// power_port_text), or "Port a: free" without a pipe.
+fluid_port_text :: proc(entities: ^Entities, machines: Machine_Registry, items: Item_Registry, end: Port_End) -> (line: string, piped: bool) {
+	port_id := machines.machines[entity_common(entities, end.entity).machine].ports[end.port].id
+	index := port_end_cable(&entities.cables, end)
+	if index < 0 {
+		return replace_message_mark(text("fluid_port_free"), "{port}", port_id), false
+	}
+	cable := entities.cables.cables[index]
+	peer := cable.ends[0] == end ? cable.ends[1] : cable.ends[0]
+	from_first := pipe_line_net_litres_last_second(&entities.fluid_networks, &entities.cables, index)
+	entering := cable.ends[0] == end ? from_first < 0 : from_first > 0
+	line = replace_message_mark(text(entering ? "fluid_port_in" : "fluid_port_out"), "{port}", port_id)
+	line = replace_message_mark(line, "{flow}", format_second_litres_per_minute(abs(from_first)))
+	line = replace_message_mark(line, "{pipe}", item_name(items, cable.item))
+	return replace_message_mark(line, "{peer}", port_end_machine_name(entities, machines, peer)), true
 }
 
 // The HUD line: the machine's state, or a pipe's name and its netlist's

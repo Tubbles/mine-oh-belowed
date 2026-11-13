@@ -66,7 +66,7 @@ test_malformed_part_slots_and_ports_are_refused :: proc(t: ^testing.T) {
 	slotted_furnace.part_slots = {outside}
 	testing.expect_value(t, validate_machine_definition({slotted_furnace}, 0), `machine "stone_furnace" lists part_slots, which only a vessel_part may`)
 
-	fluid := Machine_Port_Definition{id = "fluid", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 10}
+	fluid := Machine_Port_Definition{id = "fluid", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 60}
 	// Four on the tank's -z face, four on its +z face, the ninth on -x.
 	nine_ports := make([]Machine_Port_Definition, MAXIMUM_MACHINE_PORTS + 1, context.temp_allocator)
 	for &port, index in nine_ports {
@@ -82,16 +82,17 @@ test_malformed_part_slots_and_ports_are_refused :: proc(t: ^testing.T) {
 		ports: []Machine_Port_Definition,
 		words: string,
 	} {
-		{{{id = "fluid", kind = "fluid", cell = cell(0, 0, 0), face = "positive_x", capacity_litres_per_second = 10}}, `machine "iron_tank" port "fluid" does not face out of the footprint`},
-		{{{id = "fluid", kind = "fluid", cell = cell(2, 0, 0), face = "positive_x", capacity_litres_per_second = 10}}, `port "fluid" is not on a footprint cell`},
-		{{fluid, {id = "fluid", kind = "fluid", cell = cell(0, 0, 0), face = "negative_x", capacity_litres_per_second = 10}}, `machine "iron_tank" has two ports "fluid"`},
-		{{fluid, {id = "other", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 10}}, `ports "fluid" and "other" share a cell and face`},
-		{{{id = "fluid", kind = "steam", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 10}}, `port "fluid" has unknown kind "steam", not power or fluid`},
-		{{{id = "fluid", kind = "fluid", cell = cell(0, 0, 1), face = "outward", capacity_litres_per_second = 10}}, `port "fluid" has unknown face "outward"`},
-		{{{id = "", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 10}}, `machine "iron_tank" has a port without an id`},
+		{{{id = "fluid", kind = "fluid", cell = cell(0, 0, 0), face = "positive_x", capacity_litres_per_second = 60}}, `machine "iron_tank" port "fluid" does not face out of the footprint`},
+		{{{id = "fluid", kind = "fluid", cell = cell(2, 0, 0), face = "positive_x", capacity_litres_per_second = 60}}, `port "fluid" is not on a footprint cell`},
+		{{fluid, {id = "fluid", kind = "fluid", cell = cell(0, 0, 0), face = "negative_x", capacity_litres_per_second = 60}}, `machine "iron_tank" has two ports "fluid"`},
+		{{fluid, {id = "other", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 60}}, `ports "fluid" and "other" share a cell and face`},
+		{{{id = "fluid", kind = "steam", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 60}}, `port "fluid" has unknown kind "steam", not power or fluid`},
+		{{{id = "fluid", kind = "fluid", cell = cell(0, 0, 1), face = "outward", capacity_litres_per_second = 60}}, `port "fluid" has unknown face "outward"`},
+		{{{id = "", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 60}}, `machine "iron_tank" has a port without an id`},
 		{{{id = "power", kind = "power", cell = cell(0, 0, 1), face = "positive_z", capacity_watts = 10, capacity_litres_per_second = 5}}, `port "power" is a power port and cannot have capacity_litres_per_second`},
 		{{{id = "power", kind = "power", cell = cell(0, 0, 1), face = "positive_z"}}, `port "power" has capacity_watts 0 outside 1 to 1000000000`},
-		{{{id = "fluid", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 1_000_000_001}}, `port "fluid" has capacity_litres_per_second 1000000001 outside 1 to 1000000000`},
+		{{{id = "fluid", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 1_000_000_001}}, `port "fluid" has capacity_litres_per_second 1000000001 outside 60 to 1000000000`},
+		{{{id = "fluid", kind = "fluid", cell = cell(0, 0, 1), face = "positive_z", capacity_litres_per_second = 59}}, `port "fluid" has capacity_litres_per_second 59 outside 60 to 1000000000`},
 		{nine_ports, `machine "iron_tank" has more than 8 ports`},
 	}
 	for refusal in port_cases {
@@ -105,7 +106,7 @@ test_malformed_part_slots_and_ports_are_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, validate_machine_definition({eight_ports}, 0), "")
 	ported_furnace := furnace
 	ported_furnace.ports = {fluid}
-	testing.expect_value(t, validate_machine_definition({ported_furnace}, 0), `machine "stone_furnace" port "fluid" is not a power port, which only a vessel part may list`)
+	testing.expect_value(t, validate_machine_definition({ported_furnace}, 0), `machine "stone_furnace" port "fluid" is a fluid port, which only a machine with fluid_ports, a fluid junction or a vessel part may list`)
 
 	no_item := tank
 	no_item.item = ""

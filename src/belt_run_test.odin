@@ -35,9 +35,9 @@ pole_bottom :: proc(entities: ^Entities, pole: Entity_Handle) -> World_Position 
 
 add_test_run :: proc(entities: ^Entities, machines: Machine_Registry, first, second: Entity_Handle) -> (run: Entity_Handle, refusal: Belt_Run_Refusal) {
 	chord := cast([3]i64)(pole_bottom(entities, second) - pole_bottom(entities, first))
-	start, _ := belt_pole_endpoint(entities, first, chord, .Belt, BELT_RUN_START)
-	end, _ := belt_pole_endpoint(entities, second, chord, .Belt, BELT_RUN_END)
-	return add_belt_run(entities, machines, data_belt_run_constraints(), .Belt, find_belt_machine(machines, .Flat), {start, end})
+	start, _ := belt_pole_endpoint(entities, first, chord, BELT_RUN_START)
+	end, _ := belt_pole_endpoint(entities, second, chord, BELT_RUN_END)
+	return add_belt_run(entities, machines, data_belt_run_constraints(), find_belt_machine(machines, .Flat), {start, end})
 }
 
 @(test)
@@ -142,7 +142,7 @@ test_items_keep_their_spacing_across_a_run :: proc(t: ^testing.T) {
 	}
 	start := Belt_Run_Endpoint{frame = first_frame, cell = {2, 0, 0}}
 	end := Belt_Run_Endpoint{frame = second_frame, cell = {0, 0, 0}}
-	run, refusal := add_belt_run(&entities, machines, data_belt_run_constraints(), .Belt, belt, {start, end})
+	run, refusal := add_belt_run(&entities, machines, data_belt_run_constraints(), belt, {start, end})
 	testing.expect_value(t, refusal, Belt_Run_Refusal.None)
 	run_length := pool_get(&entities.belt_runs, run).curve.length_units
 	testing.expect_value(t, run_length, i32(17 * BELT_UNITS_PER_BLOCK))
@@ -362,12 +362,12 @@ test_a_run_never_takes_a_belt_end_already_linked :: proc(t: ^testing.T) {
 	before := add_test_pole(&entities, machines, {-10 * TEST_RUN_METRE, 0, 0}, 0)
 	after := add_test_pole(&entities, machines, {10 * TEST_RUN_METRE, 0, 0}, 0)
 	chord := [3]i64{TEST_RUN_METRE, 0, 0}
-	start, _ := belt_pole_endpoint(&entities, before, chord, .Belt, BELT_RUN_START)
-	end, _ := belt_pole_endpoint(&entities, after, chord, .Belt, BELT_RUN_END)
+	start, _ := belt_pole_endpoint(&entities, before, chord, BELT_RUN_START)
+	end, _ := belt_pole_endpoint(&entities, after, chord, BELT_RUN_END)
 	constraints := data_belt_run_constraints()
-	_, fed := add_belt_run(&entities, machines, constraints, .Belt, belt, {start, middle})
+	_, fed := add_belt_run(&entities, machines, constraints, belt, {start, middle})
 	testing.expect_value(t, fed, Belt_Run_Refusal.Belt_Already_Fed)
-	_, taken := add_belt_run(&entities, machines, constraints, .Belt, belt, {middle, end})
+	_, taken := add_belt_run(&entities, machines, constraints, belt, {middle, end})
 	testing.expect_value(t, taken, Belt_Run_Refusal.Belt_Output_Taken)
 	testing.expect_value(t, pool_alive_count(entities.belt_runs), 0)
 }
@@ -396,7 +396,7 @@ test_a_level_run_turning_too_far_is_refused :: proc(t: ^testing.T) {
 	add_belt(&entities, machines, belt, {}, 2, .Flat, second_frame)
 	start := Belt_Run_Endpoint{frame = first_frame}
 	end := Belt_Run_Endpoint{frame = second_frame, facing = 2}
-	_, refusal := add_belt_run(&entities, machines, data_belt_run_constraints(), .Belt, belt, {start, end})
+	_, refusal := add_belt_run(&entities, machines, data_belt_run_constraints(), belt, {start, end})
 	testing.expect_value(t, refusal, Belt_Run_Refusal.Turns_Too_Far)
 }
 
@@ -438,10 +438,9 @@ test_undoing_planned_poles_leaves_no_frame :: proc(t: ^testing.T) {
 	defer destroy_entities(&entities)
 	frames := len(entities.frames.frames)
 	run := Field_Run_Placement {
-		kind       = .Belt,
 		candidates = {{kind = .Free_Pole, hit = {0, 8000 * TEST_RUN_METRE, 0}}, {kind = .Free_Pole, hit = {10 * TEST_RUN_METRE, 8000 * TEST_RUN_METRE, 0}}},
 	}
-	plan, found := plan_belt_run(&entities, content, run.kind, run.candidates)
+	plan, found := plan_belt_run(&entities, content, run.candidates)
 	testing.expect(t, found)
 	_, placed := place_planned_poles(&entities, content, run, plan)
 	testing.expect_value(t, pool_alive_count(entities.belt_poles), 2)
@@ -479,7 +478,7 @@ test_two_players_running_to_one_pole_in_a_tick :: proc(t: ^testing.T) {
 			entry := pool_get(&entities.belt_poles, pole)
 			candidates[role] = {kind = .Existing, endpoint = {pole = pole, frame = entry.frame, cell = entry.origin}}
 		}
-		placement := Field_Placement{kind = .Run, run = {kind = .Belt, machine = content.field.run_belt, candidates = candidates}}
+		placement := Field_Placement{kind = .Run, run = {machine = content.field.run_belt, candidates = candidates}}
 		append(&simulation.field.placements, Queued_Field_Placement{player = player, placement = placement})
 	}
 	simulation.records.statistics.placed = make([]u64, len(content.machines.machines))

@@ -11,6 +11,12 @@ import "generation_seed"
 // measured from its ends' port points whenever it is laid, aimed at or
 // drawn; the netlist never sees a position.
 //
+// A hand run pipe (0374) is a record of the same table between two fluid
+// ports, a pipe because its item is one (item_line_figures); the fluid
+// netlist takes it as an edge (fluid_network.odin, pipe_edges) and the
+// power netlist skips it. The run, the aim, the take up, the save and the
+// draw serve both.
+//
 // The run and the take up by hand are cable_field.odin's; the draw is
 // render_cables.odin's.
 
@@ -27,13 +33,15 @@ Cable :: struct {
 	metres: u16,
 }
 
-// cables is saved; watts (the least of the item's and its two ports'
-// capacities, per cable) and port_cable (each end's cable) are derived:
-// kept by add_cable and remove_cable, rebuilt by settle_cables. The map
-// is only looked up, never iterated.
+// cables is saved; capacity (the least of the item's and its two ports'
+// capacities, per record: watts for a cable, litres a second for a pipe),
+// kinds (the item's port kind) and port_cable (each end's record) are
+// derived: kept by add_cable and remove_cable_record, rebuilt by
+// settle_cables. The map is only looked up, never iterated.
 Cable_Table :: struct {
 	cables:     [dynamic]Cable,
-	watts:      [dynamic]i64,
+	capacity:   [dynamic]i64,
+	kinds:      [dynamic]Machine_Port_Kind,
 	port_cable: map[Port_End]int,
 }
 
@@ -45,7 +53,8 @@ Cable_Placement :: struct {
 
 destroy_cable_table :: proc(table: ^Cable_Table) {
 	delete(table.cables)
-	delete(table.watts)
+	delete(table.capacity)
+	delete(table.kinds)
 	delete(table.port_cable)
 }
 
@@ -68,19 +77,33 @@ port_point_on_frame :: proc(frame: Frame, common: Entity_Common, machine: Machin
 	return frame_face_centre(frame, face.cell, face.face)
 }
 
-// A live entity's power port's point; found is false for a dead entity,
-// a port that is no power port, or a frame that is gone.
-power_port_point :: proc(entities: ^Entities, machines: Machine_Registry, end: Port_End) -> (point: World_Position, found: bool) {
+// A live entity's port's point; found is false for a dead entity, a port
+// the machine does not list, or a frame that is gone.
+port_end_point :: proc(entities: ^Entities, machines: Machine_Registry, end: Port_End) -> (point: World_Position, found: bool) {
 	common := entity_common(entities, end.entity)
 	if common == nil {
 		return {}, false
 	}
 	machine := machines.machines[common.machine]
-	if !machine_port_is_power(machine, int(end.port)) {
+	if int(end.port) >= machine.port_count {
 		return {}, false
 	}
 	frame := find_frame(&entities.frames, common.frame) or_return
 	return port_point_on_frame(frame, common^, machine, int(end.port)), true
+}
+
+// A live entity's port's kind; found is false for a dead entity or a port
+// the machine does not list.
+port_end_kind :: proc(entities: ^Entities, machines: Machine_Registry, end: Port_End) -> (kind: Machine_Port_Kind, found: bool) {
+	common := entity_common(entities, end.entity)
+	if common == nil {
+		return {}, false
+	}
+	machine := machines.machines[common.machine]
+	if int(end.port) >= machine.port_count {
+		return {}, false
+	}
+	return machine.ports[end.port].kind, true
 }
 
 // The distance in whole metres, rounded up, at least 1.
@@ -91,31 +114,30 @@ chord_metres :: proc(first, second: World_Position) -> i64 {
 
 // 0 when either end has no point.
 port_span_metres :: proc(entities: ^Entities, machines: Machine_Registry, first, second: Port_End) -> i64 {
-	first_point, first_found := power_port_point(entities, machines, first)
-	second_point, second_found := power_port_point(entities, machines, second)
+	first_point, first_found := port_end_point(entities, machines, first)
+	second_point, second_found := port_end_point(entities, machines, second)
 	if !first_found || !second_found {
 		return 0
 	}
 	return chord_metres(first_point, second_point)
 }
 
-// The watts a cable carries: the least of its item's and both its ports'.
-cable_watts :: proc(content: Simulation_Content, entities: ^Entities, cable: Cable) -> i64 {
-	watts := i64(0)
-	if item_is_cable(content.items, cable.item) {
-		watts = i64(content.items.items[cable.item].cable_kilowatts) * 1000
-	}
+// What a cable or pipe carries: the least of its item's capacity and both
+// its ports' (watts for a cable, litres a second for a pipe).
+cable_capacity :: proc(content: Simulation_Content, entities: ^Entities, cable: Cable) -> i64 {
+	figures, _ := item_line_figures(content.items, cable.item)
+	capacity := figures.capacity
 	for end in cable.ends {
 		common := entity_common(entities, end.entity)
 		if common == nil {
 			continue
 		}
 		machine := content.machines.machines[common.machine]
-		if machine_port_is_power(machine, int(end.port)) {
-			watts = min(watts, machine.ports[end.port].capacity)
+		if int(end.port) < machine.port_count {
+			capacity = min(capacity, machine.ports[end.port].capacity)
 		}
 	}
-	return watts
+	return capacity
 }
 
 // Ports.
@@ -128,18 +150,25 @@ port_end_cable :: proc(table: ^Cable_Table, end: Port_End) -> int {
 	return -1
 }
 
-// A live entity's power port with no cable on it.
+// A live entity's port that takes a line (machine_port_takes_line) with no
+// cable or pipe on it.
 port_end_is_free :: proc(entities: ^Entities, machines: Machine_Registry, end: Port_End) -> bool {
 	common := entity_common(entities, end.entity)
-	if common == nil || !machine_port_is_power(machines.machines[common.machine], int(end.port)) {
+	if common == nil || !machine_port_takes_line(machines.machines[common.machine], int(end.port)) {
 		return false
 	}
 	return port_end_cable(&entities.cables, end) < 0
 }
 
-// The entity's free power port whose point is nearest the point, the
+// A free port of the kind.
+port_end_takes_kind :: proc(entities: ^Entities, machines: Machine_Registry, end: Port_End, kind: Machine_Port_Kind) -> bool {
+	port_kind, found := port_end_kind(entities, machines, end)
+	return found && port_kind == kind && port_end_is_free(entities, machines, end)
+}
+
+// The entity's free port of the kind whose point is nearest the point, the
 // lowest index on a tie.
-free_power_port_nearest :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle, point: World_Position) -> (port: int, found: bool) {
+free_port_nearest :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle, point: World_Position, kind: Machine_Port_Kind) -> (port: int, found: bool) {
 	common := entity_common(entities, handle)
 	if common == nil {
 		return 0, false
@@ -149,7 +178,7 @@ free_power_port_nearest :: proc(entities: ^Entities, machines: Machine_Registry,
 	best := i64(max(i64))
 	for index in 0 ..< machine.port_count {
 		end := Port_End{entity = handle, port = u8(index)}
-		if !port_end_is_free(entities, machines, end) {
+		if machine.ports[index].kind != kind || !port_end_is_free(entities, machines, end) {
 			continue
 		}
 		offset := cast([3]i64)(port_point_on_frame(frame, common^, machine, index) - point)
@@ -161,25 +190,30 @@ free_power_port_nearest :: proc(entities: ^Entities, machines: Machine_Registry,
 	return
 }
 
-// Why a cable cannot be laid, in this order, or None: the first end not
-// free (Cable_End_Gone), the second not free (No_Free_Port), one entity
-// at both ends, a span past the item's, fewer metres held than the span
-// (the developer command holds max(i64)), and on two frames a vessel's
-// end that is not its connector. A loop is laid (0377: its chord carries
-// nothing until then).
+// Why a cable or pipe cannot be laid, in this order, or None: an item
+// that is neither (Cable_Too_Short; only a malformed request reaches it),
+// the first end not free or not of the item's kind (Cable_End_Gone), the
+// second likewise (No_Free_Port), one entity at both ends, a span past
+// the item's, fewer metres held than the span (the developer command holds
+// max(i64)), and on two frames a vessel's end that is not its connector.
+// A loop is laid (0377: its chord carries nothing until then).
 cable_placement_refusal :: proc(entities: ^Entities, content: Simulation_Content, placement: Cable_Placement, metres_held: i64) -> Field_Edit_Refusal {
 	machines := content.machines
+	figures, is_line := item_line_figures(content.items, placement.item)
+	if !is_line {
+		return .Cable_Too_Short
+	}
 	first, second := placement.ends[0], placement.ends[1]
 	switch {
-	case !port_end_is_free(entities, machines, first):
+	case !port_end_takes_kind(entities, machines, first, figures.kind):
 		return .Cable_End_Gone
-	case !port_end_is_free(entities, machines, second):
+	case !port_end_takes_kind(entities, machines, second, figures.kind):
 		return .No_Free_Port
 	case first.entity == second.entity:
 		return .Same_Thing
 	}
 	span := port_span_metres(entities, machines, first, second)
-	if !item_is_cable(content.items, placement.item) || span > i64(content.items.items[placement.item].cable_span_metres) {
+	if span > figures.span_metres {
 		return .Cable_Too_Short
 	}
 	if metres_held < span {
@@ -202,16 +236,18 @@ cable_placement_refusal :: proc(entities: ^Entities, content: Simulation_Content
 
 // The table.
 
-// Lays the cable and rebuilds the netlist.
+// Lays the cable or pipe and rebuilds the netlist of its kind.
 add_cable :: proc(entities: ^Entities, content: Simulation_Content, cable: Cable) {
 	table := &entities.cables
+	figures, _ := item_line_figures(content.items, cable.item)
 	append(&table.cables, cable)
-	append(&table.watts, cable_watts(content, entities, cable))
+	append(&table.capacity, cable_capacity(content, entities, cable))
+	append(&table.kinds, figures.kind)
 	index := len(table.cables) - 1
 	for end in cable.ends {
 		table.port_cable[end] = index
 	}
-	rebuild_electric_networks(entities, content.machines)
+	rebuild_line_networks(entities, content.machines, figures.kind)
 }
 
 // The cable at index leaves the table, the last one taking its index; no
@@ -221,7 +257,8 @@ remove_cable_record :: proc(table: ^Cable_Table, index: int) {
 		delete_key(&table.port_cable, end)
 	}
 	unordered_remove(&table.cables, index)
-	unordered_remove(&table.watts, index)
+	unordered_remove(&table.capacity, index)
+	unordered_remove(&table.kinds, index)
 	if index < len(table.cables) {
 		for end in table.cables[index].ends {
 			table.port_cable[end] = index
@@ -229,10 +266,20 @@ remove_cable_record :: proc(table: ^Cable_Table, index: int) {
 	}
 }
 
-// Takes the cable up and rebuilds the netlist.
+// Takes the cable or pipe up and rebuilds the netlist of its kind.
 remove_cable :: proc(entities: ^Entities, machines: Machine_Registry, index: int) {
+	kind := entities.cables.kinds[index]
 	remove_cable_record(&entities.cables, index)
-	rebuild_electric_networks(entities, machines)
+	rebuild_line_networks(entities, machines, kind)
+}
+
+rebuild_line_networks :: proc(entities: ^Entities, machines: Machine_Registry, kind: Machine_Port_Kind) {
+	switch kind {
+	case .Power:
+		rebuild_electric_networks(entities, machines)
+	case .Fluid:
+		rebuild_fluid_networks(entities, machines)
+	}
 }
 
 // The metres of every cable on the entity, one stack per item in the
@@ -309,21 +356,27 @@ cable_curve_point :: proc(first, second: World_Position, down: [3]i64, sag_units
 	return chord + World_Position(fixed_scale(down, lowered))
 }
 
-// The inputs of cable_curve_point for a live cable: its ports' points,
-// the first end's frame's down, and its sag by the lower end's pitch.
+// The inputs of cable_curve_point for a live cable or pipe: its ports'
+// points, the first end's frame's down, and its sag by the lower end's
+// pitch, none for a pipe (the first port's kind, which is the item's).
 cable_curve :: proc(entities: ^Entities, machines: Machine_Registry, cable: Cable) -> (first, second: World_Position, down: [3]i64, sag_units: i64, found: bool) {
-	first = power_port_point(entities, machines, cable.ends[0]) or_return
-	second = power_port_point(entities, machines, cable.ends[1]) or_return
+	first = port_end_point(entities, machines, cable.ends[0]) or_return
+	second = port_end_point(entities, machines, cable.ends[1]) or_return
+	kind := port_end_kind(entities, machines, cable.ends[0]) or_return
 	first_frame := find_frame(&entities.frames, entity_common(entities, cable.ends[0].entity).frame) or_return
 	second_frame := find_frame(&entities.frames, entity_common(entities, cable.ends[1].entity).frame) or_return
-	down, sag_units = cable_down_and_sag(cable, first_frame, second_frame, first, second)
+	down, sag_units = cable_down_and_sag(cable, kind, first_frame, second_frame, first, second)
 	return first, second, down, sag_units, true
 }
 
 // The first frame's up negated, and the sag in position units by the
-// pitch of the lower end's frame (the lower along that down).
-cable_down_and_sag :: proc(cable: Cable, first_frame, second_frame: Frame, first, second: World_Position) -> (down: [3]i64, sag_units: i64) {
+// pitch of the lower end's frame (the lower along that down); a pipe
+// (fluid) sags none, straight from port to port (0374).
+cable_down_and_sag :: proc(cable: Cable, kind: Machine_Port_Kind, first_frame, second_frame: Frame, first, second: World_Position) -> (down: [3]i64, sag_units: i64) {
 	down = -first_frame.axes[FRAME_UP]
+	if kind == .Fluid {
+		return down, 0
+	}
 	lower_pitch := first_frame.pitch_millimetres
 	if fixed_dot(cast([3]i64)(second - first), down) > 0 {
 		lower_pitch = second_frame.pitch_millimetres
@@ -384,16 +437,17 @@ field_aimed_cable :: proc(entities: ^Entities, machines: Machine_Registry, playe
 
 // The save (save_state.odin, write_cable_table).
 
-// After the pools are read: a cable whose item reads as none or is no
-// cable, whose port is no power port of its entity's machine, or whose
-// end the load deleted (deleted_ids, handle_was_deleted) is dropped and
-// counted; one whose metres pass MAXIMUM_CABLE_SPAN_METRES keeps that
+// After the pools are read: a cable or pipe whose item reads as none or
+// is neither, whose port does not take it (cable_ports_take_item), or
+// whose end the load deleted (deleted_ids, handle_was_deleted) is dropped
+// and counted; one whose metres pass MAXIMUM_CABLE_SPAN_METRES keeps that
 // many, counted, so taking it up returns no more than any span; an end on
-// a dead entity otherwise or two cables on one port end refuse the file.
-// Derives watts and port_cable. remap is nil outside a load.
+// a dead entity otherwise or two records on one port end refuse the file.
+// Derives capacity, kinds and port_cable. remap is nil outside a load.
 settle_cables :: proc(entities: ^Entities, content: Simulation_Content, remap: ^Content_Remap) -> (dropped, clamped: int, problem: string) {
 	table := &entities.cables
-	clear(&table.watts)
+	clear(&table.capacity)
+	clear(&table.kinds)
 	clear(&table.port_cable)
 	kept := 0
 	for cable in table.cables {
@@ -407,7 +461,7 @@ settle_cables :: proc(entities: ^Entities, content: Simulation_Content, remap: ^
 			}
 			deleted = true
 		}
-		if deleted || !item_is_cable(content.items, cable.item) || !cable_ports_are_power(entities, content.machines, cable) {
+		if deleted || !item_is_line(content.items, cable.item) || !cable_ports_take_item(entities, content, cable) {
 			dropped += 1
 			continue
 		}
@@ -426,15 +480,27 @@ settle_cables :: proc(entities: ^Entities, content: Simulation_Content, remap: ^
 			}
 			table.port_cable[end] = index
 		}
-		append(&table.watts, cable_watts(content, entities, cable))
+		figures, _ := item_line_figures(content.items, cable.item)
+		append(&table.capacity, cable_capacity(content, entities, cable))
+		append(&table.kinds, figures.kind)
 	}
 	return dropped, clamped, ""
 }
 
-cable_ports_are_power :: proc(entities: ^Entities, machines: Machine_Registry, cable: Cable) -> bool {
+// Both ports take lines (machine_port_takes_line) and are of the item's
+// kind.
+cable_ports_take_item :: proc(entities: ^Entities, content: Simulation_Content, cable: Cable) -> bool {
+	figures, found := item_line_figures(content.items, cable.item)
+	if !found {
+		return false
+	}
 	for end in cable.ends {
 		common := entity_common(entities, end.entity)
-		if common == nil || !machine_port_is_power(machines.machines[common.machine], int(end.port)) {
+		if common == nil {
+			return false
+		}
+		machine := content.machines.machines[common.machine]
+		if !machine_port_takes_line(machine, int(end.port)) || machine.ports[end.port].kind != figures.kind {
 			return false
 		}
 	}

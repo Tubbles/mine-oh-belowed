@@ -6,13 +6,15 @@ import rl "shared:raylib"
 // The cables (work items 0368 and 0384, cable.odin): each through
 // CABLE_CURVE_STEPS + 1 points of its curve, the integer sag of
 // cable_curve_point, so the aim and the draw agree; the carried runs from
-// their ports to the hand the same way. Every shown cable is lines; within
-// CABLE_BOX_METRES of the eye each segment is also a box of the item's
-// thickness, all of them one instanced draw of the unit cube from the
-// viewport's cables buffer (Field_Instance_Buffers.cables), and the box
-// hides the line by depth wherever it is a pixel wide or more. Without
-// the buffer (the block world) or the model shader's instancing, lines
-// only. Unlit and hazed through the model shader's flat modes
+// their ports to the hand the same way. A hand run pipe (0374) draws the
+// same way with no sag: square boxes of its item's thickness near the eye
+// and a line far away. Every shown cable is lines; within its box
+// distance of the eye (cable_box_metres) each segment is also a box of
+// the item's thickness, all of them one instanced draw of the unit cube
+// from the viewport's cables buffer (Field_Instance_Buffers.cables), and
+// the box hides the line by depth wherever it is a pixel wide or more.
+// Without the buffer (the block world) or the model shader's instancing,
+// lines only. Unlit and hazed through the model shader's flat modes
 // (begin_flat_instances, begin_flat_batch), cast into no shadow map. Each
 // cable's hash picks its colour value (13 steps) and its sag (21 steps),
 // so two neighbours of one item rarely match in both. Floats are made
@@ -21,9 +23,14 @@ import rl "shared:raylib"
 CABLE_CURVE_STEPS :: 12
 // The colour's value varies this many percent either way by the hash.
 CABLE_COLOR_VARIATION_PERCENT :: 6
-// Within this of the eye (the box round the points) a cable draws its
-// boxes too.
+// Within this of the eye (the box round the points) every line draws its
+// boxes too; a thicker one further, out to where its box is a pixel wide
+// (cable_box_metres), at most CABLE_BOX_MAXIMUM_METRES.
 CABLE_BOX_METRES :: 32
+CABLE_BOX_MAXIMUM_METRES :: 128
+// A pixel at the reference screen, 1080 lines under the default 70
+// degree field of view: 2 tan(35 degrees) / 1080 metres a metre away.
+CABLE_PIXEL_METRES_PER_METRE :: 2 * 0.70020754 / 1080
 
 // view nil shows every cable; frames nil reads the frames from the
 // entities (the block world); instances nil draws every cable as lines.
@@ -37,10 +44,12 @@ Cable_Draw :: struct {
 
 Cable_Draw_Points :: [CABLE_CURVE_STEPS + 1][3]f32
 
-// A cable or a carried run as this frame draws it.
+// A cable or a carried run as this frame draws it; box_metres is its
+// cable_box_metres.
 Cable_Look :: struct {
 	points:           Cable_Draw_Points,
 	thickness_metres: f32,
+	box_metres:       f32,
 	color:            rl.Color,
 }
 
@@ -54,18 +63,18 @@ cable_draw_frame :: proc(entities: ^Entities, frames: ^Frame_Matrix_Table, id: F
 }
 
 // The curve's points in metres, found false for a cable whose end is gone.
-cable_draw_points :: proc(entities: ^Entities, machines: Machine_Registry, frames: ^Frame_Matrix_Table, cable: Cable) -> (points: Cable_Draw_Points, found: bool) {
+cable_draw_points :: proc(entities: ^Entities, machines: Machine_Registry, frames: ^Frame_Matrix_Table, cable: Cable, kind: Machine_Port_Kind) -> (points: Cable_Draw_Points, found: bool) {
 	ends: [2]World_Position
 	end_frames: [2]Frame
 	for end, role in cable.ends {
 		common := entity_common(entities, end.entity)
-		if common == nil || !machine_port_is_power(machines.machines[common.machine], int(end.port)) {
+		if common == nil || int(end.port) >= machines.machines[common.machine].port_count {
 			return {}, false
 		}
 		end_frames[role] = cable_draw_frame(entities, frames, common.frame) or_return
 		ends[role] = port_point_on_frame(end_frames[role], common^, machines.machines[common.machine], int(end.port))
 	}
-	down, sag := cable_down_and_sag(cable, end_frames[0], end_frames[1], ends[0], ends[1])
+	down, sag := cable_down_and_sag(cable, kind, end_frames[0], end_frames[1], ends[0], ends[1])
 	return cable_points_in_metres(ends[0], ends[1], down, sag), true
 }
 
@@ -76,21 +85,29 @@ cable_points_in_metres :: proc(first, second: World_Position, down: [3]i64, sag_
 	return points
 }
 
-// The item's colour with its value varied by the cable's hash, times the
-// tint.
-cable_draw_color :: proc(item: Item, cable: Cable, tint: [3]f32) -> rl.Color {
+// The item's base colour with its value varied by the cable's hash, times
+// the tint.
+cable_draw_color :: proc(base: [3]u8, cable: Cable, tint: [3]f32) -> rl.Color {
 	offset := i64((cable_hash(cable) >> 16) % (2 * CABLE_COLOR_VARIATION_PERCENT + 1)) - CABLE_COLOR_VARIATION_PERCENT
 	factor := f32(100 + offset) / 100
 	color: rl.Color
 	for channel in 0 ..< 3 {
-		color[channel] = u8(clamp(f32(item.cable_color[channel]) * factor * tint[channel], 0, 255))
+		color[channel] = u8(clamp(f32(base[channel]) * factor * tint[channel], 0, 255))
 	}
 	color.a = 255
 	return color
 }
 
-cable_thickness_metres :: proc(item: Item) -> f32 {
-	return f32(item.cable_thickness_millimetres) / MILLIMETRES_PER_METRE
+cable_thickness_metres :: proc(figures: Line_Figures) -> f32 {
+	return f32(figures.thickness_millimetres) / MILLIMETRES_PER_METRE
+}
+
+// How far from the eye a line of this thickness draws its boxes: where the
+// box is still a pixel wide at the reference screen, never nearer than
+// CABLE_BOX_METRES (every shipped cable) nor further than
+// CABLE_BOX_MAXIMUM_METRES. The 150 mm pipe draws them to about 116 m.
+cable_box_metres :: proc(thickness_metres: f32) -> f32 {
+	return clamp(thickness_metres / CABLE_PIXEL_METRES_PER_METRE, CABLE_BOX_METRES, CABLE_BOX_MAXIMUM_METRES)
 }
 
 // The points' box widened by the thickness.
@@ -103,14 +120,14 @@ cable_draw_box :: proc(points: Cable_Draw_Points, thickness_metres: f32) -> (min
 	return minimum - thickness_metres, maximum + thickness_metres
 }
 
-// The box under the view's transform within CABLE_BOX_METRES of its eye;
-// never without a view.
-cable_box_is_near :: proc(view: ^Model_View, minimum, maximum: [3]f32) -> bool {
+// The box under the view's transform within box_metres of its eye; never
+// without a view.
+cable_box_is_near :: proc(view: ^Model_View, minimum, maximum: [3]f32, box_metres: f32) -> bool {
 	if view == nil {
 		return false
 	}
 	low, high := transformed_box(view.transform, minimum, maximum)
-	return box_distance_metres(low, high, view.eye) <= CABLE_BOX_METRES
+	return box_distance_metres(low, high, view.eye) <= box_metres
 }
 
 // The box round the points, widened by the thickness, under the view
@@ -170,46 +187,43 @@ append_cable_segment_instances :: proc(instances: ^[dynamic]matrix[4, 4]f32, loo
 	}
 }
 
-// A live cable's look; found false for an item that is no cable, an end
-// that is gone or a box the view does not show, the colour made only for
-// a shown cable.
+// A live cable's or pipe's look; found false for an item that is neither,
+// an end that is gone or a box the view does not show, the colour made
+// only for a shown one.
 cable_look :: proc(entities: ^Entities, machines: Machine_Registry, items: Item_Registry, draw: Cable_Draw, cable: Cable) -> (look: Cable_Look, found: bool) {
-	if !item_is_cable(items, cable.item) {
-		return {}, false
-	}
-	look.points = cable_draw_points(entities, machines, draw.frames, cable) or_return
-	item := items.items[cable.item]
-	look.thickness_metres = cable_thickness_metres(item)
+	figures := item_line_figures(items, cable.item) or_return
+	look.points = cable_draw_points(entities, machines, draw.frames, cable, figures.kind) or_return
+	look.thickness_metres = cable_thickness_metres(figures)
 	if !cable_points_shown(draw.view, look.points, look.thickness_metres) {
 		return {}, false
 	}
-	look.color = cable_draw_color(item, cable, draw.daylight_tint)
+	look.box_metres = cable_box_metres(look.thickness_metres)
+	look.color = cable_draw_color(figures.color, cable, draw.daylight_tint)
 	return look, true
 }
 
 // A carried run from its first end's port to the hand (cable_hand_point),
-// with the item's sag, in BELT_RUN_REFUSED_COLOR past the item's span;
-// found false as cable_look's.
+// with the item's sag (none for a pipe), in BELT_RUN_REFUSED_COLOR past the
+// item's span; found false as cable_look's.
 cable_run_look :: proc(entities: ^Entities, machines: Machine_Registry, items: Item_Registry, body: Field_Player, tuning: Field_Player_Tuning, item: Item_Id, draw: Cable_Draw) -> (look: Cable_Look, found: bool) {
-	if !item_is_cable(items, item) {
-		return {}, false
-	}
+	figures := item_line_figures(items, item) or_return
 	common := entity_common(entities, body.cable_start.entity)
-	if common == nil || !machine_port_is_power(machines.machines[common.machine], int(body.cable_start.port)) {
+	if common == nil || int(body.cable_start.port) >= machines.machines[common.machine].port_count {
 		return {}, false
 	}
 	frame := cable_draw_frame(entities, draw.frames, common.frame) or_return
 	start := port_point_on_frame(frame, common^, machines.machines[common.machine], int(body.cable_start.port))
 	hand := cable_hand_point(body, tuning)
 	run := Cable{ends = {body.cable_start, {}}, item = item}
-	down, sag := cable_down_and_sag(run, frame, frame, start, hand)
+	down, sag := cable_down_and_sag(run, figures.kind, frame, frame, start, hand)
 	look.points = cable_points_in_metres(start, hand, down, sag)
-	look.thickness_metres = cable_thickness_metres(items.items[item])
+	look.thickness_metres = cable_thickness_metres(figures)
 	if !cable_points_shown(draw.view, look.points, look.thickness_metres) {
 		return {}, false
 	}
-	look.color = cable_draw_color(items.items[item], run, draw.daylight_tint)
-	if chord_metres(start, hand) > i64(items.items[item].cable_span_metres) {
+	look.box_metres = cable_box_metres(look.thickness_metres)
+	look.color = cable_draw_color(figures.color, run, draw.daylight_tint)
+	if chord_metres(start, hand) > figures.span_metres {
 		look.color = BELT_RUN_REFUSED_COLOR
 	}
 	return look, true
@@ -251,7 +265,7 @@ draw_cable_looks :: proc(looks: []Cable_Look, draw: Cable_Draw) {
 		if !instanced {
 			continue
 		}
-		if minimum, maximum := cable_draw_box(look.points, look.thickness_metres); cable_box_is_near(draw.view, minimum, maximum) {
+		if minimum, maximum := cable_draw_box(look.points, look.thickness_metres); cable_box_is_near(draw.view, minimum, maximum, look.box_metres) {
 			append_cable_segment_instances(&segments, look)
 		}
 	}

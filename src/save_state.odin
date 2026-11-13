@@ -194,8 +194,8 @@ write_cable_table :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
 }
 
 // See write_cable_table: read while bytes are left, else empty, then
-// settled against the pools (settle_cables), with one line when cables
-// were dropped and one when cables were cut to the longest span.
+// settled against the pools (settle_cables), with one line when cables or
+// pipes were dropped and one when they were cut to the longest span.
 read_cable_table :: proc(reader: ^Byte_Reader, entities: ^Entities, content: Simulation_Content) -> bool {
 	clear(&entities.cables.cables)
 	if bytes_left(reader^) > 0 {
@@ -207,10 +207,10 @@ read_cable_table :: proc(reader: ^Byte_Reader, entities: ^Entities, content: Sim
 		return false
 	}
 	if dropped > 0 {
-		platform.log_printf("save: dropped %d cables whose item, port or machine this build no longer has", dropped)
+		platform.log_printf("save: dropped %d cables and pipes whose item, port or machine this build no longer has", dropped)
 	}
 	if clamped > 0 {
-		platform.log_printf("save: cut %d cables longer than %d m to %d m", clamped, MAXIMUM_CABLE_SPAN_METRES, MAXIMUM_CABLE_SPAN_METRES)
+		platform.log_printf("save: cut %d cables and pipes longer than %d m to %d m", clamped, MAXIMUM_CABLE_SPAN_METRES, MAXIMUM_CABLE_SPAN_METRES)
 	}
 	return true
 }
@@ -583,6 +583,9 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	upgraded := upgrade_resized_pods(&state.world.entities, content.machines)
 	if litres := drop_pipe_litres(&state.world.entities); litres > 0 {
 		platform.log_printf("%s", pipe_litres_line(litres))
+	}
+	if count := drop_pipe_runs(&state.world.entities, content.machines); count > 0 {
+		platform.log_printf("%s", pipe_runs_line(count))
 	}
 	rebuild_loaded_world(&state.world, content.machines, derived)
 	// A deleted machine's frame of its own goes with it (0368).

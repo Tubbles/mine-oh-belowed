@@ -54,7 +54,7 @@
 // combustion_generator, hydro_turbine, water_pump, junction_box, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
 // launch_pad, foundation, belt_pole, pod, crafting_station, tree, hatch,
-// locker, crafting_bench or charge_controller.
+// locker, crafting_bench, charge_controller or fluid_junction.
 // tree (work item 0197, doc/content.md, Trees) is a tree's model:
 // placed by the planet's generation, never by an item, never an entity;
 // only footprint and model are read.
@@ -292,14 +292,21 @@
 // ports join inside it. The junction box has 4, the junction cabinet 8.
 // Power switch: 1 by 1 by 1 with exactly 2 power ports, joining the
 // cables on them while on and splitting them while off.
-// ports (optional, work items 0361 and 0368, at most 8) lists {id, kind,
-// cell = {x, y, z}, face, capacity_watts or capacity_litres_per_second}:
-// where a power cable or a fluid pipe ends, on a face out of the
-// footprint's surface, no two on one cell and face. Outside the vessel
-// kinds a port is a power port, and only the electric machines,
-// generators, junction boxes and power switches list one. A save names a
-// port by its index, so a record's ports are appended to and never
-// reordered.
+// Fluid junction (kind fluid_junction, work item 0374): 2 to 8 fluid ports,
+// no power port, and a color, the box drawn until its model comes; the
+// hand run pipes on its ports join inside it, which holds nothing.
+// ports (optional, work items 0361, 0368 and 0374, at most 8) lists {id,
+// kind, cell = {x, y, z}, face, capacity_watts or
+// capacity_litres_per_second (from 60, a litre a tick)}: where a power
+// cable or a fluid pipe ends,
+// on a face out of the footprint's surface, no two on one cell and face.
+// Outside the vessel kinds only the electric machines, generators,
+// junction boxes and power switches list a power port, and only a machine
+// with fluid_ports or a fluid junction a fluid port; a machine's fluid
+// port meets the fluid_ports buffer of its cell and face, else its first
+// one on every face, and must meet one. The fluid ports come after the
+// power port. A save names a port by its index, so a record's ports are
+// appended to and never reordered.
 // deleted_ids (top level, work item 0368) lists the ids of machines this
 // build deleted: a save's placed machine of one is removed at load, with
 // one log line, instead of refusing the file. Each is neither a current
@@ -379,9 +386,9 @@
 // bare ground): stands_on_ground (optional, default false) marks a
 // machine that stands on the ground without a foundation for good: it is
 // never refused for slope and never wears. Set on the belts, the pipe,
-// the junction boxes, the belt pole, the pod, the stone cutting table
-// (a crafting station never operates, so it never wears either way) and
-// the water pump.
+// the junction boxes, the fluid junction, the belt pole, the pod, the
+// stone cutting table (a crafting station never operates, so it never
+// wears either way) and the water pump.
 // Every other machine placed on bare ground breaks down after
 // bare_ground_life_minutes of operation (game.sjson) unless it stands
 // on foundations; bare_ground_life_minutes (optional, 1 to 10080)
@@ -392,8 +399,8 @@
 // 1000000) is its rate; no slots, power or fluid ports. It reuses the
 // offshore pump's model, so its footprint is that model's 2 by 1 by 1.
 // Belt pole (work item 0176, kind belt_pole): a 1 by 1 by 1 footprint and
-// height_millimetres (250 to 4000), how high over its bottom a belt or
-// pipe run ends on it (doc/content.md, Belt poles and runs). Placed free
+// height_millimetres (250 to 4000), how high over its bottom a belt run
+// ends on it (doc/content.md, Belt poles and runs). Placed free
 // it is a one cell frame of its own facing the run; snapped it stands on
 // a frame's foundation.
 deleted_ids = ["small_pole", "big_pole", "substation"]
@@ -657,6 +664,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 90000}
+			{id = "revival", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -678,6 +686,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 2}, face = "negative_x", capacity_watts = 300000}
+			{id = "revival", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -716,6 +725,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 1, y = 0, z = 0}, face = "positive_z", capacity_watts = 60000}
+			{id = "out", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -733,6 +743,10 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "water", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 1}, face = "positive_z", direction = "output", fluid = "steam", buffer_litres = 200}
+		]
+		ports = [
+			{id = "in", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
+			{id = "out", kind = "fluid", cell = {x = 1, y = 0, z = 1}, face = "positive_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -753,6 +767,8 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 2}, face = "negative_x", capacity_watts = 900000}
+			{id = "in_a", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
+			{id = "in_b", kind = "fluid", cell = {x = 1, y = 0, z = 4}, face = "positive_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -765,6 +781,12 @@ machines = [
 		footprint = {width = 3, depth = 3, height = 3}
 		fluid_ports = [
 			{face = "all", direction = "both", buffer_litres = 25000}
+		]
+		ports = [
+			{id = "a", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
+			{id = "b", kind = "fluid", cell = {x = 2, y = 0, z = 1}, face = "positive_x", capacity_litres_per_second = 1200}
+			{id = "c", kind = "fluid", cell = {x = 1, y = 0, z = 2}, face = "positive_z", capacity_litres_per_second = 1200}
+			{id = "d", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -784,6 +806,8 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 1, y = 0, z = 0}, face = "positive_z", capacity_watts = 30000}
+			{id = "in", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_litres_per_second = 1200}
+			{id = "out", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "positive_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -802,6 +826,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 1, y = 0, z = 0}, face = "positive_z", capacity_watts = 60000}
+			{id = "out", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -820,6 +845,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 10000}
+			{id = "in", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -840,6 +866,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 600000}
+			{id = "in", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -938,6 +965,22 @@ machines = [
 		]
 	}
 	{
+		id = "fluid_junction"
+		name_key = "machine_fluid_junction"
+		description_key = "describe_machine_fluid_junction"
+		item = "fluid_junction"
+		kind = "fluid_junction"
+		stands_on_ground = true
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [70, 104, 140]
+		ports = [
+			{id = "a", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_litres_per_second = 24000}
+			{id = "b", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_litres_per_second = 24000}
+			{id = "c", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 24000}
+			{id = "d", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_litres_per_second = 24000}
+		]
+	}
+	{
 		id = "lamp"
 		name_key = "machine_lamp"
 		description_key = "describe_machine_lamp"
@@ -1008,6 +1051,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 50000}
+			{id = "in", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -1084,6 +1128,10 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 400000}
+			{id = "crude_in", kind = "fluid", cell = {x = 2, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
+			{id = "gas_out", kind = "fluid", cell = {x = 0, y = 0, z = 2}, face = "negative_x", capacity_litres_per_second = 1200}
+			{id = "light_out", kind = "fluid", cell = {x = 2, y = 0, z = 4}, face = "positive_z", capacity_litres_per_second = 1200}
+			{id = "heavy_out", kind = "fluid", cell = {x = 4, y = 0, z = 2}, face = "positive_x", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -1106,6 +1154,9 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 200000}
+			{id = "oil_in", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
+			{id = "water_in", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_litres_per_second = 1200}
+			{id = "out", kind = "fluid", cell = {x = 1, y = 0, z = 2}, face = "positive_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -1130,6 +1181,9 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 210000}
+			{id = "gas_in", kind = "fluid", cell = {x = 1, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
+			{id = "in", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_litres_per_second = 1200}
+			{id = "out", kind = "fluid", cell = {x = 1, y = 0, z = 2}, face = "positive_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -1152,6 +1206,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 90000}
+			{id = "gas_out", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "positive_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -1207,6 +1262,7 @@ machines = [
 		]
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 4}, face = "negative_x", capacity_watts = 200000}
+			{id = "fuel_in", kind = "fluid", cell = {x = 4, y = 0, z = 0}, face = "negative_z", capacity_litres_per_second = 1200}
 		]
 	}
 	{
@@ -1494,7 +1550,7 @@ machines = [
 		footprint = {width = 2, depth = 2, height = 2}
 		color = [150, 120, 84]
 		ports = [
-			{id = "fluid", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "positive_z", capacity_litres_per_second = 10}
+			{id = "fluid", kind = "fluid", cell = {x = 0, y = 0, z = 1}, face = "positive_z", capacity_litres_per_second = 60}
 		]
 	}
 	{
@@ -1521,7 +1577,7 @@ machines = [
 		// vessel's parts through a second power port (0383).
 		ports = [
 			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 5000}
-			{id = "fluid", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_litres_per_second = 20}
+			{id = "fluid", kind = "fluid", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_litres_per_second = 60}
 			{id = "power_inner", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 5000}
 		]
 	}

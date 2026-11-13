@@ -2,9 +2,10 @@ package game
 
 import rl "shared:raylib"
 
-// Placeholder power models: a junction box or cabinet is a box of its
-// record's color a little inset across, a power switch a box in green
-// while on and red while off, a lamp a small box that glows while lit. A
+// Placeholder power models: a junction box or cabinet, and a fluid
+// junction (0374), is a box of its record's color a little inset across,
+// a power switch a box in green while on and red while off, a lamp a
+// small box that glows while lit. A
 // switch or lamp with a model (render_models.odin) is drawn with it; its
 // glow lights up while the switch is on or the lamp lit. The boxes,
 // switches and lamps are draw_entities' on both worlds (0362), under

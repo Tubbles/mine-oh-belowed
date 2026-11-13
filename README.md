@@ -2,7 +2,7 @@
 
 The Last Caretaker meets Techtonica in space: a first person automation game on the diggable, procedurally generated planets of one star system, with Factorio's build-a-factory game loop, The Last Caretaker's look and lone machine and Techtonica's screens and controls. Couch first: designed around the 2026 Steam Controller (trackpads, gyro aim, grip buttons). No keyboard needed beyond the occasional name field.
 
-Status: pre-alpha, in a rebuild. The block world (all eight gameplay phases, from landing to the first rocket shipment) is retired; since the first slice (M13) a new world is a small planet of smooth, diggable terrain with water, light, a day and night, and factories on foundation frames joined by belts and pipes on poles, shared in lockstep between machines and split screen players. The ground game returns on it with M14 ([PLAN.md](PLAN.md)).
+Status: pre-alpha, in a rebuild. The block world (all eight gameplay phases, from landing to the first rocket shipment) is retired; since the first slice (M13) a new world is a small planet of smooth, diggable terrain with water, light, a day and night, and factories on foundation frames joined by belts on poles and by pipes and cables run by hand, shared in lockstep between machines and split screen players. The ground game returns on it with M14 ([PLAN.md](PLAN.md)).
 
 ## What it is
 

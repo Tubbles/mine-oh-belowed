@@ -217,8 +217,8 @@ foundation_heights = [1, 2, 5]
 // is wider, deeper or higher goes through the editor's outline and anchor.
 // Each 1 to 16.
 direct_placement_limit = {width = 2, depth = 2, height = 3}
-// Free belt and pipe runs between poles (work item 0176, doc/content.md,
-// Belt poles and runs): a run either inclines (its ends more than the
+// Free belt runs between poles (work item 0176, doc/content.md, Belt
+// poles and runs): a run either inclines (its ends more than the
 // level tolerance apart in height, its facings aligned) or turns (level,
 // its facings turning up to the maximum), never both, and spans at most
 // the maximum. The slope holds along the whole belt, not only the chord.

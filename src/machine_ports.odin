@@ -3,15 +3,17 @@ package game
 import "core:fmt"
 import "core:math"
 
-// A machine's ports for cables and pipes (work items 0361 and 0368,
+// A machine's ports for cables and pipes (work items 0361, 0368 and 0374,
 // doc/vessels.md, doc/content.md): a named face of one footprint cell
 // where a power cable or a fluid pipe ends, with the most it carries. The
 // vessel kinds list both kinds; outside them every electric machine and
 // generator lists one power port, first, and the junction boxes and the
-// power switch list theirs (cable.odin); the pipes (0356) extend the
-// fluid kind to the other machines. A save names a port by its index, so
-// a record's ports are appended to and never reordered. Separate from
-// fluid_ports (machine_fluid_ports.odin), the fluid network's buffers.
+// power switch list theirs (cable.odin); a machine with fluid_ports lists
+// a fluid port on each buffer a hand run pipe meets, and a fluid junction
+// its fluid ports. A save names a port by its index, so a record's ports
+// are appended to and never reordered. Separate from fluid_ports
+// (machine_fluid_ports.odin), the fluid network's buffers, which a fluid
+// port meets by fluid_buffer.
 
 MAXIMUM_MACHINE_PORTS :: 8
 // Watts or litres a second; keeps a sum of every port far inside an i64.
@@ -40,22 +42,27 @@ Machine_Port_Definition :: struct {
 }
 
 // cell is of the unrotated footprint, face out of it; capacity in watts
-// for power, litres a second for fluid.
+// for power, litres a second for fluid. fluid_buffer is derived
+// (link_fluid_ports_to_buffers): for a fluid port the index into the
+// machine's fluid_ports of the buffer it meets; -1 for a power port, a
+// vessel part's fluid port and a fluid junction's port.
 Machine_Port :: struct {
-	id:       string,
-	kind:     Machine_Port_Kind,
-	cell:     [3]i32,
-	face:     Direction,
-	capacity: i64,
+	id:           string,
+	kind:         Machine_Port_Kind,
+	cell:         [3]i32,
+	face:         Direction,
+	capacity:     i64,
+	fluid_buffer: i8,
 }
 
-// A machine's ports: the kind's (validate_power_ports_of_kind), at most
+// A machine's ports: the kind's (validate_ports_of_kind), at most
 // MAXIMUM_MACHINE_PORTS, each with an id unique on the machine, a known
 // kind and face, its cell on the footprint's surface with the face out of
 // it (port_cell_is_on_the_surface), no two on one cell and face, and the
-// capacity of its kind 1 to MAXIMUM_PORT_CAPACITY with the other 0.
+// capacity of its kind up to MAXIMUM_PORT_CAPACITY, from 1 watt or from
+// MINIMUM_PIPE_LITRES_PER_SECOND, with the other 0.
 validate_machine_ports :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
-	if problem := validate_power_ports_of_kind(definition, kind); problem != "" {
+	if problem := validate_ports_of_kind(definition, kind); problem != "" {
 		return problem
 	}
 	if len(definition.ports) == 0 {
@@ -87,32 +94,44 @@ definition_electric_watts :: proc(definition: Machine_Definition) -> int {
 	return int(math.round(kilowatts * 1000))
 }
 
-// Which ports a kind lists (0368): any for the vessel kinds; outside
-// them power ports only (the fluid kind waits for the pipes, 0356), one
-// at index 0 of at least the rating on an electric machine or generator,
-// 2 to MAXIMUM_MACHINE_PORTS on a junction box, 2 on a power switch, and
-// none on any other kind.
-validate_power_ports_of_kind :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+// Which ports a kind lists (0368, 0374): any for the vessel kinds.
+// Outside them a fluid port only on a record with fluid_ports, which the
+// port meets (link_fluid_ports_to_buffers), or on a fluid junction; and
+// counting power ports only, one at index 0 of at least the rating on an
+// electric machine or generator, 2 to MAXIMUM_MACHINE_PORTS and no fluid
+// port on a junction box, 2 and no fluid port on a power switch, none on
+// any other kind. A fluid junction lists 2 to MAXIMUM_MACHINE_PORTS fluid
+// ports and no power port.
+validate_ports_of_kind :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
 	if machine_kind_is_vessel(kind) {
 		return ""
 	}
+	fluid_count := 0
 	for port in definition.ports {
-		if port.kind != machine_port_kind_names[.Power] {
-			return fmt.tprintf("machine %q port %q is not a power port, which only a vessel part may list", definition.id, port.id)
+		if port.kind != machine_port_kind_names[.Fluid] {
+			continue
 		}
+		if len(definition.fluid_ports) == 0 && kind != .Fluid_Junction {
+			return fmt.tprintf("machine %q port %q is a fluid port, which only a machine with fluid_ports, a fluid junction or a vessel part may list", definition.id, port.id)
+		}
+		fluid_count += 1
 	}
-	watts, count := definition_electric_watts(definition), len(definition.ports)
+	watts, count := definition_electric_watts(definition), len(definition.ports) - fluid_count
 	switch {
+	case kind == .Fluid_Junction:
+		if fluid_count < 2 || fluid_count > MAXIMUM_MACHINE_PORTS || count > 0 {
+			return fmt.tprintf("fluid junction %q needs 2 to %d fluid ports and no power port", definition.id, MAXIMUM_MACHINE_PORTS)
+		}
 	case watts > 0:
-		if count != 1 || definition.ports[0].capacity_watts < watts {
+		if count != 1 || definition.ports[0].kind != machine_port_kind_names[.Power] || definition.ports[0].capacity_watts < watts {
 			return fmt.tprintf("electric machine %q needs one power port, first, with capacity_watts of at least %d", definition.id, watts)
 		}
 	case kind == .Junction_Box:
-		if count < 2 || count > MAXIMUM_MACHINE_PORTS {
+		if count < 2 || count > MAXIMUM_MACHINE_PORTS || fluid_count > 0 {
 			return fmt.tprintf("junction box %q needs 2 to %d power ports", definition.id, MAXIMUM_MACHINE_PORTS)
 		}
 	case kind == .Power_Switch:
-		if count != 2 {
+		if count != 2 || fluid_count > 0 {
 			return fmt.tprintf("power switch %q needs exactly 2 power ports", definition.id)
 		}
 	case count > 0:
@@ -151,8 +170,11 @@ validate_machine_port :: proc(definition: Machine_Definition, port: Machine_Port
 		capacity, other = other, capacity
 		key, other_key = other_key, key
 	}
-	if capacity < 1 || capacity > MAXIMUM_PORT_CAPACITY {
-		return fmt.tprintf("machine %q port %q has %s %d outside 1 to %d", definition.id, port.id, key, capacity, MAXIMUM_PORT_CAPACITY)
+	// A fluid port takes the pipe's minimum, a litre a tick at 60 Hz: below
+	// it a pipe on the port would carry nothing (scale_fluid_capacities).
+	minimum := port_kind == .Fluid ? MINIMUM_PIPE_LITRES_PER_SECOND : 1
+	if capacity < minimum || capacity > MAXIMUM_PORT_CAPACITY {
+		return fmt.tprintf("machine %q port %q has %s %d outside %d to %d", definition.id, port.id, key, capacity, minimum, MAXIMUM_PORT_CAPACITY)
 	}
 	if other != 0 {
 		return fmt.tprintf("machine %q port %q is a %s port and cannot have %s", definition.id, port.id, port.kind, other_key)
@@ -175,13 +197,49 @@ resolve_machine_ports :: proc(definitions: []Machine_Port_Definition) -> (ports:
 		capacity := kind == .Power ? definition.capacity_watts : definition.capacity_litres_per_second
 		cell := definition.cell
 		ports[count] = Machine_Port {
-			id       = definition.id,
-			kind     = kind,
-			cell     = {i32(cell.x), i32(cell.y), i32(cell.z)},
-			face     = face,
-			capacity = i64(capacity),
+			id           = definition.id,
+			kind         = kind,
+			cell         = {i32(cell.x), i32(cell.y), i32(cell.z)},
+			face         = face,
+			capacity     = i64(capacity),
+			fluid_buffer = -1,
 		}
 		count += 1
 	}
 	return ports, count
+}
+
+// After resolve_fluid_ports (0374): each fluid port meets the buffer of its
+// cell and face, else the first every_face one. Outside the vessel kinds
+// and the fluid junction, whose fluid ports keep -1, a fluid port that
+// meets none is refused. A buffer without a port stays allowed: the block
+// world joins it by face.
+link_fluid_ports_to_buffers :: proc(machine: ^Machine, id: string) -> string {
+	if machine_kind_is_vessel(machine.kind) || machine.kind == .Fluid_Junction {
+		return ""
+	}
+	for &port in machine.ports[:machine.port_count] {
+		if port.kind != .Fluid {
+			continue
+		}
+		port.fluid_buffer = i8(fluid_buffer_met_by(machine^, port))
+		if port.fluid_buffer < 0 {
+			return fmt.tprintf("machine %q fluid port %q meets none of its fluid_ports", id, port.id)
+		}
+	}
+	return ""
+}
+
+// The index of the buffer on the port's cell and face, else of the first
+// every_face buffer, else -1.
+fluid_buffer_met_by :: proc(machine: Machine, port: Machine_Port) -> int {
+	every_face := -1
+	for buffer, index in fluid_ports_of(machine) {
+		if buffer.every_face {
+			every_face = every_face < 0 ? index : every_face
+		} else if buffer.cell == port.cell && buffer.face == port.face {
+			return index
+		}
+	}
+	return every_face
 }

@@ -129,6 +129,8 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 		return fluid_area_size(machine).x
 	case .Junction_Box, .Power_Switch, .Lamp:
 		return power_area_size(machine).x
+	case .Fluid_Junction:
+		return fluid_junction_area_size(machine).x
 	case .Crafting_Machine, .Lab:
 		return crafting_machine_area_width(machine)
 	case .Core_Sample_Drill:
@@ -161,6 +163,8 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 		return fluid_area_size(machine).y
 	case .Junction_Box, .Power_Switch, .Lamp:
 		return power_area_size(machine).y
+	case .Fluid_Junction:
+		return fluid_junction_area_size(machine).y
 	case .Crafting_Machine, .Lab:
 		return crafting_machine_area_height(machine, slot_count, width)
 	case .Core_Sample_Drill:
@@ -433,7 +437,11 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	case .Fluid_Machine:
 		return fluid_machine_slot_region(state, content, pool_get(&screen_context.world.entities.fluid_machines, handle)^, screen_context)
 	case .Pole, .Lamp:
-		power_panel_region(state, content, handle, screen_context)
+		if screen_context.machines.machines[common.machine].kind == .Fluid_Junction {
+			fluid_junction_panel_region(state, content, handle, screen_context)
+		} else {
+			power_panel_region(state, content, handle, screen_context)
+		}
 		return {grid = {activated = -1, focused = -1}}
 	case .Assembler:
 		return assembler_slot_region(state, content, pool_get(&screen_context.world.entities.assemblers, handle)^, screen_context)
