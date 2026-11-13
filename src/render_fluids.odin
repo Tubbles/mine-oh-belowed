@@ -3,8 +3,9 @@ package game
 import rl "shared:raylib"
 
 // Placeholder fluid models: a pipe is a small core cube with a stub
-// towards every neighbour it connects to and a band in the fluid's colour
-// whose height follows the level (the block world's draw_pipes). Fluid
+// towards every neighbour it connects to and a band in the colour of the
+// fluid its netlist carries, since a pipe holds nothing (0356, the block
+// world's draw_pipes). Fluid
 // machines are coloured boxes, drawn by draw_entities with the other
 // machines on both worlds (0362); their single face ports are squares on
 // the footprint faces, in the colour of the fluid held or taken (every
@@ -107,6 +108,12 @@ pipe_stub :: proc(centre: [3]f32, face: Direction) -> (stub_centre, size: [3]f32
 	return
 }
 
+// Steady while the pipe's netlist carries a fluid, not only on the ticks
+// litres pass, so a slow line does not blink.
+pipe_shows_band :: proc(pipe: Pipe) -> bool {
+	return pipe.buffer.fluid != NO_FLUID
+}
+
 draw_pipe :: proc(world: ^World, pipe: Pipe, machines: Machine_Registry, fluids: Fluid_Registry) {
 	centre := block_centre(pipe.origin)
 	rl.DrawCube(centre, PIPE_CORE_SIZE, PIPE_CORE_SIZE, PIPE_CORE_SIZE, PIPE_COLOR)
@@ -116,14 +123,11 @@ draw_pipe :: proc(world: ^World, pipe: Pipe, machines: Machine_Registry, fluids:
 			rl.DrawCubeV(stub_centre, size, PIPE_COLOR)
 		}
 	}
-	capacity := machines.machines[pipe.machine].buffer_litres
-	if pipe.buffer.level <= 0 || capacity <= 0 {
+	if !pipe_shows_band(pipe) {
 		return
 	}
-	height := PIPE_CORE_SIZE * f32(pipe.buffer.level) / f32(capacity)
-	bottom := centre.y - PIPE_CORE_SIZE / 2
 	band := f32(PIPE_CORE_SIZE + 2 * PIPE_BAND_MARGIN)
-	rl.DrawCubeV({centre.x, bottom + height / 2, centre.z}, {band, height, band}, fluid_color(fluids, pipe.buffer.fluid))
+	rl.DrawCubeV(centre, {band, PIPE_CORE_SIZE, band}, fluid_color(fluids, pipe.buffer.fluid))
 }
 
 // A thin square on the outside of the port's face.

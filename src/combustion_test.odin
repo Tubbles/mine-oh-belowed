@@ -141,25 +141,25 @@ test_combustion_generator_prefers_gas :: proc(t: ^testing.T) {
 	testing.expect_value(t, machine.state, Fluid_Machine_State.No_Fuel)
 }
 
-// The gas port admits only gases with a fuel value: steam in a pipe at
-// the port closes it (one mixing refusal) and stays in the pipe, while
-// petroleum gas flows in.
+// The gas port admits only gases with a fuel value: steam in a tank on
+// the port's pipe closes it (one mixing refusal) and stays in the tank,
+// while wood gas flows in.
 @(test)
 test_combustion_generator_port_refuses_steam :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
 	records := make_fluid_test_records(content)
-	pipe := lay_pipes(&world, content, {2, 1, 0})[0]
-	test_pipe(&world, pipe).buffer = {fluid = test_fluid(content, "steam"), level = 100}
+	lay_pipes(&world, content, {2, 1, 0})
+	tank := place_test_tank(&world, content, {3, 1, -2}, "steam", 100)
 	tick_test_fluids_with_statistics(&world, &records, content, 30)
 	testing.expect_value(t, test_fluid_machine(&world, generator).buffers[0].level, 0)
 	testing.expect(t, test_fluid_machine(&world, generator).closed[0])
-	testing.expect_value(t, test_pipe(&world, pipe).buffer.level, 100)
+	testing.expect_value(t, test_fluid_machine(&world, tank).buffers[0].level, 100)
 	testing.expect_value(t, records.statistics.mixing_refusals, 1)
 	// Emptied, the network forgets the steam and takes the wood gas.
-	test_pipe(&world, pipe).buffer = EMPTY_FLUID_BUFFER
+	test_fluid_machine(&world, tank).buffers[0] = EMPTY_FLUID_BUFFER
 	tick_test_fluids_with_statistics(&world, &records, content, 1)
-	test_pipe(&world, pipe).buffer = {fluid = test_fluid(content, "wood_gas"), level = 100}
+	test_fluid_machine(&world, tank).buffers[0] = {fluid = test_fluid(content, "wood_gas"), level = 100}
 	tick_test_fluids_with_statistics(&world, &records, content, 30)
 	testing.expect(t, !test_fluid_machine(&world, generator).closed[0])
 	testing.expect(t, test_fluid_machine(&world, generator).buffers[0].level > 0)

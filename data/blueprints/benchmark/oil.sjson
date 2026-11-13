@@ -8,10 +8,10 @@
 // bars from coal into a chest. Its heavy oil goes into a cracking unit,
 // whose light oil joins the refinery's in a second cracking unit; each
 // cracking unit has an offshore pump on its own pool of water. The
-// second one's petroleum gas is the waste and goes into a flare stack.
-// (A flare burns only above 90 percent of its port, so it takes gas
-// from a machine that outputs 20 litres a craft; the refinery's 45
-// would never find room next to it.) Two electric drills on the coal
+// second one's petroleum gas is the waste and goes into a flare stack,
+// its only taker on that netlist. (A flare is a relief valve: it takes
+// only the gas nothing else on its netlist asks for or keeps, and burns
+// it above 90 percent of its port.) Two electric drills on the coal
 // vein drop onto a coal belt that feeds the plant and three combustion
 // generators and ends in a sink chest. Every electric machine, the
 // offshore pumps too (work item 0140), has a cable to a junction

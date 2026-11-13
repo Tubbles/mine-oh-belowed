@@ -9,8 +9,9 @@
 // (litres of gas flare stacks burned) and generator_gas_litres (litres of
 // gas combustion generators drew).
 //
-// Placements and counters are measured, not layout: "uphill" cannot tell
-// that the pump lifts water uphill, "fractions" cannot tell that the gases
+// Placements and counters are measured, not layout: "uphill" (named for
+// the lift pumps had before 0356) cannot tell that the pump empties one
+// tank into another, "fractions" cannot tell that the gases
 // go into tanks, and "two_routes" cannot tell which route made the plastic
 // (plastic_bar is one item on both), so it asks for more plastic after
 // the gasifier is placed. Research follows the tree: fluid_handling needs

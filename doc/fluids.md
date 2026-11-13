@@ -1,46 +1,37 @@
 # Fluids, power and research
 
-How liquids, gases and electricity move, and how assemblers and labs turn them into work. Everything runs per tick in integers: litres, joules and per mille. The values (rates, buffers, heads, powers) are in `data/machines.sjson` and `data/fluids.sjson`, whose headers explain each key. The phase and ratio rules are in [content.md](content.md).
+How liquids, gases and electricity move, and how assemblers and labs turn them into work. Everything runs per tick in integers: litres, joules and per mille. The values (rates, buffers, powers) are in `data/machines.sjson` and `data/fluids.sjson`, whose headers explain each key. The phase and ratio rules are in [content.md](content.md).
 
-- A fluid network is a connected set of pipes and machine ports holding one fluid. An electric network is a set of machines and junction boxes joined by cables run by hand. Every consumer in it gets the same share of its demand, except behind a cable too thin for what lies beyond it.
+- A fluid netlist is a connected set of machine ports and the pipes that join them, carrying one fluid. An electric network is a set of machines and junction boxes joined by cables run by hand. Every consumer in it gets the same share of its demand, except behind a cable too thin for what lies beyond it.
 - Networks are rebuilt when a member is placed or removed and evaluated every tick in a fixed order, so the result never depends on timing.
 
-## Fluid networks
+## Fluid netlists
 
-`fluid_network.odin`. A segment is one pipe block or one port buffer of a machine. The litres live on the entities, so a rebuild keeps them.
+`fluid_network.odin`, on the solve of `src/netlist/` that power uses (0356). Rule: no gravity in a pipe. Height plays no part, and a gas moves as a liquid does: the phase is only a port's filter.
 
-- Pipes connect on all six faces to pipes and to ports facing them. Pipes stand on solid blocks or on other pipes, so they climb in columns.
-- A network holds one fluid: the first that enters, kept until the network is empty. A port holding another fluid, only taking another, or refusing the fluid by its phase filter is closed and moves nothing. Each closing counts as a mixing refusal (`mixing_refusals`) and the panel says why. When two networks join, pipes holding the other fluid lose it.
-- Per tick the connections run outwards from the output ports, breadth first, ties in coordinate order. Along a connection leading away from the output ports the fuller segment pushes everything it can within the flow limit and the room, so a pump's rate crosses a whole run in one tick in either direction.
-- Every other connection evens the fill fractions, rounded down, so a pipe can fill a tank past its own capacity and a litre never bounces between two full segments.
-- The flow limit per connection is the pipe's `flow_litres_per_second` in whole litres per tick.
-- Gotcha: at a branch the first downstream neighbour in coordinate order is served first, so a tank on one branch can starve an engine on the other until the tank's fill fraction passes the junction's.
+- Nodes: every port of a fluid machine, of a crafting machine with ports, a drill's revival port and a launch pad's fuel port, in pool and port order, then one junction per group of block world pipes that touch, in the order of each group's first pipe. Pipes hold nothing. The litres live in the port buffers, so a rebuild keeps them.
+- Joints: a face where a port meets a pipe or another port facing back. Each carries the pipe's `flow_litres_per_second` in whole litres a tick (20), and the joints between two nodes add up (a tank on a pipe by three faces carries 60). Joints are found on the block frame only, so a machine on a field frame is a netlist of its own ports. Pipes stand on solid blocks or on other pipes, so they climb in columns.
+- A loop (two tanks touching each other and one pipe) is cut at one joint, a chord that carries nothing, as for cables.
+- Per tick, in whole litres, each capped at what the port's joints carry: an output port offers what it holds at `FLUID_PRODUCER_ORDER`, an input port asks for its room, a storage tank's port is a store, and a flare stack's port is a store that offers nothing and takes nothing while a tank has room (Fluid machines).
+- The solve is power's (Power, Balance) with a rounding top-up: what the whole per mille levels leave undelivered goes out in one more pass per dispatch order, so a line never stalls when its litres a tick are fewer than its consumers. Power never takes the top-up.
+- Gotcha: the top-up's litres go out in the pre-order walk of the netlist from its lowest node, children in node order, so in a lasting shortage the ports late in that walk starve while the early ones run. The same holds for the producers of one order: with a demand below one producer's offer the first producer serves it and the others stand by with a full output (two boilers on one steam line whose engines ask a litre a tick). The benchmark counts such a producer, and the pump backed up behind it, as standing by, not idle ([architecture.md](architecture.md), Performance).
+- One fluid per netlist, decided each tick from the saved buffers and closed flags: of the ports holding litres, the first in node order among the open output and tank ports, else among the closed ones, else among the open input ports (`fluid_claim_rank`). A port that feeds the line and holds litres so outranks every inlet: an inlet holding what it cannot pass on (an unpowered pump's, a flare's, a recipe's unused one) names a line only while no feeder holds any, and loses it on the tick one does. A port holding another fluid, only taking another, or refusing it by its phase filter is closed and moves nothing. Each closing counts as a mixing refusal (`mixing_refusals`) and the panel says why. When two netlists join, the first such port's fluid wins and the other ports close, losing nothing.
+- The netlist is rebuilt when a pipe or a machine with ports is placed or removed, and solved every tick over every port.
 - Picking up a machine loses its fluid. Placed pipes and fluid machines do not rotate.
-
-### Height and pump head
-
-Rule: a liquid rises only as high as a running pump's head allows (0139). Gases ignore height.
-
-- A segment's height is its cell's y. A storage tank's port on every face counts at the tank's bottom.
-- Every pump kind has `head_metres` (one block is one metre), required on those kinds and refused on others. A network's head line is the highest outlet height plus head of the running pumps whose output port is in it (`tick_head_line`).
-- A liquid moves into a higher segment only while that segment is at or below the head line. Level and downhill moves are always allowed. A network without a running pump outlet, such as a refinery's output, never lifts liquid.
-- A pump runs when its output port is open, it has power or needs none, and its input side holds fluid. The offshore and tar pit pumps stand at their source, so their input side always does. The electric pump needs a litre in its input buffer, or to have moved fluid this tick, since it may have drained its input to zero doing so.
-- A pump pushing against a full output still runs, as a real pump holds its head against a closed pipe.
-- A pump moves its rate from its input side to its output side whatever the heights, and its ports sit in different networks, so pumps in series chain: each outlet sets its own network's line.
-- Pipes and every port in a fluid machine's panel show "Above the pump's head" in place of the flow when they stand above the line of a network with a running pump. Crafting machine, drill and launch pad panels do not. Pump panels show the head. Placement is not checked against the head.
+- Old saves: the litres a block world held in pipes are dropped, their fluid with them, with one line `save: dropped N litres held in pipes, which hold no fluid since 0356`. Its ports and tanks keep theirs, and a tank above its consumers still feeds them. The list of network fluids is written empty and ignored on load.
 
 ### Fluid machines
 
-`fluid_machine.odin`. One pool, the machine's kind decides the tick. Machines run before the networks, so what they make flows on in the same tick.
+`fluid_machine.odin`. One pool, the machine's kind decides the tick. Machines run before the netlists, so what they make moves on in the same tick.
 
 - Offshore pump: two blocks wide along its facing, valid with a water source in front of its intake end at its height or one below, checked at placement. It needs electricity: it pumps a full tick's litres once per power credit step, so over a second it yields its rate times its network's satisfaction exactly, and starts Unpowered.
 - Tar pit pump: placed like the offshore pump, with a block whose `fluid_source` is crude oil in front (the tar flats' pits, infinite). Its rate is litres per minute, whole litres as the minute adds up, one tick of pumping per power credit step.
-- Electric pump: its rate times the satisfaction per tick, truncated, from its input port to its output port.
+- Electric pump: a one way link between two netlists, its inlet a consumer on one and its outlet a producer on the other. It moves a full tick's litres from inlet to outlet once per power credit step, as the offshore pump does. It empties one tank into another, meters a line and keeps a fluid from flowing back.
 - Boiler: turns water into as much steam, burning fuel only on the ticks it produces.
 - Steam engine: input ports only. A litre of steam is `electric_output_kilowatts` times 1000 over `fluid_litres_per_second` joules (30 kJ), drawn a whole litre at a time only for the energy delivered.
-- Storage tank: one port on every face. Its buffer is the tank. It holds gases too.
-- Flare stack: a relief valve that burns gas only while its port is at least `FLARE_RELIEF_PERCENT` full. The network evens fill fractions, so generators and chemical plants on the same gas are served first. Burned gas counts as voided.
-- Rendering (`render_fluids.odin`): a pipe shows a stub per connection and a band at its level in the fluid's colour. Ports are coloured squares on the footprint.
+- Storage tank: one port on every face. Its buffer is the tank, and it holds gases too. A store: it gives only what the output ports cannot, after them, and fills only from what they leave once the input ports are served, never from another tank. Two tanks on one netlist never even out. A pump between their netlists moves one into the other.
+- Flare stack: a relief valve. Its port fills only from what the output ports leave once the input ports are served, never from a tank, and only while no open tank on its netlist has room, read from the buffers before the solve (`netlists_with_tank_room`). When the last room of the tanks is smaller than the leftover, the rest backs up for a tick and the flare opens on the next. A tank whose joint is saturated by the litres passing through it to the consumers still has room, so the flare stays shut and the producers back up for as long as that lasts (two producers of 40 L a tick, an inline tank, a consumer of 20). It burns gas only while the port is at least `FLARE_RELIEF_PERCENT` full. Burned gas counts as voided.
+- Rendering (`render_fluids.odin`): a pipe shows a stub per connection and, while its netlist carries a fluid, a steady band the core's height in that fluid's colour. Ports are coloured squares on the footprint. A pipe's panel shows the litres of the last full second as a rate a minute (`pipe_litres_last_second`, kept beside the netlist and never saved or hashed), since a slow line moves litres on some ticks only.
 
 ### Oil and chemistry
 

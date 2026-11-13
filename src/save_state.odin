@@ -98,16 +98,6 @@ water_update_list :: proc(flow: ^Water_Flow) -> []Water_Update {
 	return updates
 }
 
-// Networks keep the first fluid that entered them even where only machine
-// ports hold it, which a rebuild cannot see, so the fluids are saved.
-fluid_network_fluids :: proc(networks: Fluid_Networks) -> []Fluid_Id {
-	fluids := make([]Fluid_Id, len(networks.networks), context.temp_allocator)
-	for network, index in networks.networks {
-		fluids[index] = network.fluid
-	}
-	return fluids
-}
-
 // The world's lists and the records interleave in the order of the
 // format, which predates Game_Records.
 write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_Records) {
@@ -120,7 +110,9 @@ write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_R
 	write_list(bytes, water_update_list(&world.water))
 	write_entity_pools(bytes, &world.entities)
 	write_list(bytes, belt_cell_items(&world.entities))
-	write_list(bytes, fluid_network_fluids(world.entities.fluid_networks))
+	// The fluid networks' fluids until 0356: a netlist decides its fluid
+	// from the ports each tick, so the list stays empty.
+	write_list(bytes, []Fluid_Id{})
 	write_value_of(bytes, &records.statistics)
 	write_value_of(bytes, &records.research)
 	write_list(bytes, records.shipments[:])
@@ -296,10 +288,11 @@ read_entity_pools :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: M
 	return true
 }
 
-// What the rebuild after reading needs besides the pools.
+// What the rebuild after reading needs besides the pools. A save from
+// before 0356 lists its fluid networks' fluids, read and ignored.
 Loaded_Derived_State :: struct {
-	belt_items:     [dynamic]Belt_Cell_Item,
-	network_fluids: [dynamic]Fluid_Id,
+	belt_items:             [dynamic]Belt_Cell_Item,
+	dropped_network_fluids: [dynamic]Fluid_Id,
 }
 
 read_world_lists :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Records) -> bool {
@@ -350,7 +343,7 @@ read_world_state :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Rec
 	remap_machine_recipes(&world.entities, remap^, content.recipes) or_return
 	read_list(reader, &derived.belt_items) or_return
 	drop_gone_belt_items(&derived.belt_items)
-	read_list(reader, &derived.network_fluids) or_return
+	read_list(reader, &derived.dropped_network_fluids) or_return
 	statistics := saved_statistics(remap^)
 	read_value_of(reader, &statistics) or_return
 	remap_statistics(&records.statistics, statistics, remap^)
@@ -500,8 +493,8 @@ read_players :: proc(reader: ^Byte_Reader, players: ^[dynamic]Player) -> bool {
 read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, content: Simulation_Content) -> bool {
 	assert(reader.remap != nil, "save: reading the state needs the content remap")
 	derived := Loaded_Derived_State {
-		belt_items     = make([dynamic]Belt_Cell_Item, context.temp_allocator),
-		network_fluids = make([dynamic]Fluid_Id, context.temp_allocator),
+		belt_items             = make([dynamic]Belt_Cell_Item, context.temp_allocator),
+		dropped_network_fluids = make([dynamic]Fluid_Id, context.temp_allocator),
 	}
 	read_world_state(reader, &state.world, &state.records, content, &derived) or_return
 	unlocks := saved_recipe_unlocks(reader.remap^)
@@ -535,6 +528,9 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	// An older build's pod is replaced before the occupancy is built
 	// (work item 0198), so the rebuild sees only the new pod.
 	upgraded := upgrade_resized_pods(&state.world.entities, content.machines)
+	if litres := drop_pipe_litres(&state.world.entities); litres > 0 {
+		platform.log_printf("%s", pipe_litres_line(litres))
+	}
 	rebuild_loaded_world(&state.world, content.machines, derived)
 	// A deleted machine's frame of its own goes with it (0368).
 	for frame in reader.remap.deleted_frames {
@@ -677,15 +673,6 @@ rebuild_entity_lights :: proc(world: ^World, machines: Machine_Registry) {
 	}
 }
 
-restore_network_fluids :: proc(networks: ^Fluid_Networks, fluids: []Fluid_Id) {
-	if len(fluids) != len(networks.networks) {
-		return
-	}
-	for &network, index in networks.networks {
-		network.fluid = fluids[index]
-	}
-}
-
 rebuild_loaded_world :: proc(world: ^World, machines: Machine_Registry, derived: Loaded_Derived_State) {
 	rebuild_vein_indices(world)
 	entities := &world.entities
@@ -694,7 +681,6 @@ rebuild_loaded_world :: proc(world: ^World, machines: Machine_Registry, derived:
 	refresh_all_founded(entities, machines)
 	rebuild_belt_lines(entities, machines, derived.belt_items[:])
 	rebuild_fluid_networks(entities, machines)
-	restore_network_fluids(&entities.fluid_networks, derived.network_fluids[:])
 	rebuild_electric_networks(entities, machines)
 	rebuild_entity_lights(world, machines)
 }

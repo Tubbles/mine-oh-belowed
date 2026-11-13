@@ -355,11 +355,9 @@ Machine_Definition :: struct {
 	filter_slots:                 int,
 	rate_reference_ore_percent:   int,
 	fluid_ports:                  []Fluid_Port_Definition,
-	buffer_litres:                int,
 	flow_litres_per_second:       int,
 	fluid_litres_per_second:      int,
 	fluid_litres_per_minute:      int,
-	head_metres:                  int,
 	electric_output_kilowatts:    f32,
 	fuel_efficiency_percent:      int,
 	dispatch_order:               Maybe(int),
@@ -432,9 +430,7 @@ Machine :: struct {
 	rate_reference_ore_percent:  u32,
 	fluid_ports:                 [MAXIMUM_FLUID_PORTS]Fluid_Port,
 	fluid_port_count:            int,
-	// Pipes: the litres one pipe block holds, and the most litres a
-	// connection moves per second.
-	buffer_litres:               i32,
+	// Pipes: the most litres a joint moves per second (0356).
 	flow_litres_per_second:      u32,
 	// Offshore pumps and pumps: litres moved per second. Boilers: litres
 	// of steam made per second from as much water. Steam engines: litres
@@ -443,9 +439,6 @@ Machine :: struct {
 	// Tar pit pumps: litres per minute, a whole litre whenever enough
 	// ticks have added up (accumulate_litres).
 	fluid_litres_per_minute:     u32,
-	// Offshore, tar pit and electric pumps: how many blocks above their
-	// output port they lift a liquid (fluid_network.odin, 0139).
-	head_metres:                 i32,
 	// Generators (steam and combustion): the most power they give.
 	electric_output_watts:       u32,
 	// Combustion generators: the percent of a fuel item's energy they
@@ -913,9 +906,6 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_pod_heat_shield(definition, kind); problem != "" {
 		return problem
 	}
-	if problem := validate_pump_head(definition, kind); problem != "" {
-		return problem
-	}
 	if problem := validate_fuel_efficiency(definition, kind); problem != "" {
 		return problem
 	}
@@ -1030,11 +1020,9 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		electric_power_watts = u32(math.round(definition.electric_power_kilowatts * 1000)),
 		filter_slot_count = definition.filter_slots,
 		rate_reference_ore_percent = u32(max(definition.rate_reference_ore_percent, 0)),
-		buffer_litres = i32(max(definition.buffer_litres, 0)),
 		flow_litres_per_second = u32(max(definition.flow_litres_per_second, 0)),
 		fluid_litres_per_second = u32(max(definition.fluid_litres_per_second, 0)),
 		fluid_litres_per_minute = u32(max(definition.fluid_litres_per_minute, 0)),
-		head_metres = i32(max(definition.head_metres, 0)),
 		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),
 		fuel_efficiency_percent = u32(max(definition.fuel_efficiency_percent, 0)),
 		dispatch_order = u8(clamp(definition.dispatch_order.? or_else 0, 0, MAXIMUM_DISPATCH_ORDER)),

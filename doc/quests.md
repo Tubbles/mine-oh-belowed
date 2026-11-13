@@ -13,7 +13,7 @@ The design rules are in [DESIGN.md](../DESIGN.md), Research, quests and rockets.
 - Rewards arrive physically: a drop capsule on the landing pad holds the items, on a field world the pod's locker (0210), and schematics arrive as a message that unlocks the technology.
 - Contextual hints fire once, on counters the simulation already keeps.
 - World building lives in the journal's Notes tab (`data/notes.sjson`), not in quest text.
-- Chapters measure placements and production, not layout: nothing checks that a belt feeds the same furnace or that a pump lifts water. A chapter whose intent is a layout says so in its header and measures a stand in (ten lifts for a second floor).
+- Chapters measure placements and production, not layout: nothing checks that a belt feeds the same furnace or that a pipe reaches the boiler it was laid for. A chapter whose intent is a layout says so in its header and measures a stand in (ten lifts for a second floor).
 
 ## Objective types
 
@@ -77,7 +77,7 @@ The objectives, hints and rewards are in the chapter files. The intent per chapt
    - A lab and automation, with the brownout and unpowered hints, an assembler, the electric drill, a second engine.
    - Main quest "The first contract": 100 electronic circuits, paid with a crusher and a washer.
 5. Contracts. Low grade ore and its processing line, slag and concrete, alloys, the recycler, a rate contract that introduces the statistics screen. Main quest "Extraction rights" researches oil processing.
-6. Fluids. A pump uphill and a tank, tar and the refinery (the mixing hint), fractions and cracking, the flare, plastic on both routes, waste gas into a generator. Main quest "Deep mining permit" researches deep mining.
+6. Fluids. A pump and a tank, tar and the refinery (the mixing hint), fractions and cracking, the flare, plastic on both routes, waste gas into a generator. Main quest "Deep mining permit" researches deep mining.
 7. Scale. A second vein, the deep permit (prospecting, electrolysis, a bore drill), aluminium and silicon, two floors, hydro power, the grid, a cave schematic, sixty plates a minute. Main quest "Launch pad permit" researches the rocket program.
 8. Rocket program. Rocketry, the launch pad and one rocket's parts, the first launch, a contract, an orbital survey, mining productivity.
    - Main quest "Self sufficient": ship 1000 items. Its line is the soft ending in one sentence, ending "The contracts continue.", and the venture keeps offering contracts.

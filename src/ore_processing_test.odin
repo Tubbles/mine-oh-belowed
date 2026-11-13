@@ -294,14 +294,14 @@ test_washer_port_takes_water_from_pipes :: proc(t: ^testing.T) {
 	tank := place_test_fluid_entity(&world, content, "storage_tank", {5, 1, -4})
 	test_fluid_machine(&world, tank).buffers[0] = {fluid = test_fluid(content, "water"), level = 1000}
 	networks := &world.entities.fluid_networks
-	testing.expect(t, test_fluid_network_of(networks, washer, 0) >= 0)
-	testing.expect_value(t, test_fluid_network_of(networks, washer, 0), test_fluid_network_of(networks, pipes[0], -1))
+	testing.expect(t, fluid_netlist_of(networks, washer, 0) >= 0)
+	testing.expect_value(t, fluid_netlist_of(networks, washer, 0), fluid_netlist_of(networks, pipes[0], -1))
 	testing.expect(t, pipe_connects_through(&world.entities, content.machines, {6, 1, -1}, .Positive_Z))
 	tick_test_fluids(&world, content, 60)
 	testing.expect(t, pool_get(&world.entities.assemblers, washer).buffers[0].level > 0)
 	// Picking the washer up rebuilds the networks without it.
 	remove_entity(&world.entities, content.machines, washer)
-	testing.expect_value(t, test_fluid_network_of(networks, washer, 0), -1)
+	testing.expect_value(t, fluid_netlist_of(networks, washer, 0), -1)
 }
 
 @(test)
@@ -525,11 +525,10 @@ test_ore_processing_line_is_deterministic :: proc(t: ^testing.T) {
 	testing.expect(t, chest_count_of(first, outputs[0], hematite) > 0)
 	testing.expect_value(t, chest_count_of(first, outputs[0], hematite), chest_count_of(second, outputs[1], hematite))
 	testing.expect_value(t, all_records[0].statistics.produced[hematite], all_records[1].statistics.produced[hematite])
-	// Every wash drew 30 L from the tank through the pipe.
+	// Every wash drew 30 L from the tank through the pipe, which holds none.
 	tank := first.entities.fluid_machines.entries[0]
-	in_pipes := first.entities.pipes.entries[0].buffer.level
 	washer := first.entities.assemblers.entries[1]
-	drawn := 5000 - tank.buffers[0].level - in_pipes - washer.buffers[0].level
+	drawn := 5000 - tank.buffers[0].level - washer.buffers[0].level
 	partial := washer.working ? i32(washer.progress_ticks) / 2 : 0
 	testing.expect_value(t, drawn, i32(made) * 30 + partial)
 }

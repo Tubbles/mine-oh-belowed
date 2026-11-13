@@ -5,9 +5,10 @@
 //
 // An electric drill on the coal vein drops onto a coal belt running
 // south into a sink chest. Two offshore pumps, each on a pool of water
-// laid into the grass, fill one boiler's water pipe each; long
-// inserters reach over the pipes to fuel the boilers from the coal
-// belt, and their steam pipe feeds four steam engines. Each machine
+// laid into the grass, feed one boiler's inlet each through a pipe,
+// which holds nothing itself. Long inserters reach over the pipes to
+// fuel the boilers from the coal belt, and their steam pipe feeds four
+// steam engines. Each machine
 // has a cable to a junction cabinet (work item 0368), heavy from the
 // engines, and the cabinets are cabled to each other; through a power
 // switch that is on the last cabinet lights eight lamps. The boilers

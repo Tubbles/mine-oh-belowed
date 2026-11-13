@@ -5,7 +5,7 @@ import "core:fmt"
 // Fluid ports of machines (data/machines.sjson, doc/fluids.md). A port is
 // a face of one footprint cell, or with face "all" every outward face of
 // the footprint, with its own litre buffer. Ports rotate with the
-// footprint. Each port is one segment of the fluid network it touches.
+// footprint. Each port is one node of the fluid netlist it touches.
 
 MAXIMUM_FLUID_PORTS :: 4
 
@@ -235,25 +235,6 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 	return ""
 }
 
-machine_kind_is_pump :: proc(kind: Machine_Kind) -> bool {
-	return kind == .Offshore_Pump || kind == .Pump || kind == .Tar_Pit_Pump
-}
-
-// Keeps a port height plus the head far inside i32.
-MAXIMUM_HEAD_METRES :: 1000
-
-// Every pump kind lifts liquid up to a head of 1 to MAXIMUM_HEAD_METRES
-// metres (0139); no other kind has one.
-validate_pump_head :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
-	if machine_kind_is_pump(kind) && (definition.head_metres < 1 || definition.head_metres > MAXIMUM_HEAD_METRES) {
-		return fmt.tprintf("pump %q needs a head_metres from 1 to %d", definition.id, MAXIMUM_HEAD_METRES)
-	}
-	if !machine_kind_is_pump(kind) && definition.head_metres != 0 {
-		return fmt.tprintf("machine %q is not a pump and cannot have head_metres", definition.id)
-	}
-	return ""
-}
-
 // The fields that need no fluid registry.
 validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
 	footprint := definition.footprint
@@ -262,8 +243,8 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 		if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 {
 			return fmt.tprintf("pipe %q must have a 1 by 1 by 1 footprint", definition.id)
 		}
-		if definition.buffer_litres <= 0 || definition.flow_litres_per_second <= 0 {
-			return fmt.tprintf("pipe %q needs a positive buffer_litres and flow_litres_per_second", definition.id)
+		if definition.flow_litres_per_second <= 0 {
+			return fmt.tprintf("pipe %q needs a positive flow_litres_per_second", definition.id)
 		}
 	case .Offshore_Pump:
 		if definition.fluid_litres_per_second <= 0 {
@@ -366,13 +347,4 @@ port_at_face :: proc(common: Entity_Common, machine: Machine, cell: World_Coordi
 		}
 	}
 	return -1
-}
-
-// The height a port's buffer counts at for gravity: its cell, or the
-// bottom of the machine for an every face port.
-placed_port_height :: proc(common: Entity_Common, machine: Machine, port: Fluid_Port) -> i32 {
-	if port.every_face {
-		return common.origin.y
-	}
-	return placed_port_face(common, machine, port).cell.y
 }

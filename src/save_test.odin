@@ -349,10 +349,13 @@ modified_chunk_count :: proc(world: ^World) -> int {
 	return count
 }
 
-pipes_holding_fluid :: proc(entities: ^Entities) -> int {
+// Pipes hold nothing since 0356: the fluid machines' ports hold it.
+fluid_ports_holding_fluid :: proc(entities: ^Entities) -> int {
 	count := 0
-	for pipe in entities.pipes.entries {
-		count += pipe.alive && pipe.buffer.level > 0 ? 1 : 0
+	for machine in entities.fluid_machines.entries {
+		for buffer in machine.buffers {
+			count += machine.alive && buffer.level > 0 ? 1 : 0
+		}
 	}
 	return count
 }
@@ -445,7 +448,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, len(belt_cell_items(&loaded.world.entities)) > 0)
 	testing.expect(t, loaded.records.research.queued && labs_in_progress(&loaded.world.entities) > 0)
 	testing.expect(t, len(loaded.quests.messages) > 0)
-	testing.expect(t, pipes_holding_fluid(&loaded.world.entities) > 0)
+	testing.expect(t, fluid_ports_holding_fluid(&loaded.world.entities) > 0)
 	testing.expect(t, deep_veins_and_bore_drill_loaded(&loaded.world))
 	testing.expect(t, schematics_loaded(&loaded, content))
 	testing.expect(t, prospecting_loaded(&loaded.world, &loaded.records, &original.records))
@@ -455,7 +458,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, venture_loaded(&loaded.records, &original.records, content.technologies))
 	testing.expect(t, len(loaded.world.entities.loose_items.items) > 0)
 	testing.expect(t, slice.equal(loaded.world.entities.loose_items.items[:], original.world.entities.loose_items.items[:]))
-	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
+	testing.expect_value(t, fluid_netlist_count(&loaded.world.entities.fluid_networks), fluid_netlist_count(&original.world.entities.fluid_networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))
 	testing.expect_value(t, len(loaded.world.entities.frames.occupants), len(original.world.entities.frames.occupants))
@@ -956,6 +959,49 @@ test_a_save_without_frame_tables_loads_on_frame_0 :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_at(&loaded.world.entities, {3, 1, 3}), chest)
 	testing.expect_value(t, entity_common(&loaded.world.entities, chest).frame, BLOCK_FRAME)
 	testing.expect_value(t, len(loaded.world.entities.frames.occupants), len(original.world.entities.frames.occupants))
+}
+
+// Work item 0356: a block world saved while its pipes held litres, as a
+// save from before 0356 does, loads with the pipes empty of litres and
+// fluid, so they show no band before the first tick, and the ports'
+// litres kept; the line names the litres dropped, not those a removed
+// pipe's dead entry still holds, and the world saves and loads again to
+// its hash.
+@(test)
+test_an_old_save_drops_its_pipe_litres :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	header := make_save_header()
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	pipes := lay_pipes(&original.world, content, {-1, 1, 1}, {-2, 1, 1})
+	tank := place_test_tank(&original.world, content, {-5, 1, 0}, "water", 1000)
+	for pipe in pipes {
+		test_pipe(&original.world, pipe).buffer = {fluid = test_fluid(content, "water"), level = 60}
+	}
+	removed := lay_pipes(&original.world, content, {-1, 1, 6})[0]
+	test_pipe(&original.world, removed).buffer = {fluid = test_fluid(content, "water"), level = 50}
+	testing.expect(t, remove_entity(&original.world.entities, content.machines, removed))
+	bytes := encode_entities(&original, content, header)
+
+	remap: Content_Remap
+	loaded := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&loaded)
+	testing.expect_value(t, decode_entities(&loaded, content, bytes, "entities.bin", header, &remap), "")
+	for pipe in pipes {
+		testing.expect_value(t, test_pipe(&loaded.world, pipe).buffer, EMPTY_FLUID_BUFFER)
+		testing.expect(t, !pipe_shows_band(test_pipe(&loaded.world, pipe)^))
+	}
+	testing.expect_value(t, test_fluid_machine(&loaded.world, tank).buffers[0], test_fluid_machine(&original.world, tank).buffers[0])
+	testing.expect_value(t, drop_pipe_litres(&original.world.entities), 120)
+	testing.expect_value(t, pipe_litres_line(120), "save: dropped 120 litres held in pipes, which hold no fluid since 0356")
+
+	hash := simulation_state_hash(&loaded)
+	again_remap: Content_Remap
+	again := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&again)
+	testing.expect_value(t, decode_entities(&again, content, encode_entities(&loaded, content, header), "entities.bin", header, &again_remap), "")
+	testing.expect_value(t, simulation_state_hash(&again), hash)
 }
 
 // The save tests' world writing and reading a field world's tables

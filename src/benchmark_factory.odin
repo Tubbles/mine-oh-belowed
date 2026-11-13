@@ -478,6 +478,24 @@ generator_is_standing_by :: proc(kind: Machine_Kind, state: Fluid_Machine_State)
 	return machine_kind_is_generator(kind) && state == .Idle
 }
 
+// Every boiler, offshore or tar pit pump in Output_Full and every
+// electric pump idle with its output full stands by, as a generator does,
+// whatever the cause (0356). It is meant for a producer its netlist asks
+// less of than its producers offer (with a demand below one producer's
+// offer the first producer of an order serves it, and a pump backs up
+// behind the others), but it also excuses one behind a stalled line,
+// which still shows as idle through that line's consumers.
+fluid_producer_is_standing_by :: proc(fluid_machine: Fluid_Machine, machine: Machine) -> bool {
+	#partial switch machine.kind {
+	case .Boiler, .Offshore_Pump, .Tar_Pit_Pump:
+		return fluid_machine.state == .Output_Full
+	case .Pump:
+		output := port_index_of_direction(machine, .Output)
+		return fluid_machine.state == .Idle && fluid_machine.buffers[output].level >= machine.fluid_ports[output].capacity
+	}
+	return false
+}
+
 idle_machine_of :: proc(common: Entity_Common) -> Idle_Machine {
 	return Idle_Machine{machine = common.machine, cell = common.origin}
 }
@@ -485,7 +503,7 @@ idle_machine_of :: proc(common: Entity_Common) -> Idle_Machine {
 // After the idle window: drills and furnaces by their output over the
 // last minute (the rate their panels show), inserters by an idle streak
 // (nothing to pick) as long as the window, every other machine by the
-// observed activity, except a generator standing by. An inserter holding an item for a full target is not
+// observed activity, except a generator or a fluid producer standing by. An inserter holding an item for a full target is not
 // idle: its supply runs, the target is just stocked. Storage tanks hold
 // fluid and do no work, so they are left out. In the temp allocator, by
 // cell.
@@ -510,8 +528,9 @@ benchmark_idle_machines :: proc(world: ^World, second: u64, content: Simulation_
 	append_unobserved(&idle, world.entities.labs.entries[:], activity)
 	append_unobserved(&idle, world.entities.launch_pads.entries[:], activity)
 	for machine in world.entities.fluid_machines.entries {
-		kind := content.machines.machines[machine.machine].kind
-		if machine.alive && kind != .Storage_Tank && !activity[machine.handle] && !generator_is_standing_by(kind, machine.state) {
+		prototype := content.machines.machines[machine.machine]
+		standing_by := generator_is_standing_by(prototype.kind, machine.state) || fluid_producer_is_standing_by(machine, prototype)
+		if machine.alive && prototype.kind != .Storage_Tank && !activity[machine.handle] && !standing_by {
 			append(&idle, idle_machine_of(machine.common))
 		}
 	}

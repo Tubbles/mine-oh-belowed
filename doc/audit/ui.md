@@ -181,7 +181,7 @@ What the screens need from an engine side toolkit across a plugin boundary:
   - player: inventory, `held`, selected slot, crafting queue, target hit, mining state, magnetometer reading, position and movement flags, tool tier, open machine;
   - entity by handle: common data, slots (`entity_slots`), and the per kind structs of 12 kinds;
   - power: networks, participants, an entity's network (`entity_network`), brownout;
-  - fluids: buffers of an entity, `segment_is_above_head_line`;
+  - fluids: buffers of an entity, the head line (gone with 0356);
   - world records: statistics and rates, research, shipments, contracts and venture credit, veins (`registered_vein`, `vein_at_column`, `vein_is_assayed`), core samples, seismic outlines, magnetometer readings, explored surfaces, the targeted block, world settings, entity cells for map dots;
   - generator: `sample_column` for biomes (map, banner);
   - simulation: unlocks, quest state, tick, cheat speed, pending developer requests.

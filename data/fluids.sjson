@@ -1,11 +1,11 @@
 // Fluid prototypes (work item 0019, doc/fluids.md), loaded after
 // items.sjson and resolved to a dense Fluid_Id. Fluids are never items.
 // name_key is a key into data/strings/en.sjson.
-// phase is liquid or gas: liquids flow through pipes only to the same
-// height or lower, or up to the head of a running pump in their network
-// (0139), gases ignore height.
-// color is red, green, blue from 0 to 255, for the level band in pipes
-// and the port squares on machines.
+// phase is liquid or gas: what a port with a phase filter admits (the
+// flare's gas, the combustion generator's burnable gas). In a pipe both
+// move alike, whatever the heights (0356).
+// color is red, green, blue from 0 to 255, for the band in pipes that
+// carry the fluid and the port squares on machines.
 // The oil products (work item 0030): crude oil from tar pits, split by the
 // refinery into petroleum gas and the light and heavy fractions.
 // Wood gas (work item 0031) comes from the wood gasifier, the renewable

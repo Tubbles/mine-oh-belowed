@@ -6,7 +6,7 @@ import "platform"
 
 // Fluid prototypes from data/fluids.sjson (doc/fluids.md), resolved to a
 // dense Fluid_Id after the items. Fluids are never items: they live in
-// the litre buffers of pipes and machine ports (fluid_network.odin).
+// the litre buffers of machine ports, pipes hold none (fluid_network.odin).
 
 FLUIDS_FILE_NAME :: "fluids.sjson"
 
@@ -15,7 +15,8 @@ Fluid_Id :: distinct u16
 
 NO_FLUID :: Fluid_Id(max(u16))
 
-// Liquids flow only to the same height or lower, gases fill any volume.
+// What a port's phase filter admits. In a pipe a gas moves as a liquid
+// does, with no gravity (0356).
 Fluid_Phase :: enum u8 {
 	Liquid,
 	Gas,

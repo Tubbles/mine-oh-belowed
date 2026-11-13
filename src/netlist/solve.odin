@@ -22,6 +22,10 @@ package netlist
 //
 // Phase 2 charges the stores that supplied nothing from what phase 1 left
 // of the other offers and of every edge, by the same solve.
+//
+// With top_up (the fluids', 0356, top_up.odin) each phase then hands out
+// what the per mille levels left undelivered, within the phase's bounds,
+// one dispatch order at a time. Power never sets it.
 
 import "base:runtime"
 import "core:slice"
@@ -130,21 +134,21 @@ Node_Position :: struct {
 }
 
 // Called once a tick by the game.
-solve :: proc(topology: Topology, inputs: []Node_Input, outputs: []Node_Output) {
+solve :: proc(topology: Topology, inputs: []Node_Input, outputs: []Node_Output, top_up := false) {
 	for tree in 0 ..< len(topology.trees) {
-		solve_tree(topology, tree, inputs, outputs)
+		solve_tree(topology, tree, inputs, outputs, top_up = top_up)
 	}
 }
 
 // Writes the outputs of the tree's nodes. fast_path false skips the fast
 // path (tests). took_fast_path: every phase it ran ended on the fast path.
-solve_tree :: proc(topology: Topology, tree: int, inputs: []Node_Input, outputs: []Node_Output, fast_path := true) -> (took_fast_path: bool) {
+solve_tree :: proc(topology: Topology, tree: int, inputs: []Node_Input, outputs: []Node_Output, fast_path := true, top_up := false) -> (took_fast_path: bool) {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	range := topology.trees[tree]
 	phase := make_phase(topology, topology.order[range.first:][:range.count])
 	by_node := positions_by_node(phase.nodes)
 	set_supply_phase(&phase, topology, inputs)
-	took_fast_path = solve_phase(&phase, by_node, fast_path)
+	took_fast_path = solve_phase(&phase, by_node, fast_path, top_up)
 	for node, position in phase.nodes {
 		outputs[node] = Node_Output {
 			level     = phase.level[position],
@@ -156,7 +160,7 @@ solve_tree :: proc(topology: Topology, tree: int, inputs: []Node_Input, outputs:
 	if !set_charge_phase(&phase, topology, inputs, outputs) {
 		return
 	}
-	took_fast_path = solve_phase(&phase, by_node, fast_path) && took_fast_path
+	took_fast_path = solve_phase(&phase, by_node, fast_path, top_up) && took_fast_path
 	for node, position in phase.nodes {
 		outputs[node].charged = phase.delivered[position]
 		outputs[node].supplied += phase.supplied[position]
@@ -233,7 +237,7 @@ set_charge_phase :: proc(phase: ^Phase, topology: Topology, inputs: []Node_Input
 	return demand_total > 0 && offer_total > 0
 }
 
-solve_phase :: proc(phase: ^Phase, by_node: []i32, fast_path: bool) -> (took_fast_path: bool) {
+solve_phase :: proc(phase: ^Phase, by_node: []i32, fast_path, top_up: bool) -> (took_fast_path: bool) {
 	offering := offering_positions(phase^, by_node)
 	if fast_path {
 		uniform_levels(phase)
@@ -241,6 +245,10 @@ solve_phase :: proc(phase: ^Phase, by_node: []i32, fast_path: bool) -> (took_fas
 			dispatch_by_order(phase, offering)
 			tree_flows(phase)
 			if flows_within_bounds(phase^) {
+				if top_up {
+					top_up_phase(phase)
+					tree_flows(phase)
+				}
 				return true
 			}
 		}
@@ -251,6 +259,10 @@ solve_phase :: proc(phase: ^Phase, by_node: []i32, fast_path: bool) -> (took_fas
 	tree_flows(phase)
 	if !flows_within_bounds(phase^) {
 		repair_dispatch(phase)
+		tree_flows(phase)
+	}
+	if top_up {
+		top_up_phase(phase)
 		tree_flows(phase)
 	}
 	return false

@@ -11,7 +11,6 @@ Balance and design numbers wait for late beta, just before the first release (us
 - The byproduct strictness default (today strict), pending the byproduct direction in `DESIGN.md`.
 - Whether a late orbital survey contract pays a smaller survey radius instead of the full survey.
 - Where the infinite technologies sit in the tree (today behind rocket program).
-- Pump heads (0139): offshore pump 6 metres, tar pit pump 6, pump 30.
 - The fuel generator (0140): 75 kW at 25 percent fuel efficiency against the offshore pump's 60 kW. The intent is fixed: it covers the pump and little else, and its fuel goes four times as fast as a boiler's.
 
 ## Decisions needed
@@ -91,7 +90,6 @@ Written at the end of the Android app series (0112 to 0115), each with why it wa
 ## Follow ups from the crafting, power and data browser series (0129 to 0131, 0138 to 0140)
 
 - A crafting run behind a waiting front is repaired only by the next queue action, and a deficit in a run that is not at the front surfaces only once it reaches the front (0138 review). Only adjacent runs of one recipe merge, so a plan can hold two runs of one recipe apart.
-- The electric pump keeps the per tick truncation of its satisfaction scaled rate, since its Pumping state feeds the 0139 head line and its power demand (0140 review); the offshore and tar pit pumps pump a full tick's litres once per power credit step. Aligning the pump would make all three yield exactly rate times satisfaction.
 - The factory benchmark counts a generator in the Idle state as a reserve standing by behind a lower dispatch order (0140), so a generator with no load at all is no longer reported idle either.
 - The Data files screen keeps its tree until the screen is rebuilt or the game exits; it is small (0129 review). The overlay log line comes once per read, so a file read twice at start logs twice.
 - A content file's Save reloads at once rather than marking the data changed for the Reload button (0130); a `watch_data` gate would restore the item's wording. A string holding a character past printable ASCII (the strings file's `×`) or longer than 512 cannot be edited in the game and toasts. After a failed start turned the overlay off, it stays off for the run: Discard the broken file and restart; a Save meanwhile still writes and takes effect at the next start.
@@ -512,3 +510,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The limiting rule measures the spare at a cable's fed end. Measuring it where the shortage enters (the fed reach's own region and the full cables carrying power on from it) would remove the false mark on a full generator cable beside a later generator with spare (1 in 500 marks on factory shapes, 1 in 60 on box chains). Worth it if a player is misled by one; the reviewer's cases are in `limits_test.odin`'s H12 hand case.
 - A mark says which cables to raise, not which one first. The overview ranks by the shortage behind each; a "raise this one first" hint would need the re-solve the test does.
 - `Limit_Reach` is 120 bytes a node. Nothing measures the four passes' time; the night window's frame table would show them on `factory_large`.
+
+## Suggestions from the pipes' netlist (0356, 2026-11-13)
+
+- Machine ports' flow lines (tanks, boilers) show the last tick's litres and jump between the rate and 0 on slow lines. The pipe's panel sums a second; the ports could read the same way.
+- The flare stays shut while a tank on its netlist has room, also a tank that cannot take the leftover because its joint is full of through flow. A rule on what the tanks took, not on their room, would open it; it needs 20 L a tick through one tank joint to show.
+- The pump's panel prints its two ports without saying which takes and which gives.
+- Every lone port is a tree of its own and runs the whole solve each tick. An early out for one node trees is worth measuring in the night window with `test_fluid_shaped_solve_cost`.
+- The benchmark's idle rule excuses every producer at Output full. Excusing one only when another producer on its netlist supplied in the window would still show a producer whose line is cut.

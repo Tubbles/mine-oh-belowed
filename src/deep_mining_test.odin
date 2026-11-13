@@ -287,20 +287,19 @@ test_vein_revival_ignored_on_infinite_veins :: proc(t: ^testing.T) {
 test_revival_port_takes_mining_fluid_from_a_pipe :: proc(t: ^testing.T) {
 	content := make_test_content()
 	test := make_drill_power_test(content)
-	// The port faces -x from the drill's cell (0, 1, 1).
-	pipes := lay_pipes(&test.world, content, {-1, 1, 1})
+	// The port faces -x from the drill's cell (0, 1, 1), a tank meets the
+	// pipe there.
+	lay_pipes(&test.world, content, {-1, 1, 1})
 	mining_fluid := test_fluid(content, "mining_fluid")
-	test_pipe(&test.world, pipes[0]).buffer = {fluid = mining_fluid, level = 100}
-	rebuild_fluid_networks(&test.world.entities, content.machines)
+	place_test_tank(&test.world, content, {-4, 1, 0}, "mining_fluid", 100)
 	tick_fluids(&test.world.entities, content, TEST_TICK_RATE)
 	drill := test_drill(&test.world, test.drill)
 	testing.expect(t, drill.buffers[REVIVAL_PORT].level > 0)
 	testing.expect_value(t, drill.buffers[REVIVAL_PORT].fluid, mining_fluid)
 	// Water is refused: the port is filtered to mining fluid.
 	other := make_drill_power_test(content)
-	water_pipes := lay_pipes(&other.world, content, {-1, 1, 1})
-	test_pipe(&other.world, water_pipes[0]).buffer = {fluid = test_fluid(content, "water"), level = 100}
-	rebuild_fluid_networks(&other.world.entities, content.machines)
+	lay_pipes(&other.world, content, {-1, 1, 1})
+	place_test_tank(&other.world, content, {-4, 1, 0}, "water", 100)
 	tick_fluids(&other.world.entities, content, TEST_TICK_RATE)
 	testing.expect_value(t, test_drill(&other.world, other.drill).buffers[REVIVAL_PORT].level, 0)
 }

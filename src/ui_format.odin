@@ -50,6 +50,11 @@ format_litres_per_minute :: proc(litres_per_tick: i32, tick_rate: int) -> string
 	return fmt.tprintf("%s/min", format_volume(f32(litres_per_tick) * f32(tick_rate) * 60))
 }
 
+// The litres of one second, as volume per minute.
+format_second_litres_per_minute :: proc(litres_per_second: i64) -> string {
+	return fmt.tprintf("%s/min", format_volume(f32(litres_per_second) * 60))
+}
+
 format_blocks_with :: proc(table: ^String_Table, count: int) -> string {
 	word := lookup_text(table, count == 1 ? "unit_block" : "unit_blocks")
 	return fmt.tprintf("%d %s", count, word)

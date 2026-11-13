@@ -216,8 +216,11 @@
 // admits, work item 0030, or burnable_gas: gases with a
 // fuel_kilojoules_per_litre only, work item 0033) and buffer_litres. Ports turn with the
 // footprint.
-// Pipes: buffer_litres per block and flow_litres_per_second, the most a
-// connection between two segments moves (1200 is 20 litres per tick).
+// Pipes (work item 0356): flow_litres_per_second, the most one joint (a
+// face where a port meets a pipe or another port) moves (1200 is 20
+// litres per tick). Pipes that touch are one junction and hold nothing.
+// Each tick the netlist hands what output ports offer to the input ports
+// that ask, whatever the heights.
 // Offshore pump: fluid_litres_per_second into its one output port while
 // there is room and it has electric_power_kilowatts (work item 0140),
 // scaled by its network's satisfaction like the pump. Placed with the
@@ -231,9 +234,13 @@
 // fluid_litres_per_second of steam at full output, so a litre of steam is
 // electric_output_kilowatts * 1000 / fluid_litres_per_second joules
 // (30 kJ), drawn only for the energy delivered.
-// Storage tank: one port on every face, its buffer is the tank.
-// Pump: moves fluid_litres_per_second from its input to its output port
-// whatever the heights, and only with electric_power_kilowatts.
+// Storage tank: one port on every face, its buffer is the tank. A store
+// (work item 0356): it gives only what the output ports cannot and fills
+// only from what they leave after the input ports, never from another
+// tank.
+// Pump: moves fluid_litres_per_second from its input to its output port,
+// one way from one netlist into the next, and only with
+// electric_power_kilowatts (work item 0356).
 // Tar pit pump (work item 0030): placed like the offshore pump, with a
 // block whose fluid_source is its port's fluid (a tar pit) in front of its
 // intake. Pumps fluid_litres_per_minute into its one output port while it
@@ -243,8 +250,10 @@
 // powered it destroys up to fluid_litres_per_second of the gas in it,
 // counted as voided in the statistics. The power is the price of the sink.
 // Since work item 0033 it is a relief valve: it burns only while its port
-// is at least 90 percent full, so consumers on the same gas network are
-// served first.
+// is at least 90 percent full. Since work item 0356 its port fills only
+// from what the output ports leave after the input ports, and only while
+// no tank on its network has room, so consumers and tanks on the same gas
+// network are served first.
 // Combustion generator (work item 0032): one input port with phase =
 // "burnable_gas" (work item 0033, so steam stays out) and fuel_slots = 1.
 // A generator like the steam engine: gives up to
@@ -686,7 +695,6 @@ machines = [
 		kind = "pipe"
 		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
-		buffer_litres = 100
 		flow_litres_per_second = 1200
 	}
 	{
@@ -700,7 +708,6 @@ machines = [
 		footprint = {width = 2, depth = 1, height = 1}
 		fluid_litres_per_second = 1200
 		electric_power_kilowatts = 60
-		head_metres = 6
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "water", buffer_litres = 200}
 		]
@@ -768,7 +775,6 @@ machines = [
 		footprint = {width = 2, depth = 1, height = 1}
 		fluid_litres_per_second = 1200
 		electric_power_kilowatts = 30
-		head_metres = 30
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "input", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 0}, face = "positive_x", direction = "output", buffer_litres = 200}
@@ -788,7 +794,6 @@ machines = [
 		footprint = {width = 2, depth = 1, height = 1}
 		fluid_litres_per_minute = 600
 		electric_power_kilowatts = 60
-		head_metres = 6
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "crude_oil", buffer_litres = 200}
 		]

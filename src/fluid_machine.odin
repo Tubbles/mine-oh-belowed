@@ -6,8 +6,8 @@ package game
 // water tech demo's water pump (0295, field_water_pump.odin: no ports, its
 // tick in the field's). They share one pool; the machine's kind decides
 // what the tick does. Each fluid port has its own litre
-// buffer, which is a segment of the fluid network on its side
-// (fluid_network.odin). Picking a machine up loses the fluid in it.
+// buffer, a node of the fluid netlist on its side (fluid_network.odin).
+// Picking a machine up loses the fluid in it.
 
 FLUID_MACHINE_SLOT_COUNT :: 1
 BOILER_FUEL_SLOT :: 0
@@ -25,6 +25,9 @@ EMPTY_FLUID_BUFFER :: Fluid_Buffer {
 	fluid = NO_FLUID,
 }
 
+// A pipe holds nothing (0356): its buffer shows its netlist's fluid and
+// the litres through its junction in the last tick (show_pipe_flows), and
+// stays in the pool for the save layout.
 Pipe :: struct {
 	using common: Entity_Common,
 	buffer:       Fluid_Buffer,
@@ -191,9 +194,11 @@ advance_boiler :: proc(boiler: ^Fluid_Machine, machine: Machine, items: Item_Reg
 	}
 }
 
-// Moves its rate times its network's satisfaction from the input port to
-// the output port whatever the heights, and only with power. While it
-// runs its output network lifts liquid up to its head (fluid_network.odin).
+// A one way link between two netlists (0356): its input port is a
+// consumer on one, its output port a producer on the other. Only with
+// power, like the offshore pump it moves a full tick's litres once per
+// power credit step, so over a second it moves its rate times its
+// network's satisfaction, and it counts as pumping on the ticks between.
 advance_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
 	if !power_is_on(pump.power) {
 		pump.state = .Unpowered
@@ -202,15 +207,16 @@ advance_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
 	input := &pump.buffers[port_index_of_direction(machine, .Input)]
 	output_index := port_index_of_direction(machine, .Output)
 	output := &pump.buffers[output_index]
-	rate := litres_per_tick(machine.fluid_litres_per_second, tick_rate) * i32(pump.power.satisfaction) / POWER_FULL
-	amount := min(rate, input.level, buffer_room(output^, machine.fluid_ports[output_index].capacity))
+	amount := min(litres_per_tick(machine.fluid_litres_per_second, tick_rate), input.level, buffer_room(output^, machine.fluid_ports[output_index].capacity))
 	if amount <= 0 || !buffer_takes_fluid(output^, input.fluid) {
 		pump.state = .Idle
 		return
 	}
-	input.level -= amount
-	add_to_buffer(output, input.fluid, amount)
 	pump.state = .Pumping
+	if take_power_step(&pump.power) {
+		input.level -= amount
+		add_to_buffer(output, input.fluid, amount)
+	}
 }
 
 // Whole litres due this tick at a rate in litres per minute: the rate
@@ -250,9 +256,10 @@ source_pump_has_room :: proc(pump: Fluid_Machine, machine: Machine) -> bool {
 }
 
 // The flare stack is a relief valve: it burns only while its port is at
-// least this full. The network evens out fill fractions, so its port gets
-// there only once the generators and chemical plants on the same network
-// hold about as much, and the flare takes what nobody else wants.
+// least this full. Its port fills only from what the producers on its
+// netlist leave once the consumers are served, and only while no tank
+// there has room (fluid_network.odin), so it takes what nobody else asks
+// for or keeps.
 FLARE_RELIEF_PERCENT :: 90
 
 // Whether the flare stack holds gas to burn: enough gas to relieve. Its
@@ -316,7 +323,7 @@ tick_fluids :: proc(entities: ^Entities, content: Simulation_Content, tick_rate:
 			}
 		}
 	}
-	tick_fluid_networks(entities, content.fluids, pipe_flow_per_tick(content.machines, tick_rate), statistics)
+	tick_fluid_networks(entities, content.fluids, pipe_flow_per_tick(content.machines, tick_rate), tick_rate, statistics)
 }
 
 // Fuel burned, fluids drawn and made, and the flare stack's gas as voided.
@@ -335,7 +342,7 @@ record_fluid_machine_tick :: proc(statistics: ^Statistics, machine: Machine, bef
 	}
 }
 
-// The per connection flow limit comes from the pipe prototype.
+// The litres one joint carries a tick come from the pipe prototype.
 pipe_flow_per_tick :: proc(machines: Machine_Registry, tick_rate: int) -> i32 {
 	pipe := find_machine_of_kind(machines, .Pipe)
 	if pipe == NO_MACHINE {

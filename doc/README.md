@@ -6,7 +6,7 @@
 - [architecture.md](architecture.md): frame and tick, sessions, threads and chunk streaming, generation, world storage, the simulation, data loading, hot reload and the data edits overlay, strings, the save format, configuration and directories, logging, platform split, testing, the factory benchmark.
 - [content.md](content.md): the rules behind the values in the data files: units, stack and price classes, tools, hand crafting, phase budgets, gates, veins, ratio checks, world, blocks, textures, models, sounds, descriptions, the tick cost baseline.
 - [logistics.md](logistics.md): belts as transport lines, belt placement, inserters, splitters, mining drills and bore drills, loose items, item transfer.
-- [fluids.md](fluids.md): fluid networks and pump head, the fluid machines, oil and chemistry, power networks with proportional brownouts, generators and dispatch order, assemblers, labs and research.
+- [fluids.md](fluids.md): fluid netlists without gravity, the fluid machines, oil and chemistry, power networks with proportional brownouts, generators and dispatch order, assemblers, labs and research.
 - [quests.md](quests.md): quest principles, objective types, the runtime, spawn requirements, each chapter's intent, Mission Control's tone.
 - [presentation.md](presentation.md): what is drawn and heard: chunk meshes, textures and shaders, sky, weather, water, ambient life, particles, the player, machine models, sound.
 - [input.md](input.md): input backends, the input frame, the Steam Controller through SDL3 and Steam Input, the Deck, Android, bindings, hold or toggle, fly mode, what is not built yet.
