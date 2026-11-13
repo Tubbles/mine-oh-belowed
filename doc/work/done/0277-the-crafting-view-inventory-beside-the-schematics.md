@@ -1,6 +1,6 @@
 # 0277: The crafting view, the inventory beside the schematics
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 5138746f)
 
 ## Goal
 
