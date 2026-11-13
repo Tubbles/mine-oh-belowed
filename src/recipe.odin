@@ -57,7 +57,9 @@ recipe_maker_names := [Recipe_Maker]string {
 	.Stone_Cutting = "stone_cutting",
 }
 
-// The recipe browser tabs, in tab order.
+// The recipe categories: the station browser's and the picker's tabs, in
+// tab order. The categories table maps them to the crafting view's tabs
+// (crafting_tab_list).
 Recipe_Category :: enum u8 {
 	Materials,
 	Components,
@@ -145,8 +147,19 @@ Recipe_Definition :: struct {
 	former_ids: []string,
 }
 
+// The categories table (0277): crafting_tab is the category whose tab of
+// the crafting view shows the recipes of id, a category that is its own
+// tab.
+Recipe_Category_Definition :: struct {
+	id:           string,
+	crafting_tab: string,
+}
+
+// categories is optional: without it every category is its own tab, in
+// Recipe_Category order.
 Recipes_File :: struct {
-	recipes: []Recipe_Definition,
+	categories: []Recipe_Category_Definition,
+	recipes:    []Recipe_Definition,
 }
 
 // name_key is the first output's name key when the file gives none. Time
@@ -189,6 +202,10 @@ Recipe_Registry :: struct {
 	// registry, so this is how they skip schematic alternates not found
 	// yet (recipe_runs_in_machines). Nil finds none.
 	schematics_found: []bool,
+	// Each category's tab in the crafting view and the categories in the
+	// table's order (resolve_recipe_categories, crafting_tab_list).
+	crafting_tabs:    [Recipe_Category]Recipe_Category,
+	category_order:   [len(Recipe_Category)]Recipe_Category,
 }
 
 parse_recipes_file :: proc(data: []byte, allocator := context.allocator) -> (file: Recipes_File, error: json.Unmarshal_Error) {
@@ -288,6 +305,65 @@ validate_recipe_definition :: proc(definitions: []Recipe_Definition, index: int)
 		return problem
 	}
 	return validate_recipe_channel(definition)
+}
+
+// The categories table (0277). Without one every category is its own tab
+// in Recipe_Category order. A table lists each category once and maps it
+// to a category that is its own tab, the tabs in the table's order.
+resolve_recipe_categories :: proc(definitions: []Recipe_Category_Definition) -> (tabs: [Recipe_Category]Recipe_Category, order: [len(Recipe_Category)]Recipe_Category, problem: string) {
+	for category in Recipe_Category {
+		tabs[category], order[int(category)] = category, category
+	}
+	if len(definitions) == 0 {
+		return tabs, order, ""
+	}
+	if len(definitions) != len(Recipe_Category) {
+		return {}, {}, fmt.tprintf("categories: %d entries, need each of the %d categories once", len(definitions), len(Recipe_Category))
+	}
+	listed: bit_set[Recipe_Category]
+	for definition, index in definitions {
+		category, tab: Recipe_Category
+		if category, tab, problem = resolve_recipe_category(definition, index, listed); problem != "" {
+			return {}, {}, problem
+		}
+		listed += {category}
+		tabs[category], order[index] = tab, category
+	}
+	for definition, index in definitions {
+		if shown_in := tabs[tabs[order[index]]]; shown_in != tabs[order[index]] {
+			return {}, {}, fmt.tprintf("categories[%d].crafting_tab: %q is not a tab (it shows in %q)", index, definition.crafting_tab, recipe_category_names[shown_in])
+		}
+	}
+	return tabs, order, ""
+}
+
+// One entry of the table: a known category not listed before, and a known
+// tab.
+resolve_recipe_category :: proc(definition: Recipe_Category_Definition, index: int, listed: bit_set[Recipe_Category]) -> (category, tab: Recipe_Category, problem: string) {
+	found: bool
+	if category, found = parse_named_enum(recipe_category_names, definition.id); !found {
+		return {}, {}, fmt.tprintf("categories[%d].id: unknown category %q", index, definition.id)
+	}
+	if category in listed {
+		return {}, {}, fmt.tprintf("categories[%d].id: %q is listed twice", index, definition.id)
+	}
+	if tab, found = parse_named_enum(recipe_category_names, definition.crafting_tab); !found {
+		return {}, {}, fmt.tprintf("categories[%d].crafting_tab: unknown category %q", index, definition.crafting_tab)
+	}
+	return category, tab, ""
+}
+
+// The crafting view's tabs (0277): the categories that are their own tab,
+// in the table's order. A zero registry gives one tab, Materials.
+crafting_tab_list :: proc(recipes: Recipe_Registry) -> (tabs: [len(Recipe_Category)]Recipe_Category, count: int) {
+	for category in recipes.category_order {
+		if recipes.crafting_tabs[category] != category || slice.contains(tabs[:count], category) {
+			continue
+		}
+		tabs[count] = category
+		count += 1
+	}
+	return tabs, count
 }
 
 resolve_ingredient :: proc(recipe_id: string, ingredient: Recipe_Ingredient_Definition, items: Item_Registry) -> (stack: Item_Stack, problem: string) {
@@ -516,6 +592,9 @@ validate_furnace_recipes :: proc(recipes: []Recipe) -> string {
 // reference. Technology references are resolved by
 // resolve_technology_registry.
 resolve_recipe_registry :: proc(file: Recipes_File, items: Item_Registry, fluids: Fluid_Registry, allocator := context.allocator) -> (registry: Recipe_Registry, problem: string) {
+	if registry.crafting_tabs, registry.category_order, problem = resolve_recipe_categories(file.categories); problem != "" {
+		return {}, problem
+	}
 	registry.recipes = make([]Recipe, len(file.recipes), allocator)
 	tag_names := make([dynamic]string, 0, 16, allocator)
 	for definition, index in file.recipes {

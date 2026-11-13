@@ -88,6 +88,11 @@ Ui_Audit_Problem :: enum u8 {
 	Glyph_Bar_Over_Hotbar,
 	// The HUD's glyph bar dropped the hint the case keeps (0223).
 	Glyph_Hint_Dropped,
+	// A crafting view tab with neither icon nor label (0277).
+	Crafting_Tab_Blank,
+	// The crafting view's toggle label or queue summary not drawn whole
+	// (0277).
+	Crafting_Text_Cut,
 }
 
 // One screen stack to audit at every size.
@@ -101,6 +106,8 @@ Ui_Audit_Case :: struct {
 	selecting:    Entity_Handle,
 	// The crafting station whose recipe browser is audited (0196).
 	station:      Entity_Handle,
+	// The crafting view opens on its schematics half (0277).
+	schematics:   bool,
 	keyboard:     bool,
 	// The keyboard types through the system keyboard: no keys (0133).
 	system_keyboard: bool,
@@ -409,6 +416,9 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.touch {
 		audit_touch_labels_whole(audit, state, case_text, frame_name)
 	}
+	if top_screen(state.screens) == .Inventory {
+		audit_crafting_view_texts(audit, state, case_text, frame_name)
+	}
 	if audit_case.seat == .Strapped && !audit_case.touch {
 		if _, found := glyph_beside_label(state.draw_list[:], text("hint_unbuckle")); !found {
 			audit_report(audit, case_text, frame_name, .Glyph_Hint_Dropped, .Text, {}, text("hint_unbuckle"))
@@ -467,6 +477,54 @@ audit_glyph_bar_clear_of_hotbar :: proc(audit: ^Ui_Audit, state: ^Ui_State, sele
 	}
 }
 
+// The crafting view's narrow layouts (0277): every tab shows its icon or
+// its label, and the toggle's label (either key) and the queue summary
+// are drawn whole in their rectangles. Where even "Unlocked" is wider
+// than the toggle leaves it (1280x800 at UI scale 1.5 with the largest
+// text) the toggle's label is not checked.
+audit_crafting_view_texts :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_name: string) {
+	area := ui_panel_area(state)
+	layout := crafting_view_layout(inset(fitted_panel(area, CRAFTING_VIEW_WIDTH, area.height), UI_PADDING))
+	_, count := crafting_tab_list(audit.content.recipes)
+	for index in 0 ..< count {
+		tab := column_rectangle(layout.tabs, count, index, UI_GAP)
+		if !draw_list_marks(state.draw_list[:], tab) {
+			audit_report(audit, case_text, frame_name, .Crafting_Tab_Blank, .Fill, tab, "")
+		}
+	}
+	summary := queue_summary_text(audit.simulation.players[0].crafting)
+	if !draw_list_has_text_in(state.draw_list[:], summary, layout.summary) {
+		audit_report(audit, case_text, frame_name, .Crafting_Text_Cut, .Text, layout.summary, summary)
+	}
+	full, short := text("recipes_unlocked_only"), text("crafting_view_unlocked_short")
+	if ui_text_width(state, short, UI_BODY_TEXT_SIZE) > toggle_label_width(layout.toggle) {
+		return
+	}
+	if !draw_list_has_text_in(state.draw_list[:], full, layout.toggle) && !draw_list_has_text_in(state.draw_list[:], short, layout.toggle) {
+		audit_report(audit, case_text, frame_name, .Crafting_Text_Cut, .Text, layout.toggle, full)
+	}
+}
+
+// An icon or a text drawn with its centre in the area.
+draw_list_marks :: proc(commands: []Draw_Command, area: Ui_Rectangle) -> bool {
+	for command in commands {
+		if (command.kind == .Ui_Icon || (command.kind == .Text && command.text != "")) && rectangle_contains(area, rectangle_centre(command.rectangle)) {
+			return true
+		}
+	}
+	return false
+}
+
+// The text drawn whole with its centre in the area.
+draw_list_has_text_in :: proc(commands: []Draw_Command, wanted: string, area: Ui_Rectangle) -> bool {
+	for command in commands {
+		if command.kind == .Text && command.text == wanted && rectangle_contains(area, rectangle_centre(command.rectangle)) {
+			return true
+		}
+	}
+	return false
+}
+
 // Every label of the touch row shows whole, never with an ellipsis.
 audit_touch_labels_whole :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_name: string) {
 	for command in state.draw_list {
@@ -487,6 +545,9 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 		push_screen(&state.screens, screen)
 	}
 	state.configure.item = audit_case.configure_item
+	state.crafting_half = audit_case.schematics ? .Schematics : .Inventory
+	// The tab cases step from the first tab at every size.
+	audit.views.crafting_view.tab = 0
 	if audit_case.keyboard {
 		state.keyboard.field = 1
 		state.keyboard.system = audit_case.system_keyboard
@@ -965,7 +1026,6 @@ audit_touch_rows :: proc(audit: ^Ui_Audit) {
 		{name = "developer", screens = {.Pause, .Developer}},
 		{name = "textures", screens = {.Pause, .Developer, .Textures}},
 		{name = "touch layout editor", screens = {.Pause, .Settings, .Touch_Layout}},
-		{name = "recipes", screens = {.Recipes}},
 		{name = "technologies", screens = {.Technologies}},
 		{name = "journal", screens = {.Journal}},
 		{name = "journal notes", screens = {.Journal}, tab_next = len(audit.content.quests.chapters) + 1},
@@ -1029,6 +1089,28 @@ audit_new_world_bodies_water :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "new world, bodies water", screens = {.Title, .New_World}})
 }
 
+// The crafting view (0277): the walk reaches every widget of both halves,
+// each half's touch row checked whole, every tab from the schematics half,
+// and the Materials tab with Unlocked only off (the silhouettes, and the
+// walk scrolls the grid to its last cell). The list, its letter wheel, its
+// category row, "Can craft now" and the tags stay drawn by the station
+// browser's and the picker's cases.
+audit_crafting_view :: proc(audit: ^Ui_Audit) {
+	audit_case(audit, {name = "crafting view", screens = {.Inventory}, walk_focus = true})
+	audit_case(audit, {name = "crafting view touch row", screens = {.Inventory}, hud = true, touch = true})
+	audit_case(audit, {name = "crafting view schematics", screens = {.Inventory}, schematics = true})
+	audit_case(audit, {name = "crafting view schematics touch row", screens = {.Inventory}, hud = true, touch = true, schematics = true})
+	_, tab_count := crafting_tab_list(audit.content.recipes)
+	for tab in 1 ..< tab_count {
+		audit_case(audit, {name = fmt.tprintf("crafting view tab %d", tab), screens = {.Inventory}, tab_next = tab, schematics = true})
+	}
+	view := &audit.views.crafting_view
+	saved := view^
+	defer view^ = saved
+	view.available_only = false
+	audit_case(audit, {name = "crafting view, every recipe", screens = {.Inventory}, tab_next = crafting_tab_index(audit.content.recipes, .Materials), schematics = true, walk_focus = true})
+}
+
 audit_every_case :: proc(audit: ^Ui_Audit) {
 	toasts := UI_AUDIT_TOASTS
 	audit_case(audit, {name = "title", screens = {.Title}, walk_focus = true})
@@ -1070,8 +1152,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "textures", screens = {.Pause, .Developer, .Textures}, walk_focus = true})
 	audit_data_browser(audit)
 	audit_touch_layout_editor(audit)
-	audit_case(audit, {name = "inventory", screens = {.Inventory}, walk_focus = true})
-	audit_case(audit, {name = "inventory touch row", screens = {.Inventory}, hud = true, touch = true})
+	audit_crafting_view(audit)
 	simulation := &audit.simulation
 	for handle in machines_with_panels(&simulation.world, audit.content) {
 		machine := audit.content.machines.machines[entity_common(&simulation.world.entities, handle).machine]
@@ -1084,7 +1165,6 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	}
 	audit_waiting_inserter(audit)
 	audit_broken_furnace(audit)
-	audit_case(audit, {name = "recipes", screens = {.Recipes}, walk_focus = true})
 	audit_recipe_ingredient_states(audit)
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if assembler.alive && audit.content.machines.machines[assembler.machine].recipe_choice != .Fixed {
@@ -1160,7 +1240,7 @@ test_every_screen_stays_inside_the_screen :: proc(t: ^testing.T) {
 
 // The screens of work item 0094 with the shipped content: the window step
 // changes neither the recipe picker nor its category, the pause menu has
-// no Recipes and Research rows, and the inventory and a machine panel
+// no Inventory and Research rows, and the inventory and a machine panel
 // open on the selected hotbar slot.
 @(test)
 test_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
@@ -1188,7 +1268,7 @@ test_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 	push_screen(&pause.screens, .Pause)
 	screen_test_frame(audit, &pause, {})
 	testing.expect(t, draw_list_has_text(pause.draw_list[:], text("pause_journal")))
-	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("recipes_title")))
+	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("inventory_title")))
 	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("technologies_title")))
 	destroy_ui_state(&pause)
 	player := &simulation.players[0]
@@ -1325,29 +1405,38 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 
 // The burner mining drill focused over nine iron plates and an empty
 // queue (0156): its plates held, its gears craftable from them, its stone
-// furnace missing. Returns what restore_recipe_ingredient_states puts back.
-set_recipe_ingredient_states :: proc(audit: ^Ui_Audit) -> (slots: []Item_Stack, queue: Craft_Queue, browser: Recipe_Browser) {
+// furnace missing, on the crafting view's Machines tab (0277). Returns
+// what restore_recipe_ingredient_states puts back.
+set_recipe_ingredient_states :: proc(audit: ^Ui_Audit) -> (slots: []Item_Stack, queue: Craft_Queue, browser: Recipe_Browser, view: Crafting_View) {
 	player := &audit.simulation.players[0]
-	slots, queue, browser = slice.clone(player.inventory.slots, context.temp_allocator), player.crafting, audit.views.recipe_browser
+	slots, queue, browser, view = slice.clone(player.inventory.slots, context.temp_allocator), player.crafting, audit.views.recipe_browser, audit.views.crafting_view
 	slice.fill(player.inventory.slots, EMPTY_STACK)
 	inventory_add(player.inventory, audit.content.items, test_item(audit.content.items, "iron_plate"), 9)
 	player.crafting = make_craft_queue()
 	audit.views.recipe_browser.filter = {category = .Machines, available_only = true}
 	audit.views.recipe_browser.focused_recipe = test_recipe(audit.content.recipes, "burner_mining_drill")
-	return slots, queue, browser
+	audit.views.crafting_view = {tab = crafting_tab_index(audit.content.recipes, .Machines), available_only = true}
+	return slots, queue, browser, view
 }
 
-restore_recipe_ingredient_states :: proc(audit: ^Ui_Audit, slots: []Item_Stack, queue: Craft_Queue, browser: Recipe_Browser) {
+restore_recipe_ingredient_states :: proc(audit: ^Ui_Audit, slots: []Item_Stack, queue: Craft_Queue, browser: Recipe_Browser, view: Crafting_View) {
 	player := &audit.simulation.players[0]
 	copy(player.inventory.slots, slots)
 	player.crafting = queue
 	audit.views.recipe_browser.filter, audit.views.recipe_browser.focused_recipe = browser.filter, browser.focused_recipe
+	audit.views.crafting_view = view
 }
 
 audit_recipe_ingredient_states :: proc(audit: ^Ui_Audit) {
-	slots, queue, browser := set_recipe_ingredient_states(audit)
-	defer restore_recipe_ingredient_states(audit, slots, queue, browser)
-	audit_case(audit, {name = "recipes, ingredients held, craftable and missing", screens = {.Recipes}})
+	slots, queue, browser, view := set_recipe_ingredient_states(audit)
+	defer restore_recipe_ingredient_states(audit, slots, queue, browser, view)
+	audit_case(audit, {name = "crafting view, ingredients held, craftable and missing", screens = {.Inventory}, schematics = true})
+}
+
+// The crafting view pushed on its schematics half, as C opens it.
+push_crafting_view_on_schematics :: proc(state: ^Ui_State) {
+	push_screen(&state.screens, .Inventory)
+	state.crafting_half = .Schematics
 }
 
 // The colour of the first text command reading wanted.
@@ -1366,11 +1455,11 @@ draw_list_text_color :: proc(commands: []Draw_Command, wanted: string) -> (color
 test_recipe_detail_shows_how_the_queue_gets_each_ingredient :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
-	slots, queue, browser := set_recipe_ingredient_states(audit)
-	defer restore_recipe_ingredient_states(audit, slots, queue, browser)
+	slots, queue, browser, view := set_recipe_ingredient_states(audit)
+	defer restore_recipe_ingredient_states(audit, slots, queue, browser, view)
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
-	push_screen(&state.screens, .Recipes)
+	push_crafting_view_on_schematics(&state)
 	screen_test_frame(audit, &state, {})
 	items := audit.content.items
 	Expected_Row :: struct {
@@ -1395,7 +1484,8 @@ test_recipe_detail_shows_how_the_queue_gets_each_ingredient :: proc(t: ^testing.
 }
 
 // Work item 0091: a focused unlocked recipe's ingredients read have and
-// need, and the filter column offers the unlocked only toggle.
+// need, and the crafting view's header offers the unlocked only toggle
+// (0277).
 @(test)
 test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -1404,9 +1494,11 @@ test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 	plank := test_recipe(audit.content.recipes, "plank")
 	log_item := test_item(audit.content.items, "log")
 	audit.views.recipe_browser.focused_recipe = plank
+	recipes := audit.content.recipes
+	audit.views.crafting_view.tab = crafting_tab_index(recipes, recipes.crafting_tabs[recipes.recipes[plank].category])
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
-	push_screen(&state.screens, .Recipes)
+	push_crafting_view_on_schematics(&state)
 	screen_test_frame(audit, &state, {})
 	planned := planned_crafts(player.crafting, player.inventory, audit.content.recipes, audit.simulation.unlocks, plank, HAND_MAKERS, context.temp_allocator)
 	line := ingredient_line(1, item_name(audit.content.items, log_item), planned.inputs[0])
@@ -1557,11 +1649,12 @@ test_the_configure_popup_picks_the_foundation_block :: proc(t: ^testing.T) {
 	screen_test_frame(audit, &state, {})
 	testing.expect_value(t, state.focus, focus_before)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_configure")))
-	// Only once: after a tab step to Recipes and back the view focuses the
-	// selected hotbar slot, not the slot that opened the pop-up.
+	// Only once: after a window step to the journal and back the view
+	// focuses the selected hotbar slot, not the slot that opened the
+	// pop-up.
 	audit.simulation.players[0].selected_hotbar_slot = 1
 	screen_test_frame(audit, &state, {window_next = true})
-	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+	testing.expect_value(t, top_screen(state.screens), Screen.Journal)
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {window_previous = true})
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)

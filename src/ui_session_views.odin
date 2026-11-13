@@ -7,13 +7,16 @@ package game
 // frames.
 Session_Views :: struct {
 	recipe_browser:     Recipe_Browser,
+	// The crafting view's tab and Unlocked only (0277). Its focused recipe
+	// and plans are the recipe browser's.
+	crafting_view:      Crafting_View,
 	technology_browser: Technology_Browser,
 	statistics_view:    Statistics_View,
 	map_view:           Map_View,
 }
 
 make_session_views :: proc() -> Session_Views {
-	return Session_Views{recipe_browser = make_recipe_browser(), technology_browser = make_technology_browser()}
+	return Session_Views{recipe_browser = make_recipe_browser(), crafting_view = make_crafting_view(), technology_browser = make_technology_browser()}
 }
 
 // The technology browser and the statistics view own no memory.
@@ -26,6 +29,7 @@ destroy_session_views :: proc(views: ^Session_Views) {
 // and the map collects its surfaces again from the reloaded world.
 reset_session_views :: proc(views: ^Session_Views, simulation: ^Simulation_State) {
 	reset_recipe_browser(&views.recipe_browser)
+	views.crafting_view = make_crafting_view()
 	views.technology_browser = make_technology_browser()
 	views.statistics_view.has_focus = false
 	views.statistics_view.fluid_has_focus = false

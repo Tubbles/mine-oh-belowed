@@ -34,8 +34,12 @@
 // into 1 ore and 1 mud, so processing recovers the ore. Smelting ore and
 // every alloy gives 1 slag per craft (work item 0027). The times and the
 // alloy furnace recipes are guesses pending the couch tests.
-// category is the recipe browser tab: materials, components, tools,
-// machines, logistics, power, science.
+// category is one of materials, components, tools, machines, logistics,
+// power, science: the station browser's tabs. The categories table maps
+// them to the crafting view's tabs (work item 0277): each category once,
+// as {id, crafting_tab}, crafting_tab the category whose tab shows its
+// recipes, which must be its own tab. The tabs come in the table's order.
+// Without the table every category is its own tab.
 // tags are free words for the browser's tag filter, each with a string
 // recipe_tag_<tag>.
 // channel is how the recipe becomes available: start (always), discovery
@@ -50,6 +54,15 @@
 // former_ids (optional, work item 0196) lists ids the recipe had in an
 // older build: a save naming one loads it as this recipe, with one log
 // line. A former id is never a current id of the table, nor listed twice.
+categories = [
+	{id = "machines", crafting_tab = "machines"}
+	{id = "logistics", crafting_tab = "logistics"}
+	{id = "power", crafting_tab = "power"}
+	{id = "materials", crafting_tab = "materials"}
+	{id = "components", crafting_tab = "materials"}
+	{id = "science", crafting_tab = "materials"}
+	{id = "tools", crafting_tab = "tools"}
+]
 recipes = [
 	// Materials
 	{id = "plank", inputs = [{item = "log", count = 1}], outputs = [{item = "plank", count = 4}], seconds = 0.5, made_in = ["hand", "assembler"], category = "materials", tags = ["wood"], channel = "start"}

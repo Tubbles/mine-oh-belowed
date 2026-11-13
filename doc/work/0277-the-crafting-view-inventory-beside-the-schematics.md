@@ -1,6 +1,6 @@
 # 0277: The crafting view, the inventory beside the schematics
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 ## Goal
 
@@ -240,3 +240,18 @@ Changed:
 4. The narrow layout at UI scale 1.5 as designed.
 5. C on the open view closes it, as every window's own key pops one level.
 6. The title stays "Inventory".
+
+### Deviations (implementation, 2026-11-13)
+
+- Procedures beyond the list, split out to keep each small: `crafting_body_layout` (the body's two layouts), `crafting_view_frame` (the outer panel, the title row, the seam line), `crafting_view_tabs`, `crafting_view_header`, `nearest_widget_ahead` (the seam's score), `crafting_tab_index` (a category's place in the tab list, for `navigate_crafting_view` and the tests), `resolve_recipe_category` (one table entry), and `crafting_view_touch_row` in `ui_inventory.odin`.
+- `inventory_screen` takes the slot modifiers, the quick move and the active slot before the touch row, not with the later slot input: the row's Configure in Sort's place reads the active slot of the frame, as the inventory screen did before.
+- The queue summary is right aligned in the header's second column, inset by `UI_GAP`. An empty grid's `recipes_none` is drawn fitted, since the half is 188.8 wide at the smallest size.
+- Tests: `test_the_row_ignores_a_hidden_selection` parks the focus on the toggle before it selects plank, since `settle_recipe_focus` moves a focus on a cell to the cell shown. The audit case "crafting view, every recipe" reaches Materials by `tab_next` presses, as the audit resets the tab at every size. `set_recipe_ingredient_states` saves the crafting view too, and `push_crafting_view_on_schematics` (`ui_audit_test.odin`) opens the view for the two detail tests. `test_modifiers_with_a_on_a_schematic` sets the device through `Ui_Input.device`, which `ui_begin` copies to `active_device`.
+- "Clear queue" stays: the audit finds the six button row whole at the smallest touch size.
+- Review fix 1: a widget registered inside a scroll region or list carries its clip (`Ui_Widget.clip`, `Ui_State.scroll_clip`), and `ui_pointer_over` and `widget_under` ignore a point outside it, so the hover, the press and the pointer's focus miss the part scrolled out. Focus navigation still reaches it. Tests: `test_a_tap_on_the_toggle_over_the_scrolled_grid_flips_it`, `test_a_click_on_the_toggle_over_the_scrolled_grid_queues_nothing` (offset 88), `test_a_click_above_a_scrolled_list_misses_its_rows` (the crafting bench's list a row down, a click on the category row above it).
+- Review fix 2, the stacked layout (the half under 500): the tabs, then the toggle across the half's width, then the summary on its own row (right aligned, not inset), then the grid of two rows and the detail, each with a gap of 8. At 1280x800 and UI scale 1.5: W 188.8, tabs of 31.4, toggle label room 92.8, summary 188.8, grid 168 tall, detail 116 (180 before). At 1920x1080 and UI scale 1.5: W 304, tabs of 54.4, label room 208, detail 116. At 1280x800 and UI scale 1.2: W 448, tabs of 83.2, label room 352, detail 278. Side by side the header is unchanged.
+- Review fix 2, tabs: `ui_tabs` takes `icons_alone_when_cut`, which only the crafting view sets. At the smallest size the tab (31.4) is narrower than the icon (32), so the icon shrinks to the tab rather than being dropped: a dropped icon would leave a blank tab or a cut label. At 1920x1080 with the largest text the labels do not fit either ("Logistics" needs 167.9 of 150.4), so those tabs show icons too.
+- Review fix 2, the toggle's label: `crafting_view_unlocked_short` ("Unlocked") is used only in the stacked layout, where "Unlocked only" is wider than the room left beside the knob. At 1280x800, UI scale 1.5 and text 1.6 even "Unlocked" (113.7) does not fit its 92.8 and draws fitted with an ellipsis. There the audit does not check the toggle's label, which is open for the main agent. The audit's `audit_crafting_view_texts` checks every crafting view frame for a blank tab, the toggle's label (either key) and the summary drawn whole (`Crafting_Tab_Blank`, `Crafting_Text_Cut`).
+- Review fix 3: a panel without art is `inner` (`Ui_Panel.inner`), and its tooltips dock beside the panel around it (`tooltip_dock_rectangle`). At 1080p the view is 1712 wide in a 1728 wide safe area, which leaves no room for the 420 wide box on either side, so `tooltip_rectangle` puts it under the slot, inside the inventory half. A box that intersects neither half fits only where the view leaves room beside it. `test_a_slot_tooltip_docks_beside_the_crafting_view` therefore asserts at 1080p that the box stays off the schematics half, and at 1920x540 (3840 units wide) that it stays off both halves.
+- Review fix 4: turning Unlocked only on moves `focused_recipe` off a recipe the grid now hides, to the first cell shown or to `NO_RECIPE` (`test_unlocked_only_moves_the_detail_off_a_hidden_recipe`).
+- Review fix 1, an existing test: `test_panel_presses_land_at_the_next_tick` tapped the launch pad's Assemble (y 945) and Launch (y 1009), which lie below the machine side's view at 1080p (it ends at y 950), so fix 1 made the taps miss. The test now scrolls `machine_area` to its end before the taps and back to 0 before the next machine.

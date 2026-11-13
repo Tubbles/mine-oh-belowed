@@ -149,7 +149,8 @@ test_a_drag_released_off_the_slots_returns_the_stack :: proc(t: ^testing.T) {
 	player := drag_test_inventory(audit, &state)
 	coal := player.inventory.slots[3]
 	from := widget_centre(state, inventory_slot_id("hotbar", 3))
-	outside := [2]f32{100, 400}
+	// Left of the crafting view's panel (0277).
+	outside := [2]f32{40, 400}
 	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
 	slot_test_frame(audit, &state, pointer_input(outside, true))
 	testing.expect_value(t, player.held.stack, coal)
@@ -168,7 +169,7 @@ test_a_tap_outside_the_panel_closes_the_screen :: proc(t: ^testing.T) {
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
 	drag_test_inventory(audit, &state)
-	outside := [2]f32{100, 400}
+	outside := [2]f32{40, 400}
 	inside := widget_centre(state, inventory_slot_id("grid", 0))
 	slot_test_frame(audit, &state, pointer_input(inside, true, pressed = true))
 	slot_test_frame(audit, &state, pointer_input(outside, true))
@@ -458,7 +459,7 @@ test_a_modified_click_off_the_slots_is_a_plain_click :: proc(t: ^testing.T) {
 		player := drag_test_inventory(audit, &state)
 		coal := player.inventory.slots[3]
 		state.focus = inventory_slot_id("hotbar", 3)
-		panel, found := audit_panel_rectangle(state.panels[:], ui_hash(0, "inventory", -1))
+		panel, found := audit_panel_rectangle(state.panels[:], ui_hash(0, "crafting_view", -1))
 		testing.expect(t, found)
 		empty := [2]f32{panel.x + 4, panel.y + 4}
 		testing.expect_value(t, widget_under(state.widgets[:], empty), 0)
@@ -467,7 +468,7 @@ test_a_modified_click_off_the_slots_is_a_plain_click :: proc(t: ^testing.T) {
 		testing.expectf(t, player.held.stack == EMPTY_STACK, "%v: holds %v", modifier, player.held.stack)
 		testing.expectf(t, player.inventory.slots[3] == coal, "%v: hotbar 3 holds %v", modifier, player.inventory.slots[3])
 		testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
-		outside := [2]f32{100, 400}
+		outside := [2]f32{40, 400}
 		slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(outside, true, pressed = true, moved = false), modifier))
 		slot_test_frame(audit, &state, with_confirm_modifier(pointer_input(outside, false, moved = false), modifier))
 		testing.expectf(t, state.screens.count == 0, "%v: %d screens open", modifier, state.screens.count)

@@ -5,10 +5,10 @@ package game
 // through them, wrapping. A step replaces the top screen
 // (handle_screen_keys, replace_top_screen), so the stack never grows and
 // Back returns to what lies under the window: the world, or the lab's
-// panel that opened Research. 0277 folds the first two into the crafting
-// view.
+// panel that opened Research. The Inventory is the crafting view (0277).
+// The recipe browser's picker and station modes belong to machine panels.
 @(rodata)
-window_carousel := [?]Screen{.Inventory, .Recipes, .Journal, .Technologies, .Map, .Statistics, .Power}
+window_carousel := [?]Screen{.Inventory, .Journal, .Technologies, .Map, .Statistics, .Power}
 
 // The screen's place in the carousel, -1 outside it.
 window_carousel_index :: proc(screen: Screen) -> int {
@@ -30,16 +30,9 @@ step_window_carousel :: proc(screen: Screen, steps: int) -> Screen {
 	return window_carousel[(index + steps) %% len(window_carousel)]
 }
 
-// The recipe browser is a window only outside its picker and station
-// modes, which belong to a machine's panel (views nil: outside them).
-window_in_carousel :: proc(screen: Screen, views: ^Session_Views) -> bool {
-	if window_carousel_index(screen) < 0 {
-		return false
-	}
-	if screen != .Recipes || views == nil {
-		return true
-	}
-	return views.recipe_browser.selecting_for == NO_ENTITY && views.recipe_browser.station == NO_ENTITY
+// The window step acts on the screen.
+window_in_carousel :: proc(screen: Screen) -> bool {
+	return window_carousel_index(screen) >= 0
 }
 
 // The string key of a window's title, "" outside the carousel.
@@ -47,8 +40,6 @@ window_title_key :: proc(screen: Screen) -> string {
 	#partial switch screen {
 	case .Inventory:
 		return "inventory_title"
-	case .Recipes:
-		return "recipes_title"
 	case .Journal:
 		return "journal_title"
 	case .Technologies:

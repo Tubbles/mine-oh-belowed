@@ -123,6 +123,8 @@ Player_Command_Tag :: enum u8 {
 	Skip_Arrival,
 	// The placement editor's commit (0215).
 	Machine_Placement,
+	// The crafting view's Clear queue (0277).
+	Clear_Craft_Queue,
 }
 
 // A player a client's machine drives, on the host: the newest tick
@@ -290,6 +292,8 @@ encode_player_command :: proc(bytes: ^[dynamic]byte, command: Player_Command) {
 		write_tagged_command(bytes, .Craft, variant)
 	case Cancel_Craft_Command:
 		write_tagged_command(bytes, .Cancel_Craft, variant)
+	case Clear_Craft_Queue_Command:
+		write_tagged_command(bytes, .Clear_Craft_Queue, variant)
 	case Assembler_Recipe_Command:
 		write_tagged_command(bytes, .Assembler_Recipe, variant)
 	case Power_Switch_Command:
@@ -413,6 +417,8 @@ decode_player_command :: proc(reader: ^Byte_Reader) -> (command: Player_Command,
 		return read_command_value(reader, Skip_Arrival_Command)
 	case .Machine_Placement:
 		return read_command_value(reader, Machine_Placement_Command)
+	case .Clear_Craft_Queue:
+		return read_command_value(reader, Clear_Craft_Queue_Command)
 	}
 	return nil, false
 }

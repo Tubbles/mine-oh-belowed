@@ -4,7 +4,8 @@ import "core:testing"
 
 // The carousel's order (0385), written out so the tests do not read it
 // from window_carousel.
-CAROUSEL_TEST_ORDER :: [?]Screen{.Inventory, .Recipes, .Journal, .Technologies, .Map, .Statistics, .Power}
+// The Inventory is the crafting view (0277).
+CAROUSEL_TEST_ORDER :: [?]Screen{.Inventory, .Journal, .Technologies, .Map, .Statistics, .Power}
 
 @(test)
 test_the_window_carousel_steps_in_order_and_wraps :: proc(t: ^testing.T) {
@@ -13,23 +14,15 @@ test_the_window_carousel_steps_in_order_and_wraps :: proc(t: ^testing.T) {
 	for window, index in order {
 		testing.expect_value(t, step_window_carousel(window, 1), order[(index + 1) % count])
 		testing.expect_value(t, step_window_carousel(window, -1), order[(index + count - 1) % count])
-		testing.expect_value(t, step_window_carousel(window, 8), order[(index + 1) % count])
-		testing.expect(t, window_in_carousel(window, nil))
+		testing.expect_value(t, step_window_carousel(window, 7), order[(index + 1) % count])
+		testing.expect(t, window_in_carousel(window))
 	}
 	testing.expect_value(t, step_window_carousel(.Power, 1), Screen.Inventory)
 	testing.expect_value(t, step_window_carousel(.Inventory, -1), Screen.Power)
 	testing.expect_value(t, step_window_carousel(.Pause, 1), Screen.Pause)
 	testing.expect_value(t, step_window_carousel(.Machine, -1), Screen.Machine)
-	views: Session_Views
-	testing.expect(t, window_in_carousel(.Recipes, &views))
-	views.recipe_browser.selecting_for = Entity_Handle{kind = .Assembler, index = 1, generation = 1}
-	testing.expect(t, !window_in_carousel(.Recipes, &views))
-	views.recipe_browser.selecting_for = NO_ENTITY
-	views.recipe_browser.station = Entity_Handle{kind = .Foundation, index = 1, generation = 1}
-	testing.expect(t, !window_in_carousel(.Recipes, &views))
-	testing.expect(t, window_in_carousel(.Map, &views))
-	for screen in ([?]Screen{.Machine, .Configure, .Settings, .Pause}) {
-		testing.expect(t, !window_in_carousel(screen, nil))
+	for screen in ([?]Screen{.Machine, .Configure, .Settings, .Pause, .Recipes}) {
+		testing.expect(t, !window_in_carousel(screen))
 	}
 }
 
@@ -163,7 +156,7 @@ test_back_pops_one_level_of_the_stack :: proc(t: ^testing.T) {
 	defer destroy_ui_audit(audit)
 	with_audit_foundation_blocks(audit)
 	order := CAROUSEL_TEST_ORDER
-	own_keys := [?]Ui_Input{{open_inventory = true}, {open_recipes = true}, {open_journal = true}, {open_technologies = true}, {open_map = true}, {open_statistics = true}, {open_power = true}}
+	own_keys := [?]Ui_Input{{open_inventory = true}, {open_journal = true}, {open_technologies = true}, {open_map = true}, {open_statistics = true}, {open_power = true}}
 	for window, index in order {
 		for input in ([?]Ui_Input{{back = true}, {pause = true}, own_keys[index]}) {
 			state := carousel_test_state(audit, {screens = {window}})
@@ -172,6 +165,11 @@ test_back_pops_one_level_of_the_stack :: proc(t: ^testing.T) {
 			destroy_ui_state(&state)
 		}
 	}
+	// C pops the crafting view too, the inventory binding's window.
+	crafting := carousel_test_state(audit, {screens = {.Inventory}})
+	screen_test_frame(audit, &crafting, {open_recipes = true})
+	expect_screens(t, &crafting, {})
+	destroy_ui_state(&crafting)
 	lab := audit_panel_of_kind(audit, .Lab)
 	research := carousel_test_state(audit, {screens = {.Machine, .Technologies}, machine = lab})
 	screen_test_frame(audit, &research, {back = true})
@@ -226,7 +224,7 @@ test_the_keyboard_window_step_wins_over_open_inventory :: proc(t: ^testing.T) {
 		after: []Screen,
 	}
 	cases := [?]Case {
-		{{screens = {.Inventory}}, {.Recipes}},
+		{{screens = {.Inventory}}, {.Journal}},
 		{{screens = {.Machine, .Technologies}, machine = lab}, {.Machine, .Map}},
 		{{screens = {.Machine}, machine = chest}, {}},
 		{{screens = {.Machine, .Recipes}, machine = assembler, selecting = assembler}, {.Machine}},

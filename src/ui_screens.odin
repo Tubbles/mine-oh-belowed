@@ -166,19 +166,21 @@ Developer_Context :: struct {
 }
 
 // The screen stack (0385), the world being the empty stack. Push: from the
-// world Pause opens the pause menu, Open_Inventory the inventory,
-// Open_Recipes the recipe browser, Open_Journal the journal,
-// Open_Power_Overview the power overview, Open_Statistics the statistics,
-// Open_Technologies the technology screen and Open_Map the map; the
-// panels and the pause menu push theirs. Replace: on a window of the
-// carousel (in_carousel) the window step puts the previous or the next
-// window in its place, ahead of the closes, so the keyboard's E
-// (Open_Inventory and Window_Next) steps there. Pop one: Back and Pause,
-// a window's own key, and Open_Inventory on the inventory, the recipe
-// browser, the technology screen and a machine panel, except on the
-// gamepad, where the same X press is the context action. The first press
-// closes an open info panel alone. While the world falls (only_pause,
-// 0200) Pause is the one binding that opens a screen from the world.
+// world Pause opens the pause menu, Open_Inventory the crafting view on
+// its inventory half and Open_Recipes the same view on its schematics
+// half (0277), Open_Journal the journal, Open_Power_Overview the power
+// overview, Open_Statistics the statistics, Open_Technologies the
+// technology screen and Open_Map the map. The panels and the pause menu
+// push theirs. Replace: on a window of the carousel (in_carousel) the
+// window step puts the previous or the next window in its place, ahead
+// of the closes, so the keyboard's E (Open_Inventory and Window_Next)
+// steps there. Pop one: Back and Pause, a window's own key (Open_Recipes
+// on the crafting view too), and Open_Inventory on the crafting view, the
+// recipe browser, the technology screen and a machine panel, except on
+// the gamepad, where the same X press is the context action. The first
+// press closes an open info panel alone. While the world falls
+// (only_pause, 0200) Pause is the one binding that opens a screen from
+// the world.
 handle_screen_keys :: proc(state: ^Ui_State, only_pause := false, in_carousel := false) {
 	input := state.input
 	if state.screens.count == 0 {
@@ -193,8 +195,10 @@ handle_screen_keys :: proc(state: ^Ui_State, only_pause := false, in_carousel :=
 			push_screen(&state.screens, .Pause)
 		case input.open_inventory:
 			push_screen(&state.screens, .Inventory)
+			state.crafting_half = .Inventory
 		case input.open_recipes:
-			push_screen(&state.screens, .Recipes)
+			push_screen(&state.screens, .Inventory)
+			state.crafting_half = .Schematics
 		case input.open_journal:
 			push_screen(&state.screens, .Journal)
 		case input.open_power:
@@ -219,7 +223,7 @@ handle_screen_keys :: proc(state: ^Ui_State, only_pause := false, in_carousel :=
 		return
 	}
 	closes_inventory := (top == .Inventory || top == .Machine || top == .Recipes || top == .Technologies) && input.open_inventory && !input.context_action
-	closes_recipes := top == .Recipes && input.open_recipes
+	closes_recipes := (top == .Recipes || top == .Inventory) && input.open_recipes
 	closes_journal := top == .Journal && input.open_journal
 	closes_power := top == .Power && input.open_power
 	closes_technologies := top == .Technologies && input.open_technologies
@@ -304,7 +308,7 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// and the screen change land in the same frame. While the keyboard is
 	// open, Back and Pause belong to it.
 	if !typing {
-		handle_screen_keys(state, screen_context.arrival_falling, window_in_carousel(top_screen(state.screens), screen_context.views))
+		handle_screen_keys(state, screen_context.arrival_falling, window_in_carousel(top_screen(state.screens)))
 	}
 	if screen_context.waiting_for_player {
 		keep_waiting_player_screens(&state.screens)

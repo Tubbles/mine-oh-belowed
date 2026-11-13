@@ -69,11 +69,23 @@ Ui_Widget :: struct {
 	panel:     Ui_Id,
 	rectangle: Ui_Rectangle,
 	flags:     Ui_Widget_Flags,
+	// The scroll region or list it was registered in clips it: the part
+	// scrolled out takes no pointer (0277). Focus navigation ignores it.
+	clip:      Maybe(Ui_Rectangle),
+}
+
+// A point the pointer can reach under the clip: anywhere without one.
+point_in_clip :: proc(clip: Maybe(Ui_Rectangle), point: [2]f32) -> bool {
+	rectangle, clipped := clip.?
+	return !clipped || rectangle_contains(rectangle, point)
 }
 
 Ui_Panel :: struct {
 	id:        Ui_Id,
 	rectangle: Ui_Rectangle,
+	// A panel without art inside another (the crafting view's halves,
+	// 0277): its tooltips dock beside the panel around it.
+	inner:     bool,
 }
 
 Input_Device :: enum u8 {
@@ -475,6 +487,9 @@ Ui_State :: struct {
 	quick_move:       Quick_Move_State,
 	// The slot screens' active grid (0125), forgotten with the focus.
 	active_slot:      Active_Slot,
+	// The crafting view's half the focus is on (0277): set when the view
+	// opens from the world and each frame from the focused widget.
+	crafting_half:    Crafting_Half,
 	// The configure pop-up's item (0202), forgotten with the focus.
 	configure:        Configure_Popup,
 	toasts:           [dynamic]Toast,
@@ -517,6 +532,9 @@ Ui_State :: struct {
 	id_stack:         [UI_ID_STACK_CAPACITY]Ui_Id,
 	id_depth:         int,
 	current_panel:    Ui_Id,
+	// The open scroll region's or list's clip (0277): the pointer finds a
+	// widget registered inside it only within it (point_in_clip).
+	scroll_clip:      Maybe(Ui_Rectangle),
 	focused_tooltip:  string,
 	// The widget the fallback focuses when the focus belongs to no widget
 	// of the frame (ui_prefer_focus), cleared by ui_begin.
@@ -708,10 +726,11 @@ widget_index :: proc(widgets: []Ui_Widget, id: Ui_Id) -> int {
 	return -1
 }
 
-// The last widget registered under the point, since later widgets draw on top.
+// The last widget registered under the point, since later widgets draw on
+// top. A widget's part outside its clip is not under any point.
 widget_under :: proc(widgets: []Ui_Widget, point: [2]f32) -> Ui_Id {
 	#reverse for widget in widgets {
-		if rectangle_contains(widget.rectangle, point) {
+		if rectangle_contains(widget.rectangle, point) && point_in_clip(widget.clip, point) {
 			return widget.id
 		}
 	}

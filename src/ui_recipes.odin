@@ -4,26 +4,31 @@ import "core:fmt"
 import "core:slice"
 import "core:strings"
 
-// The recipe browser (DESIGN.md, User interface): the window's title row
-// (ui_window_carousel.odin), the category tabs as a focusable
-// row stepped with left and right and by the tab step (the right stick's
-// flick, `[` and `]`), the "can craft now" and "unlocked only"
-// toggles and the tag filter on the left, the
-// recipes sorted by name in the middle with the letter wheel on the left
-// pad (letter keys on the keyboard), and the focused recipe's detail on
-// the right, whose "made by" and "used in" lists walk the recipe graph.
-// Confirm on a recipe queues one hand craft, with R1 held five and with
-// L1 held the most the inventory affords, and the context action cancels
-// the newest queued craft (0276). Queuing plans the missing hand
-// craftable intermediates ahead (crafting.odin). Each row shows how many
-// of its product the inventory holds. There is no search box. On touch a
-// tap on a recipe selects it and the touch row's Craft, Craft 5, Craft
-// max and Cancel last act on the selected recipe (0137).
+// The recipe browser (DESIGN.md, User interface) of a machine's panel,
+// outside the window carousel. The window that crafts by hand is the
+// crafting view (ui_crafting_view.odin, 0277), which reuses the detail,
+// the plans and the craft input here. The browser shows its title, the
+// category tabs as a focusable row stepped with left and right and by the
+// tab step (the right stick's flick, `[` and `]`), the filter column on
+// the left, the recipes sorted by name in the middle with the letter
+// wheel on the left pad (letter keys on the keyboard), and the focused
+// recipe's detail on the right, whose "made by" and "used in" lists walk
+// the recipe graph. Each row shows how many of its product the inventory
+// holds. There is no search box.
+//
+// In the station mode, a crafting station's panel (0196), the list holds
+// the station's unlocked recipes and the filter column "Can craft now",
+// the tags and the queue summary. Confirm on a recipe queues one hand
+// craft, with R1 held five and with L1 held the most the inventory
+// affords, and the context action cancels the newest queued craft (0276).
+// Queuing plans the missing hand craftable intermediates ahead
+// (crafting.odin). On touch a tap on a recipe selects it and the touch
+// row's Craft, Craft 5, Craft max and Cancel last act on the selected
+// recipe (0137).
 //
 // In the selection mode, opened from an assembler's panel, the list holds
 // the available recipes an assembler makes, and Confirm sets the focused
-// one on the assembler and goes back to its panel. It lies outside the
-// window carousel and shows no title row.
+// one on the assembler and goes back to its panel.
 
 RECIPE_FILTER_COLUMN_WIDTH :: 380
 RECIPE_LIST_COLUMN_WIDTH :: 560
@@ -248,8 +253,9 @@ queue_summary_text :: proc(queue: Craft_Queue) -> string {
 	return fmt.tprintf("%s  %d", text("crafting_queue"), queued_craft_count(queue))
 }
 
-// The craftable and unlocked toggles, one toggle per tag of the category, and the queue
-// length at the bottom. Tags that do not fit are left out.
+// Outside the picker the craftable toggle and the queue length at the
+// bottom (a station shows only unlocked recipes, station_filter), then one
+// toggle per tag of the category. Tags that do not fit are left out.
 recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	browser := &screen_context.views.recipe_browser
 	content := area
@@ -259,10 +265,6 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 		waits := queue.waiting || craft_queue_waits_for_input(queue)
 		draw_text_fitted(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, waits ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 		ui_toggle(state, cut_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
-		// A station shows only unlocked recipes (station_filter).
-		if browser.station == NO_ENTITY {
-			ui_toggle(state, cut_row(&content), text("recipes_unlocked_only"), &browser.filter.available_only)
-		}
 	}
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_tags"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	tags := category_tags(screen_context.recipes, browser.filter.category)
@@ -452,12 +454,21 @@ craft_button_modifier :: proc(button: Touch_Button) -> (modifier: Confirm_Modifi
 	return .None, false
 }
 
+// What a press does to the crafting queue: the station browser's context
+// action and Cancel last take off the newest craft, the crafting view's
+// context action and Clear queue empty it (0277).
+Craft_Queue_Act :: enum u8 {
+	None,
+	Cancel_Last,
+	Clear,
+}
+
 // Confirm on a row queues crafts of it as the held modifier says
-// (craft_count), the context action cancels the newest craft. The touch
-// row's Craft, Craft 5 and Craft max act on the selected recipe (the
-// focused one before the tap moved the focus to the button) while the
-// list shows it, Cancel last as the context action.
-apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, selected_shown: bool, button: Touch_Button) {
+// (craft_count), the queue act the screen read off the press changes the
+// queue (apply_craft_queue_act). The touch row's Craft, Craft 5 and Craft
+// max act on the selected recipe (the focused one before the tap moved
+// the focus to the button) while the list or the grid shows it.
+apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, selected_shown: bool, button: Touch_Button, queue_act: Craft_Queue_Act) {
 	player := screen_context.player
 	recipes := screen_context.recipes
 	recipe, modifier := activated, state.confirm_modifier
@@ -471,14 +482,32 @@ apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Contex
 		}
 		queue_checked_crafts(state, screen_context, recipe, craft_count(modifier, most))
 	}
-	cancels := state.input.context_action || button == .Cancel_Craft
-	if cancels && player.crafting.count > 0 {
-		if last_craft_cancels(player.crafting, player.inventory, recipes, screen_context.items) {
-			queue_player_command(screen_context.player_commands, screen_context.player_index, Cancel_Craft_Command{})
-		} else {
-			ui_toast(state, text("inventory_full"))
-		}
+	apply_craft_queue_act(state, screen_context, queue_act)
+}
+
+// With a run queued, the act's command after the check the tick repeats:
+// refused, it toasts that the inventory is full, since only the craft in
+// progress gives ingredients back.
+apply_craft_queue_act :: proc(state: ^Ui_State, screen_context: Screen_Context, act: Craft_Queue_Act) {
+	player := screen_context.player
+	if player.crafting.count == 0 {
+		return
 	}
+	command: Player_Command
+	accepted := false
+	switch act {
+	case .None:
+		return
+	case .Cancel_Last:
+		command, accepted = Cancel_Craft_Command{}, last_craft_cancels(player.crafting, player.inventory, screen_context.recipes, screen_context.items)
+	case .Clear:
+		command, accepted = Clear_Craft_Queue_Command{}, craft_queue_clears(player.crafting, player.inventory, screen_context.recipes, screen_context.items)
+	}
+	if !accepted {
+		ui_toast(state, text("inventory_full"))
+		return
+	}
+	queue_player_command(screen_context.player_commands, screen_context.player_index, command)
 }
 
 // The planner's refusal toasts now; an accepted craft queues for the tick
@@ -656,6 +685,12 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	at_station = at_station && !selecting
+	// Outside both modes the browser has no screen (the crafting view
+	// crafts by hand, 0277): it closes as for a vanished station.
+	if !selecting && !at_station {
+		pop_screen(&state.screens)
+		return
+	}
 	makers := screen_craft_makers(screen_context)
 	refresh_craftable_recipes(&browser.plans, screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, screen_context.player.crafting, makers, screen_context.free_crafting)
 	craftable := browser.plans.craftable[:]
@@ -663,15 +698,8 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "recipes", panel)
 	content := inset(panel, UI_PADDING)
-	// The picker and the station mode belong to a machine's panel, outside
-	// the window carousel, and keep their own title.
-	if !selecting && !at_station {
-		ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
-		cut_top(&content, UI_GAP)
-	} else {
-		title := at_station ? text(station.name_key) : text("recipes_choose_title")
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), title, UI_HEADING_TEXT_SIZE, .Centre)
-	}
+	title := at_station ? text(station.name_key) : text("recipes_choose_title")
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), title, UI_HEADING_TEXT_SIZE, .Centre)
 	shown := at_station ? station_categories(screen_context.recipes, station.recipe_maker) : ~Recipe_Categories{}
 	recipe_category_tabs(state, cut_top(&content, UI_ROW_HEIGHT), browser, shown)
 	cut_top(&content, UI_GAP)
@@ -724,7 +752,9 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		}
 		return
 	}
-	apply_recipe_craft_input(state, screen_context, activated, selected_shown, button)
+	// The station browser's X and F stay Cancel last (0277).
+	queue_act := state.input.context_action || button == .Cancel_Craft ? Craft_Queue_Act.Cancel_Last : .None
+	apply_recipe_craft_input(state, screen_context, activated, selected_shown, button, queue_act)
 	if !touch {
 		recipe_glyph_bar(state)
 	}
@@ -743,9 +773,9 @@ recipe_selection_glyph_bar :: proc(state: ^Ui_State) {
 	ui_glyph_bar(state, hints[:])
 }
 
-// The modifiers' glyphs go before their Confirm, unlabelled, so the bar
-// drops each pair together. The tabs hint names the categories' tab step;
-// the window step's glyphs sit in the title row (ui_window_title_row).
+// The station browser's bar. The modifiers' glyphs go before their
+// Confirm, unlabelled, so the bar drops each pair together. The tabs hint
+// names the categories' tab step.
 recipe_glyph_bar :: proc(state: ^Ui_State) {
 	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 	append(&hints, Glyph_Hint{.Confirm, text("hint_craft")})

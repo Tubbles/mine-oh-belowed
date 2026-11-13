@@ -490,3 +490,14 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `test_solve_matches_brute_force_on_small_netlists` takes 13 s in the suite, each region table being 1,001 entries per assignment.
 - The power tests print `strings: missing key "fuel_efficiency"` and `"fuel_burn_time"`.
 - A reference that shares nothing with the solver (the reviewer's probe did this from the output alone) would let the brute force test check the greedy and the pool, which today only the definition test and the hand cases guard.
+
+## Suggestions from the crafting view (0277, 2026-11-13)
+
+- Clear queue takes one press of X and asks nothing. Only planned crafts are lost; a hold, or a second press, would guard it if it is hit by mistake at the couch.
+- The Clear queue hint shows while the queue is empty, and with a stack in hand the schematics half shows no Drop hint though the stick's click drops it.
+- The launch pad's Assemble and Launch buttons start below the fold of its panel at 1080p. A layout that keeps them in view (the buttons above the parts list, or outside the scroll region) would save the scroll.
+- Where the view fills the safe area (the Deck, the smallest size) there is no space outside the panel to tap it shut. Back closes it.
+- At 1080p a slot's tooltip has no room beside the 1712 wide view and covers part of the inventory half.
+- The stacked toggle's widget id comes from its label, so a resize that swaps "Unlocked only" for "Unlocked" drops the focus from it.
+- `scroll_clip` is not reset in `ui_begin`: an early return between a region's begin and end, which nothing does today, would carry the clip into later widgets.
+- At 720p the detail panel's Made by and Used in rows shorten their names to an ellipsis.

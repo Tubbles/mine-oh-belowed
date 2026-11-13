@@ -450,6 +450,66 @@ test_cancel_refused_when_ingredients_do_not_fit :: proc(t: ^testing.T) {
 	testing.expect_value(t, test.queue.count, 1)
 }
 
+// Work item 0277: clearing the queue gives back the craft in progress's
+// ingredients only, since the queued crafts took nothing yet, and a free
+// craft in progress gives back nothing.
+@(test)
+test_clear_returns_only_the_craft_in_progress :: proc(t: ^testing.T) {
+	{
+		test := make_crafting_test()
+		log := test_item(test.items, "log")
+		inventory_add(test.inventory, test.items, log, 3)
+		for _ in 0 ..< 3 {
+			testing.expect_value(t, queue_test_craft(&test, test_recipe(test.recipes, "plank")), Craft_Refusal.None)
+		}
+		advance_crafting_ticks(&test, 1)
+		testing.expect(t, test.queue.started)
+		testing.expect_value(t, inventory_count(test.inventory, log), 2)
+		testing.expect(t, craft_queue_clears(test.queue, test.inventory, test.recipes, test.items))
+		testing.expect(t, clear_craft_queue(&test.queue, test.inventory, test.recipes, test.items))
+		testing.expect_value(t, inventory_count(test.inventory, log), 3)
+		testing.expect_value(t, test.queue.count, 0)
+		testing.expect(t, !test.queue.started)
+		testing.expect_value(t, test.queue.progress_ticks, 0)
+	}
+	{
+		test := make_crafting_test()
+		queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "plank"), 2, HAND_MAKERS, true)
+		advance_free_crafting_ticks(&test, 1, true)
+		testing.expect(t, test.queue.started_free)
+		testing.expect(t, clear_craft_queue(&test.queue, test.inventory, test.recipes, test.items))
+		testing.expect_value(t, inventory_count(test.inventory, test_item(test.items, "log")), 0)
+		testing.expect_value(t, test.queue.count, 0)
+		testing.expect(t, !test.queue.started_free)
+	}
+}
+
+// A started craft whose ingredients do not fit back keeps the whole queue.
+// A queue whose front has not started clears into a full inventory.
+@(test)
+test_clear_refused_when_ingredients_do_not_fit :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	test.inventory = make_inventory(1, context.temp_allocator)
+	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 2)
+	plank := test_recipe(test.recipes, "plank")
+	queue_test_craft(&test, plank)
+	queue_test_craft(&test, plank)
+	advance_crafting_ticks(&test, 1)
+	inventory_remove(test.inventory, test_item(test.items, "log"), 1)
+	inventory_add(test.inventory, test.items, test_item(test.items, "stone"), 1)
+	before := test.queue
+	testing.expect(t, !craft_queue_clears(test.queue, test.inventory, test.recipes, test.items))
+	testing.expect(t, !clear_craft_queue(&test.queue, test.inventory, test.recipes, test.items))
+	testing.expect_value(t, test.queue, before)
+	waiting := Craft_Queue {
+		count = 1,
+	}
+	waiting.runs[0] = {recipe = plank, count = 1}
+	testing.expect(t, craft_queue_clears(waiting, test.inventory, test.recipes, test.items))
+	testing.expect(t, clear_craft_queue(&waiting, test.inventory, test.recipes, test.items))
+	testing.expect_value(t, waiting.count, 0)
+}
+
 // The held count of a product counts the hotbar and the main grid.
 @(test)
 test_held_count_counts_both_grids :: proc(t: ^testing.T) {

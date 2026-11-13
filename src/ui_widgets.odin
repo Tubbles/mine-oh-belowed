@@ -292,8 +292,10 @@ draw_divider :: proc(state: ^Ui_State, line: Ui_Rectangle) {
 	}
 }
 
+// Inside an open scroll region or list only within its clip, so a widget
+// scrolled out of it is not hovered and takes no press (0277).
 ui_pointer_over :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) -> bool {
-	return state.pointer_source != .None && rectangle_contains(rectangle, state.pointer)
+	return state.pointer_source != .None && rectangle_contains(rectangle, state.pointer) && point_in_clip(state.scroll_clip, state.pointer)
 }
 
 // Registers a focusable widget and reports how it is used this frame:
@@ -302,7 +304,7 @@ ui_pointer_over :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) -> bool {
 // names the widget; the last one registered under the pointer wins, as in
 // widget_under.
 ui_interact :: proc(state: ^Ui_State, id: Ui_Id, rectangle: Ui_Rectangle, flags: Ui_Widget_Flags = {}, tooltip := "") -> Ui_Interaction {
-	append(&state.widgets, Ui_Widget{id = id, panel = state.current_panel, rectangle = rectangle, flags = flags})
+	append(&state.widgets, Ui_Widget{id = id, panel = state.current_panel, rectangle = rectangle, flags = flags, clip = state.scroll_clip})
 	focused := state.focus == id
 	hovered := ui_pointer_over(state, rectangle)
 	if focused && tooltip != "" {
@@ -315,12 +317,17 @@ ui_interact :: proc(state: ^Ui_State, id: Ui_Id, rectangle: Ui_Rectangle, flags:
 	return Ui_Interaction{focused = focused, hovered = hovered, activated = (focused && state.confirm) || tapped}
 }
 
-// Widgets inside a panel move focus among each other; the tooltip docks to it.
-ui_panel_begin :: proc(state: ^Ui_State, label: string, rectangle: Ui_Rectangle) {
+// Widgets inside a panel move focus among each other, and the tooltip
+// docks to it. Without art the panel only scopes the focus and the ids (the
+// crafting view's halves inside its one panel, 0277), and the tooltip
+// docks to the panel around it (tooltip_dock_rectangle).
+ui_panel_begin :: proc(state: ^Ui_State, label: string, rectangle: Ui_Rectangle, art := true) {
 	id := ui_push_id(state, label)
 	state.current_panel = id
-	append(&state.panels, Ui_Panel{id = id, rectangle = rectangle})
-	draw_panel_art(state, rectangle, theme_color(state, .Panel), theme_color(state, .Panel_Edge))
+	append(&state.panels, Ui_Panel{id = id, rectangle = rectangle, inner = !art})
+	if art {
+		draw_panel_art(state, rectangle, theme_color(state, .Panel), theme_color(state, .Panel_Edge))
+	}
 }
 
 ui_panel_end :: proc(state: ^Ui_State) {
@@ -382,6 +389,11 @@ toggle_knob_rectangle :: proc(track: Ui_Rectangle, position: f32) -> Ui_Rectangl
 // Label on the left, a switch on the right: a track, filled in the accent
 // while on, and a knob that slides to the side of the value. Returns true
 // when flipped.
+// The room a toggle of the rectangle leaves its label, left of the track.
+toggle_label_width :: proc(rectangle: Ui_Rectangle) -> f32 {
+	return max(rectangle.width - 2 * UI_PADDING - UI_TOGGLE_WIDTH - UI_GAP, 0)
+}
+
 ui_toggle :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, value: ^bool, tooltip := "") -> bool {
 	id := ui_id(state, label)
 	interaction := ui_interact(state, id, rectangle, {}, tooltip)
@@ -391,7 +403,7 @@ ui_toggle :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, valu
 	theme := ui_theme(state)
 	widget_background(state, rectangle, id, interaction)
 	label_area := inset(rectangle, UI_PADDING)
-	label_area.width = max(label_area.width - UI_TOGGLE_WIDTH - UI_GAP, 0)
+	label_area.width = toggle_label_width(rectangle)
 	draw_text_fitted(state, label_area, label, UI_BODY_TEXT_SIZE, .Left)
 	track := Ui_Rectangle {
 		rectangle.x + rectangle.width - UI_PADDING - UI_TOGGLE_WIDTH,
@@ -604,6 +616,25 @@ draw_tab_label :: proc(state: ^Ui_State, tab: Ui_Rectangle, label: string, icon:
 	}
 }
 
+// Whether every label of the strip draws whole beside its icon, as
+// draw_tab_label lays them out.
+tab_labels_whole :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, labels: []string) -> bool {
+	for label, index in labels {
+		content := inset(column_rectangle(rectangle, len(labels), index, UI_GAP), UI_GAP)
+		if content.height < UI_TAB_ICON_SIZE || ui_text_width(state, label, UI_BODY_TEXT_SIZE) > content.width - UI_TAB_ICON_SIZE - UI_GAP {
+			return false
+		}
+	}
+	return true
+}
+
+// A tab's icon alone, centred, as large as the tab allows up to
+// UI_TAB_ICON_SIZE (0277).
+draw_tab_icon :: proc(state: ^Ui_State, tab: Ui_Rectangle, icon: Ui_Icon) {
+	size := min(UI_TAB_ICON_SIZE, tab.width, tab.height)
+	draw_ui_icon(state, {tab.x + (tab.width - size) / 2, tab.y + (tab.height - size) / 2, size, size}, icon)
+}
+
 // How a tab strip is stepped. Stepped: the tab step (Ui_Input.tab_previous
 // and tab_next) cycles the tabs and the strip is not a focus target, so
 // the stick moves only between the widgets of the open tab. Focus: the
@@ -630,8 +661,10 @@ step_tab_selection :: proc(selected, count: int, previous, next: bool) -> int {
 
 // The pointer picks a tab in either mode. The selection lives in the UI
 // state under the tab strip's id. icons, when given, holds one icon per
-// tab, drawn before its label.
-ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string, icons: []Ui_Icon = nil, mode := Ui_Tabs_Mode.Stepped) -> int {
+// tab, drawn before its label. With icons_alone_when_cut every tab draws
+// its icon alone while any label would not draw whole beside its icon
+// (the crafting view's tabs, 0277).
+ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string, icons: []Ui_Icon = nil, mode := Ui_Tabs_Mode.Stepped, icons_alone_when_cut := false) -> int {
 	id := ui_id(state, label)
 	count := len(labels)
 	if count == 0 {
@@ -647,6 +680,7 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 		selected = step_tab_selection(selected, count, step == .Left, step == .Right)
 	}
 	theme := ui_theme(state)
+	icons_alone := icons_alone_when_cut && len(icons) >= count && !tab_labels_whole(state, rectangle, labels)
 	for tab_label, index in labels {
 		tab := column_rectangle(rectangle, count, index, UI_GAP)
 		if state.click && ui_pointer_over(state, tab) {
@@ -654,6 +688,10 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 		}
 		hovered := ui_pointer_over(state, tab)
 		draw_fill(state, tab, widget_fill_color(theme, hovered, hovered && state.pointer_held))
+		if icons_alone {
+			draw_tab_icon(state, tab, icons[index])
+			continue
+		}
 		icon: Maybe(Ui_Icon)
 		if index < len(icons) {
 			icon = icons[index]
@@ -694,6 +732,7 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 	focus_inside := false
 	activated := -1
 	push_command(state, {kind = .Clip_Begin, rectangle = rectangle})
+	state.scroll_clip = rectangle
 	for item, index in items {
 		item_id := ui_id(state, "item", index)
 		row_top := f32(index) * UI_ROW_HEIGHT
@@ -712,6 +751,7 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 		draw_text_fitted(state, inset(row, UI_PADDING), item, UI_BODY_TEXT_SIZE, .Left)
 	}
 	push_command(state, {kind = .Clip_End})
+	state.scroll_clip = nil
 	scroll -= pointer_drag_scroll(state, rectangle)
 	if focus_inside || ui_pointer_over(state, rectangle) {
 		scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds
@@ -752,6 +792,7 @@ scroll_region_begin :: proc(state: ^Ui_State, label: string, area: Ui_Rectangle,
 		first_command  = len(state.draw_list) + 1,
 	}
 	push_command(state, {kind = .Clip_Begin, rectangle = area})
+	state.scroll_clip = area
 	return region, {area.x, area.y - region.scroll, area.width, region.content_height}
 }
 
@@ -763,6 +804,7 @@ scroll_region_end :: proc(state: ^Ui_State, region: Scroll_Region) {
 		content_height = max(content_height, command.rectangle.y + command.rectangle.height - content_top)
 	}
 	push_command(state, {kind = .Clip_End})
+	state.scroll_clip = nil
 	scroll := region.scroll - pointer_drag_scroll(state, region.area)
 	focus_inside := false
 	for widget in state.widgets[region.first_widget:] {
@@ -1278,6 +1320,9 @@ Touch_Button :: enum u8 {
 	// The most crafts the inventory affords, as L1 with A (0276).
 	Craft_Most,
 	Cancel_Craft,
+	// Empties the crafting queue, as the context action on the crafting
+	// view's schematics (0277).
+	Clear_Craft_Queue,
 	Choose_Recipe,
 	Research,
 	Zoom_In,
@@ -1304,6 +1349,7 @@ touch_button_keys := [Touch_Button]string {
 	.Craft_Five           = "touch_button_craft_five",
 	.Craft_Most           = "touch_button_craft_most",
 	.Cancel_Craft         = "touch_button_cancel_craft",
+	.Clear_Craft_Queue    = "touch_button_clear_craft_queue",
 	.Choose_Recipe        = "touch_button_choose_recipe",
 	.Research             = "touch_button_research",
 	.Zoom_In              = "touch_button_zoom_in",
@@ -1450,6 +1496,28 @@ tooltip_shows :: proc(state: Ui_State, widget: Ui_Widget) -> bool {
 	return .Tooltip_Shows_Itself in widget.flags && rested
 }
 
+// What a widget's tooltip docks beside: its panel, or for an inner panel
+// the first other panel around its centre (the crafting view's, 0277), so
+// a half's tooltip leaves the other half alone. The widget without a
+// panel.
+tooltip_dock_rectangle :: proc(panels: []Ui_Panel, widget: Ui_Widget) -> Ui_Rectangle {
+	own := Ui_Panel{rectangle = widget.rectangle}
+	for panel in panels {
+		if panel.id == widget.panel {
+			own = panel
+		}
+	}
+	if !own.inner {
+		return own.rectangle
+	}
+	for panel in panels {
+		if !panel.inner && panel.id != UI_GLYPH_BAR_PANEL && rectangle_contains(panel.rectangle, rectangle_centre(own.rectangle)) {
+			return panel.rectangle
+		}
+	}
+	return own.rectangle
+}
+
 // The focused widget's tooltip (tooltip_shows), wrapped to the tooltip's
 // width.
 append_tooltip :: proc(state: ^Ui_State) {
@@ -1458,16 +1526,10 @@ append_tooltip :: proc(state: ^Ui_State) {
 		return
 	}
 	widget := state.widgets[focus_index]
-	panel_rectangle := widget.rectangle
-	for panel in state.panels {
-		if panel.id == widget.panel {
-			panel_rectangle = panel.rectangle
-		}
-	}
 	safe := ui_safe_area(state)
 	text_width := min(f32(UI_TOOLTIP_WIDTH), safe.width) - 2 * UI_PADDING
 	lines := wrap_text(state, state.focused_tooltip, UI_BODY_TEXT_SIZE, text_width)
-	box := tooltip_rectangle(panel_rectangle, widget.rectangle, safe, f32(len(lines)) * UI_LINE_HEIGHT + 2 * UI_PADDING)
+	box := tooltip_rectangle(tooltip_dock_rectangle(state.panels[:], widget), widget.rectangle, safe, f32(len(lines)) * UI_LINE_HEIGHT + 2 * UI_PADDING)
 	draw_panel_art(state, box, theme_color(state, .Tooltip), theme_color(state, .Accent))
 	draw_text_lines(state, inset(box, UI_PADDING), lines)
 }
@@ -1634,6 +1696,7 @@ Scroll_List :: struct {
 scroll_list_begin :: proc(state: ^Ui_State, label: string, area: Ui_Rectangle, count: int) -> Scroll_List {
 	id := ui_push_id(state, label)
 	push_command(state, {kind = .Clip_Begin, rectangle = area})
+	state.scroll_clip = area
 	return Scroll_List{id = id, area = area, scroll = state.scroll_offsets[id], count = count, keeps_focus_in_view = !state.focus_scrolled_away}
 }
 
@@ -1650,6 +1713,7 @@ scroll_list_keep_visible :: proc(list: ^Scroll_List, position: int) {
 
 scroll_list_end :: proc(state: ^Ui_State, list: ^Scroll_List) {
 	push_command(state, {kind = .Clip_End})
+	state.scroll_clip = nil
 	list.scroll -= pointer_drag_scroll(state, list.area)
 	if list.focus_inside || ui_pointer_over(state, list.area) {
 		list.scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds

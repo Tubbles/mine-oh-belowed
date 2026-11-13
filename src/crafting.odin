@@ -535,6 +535,34 @@ cancel_last_craft :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Re
 	return true
 }
 
+// What clear_craft_queue would do (0277): a run queued, and the
+// ingredients of a started front craft fit back into the inventory. A
+// front craft not started yet, or started free, gives nothing back.
+craft_queue_clears :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, items: Item_Registry) -> bool {
+	if queue.count == 0 {
+		return false
+	}
+	return !queue.started || queue.started_free || inventory_fits_all(inventory, items, recipes.recipes[queue.runs[0].recipe].inputs)
+}
+
+// Empties the queue, all or nothing. Only the started front craft holds
+// ingredients (a waiting one too) and gives them back. The clear is
+// refused (false) when they no longer fit, so nothing is lost. The queued
+// runs took nothing.
+clear_craft_queue :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, items: Item_Registry) -> bool {
+	if !craft_queue_clears(queue^, inventory, recipes, items) {
+		return false
+	}
+	if queue.started && !queue.started_free {
+		for input in recipes.recipes[queue.runs[0].recipe].inputs {
+			inventory_add(inventory, items, input.item, int(input.count))
+		}
+	}
+	queue.count = 0
+	reset_front_craft(queue)
+	return true
+}
+
 // The front craft takes its ingredients, or names the first missing one.
 // Under free crafting it starts at once and takes nothing (started_free).
 start_front_craft :: proc(queue: ^Craft_Queue, inventory: Inventory, recipe: Recipe, free_crafting := false) -> bool {

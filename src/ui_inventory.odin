@@ -1,13 +1,15 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 
-// The inventory screen: the 36 slot grid and the hotbar as slot grids, with
-// the slot interaction from doc/ui.md and the quick move between the
-// hotbar and the backpack (quick_transfer.odin). Menu_Drop (the right
-// stick click, X on the keyboard) puts the cursor's stack, or the focused
-// one with nothing held, onto the ground in front of the player
-// (loose_item.odin). It does not pause the simulation.
+// The inventory screen, the crafting view's inventory half (0277): the 36
+// slot grid and the hotbar as slot grids, with the slot interaction from
+// doc/ui.md and the quick move between the hotbar and the backpack
+// (quick_transfer.odin). Menu_Drop (the right stick click, X on the
+// keyboard) puts the cursor's stack, or the focused one with nothing
+// held, onto the ground in front of the player (loose_item.odin). It does
+// not pause the simulation.
 
 INVENTORY_COLUMNS :: 9
 INVENTORY_ROWS :: PLAYER_GRID_SLOT_COUNT / INVENTORY_COLUMNS
@@ -280,24 +282,34 @@ selected_hotbar_slot_id :: proc(state: ^Ui_State, player: ^Player) -> Ui_Id {
 	return ui_hash(ui_id(state, "hotbar"), "slot", player.selected_hotbar_slot)
 }
 
+// The crafting view (0277, ui_crafting_view.odin): the inventory half
+// left, the schematics half right, in one panel under the window's title
+// row. The focus stays in its half but for Left and Right across the seam
+// (crafting_seam_target). The half it is on (Ui_State.crafting_half)
+// picks the preferred focus, the touch row, the glyph bar and what the
+// context action does.
 inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
+	browser := &screen_context.views.recipe_browser
 	ui_backdrop(state)
-	// The heading row of inventory_panel_height is the window's title row.
-	panel := fitted_panel(ui_panel_area(state), slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, inventory_panel_height() + UI_GAP)
-	ui_panel_begin(state, "inventory", panel)
+	area := ui_panel_area(state)
+	panel := fitted_panel(area, CRAFTING_VIEW_WIDTH, area.height)
+	layout := crafting_view_layout(inset(panel, UI_PADDING))
+	crafting_view_frame(state, panel, layout)
+	ui_panel_begin(state, "inventory", layout.inventory, art = false)
+	inventory_panel := state.current_panel
 	// Back from the configure pop-up focuses the slot that opened it, once:
 	// the frame after the focus landed there the view prefers the
 	// selected hotbar slot again (a window step there and back).
 	if state.focus == state.configure.return_focus {
 		state.configure.return_focus = 0
 	}
-	ui_prefer_focus(state, state.configure.return_focus != 0 ? state.configure.return_focus : selected_hotbar_slot_id(state, player))
-	content := inset(panel, UI_PADDING)
-	ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
-	cut_top(&content, UI_GAP)
-	slots := player_slot_region(state, content, player, items)
+	slot_preferred := state.configure.return_focus != 0 ? state.configure.return_focus : selected_hotbar_slot_id(state, player)
+	slots := player_slot_region(state, layout.inventory, player, items)
 	ui_panel_end(state)
+	schematics := schematics_half(state, screen_context, layout)
+	state.crafting_half = crafting_half_of_focus(state.widgets[:], state.focus, inventory_panel, schematics.panel, state.crafting_half)
+	on_schematics := state.crafting_half == .Schematics
 	modifiers := slot_modifier_input(state^, stack_is_empty(player.held.stack))
 	slots.activated = apply_inventory_quick_move_input(state, screen_context, slots, modifiers)
 	state.active_slot = active_slot_after_focus(state.active_slot, slots.focused, -1)
@@ -307,13 +319,34 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// the tapped one, which the active slot keeps while a finger is on
 	// the row.
 	configurable := configurable_slot_item(player^, screen_context.content, touch ? player_slot_index(active) : slots.focused)
-	button := touch ? ui_touch_row(state, inventory_touch_buttons(configurable != NO_ITEM), INVENTORY_TOUCH_LAYOUT) : .None
-	configures := configurable != NO_ITEM && (state.input.context_action || button == .Configure)
+	// Before the focus settles: a focus on the row's button belongs to
+	// neither half, so the half and the selection stay.
+	button := touch ? crafting_view_touch_row(state, on_schematics, configurable != NO_ITEM) : .None
+	// On touch a tap on a cell selects the recipe and the row's buttons
+	// commit.
+	activated := schematics.activated
+	if activated != NO_RECIPE && tap_selects_only(state) {
+		focus_recipe_row(state, browser, schematics.grid, activated)
+		activated = NO_RECIPE
+	}
+	if on_schematics {
+		ui_prefer_focus(state, schematics.toggle)
+		settle_recipe_focus(state, browser, schematics.grid, schematics.visible)
+	} else {
+		ui_prefer_focus(state, slot_preferred)
+	}
+	if schematics.reached != NO_RECIPE {
+		navigate_crafting_view(&screen_context.views.crafting_view, browser, screen_context.recipes, screen_context.unlocks^, schematics.reached)
+	}
+	if target := crafting_seam_target(state.widgets[:], state.focus, state.navigation_step, inventory_panel, schematics.panel); target != 0 {
+		state.requested_focus, state.navigation_step = target, .None
+	}
+	configures := !on_schematics && configurable != NO_ITEM && (state.input.context_action || button == .Configure)
 	slot_input := Inventory_Slot_Input {
 		activated      = slots.activated,
 		focused        = slots.focused,
 		secondary      = modifiers.split_pressed,
-		context_action = state.input.context_action && !configures && sort_target_grid(active.grid) == .Main,
+		context_action = !on_schematics && state.input.context_action && !configures && sort_target_grid(active.grid) == .Main,
 		drag_drop      = state.slot_drag.released,
 		drag_hand      = dragged_hand_item(screen_context),
 	}
@@ -323,6 +356,10 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if transfer.target != .None {
 		queue_slot_command(state, screen_context, Grid_Transfer_Command{machine = NO_ENTITY, transfer = transfer})
 	}
+	// The row's craft buttons act on the selected recipe while the grid
+	// shows it.
+	selected_shown := slice.contains(schematics.visible, browser.focused_recipe)
+	apply_recipe_craft_input(state, screen_context, activated, selected_shown, button, crafting_view_queue_act(state.input.context_action && on_schematics, button))
 	if screen_context.world != nil && (state.input.drop || button == .Drop) {
 		dropped_slot := button == .Drop ? player_slot_index(active) : slots.focused
 		if drop_command, drops := drop_stack_command(player^, dropped_slot); drops {
@@ -331,12 +368,25 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	finish_slot_drag(state, screen_context)
 	draw_held_stack(state, player.held.stack, items)
-	if !touch {
+	switch {
+	case touch:
+	case on_schematics:
+		crafting_view_glyph_bar(state, state.focus == recipe_row_id(schematics.grid, browser.focused_recipe))
+	case:
 		inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, quick_move = true, drop = true, configure = configurable != NO_ITEM)
 	}
 	if configures {
 		open_configure_popup(state, configurable)
 	}
+}
+
+// The half's touch row: the inventory's, laid out for Configure, or the
+// schematics' (CRAFTING_VIEW_TOUCH_BUTTONS).
+crafting_view_touch_row :: proc(state: ^Ui_State, on_schematics, configurable: bool) -> Touch_Button {
+	if on_schematics {
+		return ui_touch_row(state, CRAFTING_VIEW_TOUCH_BUTTONS)
+	}
+	return ui_touch_row(state, inventory_touch_buttons(configurable), INVENTORY_TOUCH_LAYOUT)
 }
 
 // The inventory's touch row (0125, 0137): the slot buttons on the active

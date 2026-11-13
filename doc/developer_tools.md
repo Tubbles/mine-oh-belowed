@@ -23,7 +23,7 @@ The screens a developer uses in a running game: the Developer screen, the diagno
 
 - The diagnostics and overlay entries act at once. Screenshot and Reload data are frame requests the frame loop serves after the frame, and the editors open their screens. Everything else queues a `Developer_Request` for the simulation, applied when the game resumes, with a toast saying so.
 - Cheat speed: three times the movement speed (`CHEAT_SPEED_FACTOR`), hand mining in a tenth of the ticks, a walk steps up one block ledges and a jump reaches about 2.2 blocks. The walk cycle, head bob and footsteps count the walked distance divided by three, and the chop and mining hits keep their period, so nothing looks or sounds faster.
-- Free crafting (0234): every craft the player orders, by hand, at a station or at a bench, is accepted whatever the inventory holds and takes nothing; the recipe browser marks every unlocked recipe of the makers craftable. It unlocks nothing (Unlock all does) and keeps the recipe's time and the station rule ([content.md](content.md), Hand crafting). A simulation flag like cheat speed: not saved, in the state hash and the join snapshot.
+- Free crafting (0234): every craft the player orders, by hand, at a station or at a bench, is accepted whatever the inventory holds and takes nothing; the crafting view and the station browser mark every unlocked recipe of the makers craftable. It unlocks nothing (Unlock all does) and keeps the recipe's time and the station rule ([content.md](content.md), Hand crafting). A simulation flag like cheat speed: not saved, in the state hash and the join snapshot.
 
 ## Diagnostics pages
 

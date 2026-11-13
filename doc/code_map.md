@@ -107,9 +107,10 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `ui_multiplayer.odin`: the Multiplayer screen (0188), `Multiplayer_State` and its list of `Lan_Game` (`add_lan_answer`, `prune_lan_games`), the join request.
   - `ui_tech_demo.odin`: the Tech demos list (0302) and the Tech demo screen (0291), `Tech_Demo_Setup` and its rows' steps, the tech demo request, the bare flag's screens (`push_tech_demo_menu`).
   - `ui_inventory.odin`, `quick_transfer.odin`: the inventory screen, `finish_slot_drag` and `queue_slot_command`; the quick move state machine and the transfer buttons, which queue slot commands.
+  - `ui_crafting_view.odin`: the crafting view's layout, its schematics half (tabs, grid, detail), the seam's focus step and its glyph bar (0277), drawn by `inventory_screen`.
   - `ui_machine.odin`: the machine panel frame, furnace, inserter, drill and splitter sections.
   - `ui_crafting_machines.odin`, `ui_fluid.odin`, `ui_power.odin`, `ui_launch_pad.odin`, `ui_prospecting.odin`, `ui_contracts.odin`: the panel sections for assemblers and labs, fluids, power, launch pads, prospecting, the venture.
-  - `ui_recipes.odin`, `ui_recipe_browser.odin`: the recipe screen; its pure filtering and detail.
+  - `ui_recipes.odin`, `ui_recipe_browser.odin`: the recipe screen of the picker and the station; its pure filtering and detail.
   - `ui_technologies.odin`, `ui_technology_browser.odin`: the technology screen; its pure filtering.
   - `ui_statistics.odin`, `ui_map.odin`, `ui_journal.odin`, `ui_mission_control.odin`: statistics; `Map_View`; the journal; Mission Control and the discovery card.
   - `ui_session_views.odin`: `Session_Views`, the played world's browsers, statistics and map, made, destroyed and reset with the session.
@@ -119,7 +120,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `touch_overlay.odin`: the virtual gamepad, its layout files, gestures, drawing ([touch_overlay.md](touch_overlay.md)).
   - `haptics.odin`, `haptics_android.odin`, `haptics_desktop.odin`: `Haptic_Request` and the rumble constants for every target; the phone's vibrator, through the JNI helpers of the platform package; the desktop stub.
   - `system_keyboard.odin`, `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: `System_Keyboard_Field`, a text field's window rectangle; show and hide the platform keyboard for it.
-- State: `Ui_State` (60 fields, one per viewport), `Screen_Context` (32), `Hud_Context`, `Input_Frame`, `Touch_Overlay_State`, `Title_State`; `Session_Views` (the map and the browsers) sits beside the session on each viewport's `Viewport_Interaction`.
+- State: `Ui_State` (62 fields, one per viewport), `Screen_Context` (32), `Hud_Context`, `Input_Frame`, `Touch_Overlay_State`, `Title_State`; `Session_Views` (the map and the browsers) sits beside the session on each viewport's `Viewport_Interaction`.
 - Tests: every `*_test.odin` beside its file; `ui_audit_test.odin` draws every screen at every audit size, `ui_pointer_test.odin` the pointer and taps, `accessibility_test.odin`.
 - Reaches into: tools 47 (accepted: the Data files screen on `Data_Browser` 33, the edits directory field's `set_edits_directory` and `edits_directory_done_toast` 2 (0228), the diagnostics page names 3, a `block_name` field as noise 9), loop 10 (accepted 3: `Touch_Overlay_Context` in `touch_overlay.odin` names `Frame_Interaction`, `Game_Content` and `Session`, 0158; accepted 1: `touch_interaction_frame` reads the tap's aimed frame cell from the predicted field player through `lockstep_view_player`, 0194; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
 

@@ -258,33 +258,31 @@ audit_crafting_bench :: proc(audit: ^Ui_Audit) -> Entity_Handle {
 	return NO_ENTITY
 }
 
-// The recipe browser open on the plank recipe's focused row, as a window
-// of the carousel or (station) a crafting station's panel, with the
-// inventory holding logs and nothing queued. Returns the row's id.
-open_recipe_browser_on_plank :: proc(audit: ^Ui_Audit, state: ^Ui_State, station: Entity_Handle, logs: u16) -> Ui_Id {
+// The station browser of the crafting bench open on the plank recipe's
+// focused row, with the inventory holding logs and nothing queued.
+// Returns the row's id.
+open_recipe_browser_on_plank :: proc(audit: ^Ui_Audit, state: ^Ui_State, bench: Entity_Handle, logs: u16) -> Ui_Id {
 	player := &audit.simulation.players[0]
 	plank := test_recipe(audit.content.recipes, "plank")
 	player.crafting = {}
 	slice.fill(player.inventory.slots, EMPTY_STACK)
 	player.inventory.slots[3] = {test_item(audit.content.items, "log"), logs}
-	player.open_machine = station
+	player.open_machine = bench
 	clear(&audit.simulation.player_commands)
 	browser := &audit.views.recipe_browser
-	browser.station = station
+	browser.station = bench
 	browser.filter.category = audit.content.recipes.recipes[plank].category
 	browser.focused_recipe = plank
-	if station != NO_ENTITY {
-		push_screen(&state.screens, .Machine)
-	}
+	push_screen(&state.screens, .Machine)
 	push_screen(&state.screens, .Recipes)
 	screen_test_frame(audit, state, {})
 	return recipe_row_id(ui_hash(ui_hash(0, "recipes", -1), "recipe_list", -1), plank)
 }
 
-// Work item 0276: A on a focused recipe queues one craft, with R1 held
-// five, with L1 held the most the planner accepts. With nothing to craft
-// from L1 with A queues nothing and toasts. X cancels the newest craft.
-// The same in the station browser (the pod's crafting bench).
+// Work item 0276: A on a focused recipe of the station browser (the pod's
+// crafting bench) queues one craft, with R1 held five, with L1 held the
+// most the planner accepts. With nothing to craft from L1 with A queues
+// nothing and toasts. X cancels the newest craft.
 @(test)
 test_modifiers_with_a_on_a_recipe :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -295,41 +293,39 @@ test_modifiers_with_a_on_a_recipe :: proc(t: ^testing.T) {
 	}
 	plank := test_recipe(audit.content.recipes, "plank")
 	player := &audit.simulation.players[0]
-	for station in ([2]Entity_Handle{NO_ENTITY, bench}) {
-		state := Ui_State{theme = audit.theme}
-		defer destroy_ui_state(&state)
-		row := open_recipe_browser_on_plank(audit, &state, station, 20)
-		testing.expect_value(t, state.focus, row)
-		screen_context := audit_screen_context(audit)
-		most := planned_craft_count(player.crafting, player.inventory, audit.content.recipes, screen_context.unlocks^, plank, screen_craft_makers(screen_context), screen_context.free_crafting)
-		testing.expectf(t, most > RECIPE_CRAFT_MANY_COUNT, "the planner accepts %d", most)
-		presses := [?]struct {
-			input: Ui_Input,
-			count: int,
-		}{{{confirm = true}, 1}, {{confirm = true, modifier_five = true}, RECIPE_CRAFT_MANY_COUNT}, {{confirm = true, modifier_most = true}, most}}
-		for press in presses {
-			screen_test_frame(audit, &state, press.input)
-			testing.expectf(t, len(audit.simulation.player_commands) == 1, "count %d: %d commands", press.count, len(audit.simulation.player_commands))
-			craft, crafts := last_queued_command(audit).(Craft_Command)
-			testing.expectf(t, crafts && craft == Craft_Command{recipe = plank, count = press.count}, "station %v: %v", station, last_queued_command(audit))
-			clear(&audit.simulation.player_commands)
-		}
-		// One craft queued, X cancels it.
-		screen_test_frame(audit, &state, {confirm = true})
-		apply_player_commands(&audit.simulation, audit.content)
-		testing.expect_value(t, player.crafting.count, 1)
-		screen_test_frame(audit, &state, {context_action = true})
-		_, cancels := last_queued_command(audit).(Cancel_Craft_Command)
-		testing.expect(t, cancels)
-		// Nothing to craft from: L1 with A queues nothing and toasts.
-		player.crafting = {}
-		slice.fill(player.inventory.slots, EMPTY_STACK)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	row := open_recipe_browser_on_plank(audit, &state, bench, 20)
+	testing.expect_value(t, state.focus, row)
+	screen_context := audit_screen_context(audit)
+	most := planned_craft_count(player.crafting, player.inventory, audit.content.recipes, screen_context.unlocks^, plank, screen_craft_makers(screen_context), screen_context.free_crafting)
+	testing.expectf(t, most > RECIPE_CRAFT_MANY_COUNT, "the planner accepts %d", most)
+	presses := [?]struct {
+		input: Ui_Input,
+		count: int,
+	}{{{confirm = true}, 1}, {{confirm = true, modifier_five = true}, RECIPE_CRAFT_MANY_COUNT}, {{confirm = true, modifier_most = true}, most}}
+	for press in presses {
+		screen_test_frame(audit, &state, press.input)
+		testing.expectf(t, len(audit.simulation.player_commands) == 1, "count %d: %d commands", press.count, len(audit.simulation.player_commands))
+		craft, crafts := last_queued_command(audit).(Craft_Command)
+		testing.expectf(t, crafts && craft == Craft_Command{recipe = plank, count = press.count}, "%v", last_queued_command(audit))
 		clear(&audit.simulation.player_commands)
-		toasts := len(state.toasts)
-		screen_test_frame(audit, &state, {confirm = true, modifier_most = true})
-		testing.expect_value(t, len(audit.simulation.player_commands), 0)
-		testing.expect_value(t, len(state.toasts), toasts + 1)
 	}
+	// One craft queued, X cancels it.
+	screen_test_frame(audit, &state, {confirm = true})
+	apply_player_commands(&audit.simulation, audit.content)
+	testing.expect_value(t, player.crafting.count, 1)
+	screen_test_frame(audit, &state, {context_action = true})
+	_, cancels := last_queued_command(audit).(Cancel_Craft_Command)
+	testing.expect(t, cancels)
+	// Nothing to craft from: L1 with A queues nothing and toasts.
+	player.crafting = {}
+	slice.fill(player.inventory.slots, EMPTY_STACK)
+	clear(&audit.simulation.player_commands)
+	toasts := len(state.toasts)
+	screen_test_frame(audit, &state, {confirm = true, modifier_most = true})
+	testing.expect_value(t, len(audit.simulation.player_commands), 0)
+	testing.expect_value(t, len(state.toasts), toasts + 1)
 	audit.views.recipe_browser.station = NO_ENTITY
 }
 
@@ -395,25 +391,14 @@ test_modifiers_where_five_and_most_mean_nothing :: proc(t: ^testing.T) {
 
 // Work item 0276: the tab step (the right stick's flick, `[` and `]`)
 // steps the recipe categories wherever the focus is and drops the tags,
-// as a window of the carousel and in the picker. The window step leaves
-// the picker's screen and category alone.
+// in the picker. The window step leaves the picker's screen and category
+// alone.
 @(test)
 test_recipe_categories_follow_the_tab_step :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
 	browser := &audit.views.recipe_browser
-	strip := Ui_State{theme = audit.theme}
-	defer destroy_ui_state(&strip)
-	push_screen(&strip.screens, .Recipes)
-	browser.filter.category, browser.filter.tags = .Materials, {0}
-	screen_test_frame(audit, &strip, {})
-	screen_test_frame(audit, &strip, {tab_next = true})
-	testing.expect_value(t, browser.filter.category, Recipe_Category.Components)
-	testing.expect_value(t, browser.filter.tags, Recipe_Tag_Set{})
-	testing.expect_value(t, top_screen(strip.screens), Screen.Recipes)
-	screen_test_frame(audit, &strip, {tab_previous = true})
-	testing.expect_value(t, browser.filter.category, Recipe_Category.Materials)
-	testing.expect_value(t, top_screen(strip.screens), Screen.Recipes)
+	browser.filter.category = .Materials
 	simulation := &audit.simulation
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if !assembler.alive || audit.content.machines.machines[assembler.machine].recipe_choice == .Fixed {

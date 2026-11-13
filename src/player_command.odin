@@ -30,6 +30,12 @@ Cancel_Craft_Command :: struct {
 	unused: u8,
 }
 
+// Empties the hand craft queue (0277): the started craft's ingredients go
+// back, all or nothing (clear_craft_queue).
+Clear_Craft_Queue_Command :: struct {
+	unused: u8,
+}
+
 Assembler_Recipe_Command :: struct {
 	assembler: Entity_Handle,
 	recipe:    int,
@@ -145,6 +151,7 @@ Player_Command :: union {
 	Research_Command,
 	Craft_Command,
 	Cancel_Craft_Command,
+	Clear_Craft_Queue_Command,
 	Assembler_Recipe_Command,
 	Power_Switch_Command,
 	Assembly_Command,
@@ -276,6 +283,11 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 	case Cancel_Craft_Command:
 		player := &state.players[queued.player]
 		if player.crafting.count > 0 && !cancel_last_craft(&player.crafting, player.inventory, content.recipes, content.items) {
+			append(&state.events, Simulation_Event{player = queued.player, kind = .Inventory_Full})
+		}
+	case Clear_Craft_Queue_Command:
+		player := &state.players[queued.player]
+		if player.crafting.count > 0 && !clear_craft_queue(&player.crafting, player.inventory, content.recipes, content.items) {
 			append(&state.events, Simulation_Event{player = queued.player, kind = .Inventory_Full})
 		}
 	case Assembler_Recipe_Command:
@@ -485,7 +497,7 @@ player_command_valid :: proc(command: Player_Command, content: Simulation_Conten
 		return index_in_range(int(value.machine), len(content.machines.machines)) && value.rotation < 4 && placement_normal_valid(value.normal) && machine_takes_placement_command(content.machines.machines[value.machine])
 	case Slot_Primary_Command, Slot_Split_Command, Slot_Sort_Command, Distribute_Command, Return_Held_Command, Drop_Stack_Command, Quick_Move_Command, Transfer_Button_Command, Grid_Transfer_Command, Inserter_Hand_Command:
 		return slot_command_valid(value, content)
-	case Cancel_Craft_Command, Power_Switch_Command, Assembly_Command, Launch_Command, Hotbar_Slot_Command, Close_Machine_Command, Debug_Remove_Block_Command, Debug_Drop_Item_Command, Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command, Skip_Arrival_Command:
+	case Cancel_Craft_Command, Clear_Craft_Queue_Command, Power_Switch_Command, Assembly_Command, Launch_Command, Hotbar_Slot_Command, Close_Machine_Command, Debug_Remove_Block_Command, Debug_Drop_Item_Command, Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command, Skip_Arrival_Command:
 		return true
 	}
 	return false

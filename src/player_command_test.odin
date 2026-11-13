@@ -123,6 +123,10 @@ test_panel_presses_land_at_the_next_tick :: proc(t: ^testing.T) {
 	pad_handle := place_test_entity(&simulation.world, audit.content, "launch_pad", {-28, 1, 14})
 	pad := pool_get(&entities.launch_pads, pad_handle)
 	open_test_panel(audit, &pad_state, pad_handle)
+	// The buttons lie below the machine side's view at 1080p: scrolled to
+	// its end, since a widget scrolled out of view takes no tap (0277).
+	machine_area := ui_hash(ui_hash(0, "machine", -1), "machine_area", -1)
+	pad_state.scroll_offsets[machine_area] = max(f32)
 	missing := simulation.records.statistics.launch_parts_missing
 	testing.expect(t, tap_labelled_widget(audit, &pad_state, text("launch_pad_assemble")))
 	testing.expect(t, tap_labelled_widget(audit, &pad_state, text("launch_pad_launch")))
@@ -132,6 +136,7 @@ test_panel_presses_land_at_the_next_tick :: proc(t: ^testing.T) {
 	testing.expect_value(t, pad.state, Launch_Pad_State.Waiting_For_Parts)
 	testing.expect_value(t, len(simulation.player_commands), 0)
 
+	pad_state.scroll_offsets[machine_area] = 0
 	open_test_panel(audit, &pad_state, entity_at(entities, SAVE_TEST_LAUNCH_PAD))
 	testing.expect(t, tap_labelled_widget(audit, &pad_state, text("launch_pad_tab_catalogue")))
 	screen_test_frame(audit, &pad_state, {pointer_is_touch = true})
@@ -257,4 +262,43 @@ test_a_machine_placement_command_round_trips_and_is_validated :: proc(t: ^testin
 	apply_player_command(&state, content, {player = 0, command = command})
 	testing.expect_value(t, len(state.events), 1)
 	testing.expect_value(t, state.events[0].kind, Player_Event.Action_Refused)
+}
+
+// The crafting view's Clear queue (0277) survives the wire, empties the
+// queue at the tick, and with the refund not fitting reports a full
+// inventory and keeps the queue.
+@(test)
+test_the_clear_craft_queue_command_round_trips_and_applies :: proc(t: ^testing.T) {
+	command := Clear_Craft_Queue_Command{}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	encode_player_command(&bytes, command)
+	reader := Byte_Reader{data = bytes[:]}
+	decoded, ok := decode_player_command(&reader)
+	testing.expect(t, ok)
+	_, clears := decoded.(Clear_Craft_Queue_Command)
+	testing.expect(t, clears)
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	testing.expect(t, player_command_valid(command, content))
+	plank := test_recipe(content.recipes, "plank")
+	player := &simulation.players[0]
+	player.crafting = {count = 2}
+	player.crafting.runs[0] = {recipe = plank, count = 3}
+	player.crafting.runs[1] = {recipe = plank, count = 1}
+	queue_player_command(&simulation.player_commands, 0, command)
+	simulation_tick(&simulation, content, {})
+	testing.expect_value(t, player.crafting.count, 0)
+	// A started craft whose log finds no room.
+	stone := test_item(content.items, "stone")
+	for &slot in player.inventory.slots {
+		slot = {stone, item_stack_size(content.items, stone)}
+	}
+	player.crafting = {count = 1, started = true}
+	player.crafting.runs[0] = {recipe = plank, count = 1}
+	queue := player.crafting
+	events := len(simulation.events)
+	apply_player_command(&simulation, content, {player = 0, command = command})
+	testing.expect_value(t, player.crafting, queue)
+	testing.expect_value(t, len(simulation.events), events + 1)
+	testing.expect_value(t, simulation.events[len(simulation.events) - 1].kind, Player_Event.Inventory_Full)
 }

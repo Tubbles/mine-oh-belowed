@@ -1,5 +1,6 @@
 package game
 
+import "core:slice"
 import "core:strings"
 import "core:testing"
 
@@ -335,14 +336,27 @@ test_a_vertical_drag_on_a_slider_scrolls :: proc(t: ^testing.T) {
 	testing.expect_value(t, state.scroll_offsets[region], start + 100)
 }
 
-// Finger scrolling reaches the Scroll_List screens: the recipe list.
+// Finger scrolling reaches the Scroll_List screens: the recipe list of the
+// crafting bench's browser, on Machines with every recipe available.
 @(test)
 test_a_drag_scrolls_the_recipe_list :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
+	bench := audit_crafting_bench(audit)
+	if !testing.expect(t, bench != NO_ENTITY) {
+		return
+	}
+	available := audit.simulation.unlocks.available
+	saved := slice.clone(available, context.temp_allocator)
+	defer copy(available, saved)
+	slice.fill(available, true)
+	browser := &audit.views.recipe_browser
+	browser.station, browser.filter.category = bench, .Machines
+	defer browser.station = NO_ENTITY
+	audit.simulation.players[0].open_machine = bench
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
-	audit.views.recipe_browser.filter.available_only = false
+	push_screen(&state.screens, .Machine)
 	push_screen(&state.screens, .Recipes)
 	screen_test_frame(audit, &state, {})
 	list := ui_hash(ui_hash(0, "recipes", -1), "recipe_list", -1)
@@ -368,6 +382,60 @@ test_a_drag_scrolls_the_recipe_list :: proc(t: ^testing.T) {
 	testing.expect_value(t, state.scroll_offsets[list], before - finger)
 	testing.expect_value(t, state.focus, focus)
 	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+}
+
+// A row scrolled out of its list takes no pointer (0277's fix round): with
+// the crafting bench's list scrolled a row, the row lies clipped under the
+// category row above the list, and a click there lands on the category
+// row and queues and toasts nothing.
+@(test) // slow
+test_a_click_above_a_scrolled_list_misses_its_rows :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	bench := audit_crafting_bench(audit)
+	if !testing.expect(t, bench != NO_ENTITY) {
+		return
+	}
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	open_recipe_browser_on_plank(audit, &state, bench, 20)
+	available := audit.simulation.unlocks.available
+	saved := slice.clone(available, context.temp_allocator)
+	defer copy(available, saved)
+	slice.fill(available, true)
+	browser := &audit.views.recipe_browser
+	browser.filter.category = .Machines
+	defer browser.station = NO_ENTITY
+	panel := ui_hash(0, "recipes", -1)
+	list, tabs := ui_hash(panel, "recipe_list", -1), ui_hash(panel, "recipe_tabs", -1)
+	// The focus off the list, so the list keeps the offset.
+	state.focus = tabs
+	state.scroll_offsets[list] = UI_ROW_HEIGHT
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.scroll_offsets[list], UI_ROW_HEIGHT)
+	strip := state.widgets[widget_index(state.widgets[:], tabs)].rectangle
+	hidden, at := NO_RECIPE, [2]f32{}
+	for recipe in 0 ..< len(audit.content.recipes.recipes) {
+		index := widget_index(state.widgets[:], recipe_row_id(list, recipe))
+		if index < 0 {
+			continue
+		}
+		row := state.widgets[index].rectangle
+		if row.y < strip.y + strip.height && row.y + row.height > strip.y {
+			hidden, at = recipe, {row.x + row.width / 2, (max(row.y, strip.y) + min(row.y + row.height, strip.y + strip.height)) / 2}
+		}
+	}
+	if !testing.expect(t, hidden != NO_RECIPE, "no row under the category row") {
+		return
+	}
+	testing.expect_value(t, widget_under(state.widgets[:], at), tabs)
+	toasts := len(state.toasts)
+	screen_test_frame(audit, &state, pointer_input(at, false))
+	screen_test_frame(audit, &state, pointer_input(at, true, pressed = true))
+	screen_test_frame(audit, &state, pointer_input(at, false, moved = false))
+	testing.expect_value(t, state.focus, tabs)
+	testing.expect_value(t, len(audit.simulation.player_commands), 0)
+	testing.expect_value(t, len(state.toasts), toasts)
 }
 
 // After a scroll drag took the focused slider out of view, a Left or
@@ -478,7 +546,6 @@ test_every_screen_has_a_back_button_on_touch :: proc(t: ^testing.T) {
 		{screens = {.Pause, .Developer, .Data_Files}},
 		{screens = {.Inventory}},
 		{screens = {.Machine}, machine = true},
-		{screens = {.Recipes}},
 		{screens = {.Machine, .Recipes}, machine = true, selecting = true},
 		{screens = {.Technologies}},
 		{screens = {.Journal}},
@@ -609,8 +676,10 @@ test_a_tap_outside_ends_a_system_keyboard_entry_first :: proc(t: ^testing.T) {
 	}
 }
 
-// A tap on a recipe selects it and queues nothing. Craft, Craft 5, Cancel
-// last and Craft max act on the selected recipe.
+// In the crafting view (0277) the inventory half's row shows until a tap
+// on a schematic selects it and queues nothing. Then the crafting row's
+// Craft, Craft 5, Cancel last and Craft max act on the selected recipe and
+// Clear queue empties the queue.
 @(test)
 test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -622,23 +691,26 @@ test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 	}
 	player.inventory.slots[3] = {test_item(audit.content.items, "log"), 20}
 	plank := test_recipe(audit.content.recipes, "plank")
-	audit.views.recipe_browser.filter.category = audit.content.recipes.recipes[plank].category
+	audit.views.crafting_view.tab = crafting_view_test_tab(audit.content.recipes, plank)
 	audit.views.recipe_browser.focused_recipe = NO_RECIPE
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
-	push_screen(&state.screens, .Recipes)
+	push_screen(&state.screens, .Inventory)
 	for _ in 0 ..< 3 {
 		touch_screen_frame(audit, &state)
 	}
-	list_id := ui_hash(ui_hash(0, "recipes", -1), "recipe_list", -1)
-	row := recipe_row_id(list_id, plank)
+	testing.expect(t, widget_index(state.widgets[:], slot_button_id("slot_button_sort")) >= 0)
+	testing.expect(t, widget_index(state.widgets[:], slot_button_id("touch_button_craft")) < 0)
+	row := schematic_cell_id(plank)
 	if !testing.expect(t, widget_index(state.widgets[:], row) >= 0) {
 		return
 	}
 	tap_widget(audit, &state, row)
 	testing.expect_value(t, player.crafting.count, 0)
 	testing.expect_value(t, audit.views.recipe_browser.focused_recipe, plank)
-	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+	testing.expect(t, widget_index(state.widgets[:], slot_button_id("slot_button_sort")) < 0)
+	testing.expect(t, widget_index(state.widgets[:], slot_button_id("touch_button_craft")) >= 0)
 	tap_widget(audit, &state, slot_button_id("touch_button_craft"))
 	testing.expect_value(t, queued_craft_count(player.crafting), 0)
 	run_audit_tick(audit)
@@ -664,6 +736,12 @@ test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 	tap_widget(audit, &state, slot_button_id("touch_button_craft_most"))
 	run_audit_tick(audit)
 	testing.expect_value(t, queued_craft_count(player.crafting), RECIPE_CRAFT_MANY_COUNT + 1 + most)
+	// Clear queue: the queue is empty after the tick.
+	tap_widget(audit, &state, slot_button_id("touch_button_clear_craft_queue"))
+	testing.expect(t, player.crafting.count > 0)
+	run_audit_tick(audit)
+	testing.expect_value(t, player.crafting.count, 0)
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 }
 
 // A tap on a technology selects it and starts nothing; Research starts it.
@@ -713,6 +791,7 @@ test_touch_row_buttons_by_screen :: proc(t: ^testing.T) {
 	testing.expect(t, .Back in machine_touch_buttons(false))
 	testing.expect_value(t, recipe_touch_buttons(true), Touch_Buttons{.Choose_Recipe, .Back})
 	testing.expect_value(t, recipe_touch_buttons(false), Touch_Buttons{.Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Back})
+	testing.expect_value(t, CRAFTING_VIEW_TOUCH_BUTTONS, Touch_Buttons{.Craft, .Craft_Five, .Craft_Most, .Cancel_Craft, .Clear_Craft_Queue, .Back})
 	testing.expect(t, .Drop in INVENTORY_TOUCH_BUTTONS)
 	testing.expect(t, .Research in TECHNOLOGY_TOUCH_BUTTONS)
 	testing.expect_value(t, map_touch_zoom_step(.Zoom_In), -1)
@@ -722,8 +801,9 @@ test_touch_row_buttons_by_screen :: proc(t: ^testing.T) {
 	testing.expect_value(t, player_slot_index({.Machine, 3}), -1)
 }
 
-// Craft, Craft 5 and Research do nothing while the list hides the
-// selected entry.
+// Craft, Craft 5 and Research do nothing while the grid or the list hides
+// the selected entry: plank selected on the crafting view's Machines tab,
+// the focus on the toggle.
 @(test)
 test_the_row_ignores_a_hidden_selection :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -732,13 +812,15 @@ test_the_row_ignores_a_hidden_selection :: proc(t: ^testing.T) {
 	player.crafting = {}
 	player.inventory.slots[3] = {test_item(audit.content.items, "log"), 20}
 	plank := test_recipe(audit.content.recipes, "plank")
-	audit.views.recipe_browser.filter.category = audit.content.recipes.recipes[plank].category
-	audit.views.recipe_browser.filter.tags = ~Recipe_Tag_Set{}
+	audit.views.crafting_view.tab = crafting_tab_index(audit.content.recipes, .Machines)
+	state := Ui_State{theme = audit.theme, crafting_half = .Schematics}
+	push_screen(&state.screens, .Inventory)
+	touch_screen_frame(audit, &state)
+	touch_screen_frame(audit, &state)
 	audit.views.recipe_browser.focused_recipe = plank
-	state := Ui_State{theme = audit.theme}
-	push_screen(&state.screens, .Recipes)
+	state.focus = schematics_toggle_id()
 	touch_screen_frame(audit, &state)
-	touch_screen_frame(audit, &state)
+	testing.expect_value(t, audit.views.recipe_browser.focused_recipe, plank)
 	tap_widget(audit, &state, slot_button_id("touch_button_craft"))
 	tap_widget(audit, &state, slot_button_id("touch_button_craft_five"))
 	tap_widget(audit, &state, slot_button_id("touch_button_craft_most"))

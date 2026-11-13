@@ -352,3 +352,74 @@ test_stone_bricks_are_cut_not_smelted :: proc(t: ^testing.T) {
 	testing.expect_value(t, table.recipe_maker, Recipe_Maker.Stone_Cutting)
 	testing.expect_value(t, cutter.recipe_maker, Recipe_Maker.Stone_Cutting)
 }
+
+// The categories table with the shipped mapping, each entry overridable.
+test_category_definitions :: proc() -> []Recipe_Category_Definition {
+	definitions := make([]Recipe_Category_Definition, len(Recipe_Category), context.temp_allocator)
+	shipped := [len(Recipe_Category)][2]string {
+		{"machines", "machines"},
+		{"logistics", "logistics"},
+		{"power", "power"},
+		{"materials", "materials"},
+		{"components", "materials"},
+		{"science", "materials"},
+		{"tools", "tools"},
+	}
+	for pair, index in shipped {
+		definitions[index] = {id = pair[0], crafting_tab = pair[1]}
+	}
+	return definitions
+}
+
+expect_crafting_tabs :: proc(t: ^testing.T, recipes: Recipe_Registry, wanted: []Recipe_Category, loc := #caller_location) {
+	tabs, count := crafting_tab_list(recipes)
+	testing.expectf(t, slice.equal(tabs[:count], wanted), "tabs %v, want %v", tabs[:count], wanted, loc = loc)
+}
+
+// Work item 0277: the crafting view's tabs come from the categories table
+// in data/recipes.sjson, and a malformed table is refused.
+@(test)
+test_the_crafting_tabs_come_from_the_categories_table :: proc(t: ^testing.T) {
+	items := make_test_items()
+	recipes, _ := make_test_recipes(items)
+	expect_crafting_tabs(t, recipes, {.Machines, .Logistics, .Power, .Materials, .Tools})
+	testing.expect_value(t, recipes.crafting_tabs[.Components], Recipe_Category.Materials)
+	testing.expect_value(t, recipes.crafting_tabs[.Science], Recipe_Category.Materials)
+	without_table := Recipe_Registry{}
+	without_table.crafting_tabs, without_table.category_order, _ = resolve_recipe_categories({})
+	expect_crafting_tabs(t, without_table, {.Materials, .Components, .Tools, .Machines, .Logistics, .Power, .Science})
+	tools_in_machines := test_category_definitions()
+	tools_in_machines[6].crafting_tab = "machines"
+	mapped: Recipe_Registry
+	problem: string
+	mapped.crafting_tabs, mapped.category_order, problem = resolve_recipe_categories(tools_in_machines)
+	testing.expect_value(t, problem, "")
+	expect_crafting_tabs(t, mapped, {.Machines, .Logistics, .Power, .Materials})
+	expect_crafting_tabs(t, Recipe_Registry{}, {.Materials})
+	short := test_category_definitions()[:6]
+	unknown := test_category_definitions()
+	unknown[2].id = "furniture"
+	twice := test_category_definitions()
+	twice[6].id = "power"
+	unknown_tab := test_category_definitions()
+	unknown_tab[1].crafting_tab = "furniture"
+	not_a_tab := test_category_definitions()
+	not_a_tab[0].crafting_tab = "science"
+	refusals := [?]struct {
+		definitions: []Recipe_Category_Definition,
+		problem:     string,
+	} {
+		{short, "categories: 6 entries, need each of the 7 categories once"},
+		{unknown, `categories[2].id: unknown category "furniture"`},
+		{twice, `categories[6].id: "power" is listed twice`},
+		{unknown_tab, `categories[1].crafting_tab: unknown category "furniture"`},
+		{not_a_tab, `categories[0].crafting_tab: "science" is not a tab (it shows in "materials")`},
+	}
+	for refusal in refusals {
+		_, _, problem = resolve_recipe_categories(refusal.definitions)
+		testing.expect_value(t, problem, refusal.problem)
+	}
+	file := Recipes_File{categories = twice, recipes = {test_recipe_definition()}}
+	_, problem = resolve_recipe_registry(file, items, make_test_fluids(), context.temp_allocator)
+	testing.expect_value(t, problem, `categories[6].id: "power" is listed twice`)
+}
