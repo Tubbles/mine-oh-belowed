@@ -1,6 +1,6 @@
 # 0389: The solve's repair in dispatch order
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 Found by 0383's review. When a generator is held back by its own cable, the solve's slow path moves the shortfall onto the other nodes with `repair_dispatch` and `spread_over_rooms` (`src/netlist/solve.odin`), in proportion to each node's room and without regard to the dispatch order. So a battery gives while a second generator in the same tree has spare offer, and having given it gets no charge room that tick: beside a 900 kW engine on a 300 kW cable a docked vessel's battery drains instead of charging. The rule is older than the batteries (two generators of different orders are misordered the same way) and 0373 keeps it. After 0373, in the same files.
 

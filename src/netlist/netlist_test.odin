@@ -1297,6 +1297,276 @@ test_a_feeder_at_its_parents_level_takes_power_in :: proc(t: ^testing.T) {
 	free_all(context.temp_allocator)
 }
 
+// A store that discharges and charges 50 J (0389).
+STORE_50 :: Node_Input {
+	offer       = 50,
+	charge_room = 50,
+	order       = 10,
+	store       = true,
+}
+
+@(test)
+test_a_held_back_generator_leaves_the_store_its_charge :: proc(t: ^testing.T) {
+	// 0383's review: node 1's 100 J behind a 10 J cable, node 2's 200 J and
+	// a store beside the 120 J consumer. Node 2 gives the 110 J node 1
+	// cannot and then the store's charge; the store gives nothing.
+	inputs := []Node_Input{{}, {offer = 100}, {offer = 200}, STORE_50, {demand = 120}}
+	topology, outputs := hand_netlist(inputs, {{1, 0, 10}, {2, 0, UNLIMITED_CAPACITY}, {3, 0, UNLIMITED_CAPACITY}, {4, 0, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, topology, inputs, outputs, 0)
+	testing.expect_value(t, outputs[4].delivered, 120)
+	testing.expect_value(t, outputs[1].supplied, 10)
+	testing.expect_value(t, outputs[1].flow, 10)
+	testing.expect_value(t, outputs[2].supplied, 160)
+	testing.expect_value(t, outputs[2].flow, 160)
+	testing.expect_value(t, outputs[3].supplied, 0)
+	testing.expect_value(t, outputs[3].charged, 50)
+	testing.expect_value(t, outputs[3].flow, -50)
+	// The 10 J cable as two of 5 J, bundled: the same outputs.
+	bundled_topology, bundled := hand_netlist(inputs, {{1, 0, 5}, {0, 1, 5}, {2, 0, UNLIMITED_CAPACITY}, {3, 0, UNLIMITED_CAPACITY}, {4, 0, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, bundled_topology, inputs, bundled, 0)
+	testing.expect(t, mem.compare(slice.to_bytes(outputs), slice.to_bytes(bundled)) == 0, "the bundled cable's outputs differ")
+	// The item's: an engine on a light cable, a fuel generator and a lead
+	// battery beside 5500 J asked.
+	engine_inputs := []Node_Input{{}, {offer = 15000, order = 1}, {offer = 1000, order = 3}, {offer = 33, charge_room = 33, order = 10, store = true}, {demand = 5500}}
+	engine_topology, engine := hand_netlist(engine_inputs, {{1, 0, 5000}, {2, 0, UNLIMITED_CAPACITY}, {3, 0, UNLIMITED_CAPACITY}, {4, 0, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, engine_topology, engine_inputs, engine, 0)
+	testing.expect_value(t, engine[1].supplied, 5000)
+	testing.expect_value(t, engine[2].supplied, 533)
+	testing.expect_value(t, engine[3].supplied, 0)
+	testing.expect_value(t, engine[3].charged, 33)
+	free_all(context.temp_allocator)
+}
+
+@(test)
+test_the_repair_serves_an_earlier_order_first :: proc(t: ^testing.T) {
+	// Node 1's 100 J at order 0 behind a 10 J cable, 200 J at orders 1 and
+	// 2 beside the 120 J consumer: order 1 gives what order 0 cannot.
+	inputs := []Node_Input{{}, {offer = 100}, {offer = 200, order = 1}, {offer = 200, order = 2}, {demand = 120}}
+	topology, outputs := hand_netlist(inputs, {{1, 0, 10}, {2, 0, UNLIMITED_CAPACITY}, {3, 0, UNLIMITED_CAPACITY}, {4, 0, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, topology, inputs, outputs, 0)
+	for supplied, node in ([3]i64{10, 110, 0}) {
+		testing.expect_value(t, outputs[node + 1].supplied, supplied)
+	}
+	// Limited further up: junction 1 behind 40 J holds node 2's order 0
+	// behind 30 J and node 3's order 1; node 4's order 2 and a store at the
+	// root, which asks 120 J.
+	further_inputs := []Node_Input{{demand = 120}, {}, {offer = 100}, {offer = 100, order = 1}, {offer = 200, order = 2}, STORE_50}
+	further_topology, further := hand_netlist(further_inputs, {{1, 0, 40}, {2, 1, 30}, {3, 1, UNLIMITED_CAPACITY}, {4, 0, UNLIMITED_CAPACITY}, {5, 0, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, further_topology, further_inputs, further, 0)
+	testing.expect_value(t, further[2].supplied, 30)
+	testing.expect_value(t, further[3].supplied, 10)
+	testing.expect_value(t, further[1].flow, 40)
+	testing.expect_value(t, further[4].supplied, 130)
+	testing.expect_value(t, further[5].supplied, 0)
+	testing.expect_value(t, further[5].charged, 50)
+	// Inside a subtree: junction 1 holds node 2's order 0 behind 10 J and
+	// node 3's order 2, node 4's order 1 is at the root. The root's share
+	// of junction 1 stays, its composition moves to the earlier order.
+	inside_inputs := []Node_Input{{demand = 100}, {}, {offer = 100}, {offer = 100, order = 2}, {offer = 100, order = 1}}
+	inside_topology, inside := hand_netlist(inside_inputs, {{1, 0, UNLIMITED_CAPACITY}, {2, 1, 10}, {3, 1, UNLIMITED_CAPACITY}, {4, 0, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, inside_topology, inside_inputs, inside, 0)
+	testing.expect_value(t, inside[2].supplied, 10)
+	testing.expect_value(t, inside[3].supplied, 0)
+	testing.expect_value(t, inside[4].supplied, 90)
+	testing.expect_value(t, inside[1].flow, 10)
+	// Two trees: the store's case as nodes 0 to 4, the orders' as 5 to 9.
+	two_inputs := []Node_Input{{}, {offer = 100}, {offer = 200}, STORE_50, {demand = 120}, {}, {offer = 100}, {offer = 200, order = 1}, {offer = 200, order = 2}, {demand = 120}}
+	two_edges := []Edge {
+		{1, 0, 10},
+		{2, 0, UNLIMITED_CAPACITY},
+		{3, 0, UNLIMITED_CAPACITY},
+		{4, 0, UNLIMITED_CAPACITY},
+		{6, 5, 10},
+		{7, 5, UNLIMITED_CAPACITY},
+		{8, 5, UNLIMITED_CAPACITY},
+		{9, 5, UNLIMITED_CAPACITY},
+	}
+	two_topology, two := hand_netlist(two_inputs, two_edges)
+	expect_feasible_output(t, two_topology, two_inputs, two, 0)
+	testing.expect_value(t, two[2].supplied, 160)
+	testing.expect_value(t, two[3].charged, 50)
+	testing.expect_value(t, two[7].supplied, 110)
+	testing.expect_value(t, two[8].supplied, 0)
+	free_all(context.temp_allocator)
+}
+
+@(test)
+test_a_store_gives_only_what_no_generator_can :: proc(t: ^testing.T) {
+	// Junction 1 behind 10 J holds a store, node 3's 20 J at order 1 and a
+	// 40 J consumer; the root offers 1000 J and asks 100 J. Node 3 gives
+	// its 20 J, the store the 10 J the cable leaves short.
+	inputs := []Node_Input{{demand = 100, offer = 1000}, {}, STORE_50, {offer = 20, order = 1}, {demand = 40}}
+	topology, outputs := hand_netlist(inputs, {{1, 0, 10}, {2, 1, UNLIMITED_CAPACITY}, {3, 1, UNLIMITED_CAPACITY}, {4, 1, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, topology, inputs, outputs, 0)
+	testing.expect_value(t, outputs[3].supplied, 20)
+	testing.expect_value(t, outputs[2].supplied, 10)
+	testing.expect_value(t, outputs[2].charged, 0)
+	testing.expect_value(t, outputs[0].supplied, 110)
+	testing.expect_value(t, outputs[1].flow, -10)
+	// Without node 3 the store gives its forced 30 J.
+	alone_inputs := []Node_Input{{demand = 100, offer = 1000}, {}, STORE_50, {demand = 40}}
+	alone_topology, alone := hand_netlist(alone_inputs, {{1, 0, 10}, {2, 1, UNLIMITED_CAPACITY}, {3, 1, UNLIMITED_CAPACITY}})
+	expect_feasible_output(t, alone_topology, alone_inputs, alone, 0)
+	testing.expect_value(t, alone[2].supplied, 30)
+	// Phase 2: node 1's order 0 behind 70 J, orders 1 and 2 at the root, a
+	// store with 100 J of room and a 50 J consumer. The charge comes from
+	// what order 0 has left first.
+	charge_inputs := []Node_Input{{}, {offer = 100}, {offer = 200, order = 1}, {offer = 200, order = 2}, {charge_room = 100, order = 10, store = true}, {demand = 50}}
+	charge_edges := []Edge{{1, 0, 70}, {2, 0, UNLIMITED_CAPACITY}, {3, 0, UNLIMITED_CAPACITY}, {4, 0, UNLIMITED_CAPACITY}, {5, 0, UNLIMITED_CAPACITY}}
+	charge_topology, charge := hand_netlist(charge_inputs, charge_edges)
+	expect_feasible_output(t, charge_topology, charge_inputs, charge, 0)
+	testing.expect_value(t, charge[4].charged, 100)
+	testing.expect_value(t, charge[1].supplied, 70)
+	testing.expect_value(t, charge[2].supplied, 80)
+	testing.expect_value(t, charge[3].supplied, 0)
+	free_all(context.temp_allocator)
+}
+
+// The rule from a phase's results (0389): with the bounds given and,
+// across an edge whose levels differ, flow only towards the poorer side
+// (as bound_flows_by_levels), a giving position is misordered when a
+// position of an earlier order with offer left reaches it over edges with
+// room towards it. guarded counts the giving positions of an order above
+// the least order with offer left, where the rule has something to say.
+count_misordered :: proc(phase: Phase, lower, upper: []i64) -> (misordered, guarded: int) {
+	count := len(phase.nodes)
+	towards_lower, towards_upper := slice.clone(lower, context.temp_allocator), slice.clone(upper, context.temp_allocator)
+	for position in 1 ..< count {
+		level, parent_level := phase.level[position], phase.level[phase.parent[position]]
+		if level < parent_level {
+			towards_upper[position] = min(towards_upper[position], 0)
+		} else if level > parent_level {
+			towards_lower[position] = max(towards_lower[position], 0)
+		}
+	}
+	giving: [256]bool
+	least_with_offer_left := 256
+	for position in 0 ..< count {
+		if phase.supplied[position] > 0 {
+			giving[phase.order[position]] = true
+		}
+		if phase.offer[position] > phase.supplied[position] {
+			least_with_offer_left = min(least_with_offer_left, int(phase.order[position]))
+		}
+	}
+	for position in 0 ..< count {
+		guarded += int(phase.supplied[position] > 0 && int(phase.order[position]) > least_with_offer_left)
+	}
+	offsets, children := phase_children(phase.parent)
+	reached := make([]bool, count, context.temp_allocator)
+	for order in 0 ..< len(giving) {
+		if !giving[order] {
+			continue
+		}
+		reach_from_earlier_orders(phase, towards_lower, towards_upper, offsets, children, order, reached)
+		for position in 0 ..< count {
+			misordered += int(reached[position] && int(phase.order[position]) == order && phase.supplied[position] > 0)
+		}
+	}
+	return
+}
+
+// The positions a position of an order below order with offer left
+// reaches: to the parent while the edge walked from has room up, to a
+// child while its edge has room down.
+reach_from_earlier_orders :: proc(phase: Phase, lower, upper: []i64, offsets, children: []i32, order: int, reached: []bool) {
+	stack := make([dynamic]i32, 0, len(reached), context.temp_allocator)
+	for position in 0 ..< len(reached) {
+		reached[position] = int(phase.order[position]) < order && phase.offer[position] > phase.supplied[position]
+		if reached[position] {
+			append(&stack, i32(position))
+		}
+	}
+	for len(stack) > 0 {
+		position := pop(&stack)
+		parent := phase.parent[position]
+		if position > 0 && !reached[parent] && upper[position] - phase.flow[position] > 0 {
+			reached[parent] = true
+			append(&stack, parent)
+		}
+		for child in children[offsets[position]:offsets[position + 1]] {
+			if !reached[child] && phase.flow[child] - lower[child] > 0 {
+				reached[child] = true
+				append(&stack, child)
+			}
+		}
+	}
+}
+
+// Solves the phase and counts its misorders against its bounds before
+// the solve narrowed them.
+phase_misorders :: proc(phase: ^Phase, by_node: []i32) -> (misordered, guarded: int) {
+	lower, upper := slice.clone(phase.lower, context.temp_allocator), slice.clone(phase.upper, context.temp_allocator)
+	solve_phase(phase, by_node, true, false)
+	return count_misordered(phase^, lower, upper)
+}
+
+// Every tree's phases as solve_tree runs them, each counted
+// (count_misordered): the outputs carry no level of phase 2, which the
+// direction rule needs.
+dispatch_misorders :: proc(netlist: Test_Netlist) -> (misordered, guarded: int) {
+	topology := build_topology(netlist.node_count, netlist.edges, context.temp_allocator)
+	outputs := make([]Node_Output, netlist.node_count, context.temp_allocator)
+	for range in topology.trees {
+		phase := make_phase(topology, topology.order[range.first:][:range.count])
+		by_node := positions_by_node(phase.nodes)
+		set_supply_phase(&phase, topology, netlist.inputs)
+		supply_misordered, supply_guarded := phase_misorders(&phase, by_node)
+		misordered, guarded = misordered + supply_misordered, guarded + supply_guarded
+		for node, position in phase.nodes {
+			outputs[node].supplied, outputs[node].flow = phase.supplied[position], phase.flow[position]
+		}
+		if set_charge_phase(&phase, topology, netlist.inputs, outputs) {
+			charge_misordered, charge_guarded := phase_misorders(&phase, by_node)
+			misordered, guarded = misordered + charge_misordered, guarded + charge_guarded
+		}
+	}
+	return
+}
+
+// One set's totals for test_the_repair_follows_the_dispatch_order.
+Misorder_Totals :: struct {
+	set:                                    string,
+	misordered, guarded, netlists_affected: int,
+	first_seed:                             int,
+}
+
+add_netlist_misorders :: proc(totals: ^Misorder_Totals, netlist: Test_Netlist, seed: int) {
+	misordered, guarded := dispatch_misorders(netlist)
+	if misordered > 0 && totals.netlists_affected == 0 {
+		totals.first_seed = seed
+	}
+	totals.netlists_affected += int(misordered > 0)
+	totals.misordered += misordered
+	totals.guarded += guarded
+}
+
+// The repair's rule (count_misordered) on every phase of the brute force,
+// light cable and feasibility sets (0389).
+@(test) // slow
+test_the_repair_follows_the_dispatch_order :: proc(t: ^testing.T) {
+	totals := [4]Misorder_Totals{{set = "brute force"}, {set = "light cable chains"}, {set = "light cable twins"}, {set = "feasibility"}}
+	for seed in 0 ..< BRUTE_FORCE_NETLISTS {
+		add_netlist_misorders(&totals[0], brute_force_netlist(seed), seed)
+		free_all(context.temp_allocator)
+	}
+	for seed in 0 ..< LIGHT_CABLE_NETLISTS {
+		add_netlist_misorders(&totals[1], light_cable_netlist(seed, false), seed)
+		free_all(context.temp_allocator)
+		add_netlist_misorders(&totals[2], light_cable_netlist(seed, true), seed)
+		free_all(context.temp_allocator)
+	}
+	for seed in 0 ..< FEASIBILITY_NETLISTS {
+		add_netlist_misorders(&totals[3], feasibility_netlist(seed), seed)
+		free_all(context.temp_allocator)
+	}
+	for set in totals {
+		log.infof("%s: %d giving positions misordered in %d netlists, %d guarded", set.set, set.misordered, set.netlists_affected, set.guarded)
+		testing.expectf(t, set.misordered == 0, "%s: %d giving positions misordered, the first at seed %d", set.set, set.misordered, set.first_seed)
+		testing.expectf(t, set.guarded > 0, "%s: no phase where the rule has something to say", set.set)
+	}
+}
+
 expect_solved_twice_alike :: proc(t: ^testing.T, netlist: Test_Netlist, seed: int) {
 	_, first := solve_test_netlist(netlist)
 	_, second := solve_test_netlist(netlist)

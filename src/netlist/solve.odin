@@ -12,13 +12,14 @@ package netlist
 // level, a saturated edge splitting its tree into regions: the side short
 // of power gets the lower level and the side with spare power keeps its
 // higher one (region_levels), and where an edge blocks the dispatch the
-// generation moves inside the limit (repair_dispatch). A region fed across
-// a saturated edge charges the region feeding it only the whole joules it
-// takes (0373). Every spare joule, a region's slack at its level or the
-// room a fed region leaves on its edge, goes a level at a time to the
-// poorest region that can reach it (the pool: fed_fill, settle_levels).
-// Each fed region's run is recorded once, uncapped, and replayed up to its
-// parent's level by every walk that meets it (0390).
+// generation moves inside the limit, every order at its offers or its
+// edges' limits before a later one gives (repair_dispatch, 0389). A
+// region fed across a saturated edge charges the region feeding it only
+// the whole joules it takes (0373). Every spare joule, a region's slack at
+// its level or the room a fed region leaves on its edge, goes a level at a
+// time to the poorest region that can reach it (the pool: fed_fill,
+// settle_levels). Each fed region's run is recorded once, uncapped, and
+// replayed up to its parent's level by every walk that meets it (0390).
 //
 // Phase 2 charges the stores that supplied nothing from what phase 1 left
 // of the other offers and of every edge, by the same solve.
@@ -28,6 +29,7 @@ package netlist
 // one dispatch order at a time. Power never sets it.
 
 import "base:runtime"
+import "core:math"
 import "core:slice"
 
 // Joules this tick: what a consumer asks, what an offer gives at its
@@ -112,6 +114,18 @@ Greedy_Step :: struct {
 	candidate: i32,
 	level:     u32,
 	need:      i64,
+}
+
+// Per position and class, flat at position * class_count + class: what
+// the dispatch gave of the class in the position's subtree, the least of
+// it the subtree gives with its edge at its floor (forced, the floor met
+// by the cheapest classes), and what more of it the subtree can give
+// under its edge's ceiling (length, the ceiling cut from the dearest);
+// class_of an order's class, -1 for an order nobody offers at (0389).
+Class_Ranges :: struct {
+	class_of:                   [256]i32,
+	class_count:                int,
+	dispatched, forced, length: []i64,
 }
 
 // The positions the pool visited on this thread and the replays a cap cut
@@ -868,65 +882,143 @@ spread_over_rooms :: proc(amount: i64, rooms, given: []i64) {
 	}
 }
 
-// Moves the dispatch inside the edges' bounds. Bottom-up, the range of
-// what each subtree can supply with its edge within bounds: low from the
-// most it may import, high from its offers and the most it may export.
-// Top-down from the tree's delivered total: each child keeps its
-// dispatched sum clamped to its range and the node its own dispatched
-// supply, and the difference to the node's target is spread over the
-// room left in them, own first.
-repair_dispatch :: proc(phase: ^Phase) {
+// Each order some position offers at gets the next class, from order 0
+// up; the others -1.
+order_classes :: proc(phase: Phase) -> (class_of: [256]i32, class_count: int) {
+	offered: [256]bool
+	for offer, position in phase.offer {
+		if offer > 0 {
+			offered[phase.order[position]] = true
+		}
+	}
+	for is_offered, order in offered {
+		class_of[order] = is_offered ? i32(class_count) : -1
+		class_count += int(is_offered)
+	}
+	return
+}
+
+// The floor met by the earliest orders: amount moves from length to
+// forced, class 0 first.
+cut_from_cheapest :: proc(forced, length: []i64, amount: i64) {
+	remaining := amount
+	for class in 0 ..< len(length) {
+		taken := clamp(remaining, 0, length[class])
+		forced[class] += taken
+		length[class] -= taken
+		remaining -= taken
+	}
+}
+
+// What the ceiling leaves out is the latest orders: amount leaves
+// length, the last class first.
+cut_from_dearest :: proc(length: []i64, amount: i64) {
+	remaining := amount
+	for class := len(length) - 1; class >= 0; class -= 1 {
+		taken := clamp(remaining, 0, length[class])
+		length[class] -= taken
+		remaining -= taken
+	}
+}
+
+// Bottom-up each position's rows: its own offer and supply in its class,
+// its children's rows added in, then cut to its edge's floor and ceiling,
+// what its subtree receives plus the edge's bounds (the root's both its
+// delivered total, where the tree balances).
+class_ranges :: proc(phase: Phase) -> (ranges: Class_Ranges) {
 	count := len(phase.nodes)
+	ranges.class_of, ranges.class_count = order_classes(phase)
+	classes := ranges.class_count
+	ranges.dispatched = make([]i64, count * classes, context.temp_allocator)
+	ranges.forced = make([]i64, count * classes, context.temp_allocator)
+	ranges.length = make([]i64, count * classes, context.temp_allocator)
 	subtree_delivered := make([]i64, count, context.temp_allocator)
-	dispatched := make([]i64, count, context.temp_allocator)
-	low := make([]i64, count, context.temp_allocator)
-	high := make([]i64, count, context.temp_allocator)
-	children_low := make([]i64, count, context.temp_allocator)
-	children_high := make([]i64, count, context.temp_allocator)
 	for position := count - 1; position >= 0; position -= 1 {
+		dispatched := ranges.dispatched[position * classes:][:classes]
+		forced := ranges.forced[position * classes:][:classes]
+		length := ranges.length[position * classes:][:classes]
 		subtree_delivered[position] += phase.delivered[position]
-		dispatched[position] += phase.supplied[position]
-		low[position] = max(children_low[position], 0)
-		high[position] = phase.offer[position] + children_high[position]
+		if phase.offer[position] > 0 {
+			class := ranges.class_of[phase.order[position]]
+			length[class] += phase.offer[position]
+			dispatched[class] += phase.supplied[position]
+		}
+		floor, ceiling := subtree_delivered[position], subtree_delivered[position]
+		if position > 0 {
+			floor += phase.lower[position]
+			ceiling += phase.upper[position]
+		}
+		cut_from_cheapest(forced, length, floor - math.sum(forced))
+		cut_from_dearest(length, math.sum(forced) + math.sum(length) - ceiling)
 		if position == 0 {
 			break
 		}
-		low[position] = max(low[position], subtree_delivered[position] + phase.lower[position])
-		high[position] = min(high[position], subtree_delivered[position] + phase.upper[position])
-		parent := phase.parent[position]
+		parent := int(phase.parent[position])
 		subtree_delivered[parent] += subtree_delivered[position]
-		dispatched[parent] += dispatched[position]
-		children_low[parent] += low[position]
-		children_high[parent] += high[position]
+		for class in 0 ..< classes {
+			ranges.dispatched[parent * classes + class] += dispatched[class]
+			ranges.forced[parent * classes + class] += forced[class]
+			ranges.length[parent * classes + class] += length[class]
+		}
 	}
+	return
+}
+
+// One class's target at the position split over the position and its
+// children: each child starts from what the dispatch gave of the class in
+// its subtree clamped to its range, the position from its own supply when
+// it offers at the class, and the difference is spread over the room
+// left in them, own first.
+split_class_target :: proc(phase: ^Phase, ranges: Class_Ranges, target: []i64, own_children: []i32, position: i32, class: int, rooms, given: []i64) {
+	classes := ranges.class_count
+	owns := phase.offer[position] > 0 && int(ranges.class_of[phase.order[position]]) == class
+	own := owns ? phase.supplied[position] : 0
+	sum := own
+	for child in own_children {
+		at := int(child) * classes + class
+		target[at] = clamp(ranges.dispatched[at], ranges.forced[at], ranges.forced[at] + ranges.length[at])
+		sum += target[at]
+	}
+	difference := target[int(position) * classes + class] - sum
+	if difference == 0 {
+		return
+	}
+	raising := difference > 0
+	rooms[0] = owns ? (raising ? phase.offer[position] - own : own) : 0
+	for child, index in own_children {
+		at := int(child) * classes + class
+		rooms[index + 1] = raising ? ranges.forced[at] + ranges.length[at] - target[at] : target[at] - ranges.forced[at]
+	}
+	room_count := len(own_children) + 1
+	spread_over_rooms(abs(difference), rooms[:room_count], given[:room_count])
+	sign := i64(raising ? 1 : -1)
+	if owns {
+		phase.supplied[position] = own + sign * given[0]
+	}
+	for child, index in own_children {
+		target[int(child) * classes + class] += sign * given[index + 1]
+	}
+}
+
+// Moves the dispatch inside the edges' bounds in dispatch order (0389):
+// each subtree's range per class from the bottom (class_ranges), then
+// top-down each class's target split over the position and its children
+// from the dispatch, the difference over the room left, own first. The
+// root's targets are its forced row, its length 0 after its cuts. With
+// one class it is the repair before 0389, joule for joule.
+repair_dispatch :: proc(phase: ^Phase) {
+	count := len(phase.nodes)
+	ranges := class_ranges(phase^)
+	classes := ranges.class_count
 	offsets, children := phase_children(phase.parent)
-	target := make([]i64, count, context.temp_allocator)
-	target[0] = subtree_delivered[0]
+	target := make([]i64, count * classes, context.temp_allocator)
+	copy(target[:classes], ranges.forced[:classes])
 	rooms := make([]i64, count, context.temp_allocator)
 	given := make([]i64, count, context.temp_allocator)
-	for position in 0 ..< count {
+	for position in 0 ..< i32(count) {
 		own_children := children[offsets[position]:offsets[position + 1]]
-		own := phase.supplied[position]
-		sum := own
-		for child in own_children {
-			target[child] = clamp(dispatched[child], low[child], high[child])
-			sum += target[child]
-		}
-		difference := target[position] - sum
-		if difference == 0 {
-			continue
-		}
-		raising := difference > 0
-		rooms[0] = raising ? phase.offer[position] - own : own
-		for child, index in own_children {
-			rooms[index + 1] = raising ? high[child] - target[child] : target[child] - low[child]
-		}
-		room_count := len(own_children) + 1
-		spread_over_rooms(abs(difference), rooms[:room_count], given[:room_count])
-		sign := i64(raising ? 1 : -1)
-		phase.supplied[position] = own + sign * given[0]
-		for child, index in own_children {
-			target[child] += sign * given[index + 1]
+		for class in 0 ..< classes {
+			split_class_target(phase, ranges, target, own_children, position, class, rooms, given)
 		}
 	}
 }
