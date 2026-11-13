@@ -1,6 +1,6 @@
 # 0278: Toolbars as shortcuts into the inventory
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, ac76d591)
 
 ## Goal
 
