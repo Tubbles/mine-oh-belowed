@@ -532,8 +532,52 @@ test_a_blueprint_refuses_as :: proc(t: ^testing.T) {
 	blueprint := Blueprint{origin_kind = .Cell, cell = {4, 1, 4}, commands = {"as 0 place wooden_chest 0 0 0 0"}}
 	response := run_blueprint(command_test_context(test), blueprint)
 	testing.expect(t, !response.ok)
-	testing.expect_value(t, response.text, "blueprint command 1 (as 0 place wooden_chest 0 0 0 0): a blueprint holds only place, block, remove, insert, recipe and filter")
+	testing.expect_value(t, response.text, "blueprint command 1 (as 0 place wooden_chest 0 0 0 0): a blueprint holds only place, cable, block, remove, insert, recipe and filter")
 	testing.expect_value(t, entity_at(&test.simulation.world.entities, {4, 1, 4}), NO_ENTITY)
+}
+
+// Work item 0368: the cable command's block and field forms lay a cable
+// and answer its metres; an item that is no cable, a port id the machine
+// lacks and a span past the item's each answer an error and lay nothing;
+// a blueprint line moves both triples.
+@(test)
+test_the_cable_command_lays_and_refuses :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	entities := &test.simulation.world.entities
+	expect_command_ok(t, test, "place junction_box 2 1 2 0")
+	expect_command_ok(t, test, "place junction_box 6 1 2 0")
+	expect_command_ok(t, test, "place junction_box 30 1 2 0")
+	testing.expect_value(t, expect_command_ok(t, test, "cable light_cable 2 1 2 b 6 1 2 a").text, "cable light_cable 3 m")
+	testing.expect_value(t, len(entities.cables.cables), 1)
+	testing.expect_value(t, test.simulation.records.statistics.cables_run, 1)
+	testing.expect_value(t, expect_command_error(t, test, "cable copper_wire 2 1 2 c 6 1 2 b").text, `"copper_wire" is not a cable item`)
+	testing.expect_value(t, expect_command_error(t, test, "cable light_cable 2 1 2 z 6 1 2 b").text, `the junction_box at 2 1 2 has no power port "z"`)
+	testing.expect_value(t, expect_command_error(t, test, "cable light_cable 9 1 2 a 6 1 2 b").text, "no entity at 9 1 2")
+	// From x 7 to x 30: past the light cable's 20 m, within the trunk's 50.
+	testing.expect_value(t, expect_command_error(t, test, "cable light_cable 6 1 2 b 30 1 2 a").text, "field_refused_cable_too_short")
+	testing.expect_value(t, expect_command_error(t, test, "cable light_cable 2 1 2 b 6 1 2 c").text, "field_refused_cable_end_gone")
+	expect_command_error(t, test, "cable light_cable 2 1 2 c 6 1 2")
+	testing.expect_value(t, len(entities.cables.cables), 1)
+	testing.expect_value(t, expect_command_ok(t, test, "cable trunk_cable 6 1 2 b 30 1 2 a").text, "cable trunk_cable 23 m")
+
+	test.simulation.field.enabled = true
+	defer test.simulation.field.enabled = false
+	origin, axes := free_frame_at(TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame := add_frame(&entities.frames, origin, axes, 500)
+	box := test_machine(test.content.machines, "junction_box")
+	add_entity(entities, test.content.machines, box, {0, 0, 0}, 0, frame)
+	add_entity(entities, test.content.machines, box, {4, 0, 0}, 0, frame)
+	// From 0.5 m to 2 m along the frame.
+	testing.expect_value(t, expect_command_ok(t, test, fmt.tprintf("cable light_cable %d 0 0 0 b %d 4 0 0 a", frame, frame)).text, "cable light_cable 2 m")
+	testing.expect_value(t, expect_command_error(t, test, "cable light_cable 2 1 2 c 6 1 2 c").text, NO_BLOCK_WORLD_PROBLEM)
+	testing.expect_value(t, expect_command_error(t, test, fmt.tprintf("cable light_cable 0 2 1 2 c %d 4 0 0 b", frame)).text, NO_BLOCK_WORLD_PROBLEM)
+	testing.expect_value(t, expect_command_error(t, test, fmt.tprintf("cable light_cable %d 0 0 0 z %d 4 0 0 b", frame, frame)).text, `the junction_box at 0 0 0 has no power port "z"`)
+	testing.expect_value(t, len(entities.cables.cables), 3)
+
+	words, problem := expand_blueprint_command("cable light_cable 1 0 1 b 2 0 2 a", {10, 20, 30})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, strings.join(words, " ", context.temp_allocator), "cable light_cable 11 20 31 b 12 20 32 a")
 }
 
 // The shipped blueprint places on a flat floor with an iron vein and

@@ -199,7 +199,9 @@ field_placement_cells :: proc(content: Simulation_Content, placement: Field_Plac
 // removal (0179, simulation_field.odin) its sample; a pick up (0195,
 // advance_field_pick_up) the frame and the cell held; a felling (0197,
 // advance_field_felling) the tree's key; a vessel part (0361,
-// vessel_placement.odin) its Vessel_Placement.
+// vessel_placement.odin) its Vessel_Placement; a cable laid and taken up
+// (0368, cable_field.odin) its Cable_Placement, the taking up's first end
+// alone.
 Field_Placement_Kind :: enum u8 {
 	Machine,
 	Run,
@@ -208,6 +210,8 @@ Field_Placement_Kind :: enum u8 {
 	Pick_Up,
 	Fell,
 	Vessel_Part,
+	Cable,
+	Cable_Removal,
 }
 
 Field_Placement :: struct {
@@ -230,6 +234,7 @@ Field_Placement :: struct {
 	sample:    Sample_Coordinate,
 	tree:      Tree_Key,
 	vessel:    Vessel_Placement,
+	cable:     Cable_Placement,
 }
 
 // The placement editor's commit (0215, player_command.odin) of a
@@ -579,6 +584,12 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 		case .Vessel_Part:
 			drain_vessel_placement(state, content, player, placement.vessel)
 			continue
+		case .Cable:
+			drain_field_cable(state, content, player, placement.cable)
+			continue
+		case .Cable_Removal:
+			drain_field_cable_removal(state, content, player, placement.cable.ends[0])
+			continue
 		case .Machine:
 		}
 		if refusal := field_placement_refusal(state, content, player^, placement); refusal != .None {
@@ -832,6 +843,12 @@ read_frame_tables :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: M
 	records := make([dynamic]Entity_Frame_Record, context.temp_allocator)
 	read_list(reader, &records) or_return
 	for record in records {
+		// A machine deleted at load (0368, settle_gone_machines) leaves its
+		// frame to be released once the world is rebuilt.
+		if handle_was_deleted(reader.remap, record.handle) {
+			append(&reader.remap.deleted_frames, record.frame)
+			continue
+		}
 		common := entity_common(entities, record.handle)
 		if _, found := find_frame(&entities.frames, record.frame); common == nil || !found {
 			return false

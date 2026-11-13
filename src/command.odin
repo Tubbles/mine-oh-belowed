@@ -163,12 +163,13 @@ command_usages := [?]Command_Usage {
 	{"free_crafting <on|off>", "crafts take no ingredients"},
 	{"vein <type> <x> <z> [size_class]", "a new surface vein centred on the column"},
 	{"place <machine> <x> <y> <z> <rotation> | place <machine> <frame> <x> <y> <z> <rotation>", "a machine by its minimum corner (on the field on a frame's cell), by the player's rules, no item taken"},
+	{"cable <item> <x> <y> <z> <port id> <x> <y> <z> <port id> | cable <item> <frame> <x> <y> <z> <port id> <frame> <x> <y> <z> <port id>", "a cable between the power ports of those ids on the things at the two cells, by the hand run's rules, no item taken"},
 	{"remove <x> <y> <z>", "the entity or block there, contents discarded"},
 	{"block <block> <x> <y> <z>", "set a block"},
 	{"insert <item> <count> <x> <y> <z>", "items into the entity there, as an inserter would"},
 	{"recipe <recipe> <x> <y> <z>", "the chosen recipe of the crafting machine there, as its panel sets it"},
 	{"filter <item> <x> <y> <z>", "the filter of the filter inserter or splitter there, as its panel sets it"},
-	{"blueprint <path>", "run the place, block, remove, insert, recipe and filter commands of an SJSON file"},
+	{"blueprint <path>", "run the place, cable, block, remove, insert, recipe and filter commands of an SJSON file"},
 	{"tick <n>", "run n ticks as fast as possible, answer when done"},
 	{"pause | resume", "hold or release the simulation"},
 	{"save", "save the world"},
@@ -315,7 +316,7 @@ execute_command_line :: proc(command_context: Command_Context, line: string) -> 
 // (the loop's lockstep driver).
 command_writes_simulation :: proc(name: string) -> bool {
 	switch name {
-	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint", "look", "camera", "crouch", "seat", "as":
+	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "cable", "remove", "block", "insert", "recipe", "filter", "blueprint", "look", "camera", "crouch", "seat", "as":
 		return true
 	}
 	return false
@@ -436,6 +437,8 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		return command_vein(command_context, arguments)
 	case "place":
 		return command_place(command_context, arguments)
+	case "cable":
+		return command_cable(command_context, arguments)
 	case "remove":
 		return command_cell_request(command_context, arguments, "remove <x> <y> <z>", Developer_Request{action = .Remove_At})
 	case "block":
@@ -788,6 +791,68 @@ command_place :: proc(command_context: Command_Context, arguments: []string) -> 
 	return command_ok("placed %s at %d %d %d", arguments[0], cell.x, cell.y, cell.z)
 }
 
+// cable <item> <x> <y> <z> <port id> <x> <y> <z> <port id> (0368): a cable
+// between the power ports of those ids at the two cells, refused as a
+// hand run is but with no metres taken; the answer names its metres.
+command_cable :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	usage :: "cable <item> <x> <y> <z> <port id> <x> <y> <z> <port id>"
+	if len(arguments) != 9 {
+		return usage_error(usage)
+	}
+	first, first_ok := parse_coordinate_words(arguments[1:4])
+	second, second_ok := parse_coordinate_words(arguments[5:8])
+	if !first_ok || !second_ok {
+		return usage_error(usage)
+	}
+	return command_cable_request(command_context, arguments[0], {{cell = first, port_id = arguments[4]}, {cell = second, port_id = arguments[8]}})
+}
+
+// One end of the cable command: frame BLOCK_FRAME in the block world.
+Cable_Command_End :: struct {
+	cell:    World_Coordinate,
+	frame:   Frame_Id,
+	port_id: string,
+}
+
+// Both world forms of cable: the item a cable, each end's cell an entity
+// with a power port of that id; then the request, served as a tick's.
+command_cable_request :: proc(command_context: Command_Context, item_word: string, ends: [2]Cable_Command_End) -> Command_Response {
+	items := command_context.content.items
+	item, found := find_item_id(items, item_word)
+	if !found || !item_is_cable(items, item) {
+		return command_error("%q is not a cable item", item_word)
+	}
+	entities := &command_context.simulation.world.entities
+	request := Developer_Request{action = .Place_Cable, item = item, cell = ends[0].cell, frame = ends[0].frame, second_cell = ends[1].cell, second_frame = ends[1].frame}
+	for end, role in ends {
+		port, problem := command_cable_port(entities, command_context.content.machines, end)
+		if problem != "" {
+			return command_error("%s", problem)
+		}
+		request.ports[role] = port
+	}
+	if problem := serve_command_request(command_context, request); problem != "" {
+		return command_error("%s", problem)
+	}
+	laid := Port_End{entity = entity_at(entities, ends[0].cell, ends[0].frame), port = request.ports[0]}
+	return command_ok("cable %s %d m", item_word, entities.cables.cables[port_end_cable(&entities.cables, laid)].metres)
+}
+
+// The index of the power port of that id on the entity at the end's cell.
+command_cable_port :: proc(entities: ^Entities, machines: Machine_Registry, end: Cable_Command_End) -> (port: u8, problem: string) {
+	common := entity_common(entities, entity_at(entities, end.cell, end.frame))
+	if common == nil {
+		return 0, fmt.tprintf("no entity at %d %d %d", end.cell.x, end.cell.y, end.cell.z)
+	}
+	machine := machines.machines[common.machine]
+	for index in 0 ..< machine.port_count {
+		if machine.ports[index].id == end.port_id && machine.ports[index].kind == .Power {
+			return u8(index), ""
+		}
+	}
+	return 0, fmt.tprintf("the %s at %d %d %d has no power port %q", machine.id, end.cell.x, end.cell.y, end.cell.z, end.port_id)
+}
+
 // A request whose only argument is the cell.
 command_cell_request :: proc(command_context: Command_Context, arguments: []string, usage: string, request_template: Developer_Request) -> Command_Response {
 	cell, ok := parse_coordinate_words(arguments)
@@ -1064,18 +1129,21 @@ blueprint_origin :: proc(command_context: Command_Context, blueprint: Blueprint)
 	return {}, ""
 }
 
-// The index of the first coordinate word of a blueprint command, or -1
-// for a command a blueprint may not hold.
-blueprint_coordinate_index :: proc(name: string) -> int {
+// The indices of the first word of a blueprint command's coordinate
+// triples: first -1 for a command a blueprint may not hold, second -1 for
+// a command with one cell (cable has two).
+blueprint_coordinate_indices :: proc(name: string) -> (first, second: int) {
 	switch name {
 	case "remove":
-		return 1
+		return 1, -1
 	case "place", "block", "recipe", "filter":
-		return 2
+		return 2, -1
 	case "insert":
-		return 3
+		return 3, -1
+	case "cable":
+		return 2, 6
 	}
-	return -1
+	return -1, -1
 }
 
 // The command's words with its coordinates moved by the origin.
@@ -1084,20 +1152,25 @@ expand_blueprint_command :: proc(command: string, origin: World_Coordinate) -> (
 	if problem != "" || len(words) == 0 {
 		return nil, problem != "" ? problem : "empty command"
 	}
-	first := blueprint_coordinate_index(words[0])
+	first, second := blueprint_coordinate_indices(words[0])
 	if first < 0 {
-		return nil, "a blueprint holds only place, block, remove, insert, recipe and filter"
-	}
-	if len(words) < first + 3 {
-		return nil, "missing coordinates"
-	}
-	cell, ok := parse_coordinate_words(words[first:first + 3])
-	if !ok {
-		return nil, "coordinates must be integers"
+		return nil, "a blueprint holds only place, cable, block, remove, insert, recipe and filter"
 	}
 	moved := slice.clone(words, context.temp_allocator)
-	for axis in 0 ..< 3 {
-		moved[first + axis] = fmt.tprintf("%d", cell[axis] + origin[axis])
+	for start in ([2]int{first, second}) {
+		if start < 0 {
+			continue
+		}
+		if len(words) < start + 3 {
+			return nil, "missing coordinates"
+		}
+		cell, ok := parse_coordinate_words(words[start:start + 3])
+		if !ok {
+			return nil, "coordinates must be integers"
+		}
+		for axis in 0 ..< 3 {
+			moved[start + axis] = fmt.tprintf("%d", cell[axis] + origin[axis])
+		}
 	}
 	return moved, ""
 }

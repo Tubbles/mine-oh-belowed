@@ -3,56 +3,32 @@ package game
 import "base:runtime"
 import "netlist"
 
-// Electric networks (doc/fluids.md, Power). Poles and power switches are
-// the nodes. Two nodes are wired when the centres of their footprints
-// (across, at the bottom) are at most the shorter of their two wire
-// reaches apart (straight line). A network is a
-// connected set of nodes over the wires, where a power switch that is off
-// takes part in no network, so the wires through it carry nothing. An
-// electric machine or generator belongs to the network of the first pole
-// (pool order) whose supply volume covers one of its cells, and to none
-// otherwise. Networks and memberships are rebuilt whenever a pole, a
-// switch or an electric machine is placed or removed, or a switch turns.
+// Electric networks (doc/fluids.md, Power, work item 0368): the netlist
+// of the cables. A node is a thing's terminal: one per live entity whose
+// machine has a power port, its ports joined inside it, but a power switch
+// that is off, which is two (port 0, port 1). Nodes are numbered in pool
+// order: the poles' pool (junction boxes and switches), then the
+// participants' pools in collection order, then the vessel parts, so the
+// leftover joules go in that order. One edge per cable between the nodes
+// of its two ends, carrying its watts (cable.odin); parallel cables
+// bundle, a cable that closes a loop is a chord that carries nothing
+// until 0377 (netlist.build_topology). A network is a tree of two or more
+// nodes, in tree order; a consumer with no cable is a tree alone, in no
+// network. The netlist is rebuilt whenever an entity with a power port is
+// placed or removed, a cable is laid or taken up, or a switch turns.
 //
 // Per tick, integers in joules: every consumer asks for its power over
 // the tick while it has work, every generator offers what it can give,
-// satisfaction is min(supply, demand) over demand in per mille, every
-// consumer receives its demand times the satisfaction and works at that
-// fraction (power_machine.odin), and the generators share the energy
-// actually received in their dispatch order (0140: the lowest order
-// serves first, up to its offers, the next takes the rest), within one
-// order in proportion to their offers, and burn fuel or steam only for
-// their share.
-//
-// The balance runs through the netlist package (0355, src/netlist/): each
-// network is a star of its participants around a hub node, joined by
-// edges of UNLIMITED_CAPACITY, so the netlist's fast path computes exactly
-// the pooled balance above. The hub adapter stands until cables replace
-// the poles (0368).
+// and the netlist's solve (src/netlist/) balances each tree with each
+// edge's capacity a tick: a consumer gets its node's level, so a thin
+// cable starves only what is behind it, and works at that fraction
+// (power_machine.odin); the generators share what was delivered in their
+// dispatch order (0140), within one order in proportion to their offers,
+// and burn fuel or steam only for their share.
 
-Electric_Node :: struct {
-	handle:        Entity_Handle,
-	origin:        World_Coordinate,
-	footprint:     [3]i32,
-	reach:         i32,
-	// The cells the node powers; size zero for a power switch.
-	supply_origin: World_Coordinate,
-	supply_size:   [3]i32,
-	// False for a power switch that is off.
-	active:        bool,
-	// -1 for an inactive node.
-	network:       int,
-}
-
-// Indices into Electric_Networks.nodes, first below second.
-Electric_Wire :: struct {
-	first:  int,
-	second: int,
-}
-
-// The last tick's balance, joules per tick. satisfaction is in per
-// mille: min(supply, demand) over demand, or full when nothing asks and
-// something could give.
+// The last tick's balance of one network, joules per tick. satisfaction
+// is the lowest level of its consumers with a demand, in per mille, or
+// full when nothing asks and something could give.
 Electric_Network :: struct {
 	supply:          u64,
 	demand:          u64,
@@ -60,11 +36,13 @@ Electric_Network :: struct {
 	satisfaction:    u32,
 	generator_count: int,
 	consumer_count:  int,
+	// The batteries (0383); 0 until then.
+	store_count:     int,
 }
 
 // offered is a consumer's demand or a generator's supply for the tick,
-// delivered what it received or gave. network is -1 outside every network.
-// node is its node in the tick's netlist (balance_electric_energy).
+// delivered what it received or gave. node is its node in the netlist, -1
+// for an entity without a power port; network is -1 outside every network.
 Electric_Participant :: struct {
 	handle:    Entity_Handle,
 	machine:   Machine_Id,
@@ -78,223 +56,203 @@ Electric_Participant :: struct {
 }
 
 Electric_Networks :: struct {
-	nodes:        [dynamic]Electric_Node,
-	wires:        [dynamic]Electric_Wire,
-	networks:     [dynamic]Electric_Network,
-	// Electric machines and generators inside a network.
-	memberships:  map[Entity_Handle]int,
+	networks:            [dynamic]Electric_Network,
 	// Every electric machine and generator in the last tick, in pool
 	// order, for the overview.
-	participants: [dynamic]Electric_Participant,
+	participants:        [dynamic]Electric_Participant,
 	// Zero means context.allocator; tests use the temp allocator.
-	allocator:    runtime.Allocator,
+	allocator:           runtime.Allocator,
+	// Per node its entity (an off switch names its entity twice), and
+	// each entity's first node.
+	node_entities:       [dynamic]Entity_Handle,
+	node_of_entity:      map[Entity_Handle]u32,
+	// The forest of the cables, in the networks' allocator, made again at
+	// each rebuild.
+	topology:            netlist.Topology,
+	// Per tree its network, -1 for a tree of one node.
+	network_of_tree:     [dynamic]i32,
+	// The tick's scratch, per node: each edge's capacity in whole joules a
+	// tick, the solve's inputs and outputs, and the participant on the node
+	// (-1 for none).
+	capacity_per_tick:   [dynamic]i64,
+	inputs:              [dynamic]netlist.Node_Input,
+	outputs:             [dynamic]netlist.Node_Output,
+	participant_of_node: [dynamic]i32,
+}
+
+electric_allocator :: proc(networks: ^Electric_Networks) -> runtime.Allocator {
+	return networks.allocator.procedure != nil ? networks.allocator : context.allocator
 }
 
 destroy_electric_networks :: proc(networks: ^Electric_Networks) {
-	delete(networks.nodes)
-	delete(networks.wires)
+	netlist.destroy_topology(&networks.topology, electric_allocator(networks))
 	delete(networks.networks)
-	delete(networks.memberships)
 	delete(networks.participants)
+	delete(networks.node_entities)
+	delete(networks.node_of_entity)
+	delete(networks.network_of_tree)
+	delete(networks.capacity_per_tick)
+	delete(networks.inputs)
+	delete(networks.outputs)
+	delete(networks.participant_of_node)
 }
 
 set_electric_allocators :: proc(networks: ^Electric_Networks) {
-	if networks.nodes.allocator.procedure != nil {
+	if networks.networks.allocator.procedure != nil {
 		return
 	}
-	allocator := networks.allocator.procedure != nil ? networks.allocator : context.allocator
-	networks.nodes.allocator, networks.wires.allocator = allocator, allocator
+	allocator := electric_allocator(networks)
 	networks.networks.allocator, networks.participants.allocator = allocator, allocator
-	networks.memberships = make(map[Entity_Handle]int, allocator)
+	networks.node_entities.allocator, networks.network_of_tree.allocator = allocator, allocator
+	networks.capacity_per_tick.allocator, networks.inputs.allocator = allocator, allocator
+	networks.outputs.allocator, networks.participant_of_node.allocator = allocator, allocator
+	networks.node_of_entity = make(map[Entity_Handle]u32, allocator)
 }
 
 clear_electric_networks :: proc(networks: ^Electric_Networks) {
 	set_electric_allocators(networks)
-	clear(&networks.nodes)
-	clear(&networks.wires)
+	netlist.destroy_topology(&networks.topology, electric_allocator(networks))
 	clear(&networks.networks)
-	clear(&networks.memberships)
 	clear(&networks.participants)
+	clear(&networks.node_entities)
+	clear(&networks.node_of_entity)
+	clear(&networks.network_of_tree)
 }
 
-// The supply volume box of a pole at origin with the given footprint:
-// centred across the footprint, from the pole's bottom up.
-supply_volume_origin :: proc(origin: World_Coordinate, footprint, volume: [3]i32) -> World_Coordinate {
-	return origin - {(volume.x - footprint.x) / 2, 0, (volume.z - footprint.z) / 2}
-}
-
-make_electric_node :: proc(pole: Pole, machine: Machine) -> Electric_Node {
-	return Electric_Node {
-		handle = pole.handle,
-		origin = pole.origin,
-		footprint = pole.size,
-		reach = machine.wire_reach,
-		supply_origin = supply_volume_origin(pole.origin, pole.size, machine.supply_volume),
-		supply_size = machine.kind == .Pole ? machine.supply_volume : {},
-		active = machine.kind == .Pole || pole.on,
-		network = -1,
-	}
-}
-
-// Twice the centre of the footprint across and its bottom, so that the
-// centre of an even footprint stays an integer.
-doubled_footprint_centre :: proc(node: Electric_Node) -> [3]i64 {
-	return {2 * i64(node.origin.x) + i64(node.footprint.x), 2 * i64(node.origin.y), 2 * i64(node.origin.z) + i64(node.footprint.z)}
-}
-
-nodes_are_within_reach :: proc(first, second: Electric_Node) -> bool {
-	offset := doubled_footprint_centre(second) - doubled_footprint_centre(first)
-	doubled_reach := 2 * i64(min(first.reach, second.reach))
-	return offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= doubled_reach * doubled_reach
-}
-
-find_electric_wires :: proc(networks: ^Electric_Networks) {
-	for first in 0 ..< len(networks.nodes) {
-		for second in first + 1 ..< len(networks.nodes) {
-			if nodes_are_within_reach(networks.nodes[first], networks.nodes[second]) {
-				append(&networks.wires, Electric_Wire{first, second})
-			}
-		}
-	}
-}
-
-// Network ids in order of each network's first active node.
-assign_electric_networks :: proc(nodes: []Electric_Node, wires: []Electric_Wire) -> int {
-	parents := make([]int, len(nodes), context.temp_allocator)
-	for &parent, index in parents {
-		parent = index
-	}
-	for wire in wires {
-		if nodes[wire.first].active && nodes[wire.second].active {
-			first, second := union_find_root(parents, wire.first), union_find_root(parents, wire.second)
-			parents[max(first, second)] = min(first, second)
-		}
-	}
-	network_of_root := make([]int, len(nodes), context.temp_allocator)
-	count := 0
-	for &node, index in nodes {
-		if !node.active {
+// The pool's live entries with a power port, one node each, an off
+// switch two.
+append_power_nodes :: proc(networks: ^Electric_Networks, pool: ^Entity_Pool($T), machines: Machine_Registry) {
+	for &entry in pool.entries {
+		if !entry.alive || !machine_touches_power(machines.machines[entry.machine]) {
 			continue
 		}
-		root := union_find_root(parents, index)
-		if root == index {
-			network_of_root[index] = count
-			count += 1
-		}
-		node.network = network_of_root[root]
-	}
-	return count
-}
-
-// The network of the first node whose supply volume covers a cell, or -1.
-network_covering_cells :: proc(nodes: []Electric_Node, cells: []World_Coordinate) -> int {
-	for node in nodes {
-		if node.network < 0 || node.supply_size == {} {
-			continue
-		}
-		for cell in cells {
-			if cell_in_box(cell, node.supply_origin, node.supply_size) {
-				return node.network
-			}
-		}
-	}
-	return -1
-}
-
-append_electric_members :: proc(networks: ^Electric_Networks, pool: ^Entity_Pool($T), machines: Machine_Registry) {
-	for entry in pool.entries {
-		if entry.alive && machine_touches_power(machines.machines[entry.machine]) {
-			network := network_covering_cells(networks.nodes[:], common_cells(entry.common, machines))
-			if network >= 0 {
-				networks.memberships[entry.handle] = network
+		networks.node_of_entity[entry.handle] = u32(len(networks.node_entities))
+		append(&networks.node_entities, entry.handle)
+		when T == Pole {
+			if !entry.on {
+				append(&networks.node_entities, entry.handle)
 			}
 		}
 	}
 }
 
-assign_electric_memberships :: proc(entities: ^Entities, machines: Machine_Registry) {
-	networks := &entities.electric_networks
-	append_electric_members(networks, &entities.inserters, machines)
-	append_electric_members(networks, &entities.drills, machines)
-	append_electric_members(networks, &entities.fluid_machines, machines)
-	append_electric_members(networks, &entities.lamps, machines)
-	append_electric_members(networks, &entities.assemblers, machines)
-	append_electric_members(networks, &entities.labs, machines)
-	append_electric_members(networks, &entities.core_sample_drills, machines)
-	append_electric_members(networks, &entities.launch_pads, machines)
+// The edges of the cables between the nodes of their ends, in the temp
+// allocator.
+cable_edges :: proc(networks: ^Electric_Networks, entities: ^Entities) -> []netlist.Edge {
+	edges := make([dynamic]netlist.Edge, 0, len(entities.cables.cables), context.temp_allocator)
+	for cable, index in entities.cables.cables {
+		first, second := power_port_node(networks, cable.ends[0]), power_port_node(networks, cable.ends[1])
+		if first >= 0 && second >= 0 {
+			append(&edges, netlist.Edge{u32(first), u32(second), entities.cables.watts[index]})
+		}
+	}
+	return edges[:]
 }
 
 rebuild_electric_networks :: proc(entities: ^Entities, machines: Machine_Registry) {
 	networks := &entities.electric_networks
 	clear_electric_networks(networks)
-	for pole in entities.poles.entries {
-		if pole.alive {
-			append(&networks.nodes, make_electric_node(pole, machines.machines[pole.machine]))
-		}
+	append_power_nodes(networks, &entities.poles, machines)
+	append_power_nodes(networks, &entities.inserters, machines)
+	append_power_nodes(networks, &entities.drills, machines)
+	append_power_nodes(networks, &entities.fluid_machines, machines)
+	append_power_nodes(networks, &entities.lamps, machines)
+	append_power_nodes(networks, &entities.assemblers, machines)
+	append_power_nodes(networks, &entities.labs, machines)
+	append_power_nodes(networks, &entities.core_sample_drills, machines)
+	append_power_nodes(networks, &entities.launch_pads, machines)
+	append_power_nodes(networks, &entities.vessel_parts, machines)
+	networks.topology = netlist.build_topology(len(networks.node_entities), cable_edges(networks, entities), electric_allocator(networks))
+	count := i32(0)
+	for tree in networks.topology.trees {
+		append(&networks.network_of_tree, tree.count >= 2 ? count : -1)
+		count += tree.count >= 2 ? 1 : 0
 	}
-	find_electric_wires(networks)
-	resize(&networks.networks, assign_electric_networks(networks.nodes[:], networks.wires[:]))
+	resize(&networks.networks, int(count))
 	for &network in networks.networks {
 		network = {}
 	}
-	assign_electric_memberships(entities, machines)
 }
 
-// The network an electric machine, generator, pole or switch belongs to,
-// or -1.
+// The node a port end joins: the entity's, the second of an off switch
+// for its port 1; -1 for none.
+power_port_node :: proc(networks: ^Electric_Networks, end: Port_End) -> int {
+	node, found := networks.node_of_entity[end.entity]
+	if !found {
+		return -1
+	}
+	next := int(node) + 1
+	if end.port == 1 && next < len(networks.node_entities) && networks.node_entities[next] == end.entity {
+		return next
+	}
+	return int(node)
+}
+
+// The network of an entity's first node, -1 without one.
 entity_network :: proc(networks: ^Electric_Networks, handle: Entity_Handle) -> int {
-	if network, found := networks.memberships[handle]; found {
-		return network
+	node, found := networks.node_of_entity[handle]
+	if !found || int(node) >= len(networks.topology.tree_of) {
+		return -1
 	}
-	for node in networks.nodes {
-		if node.handle == handle {
-			return node.network
-		}
-	}
-	return -1
+	return int(networks.network_of_tree[networks.topology.tree_of[node]])
 }
 
-// The energy balance, pure.
+// The energy balance.
 
 power_satisfaction :: proc(supply, demand: u64) -> u32 {
 	return netlist.pooled_level(i64(supply), i64(demand))
 }
 
-// Through the netlist: the participants in order are its nodes, then one
-// hub node per network, each participant with a network joined to its
-// hub by an UNLIMITED_CAPACITY edge and one without a network a node
-// alone. A consumer receives its node's delivered, a generator gives its
-// node's supplied: the pooled level of its network times its demand, and
-// what the consumers received shared over the generators by dispatch
-// order, in proportion to their offers, the rest a joule at a time in
-// participant order. The networks' figures are summed as before.
-balance_electric_energy :: proc(participants: []Electric_Participant, networks: []Electric_Network) {
-	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-	for &network in networks {
-		network = {}
+// Through the netlist: each participant's input on its node, each edge's
+// capacity in whole joules a tick (floored after bundling: a limit, no
+// energy is lost), the solve, and each participant's delivered (supplied
+// for a generator). The networks' figures are summed from the
+// participants; a network's satisfaction is the lowest level among its
+// consumers with a demand.
+balance_electric_energy :: proc(networks: ^Electric_Networks, tick_rate: int) {
+	node_count := len(networks.node_entities)
+	resize(&networks.capacity_per_tick, node_count)
+	resize(&networks.inputs, node_count)
+	resize(&networks.outputs, node_count)
+	resize(&networks.participant_of_node, node_count)
+	for node in 0 ..< node_count {
+		networks.capacity_per_tick[node] = networks.topology.capacity[node] / i64(max(tick_rate, 1))
+		networks.inputs[node], networks.outputs[node], networks.participant_of_node[node] = {}, {}, -1
 	}
-	node_count := len(participants) + len(networks)
-	inputs := make([]netlist.Node_Input, node_count, context.temp_allocator)
-	edges := make([dynamic]netlist.Edge, 0, len(participants), context.temp_allocator)
-	for &participant, index in participants {
-		participant.node = index
-		inputs[index] = participant_node_input(participant)
-		if participant.network >= 0 {
-			add_participant_offer(&networks[participant.network], participant)
-			append(&edges, netlist.Edge{u32(index), u32(len(participants) + participant.network), netlist.UNLIMITED_CAPACITY})
+	for participant, index in networks.participants {
+		if participant.node >= 0 {
+			networks.inputs[participant.node] = participant_node_input(participant)
+			networks.participant_of_node[participant.node] = i32(index)
 		}
 	}
-	topology := netlist.build_topology(node_count, edges[:], context.temp_allocator)
-	outputs := make([]netlist.Node_Output, node_count, context.temp_allocator)
-	netlist.solve(topology, inputs, outputs)
-	for &network in networks {
-		network.satisfaction = power_satisfaction(network.supply, network.demand)
+	topology := networks.topology
+	topology.capacity = networks.capacity_per_tick[:]
+	netlist.solve(topology, networks.inputs[:], networks.outputs[:])
+	for &network in networks.networks {
+		network = {}
+		network.satisfaction = POWER_FULL + 1
 	}
-	for &participant in participants {
-		output := outputs[participant.node]
+	for &participant in networks.participants {
+		participant.delivered = 0
+		if participant.node < 0 {
+			continue
+		}
+		output := networks.outputs[participant.node]
 		participant.delivered = u64(participant.generator ? output.supplied : output.delivered)
-		if participant.network >= 0 && !participant.generator {
-			networks[participant.network].delivered += participant.delivered
+		if participant.network >= 0 {
+			network := &networks.networks[participant.network]
+			add_participant_offer(network, participant)
+			if !participant.generator {
+				network.delivered += participant.delivered
+				if participant.offered > 0 {
+					network.satisfaction = min(network.satisfaction, output.level)
+				}
+			}
+		}
+	}
+	for &network in networks.networks {
+		if network.satisfaction > POWER_FULL {
+			network.satisfaction = power_satisfaction(network.supply, 0)
 		}
 	}
 }
@@ -350,9 +308,18 @@ fluid_machine_wants_power :: proc(fluid_machine: Fluid_Machine, machine: Machine
 }
 
 // A broken machine (0201) asks for and offers nothing, so it takes no
-// share of its network.
+// share of its network. Its node is its entity's first, -1 without a
+// power port.
 make_participant :: proc(networks: ^Electric_Networks, common: Entity_Common, generator: bool, offered: u64) -> Electric_Participant {
-	return Electric_Participant{handle = common.handle, machine = common.machine, network = entity_network(networks, common.handle), generator = generator, offered = common.broken ? 0 : offered}
+	node, found := networks.node_of_entity[common.handle]
+	return Electric_Participant {
+		handle = common.handle,
+		machine = common.machine,
+		network = entity_network(networks, common.handle),
+		node = found ? int(node) : -1,
+		generator = generator,
+		offered = common.broken ? 0 : offered,
+	}
 }
 
 // What every electric entity asks for or offers this tick, in pool order.
@@ -466,14 +433,15 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 	return nil
 }
 
-// Generators draw their steam, gas and fuel items here, so they are
-// counted consumed here.
+// A consumer gets its node's level. Generators draw their steam, gas and
+// fuel items here, so they are counted consumed here.
 apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content, statistics: ^Statistics, tick_rate: int) {
 	networks := &entities.electric_networks
 	for participant in networks.participants {
 		network := participant.network >= 0 ? networks.networks[participant.network] : Electric_Network{}
 		if !participant.generator {
-			deliver_power_satisfaction(entities, participant.handle, network.satisfaction)
+			level := participant.node >= 0 ? networks.outputs[participant.node].level : 0
+			deliver_power_satisfaction(entities, participant.handle, level)
 			continue
 		}
 		generator := pool_get(&entities.fluid_machines, participant.handle)
@@ -519,11 +487,13 @@ record_generator_tick :: proc(statistics: ^Statistics, kind: Machine_Kind, befor
 	record_slot_consumption(statistics, slots_before[:before.slot_count], slots_after[:after.slot_count])
 }
 
-// Energy and brownouts for the overview and the quest hints.
+// Energy and brownouts for the overview and the quest hints. A consumer
+// is unpowered outside every network or in one with no generator and no
+// store.
 record_electric_tick :: proc(statistics: ^Statistics, networks: ^Electric_Networks) {
 	unpowered := 0
 	for participant in networks.participants {
-		if participant.network < 0 && !participant.generator {
+		if !participant.generator && (participant.network < 0 || network_has_no_source(networks.networks[participant.network])) {
 			unpowered += 1
 		}
 	}
@@ -538,6 +508,10 @@ record_electric_tick :: proc(statistics: ^Statistics, networks: ^Electric_Networ
 	}
 	statistics.unpowered_machines = u64(unpowered)
 	statistics.unpowered_machine_ticks += u64(unpowered)
+}
+
+network_has_no_source :: proc(network: Electric_Network) -> bool {
+	return network.generator_count == 0 && network.store_count == 0
 }
 
 network_is_in_brownout :: proc(network: Electric_Network) -> bool {
@@ -559,7 +533,7 @@ tick_electric_networks :: proc(tick_context: Entity_Tick_Context) {
 	networks := &tick_context.entities.electric_networks
 	set_electric_allocators(networks)
 	collect_electric_participants(tick_context)
-	balance_electric_energy(networks.participants[:], networks.networks[:])
+	balance_electric_energy(networks, tick_context.tick_rate)
 	apply_electric_balance(tick_context.entities, tick_context.content, &records.statistics, tick_context.tick_rate)
 	record_electric_tick(&records.statistics, networks)
 }

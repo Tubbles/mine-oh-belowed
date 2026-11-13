@@ -7,9 +7,10 @@
 // south into a sink chest. Two offshore pumps, each on a pool of water
 // laid into the grass, fill one boiler's water pipe each; long
 // inserters reach over the pipes to fuel the boilers from the coal
-// belt, and their steam pipe feeds four steam engines. Small poles
-// carry the power to the drill and the inserters and, through a power
-// switch that is on, to a substation lighting eight lamps. The boilers
+// belt, and their steam pipe feeds four steam engines. Each machine
+// has a cable to a junction cabinet (work item 0368), heavy from the
+// engines, and the cabinets are cabled to each other; through a power
+// switch that is on the last cabinet lights eight lamps. The boilers
 // get starting coal. The offshore pumps need power (work item 0140), so a
 // fuel generator with starting coal starts the plant; the engines carry
 // it from there.
@@ -70,16 +71,16 @@ commands = [
 	"place steam_engine 9 0 7 3"
 	"place steam_engine 9 0 10 3"
 	"place steam_engine 9 0 13 3"
-	// Poles, a power switch (on) and a substation over eight lamps
-	"place small_pole 3 0 4 0"
-	"place small_pole 3 0 9 0"
-	"place small_pole 3 0 14 0"
-	"place small_pole 8 0 4 0"
-	"place small_pole 14 0 3 0"
-	"place small_pole 14 0 8 0"
-	"place small_pole 14 0 13 0"
+	// Junction cabinets, a power switch (on) and a cabinet over eight lamps
+	"place junction_cabinet 3 0 4 0"
+	"place junction_cabinet 3 0 9 0"
+	"place junction_cabinet 3 0 14 0"
+	"place junction_cabinet 8 0 4 0"
+	"place junction_cabinet 14 0 3 0"
+	"place junction_cabinet 14 0 8 0"
+	"place junction_cabinet 14 0 13 0"
 	"place power_switch 18 0 8 0"
-	"place substation 22 0 8 0"
+	"place junction_cabinet 22 0 8 0"
 	"place lamp 17 0 2 0"
 	"place lamp 17 0 15 0"
 	"place lamp 20 0 2 0"
@@ -90,6 +91,34 @@ commands = [
 	"place lamp 26 0 15 0"
 	// A fuel generator to power the offshore pumps until the engines run
 	"place fuel_generator 0 0 5 0"
+	// The cables: each machine to a cabinet, the cabinets towards the generators
+	"cable light_cable 3 0 4 d 3 0 9 c"
+	"cable light_cable 3 0 4 b 8 0 4 a"
+	"cable light_cable 3 0 9 d 3 0 14 c"
+	"cable light_cable 8 0 4 b 14 0 3 a"
+	"cable light_cable 14 0 3 d 14 0 8 c"
+	"cable light_cable 14 0 8 d 14 0 13 c"
+	"cable light_cable 14 0 8 b 18 0 8 a"
+	"cable light_cable 18 0 8 b 22 0 8 a"
+	"cable light_cable 1 0 0 power 3 0 4 c"
+	"cable light_cable 5 0 2 power 3 0 4 f"
+	"cable light_cable 0 0 5 power 3 0 4 a"
+	"cable light_cable 4 0 6 power 3 0 4 h"
+	"cable light_cable 4 0 10 power 3 0 9 b"
+	"cable light_cable 5 0 11 power 3 0 14 b"
+	"cable light_cable 2 0 15 power 3 0 14 d"
+	"cable light_cable 17 0 2 power 14 0 3 b"
+	"cable heavy_cable 9 0 4 power 14 0 8 a"
+	"cable heavy_cable 9 0 7 power 14 0 8 e"
+	"cable heavy_cable 9 0 10 power 14 0 13 a"
+	"cable heavy_cable 9 0 13 power 14 0 13 d"
+	"cable light_cable 17 0 15 power 14 0 13 b"
+	"cable light_cable 20 0 2 power 22 0 8 c"
+	"cable light_cable 23 0 2 power 22 0 8 g"
+	"cable light_cable 26 0 2 power 22 0 8 b"
+	"cable light_cable 20 0 15 power 22 0 8 d"
+	"cable light_cable 23 0 15 power 22 0 8 h"
+	"cable light_cable 26 0 15 power 22 0 8 f"
 	// Starting coal for the boilers and the fuel generator
 	"insert coal 45 6 0 5"
 	"insert coal 45 6 0 9"

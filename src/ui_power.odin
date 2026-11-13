@@ -4,8 +4,8 @@ import "core:fmt"
 import "core:slice"
 
 // The power overview screen, the power lines of machine panels, the
-// panels of poles, power switches and lamps, and the HUD brownout
-// warning. Energy is kept in joules per tick and shown as power.
+// panels of junction boxes, power switches and lamps, and the HUD
+// brownout warning. Energy is kept in joules per tick and shown as power.
 
 POWER_AREA_WIDTH :: 480
 POWER_LIST_COLUMN_WIDTH :: 560
@@ -34,8 +34,19 @@ network_name :: proc(network: int) -> string {
 	return fmt.tprintf("%s %d", text("power_network"), network + 1)
 }
 
-// "No power" outside every network, the network's satisfaction otherwise.
-power_status_line :: proc(networks: ^Electric_Networks, handle: Entity_Handle) -> string {
+// "No cable" when no power port of the entity has a cable (0368); a
+// consumer's draw, what it received of what it asked in the last tick;
+// else "No power" outside every network, the network's satisfaction
+// otherwise.
+power_status_line :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle, tick_rate: int) -> string {
+	if !entity_has_cable(entities, machines, handle) {
+		return text("power_no_cable")
+	}
+	networks := &entities.electric_networks
+	if participant, found := entity_participant(networks, handle); found && !participant.generator {
+		line := replace_message_mark(text("power_draw"), "{delivered}", format_joules_per_tick(participant.delivered, tick_rate))
+		return replace_message_mark(line, "{demand}", format_joules_per_tick(participant.offered, tick_rate))
+	}
 	network := entity_network(networks, handle)
 	if network < 0 || network >= len(networks.networks) {
 		return text("power_no_network")
@@ -43,12 +54,40 @@ power_status_line :: proc(networks: ^Electric_Networks, handle: Entity_Handle) -
 	return fmt.tprintf("%s: %s", text("power_satisfaction"), format_satisfaction(networks.networks[network].satisfaction))
 }
 
+// A power port of the entity has a cable.
+entity_has_cable :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	common := entity_common(entities, handle)
+	if common == nil {
+		return false
+	}
+	machine := machines.machines[common.machine]
+	for port in 0 ..< machine.port_count {
+		if machine_port_is_power(machine, port) && port_end_cable(&entities.cables, Port_End{entity = handle, port = u8(port)}) >= 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// The last tick's participant on the entity's node.
+entity_participant :: proc(networks: ^Electric_Networks, handle: Entity_Handle) -> (participant: Electric_Participant, found: bool) {
+	node, has_node := networks.node_of_entity[handle]
+	if !has_node || int(node) >= len(networks.participant_of_node) {
+		return {}, false
+	}
+	index := networks.participant_of_node[node]
+	if index < 0 || int(index) >= len(networks.participants) || networks.participants[index].handle != handle {
+		return {}, false
+	}
+	return networks.participants[index], true
+}
+
 // A generator's output over the last tick.
 generator_output_line :: proc(engine: Fluid_Machine, tick_rate: int) -> string {
 	return fmt.tprintf("%s: %s", text("power_output"), format_joules_per_tick(u64(engine.generated_joules), tick_rate))
 }
 
-// The rows a pole, switch or lamp panel shows under its name.
+// The rows a junction box, switch or lamp panel shows under its name.
 power_machine_rows :: proc(kind: Machine_Kind) -> int {
 	#partial switch kind {
 	case .Power_Switch:
@@ -61,15 +100,15 @@ power_area_size :: proc(machine: Machine) -> [2]f32 {
 	return {POWER_AREA_WIDTH, UI_ROW_HEIGHT + f32(power_machine_rows(machine.kind)) * (UI_ROW_HEIGHT + UI_GAP)}
 }
 
-// A pole: its network and that network's satisfaction. A switch: the
-// same plus its state and a button that turns it. A lamp: its power and
-// whether it shines.
+// A junction box: its network and that network's satisfaction, or no
+// cable. A switch: the same plus its state and a button that turns it. A
+// lamp: its draw and whether it shines.
 power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_Handle, screen_context: Screen_Context) {
 	content := area
 	entities := &screen_context.world.entities
 	networks := &entities.electric_networks
 	if lamp := pool_get(&entities.lamps, handle); lamp != nil {
-		draw_text_fitted(state, cut_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, cut_row(&content), power_status_line(entities, screen_context.machines, handle, screen_context.tick_rate), UI_BODY_TEXT_SIZE, .Left)
 		draw_text_fitted(state, cut_row(&content), text(lamp.lit ? "lamp_lit" : "lamp_dark"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 		return
 	}
@@ -79,7 +118,7 @@ power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_
 	}
 	network := entity_network(networks, handle)
 	draw_text_fitted(state, cut_row(&content), network < 0 ? text("power_switch_open") : network_name(network), UI_BODY_TEXT_SIZE, .Left)
-	draw_text_fitted(state, cut_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, cut_row(&content), power_status_line(entities, screen_context.machines, handle, screen_context.tick_rate), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if screen_context.machines.machines[pole.machine].kind != .Power_Switch {
 		return
 	}
@@ -89,7 +128,8 @@ power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_
 	}
 }
 
-// The HUD line for a pole (its network), a switch (on or off) or a lamp.
+// The HUD line for a junction box (its network), a switch (on or off) or
+// a lamp.
 power_entity_status_text :: proc(world: ^World, machines: Machine_Registry, handle: Entity_Handle, name: string) -> string {
 	entities := &world.entities
 	if lamp := pool_get(&entities.lamps, handle); lamp != nil {
@@ -102,7 +142,8 @@ power_entity_status_text :: proc(world: ^World, machines: Machine_Registry, hand
 	if machines.machines[pole.machine].kind == .Power_Switch {
 		return fmt.tprintf("%s  %s", name, text(pole.on ? "power_switch_on" : "power_switch_off"))
 	}
-	return fmt.tprintf("%s  %s", name, network_name(entity_network(&entities.electric_networks, handle)))
+	network := entity_network(&entities.electric_networks, handle)
+	return fmt.tprintf("%s  %s", name, network < 0 ? text("power_switch_open") : network_name(network))
 }
 
 // Consumers or generators of one machine type in a network, for the

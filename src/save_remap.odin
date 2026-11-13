@@ -27,7 +27,9 @@ import "platform"
 // removed, a queued technology dequeues, a crafting machine loses its
 // recipe, an active quest gives way to the first quest not done. What
 // cannot be dropped refuses the file with a problem naming the id: a
-// placed machine, a registered vein's type, a block in a saved chunk.
+// placed machine, a registered vein's type, a block in a saved chunk. A
+// placed machine whose id the machines file lists in deleted_ids (0368,
+// the electric poles) is removed instead, with one log line.
 
 Content_Table :: enum u8 {
 	Blocks,
@@ -80,13 +82,25 @@ Content_Remap :: struct {
 	// Saved ids that are former ids of a current one (work item 0196), in
 	// table order then saved order, in the temp allocator.
 	renamed:          [dynamic]Content_Renamed_Id,
+	// Indexed like saved: the id is a deleted one (0368, deleted_ids),
+	// read as none without counting as gone.
+	deleted:          [Content_Table][]bool,
+	// The placed machines of deleted ids removed at load
+	// (settle_gone_machines), their handles, whose frame records the frame
+	// tables skip, and those records' frames, released once the world is
+	// rebuilt; in the temp allocator.
+	deleted_entity_count: int,
+	deleted_handles:  [dynamic]Entity_Handle,
+	deleted_frames:   [dynamic]Frame_Id,
 }
 
 // A record that was renamed lists its old ids as former_ids (items,
 // machines and recipes, work item 0196): a save naming the old id loads
-// it as the record.
+// it as the record. A deleted machine id (0368, deleted_ids) is an entry
+// with no current id.
 Content_Former_Id :: struct {
 	former, current: string,
+	deleted:         bool,
 }
 
 Content_Former_Ids :: [Content_Table][]Content_Former_Id
@@ -217,38 +231,45 @@ content_former_ids :: proc(content: Simulation_Content) -> (former: Content_Form
 	items := make([dynamic]Content_Former_Id, context.temp_allocator)
 	for item in content.items.items {
 		for id in item.former_ids {
-			append(&items, Content_Former_Id{id, item.id})
+			append(&items, Content_Former_Id{id, item.id, false})
 		}
 	}
 	machines := make([dynamic]Content_Former_Id, context.temp_allocator)
 	for machine in content.machines.machines {
 		for id in machine.former_ids {
-			append(&machines, Content_Former_Id{id, machine.id})
+			append(&machines, Content_Former_Id{id, machine.id, false})
 		}
+	}
+	for id in content.machines.deleted_ids {
+		append(&machines, Content_Former_Id{former = id, deleted = true})
 	}
 	recipes := make([dynamic]Content_Former_Id, context.temp_allocator)
 	for recipe in content.recipes.recipes {
 		for id in recipe.former_ids {
-			append(&recipes, Content_Former_Id{id, recipe.id})
+			append(&recipes, Content_Former_Id{id, recipe.id, false})
 		}
 	}
 	former[.Items], former[.Machines], former[.Recipes] = items[:], machines[:], recipes[:]
 	return former
 }
 
-// A former id that is also a current id of its table, or listed twice in
-// one table, would make a saved id ambiguous; "" when there is none.
+// A former or deleted id that is also a current id of its table, or
+// listed twice in one table (a deleted id that is a former id too), would
+// make a saved id ambiguous; "" when there is none.
 content_former_id_problem :: proc(content: Simulation_Content) -> string {
 	former := content_former_ids(content)
 	current := content_tables(content)
 	for table in Content_Table {
 		for entry, index in former[table] {
 			if slice.contains(current[table], entry.former) {
+				if entry.deleted {
+					return fmt.tprintf("%s: deleted_ids lists %q, which is also an id", former_id_file_name(table), entry.former)
+				}
 				return fmt.tprintf("%s: %s %q lists the former id %q, which is also an id", former_id_file_name(table), content_table_names[table], entry.current, entry.former)
 			}
 			for other in former[table][index + 1:] {
 				if other.former == entry.former {
-					return fmt.tprintf("%s: %s list the former id %q twice", former_id_file_name(table), content_table_names[table], entry.former)
+					return fmt.tprintf("%s: %s list the former or deleted id %q twice", former_id_file_name(table), content_table_names[table], entry.former)
 				}
 			}
 		}
@@ -270,11 +291,35 @@ former_id_file_name :: proc(table: Content_Table) -> string {
 // The current id a saved id was renamed to, or "".
 former_id_current :: proc(former: []Content_Former_Id, id: string) -> string {
 	for entry in former {
-		if entry.former == id {
+		if entry.former == id && !entry.deleted {
 			return entry.current
 		}
 	}
 	return ""
+}
+
+former_id_is_deleted :: proc(former: []Content_Former_Id, id: string) -> bool {
+	for entry in former {
+		if entry.former == id && entry.deleted {
+			return true
+		}
+	}
+	return false
+}
+
+// "" without deletions, else the one line the load logs (0368), naming
+// the deleted machine ids the saved table held.
+deleted_machines_line :: proc(remap: Content_Remap) -> string {
+	if remap.deleted_entity_count == 0 {
+		return ""
+	}
+	names := make([dynamic]string, context.temp_allocator)
+	for id, index in remap.saved[.Machines] {
+		if content_id_is_deleted(remap, .Machines, index) {
+			append(&names, id)
+		}
+	}
+	return fmt.tprintf("save: removed %d placed machines of deleted kinds (%s)", remap.deleted_entity_count, strings.join(names[:], ", ", context.temp_allocator))
 }
 
 // "" without renames, else the one line the load logs.
@@ -301,9 +346,11 @@ renamed_content_line :: proc(remap: Content_Remap) -> string {
 // the record that lists it, noted in renamed.
 make_content_remap :: proc(saved, current: Content_Tables, former: Content_Former_Ids = {}) -> Content_Remap {
 	remap := Content_Remap {
-		saved   = saved,
-		current = current,
-		renamed = make([dynamic]Content_Renamed_Id, context.temp_allocator),
+		saved           = saved,
+		current         = current,
+		renamed         = make([dynamic]Content_Renamed_Id, context.temp_allocator),
+		deleted_handles = make([dynamic]Entity_Handle, context.temp_allocator),
+		deleted_frames  = make([dynamic]Frame_Id, context.temp_allocator),
 	}
 	for table in Content_Table {
 		index_of_id := make(map[string]int, len(current[table]), context.temp_allocator)
@@ -311,8 +358,10 @@ make_content_remap :: proc(saved, current: Content_Tables, former: Content_Forme
 			index_of_id[id] = index
 		}
 		remap.new_indices[table] = make([]int, len(saved[table]), context.temp_allocator)
+		remap.deleted[table] = make([]bool, len(saved[table]), context.temp_allocator)
 		for id, old_index in saved[table] {
 			new_index, found := index_of_id[id]
+			remap.deleted[table][old_index] = !found && former_id_is_deleted(former[table], id)
 			renamed_to := found ? "" : former_id_current(former[table], id)
 			if renamed_to != "" {
 				new_index, found = index_of_id[renamed_to]
@@ -376,6 +425,11 @@ gone_content_id :: proc(table: Content_Table, size: int) -> u64 {
 	return table == .Blocks ? u64(AIR_BLOCK) : enum_value_mask(size)
 }
 
+content_id_is_deleted :: proc(remap: Content_Remap, table: Content_Table, old_index: int) -> bool {
+	deleted := remap.deleted[table]
+	return old_index >= 0 && old_index < len(deleted) && deleted[old_index]
+}
+
 // The none value (all bits set) stays. Without a remap ids read as
 // written.
 read_content_id :: proc(reader: ^Byte_Reader, pointer: rawptr, size: int, table: Content_Table) -> bool {
@@ -389,7 +443,9 @@ read_content_id :: proc(reader: ^Byte_Reader, pointer: rawptr, size: int, table:
 		return false
 	}
 	if new_index == CONTENT_GONE {
-		note_gone_id(reader.remap, table, int(stored))
+		if !content_id_is_deleted(reader.remap^, table, int(stored)) {
+			note_gone_id(reader.remap, table, int(stored))
+		}
 		store_unsigned(pointer, size, gone_content_id(table, size))
 		return true
 	}
@@ -699,22 +755,37 @@ remap_vein_types :: proc(world: ^World, records: ^Game_Records, remap: Content_R
 
 // Placed entities of a vanished machine cannot be dropped (their cells,
 // networks and contents), so they refuse the file. Freed slots of one
-// take machine 0, which the consistency check accepts.
+// take machine 0, which the consistency check accepts. While every gone
+// machine id the file met is a deleted one (0368, first_gone stays
+// empty), a placed one is deleted instead: freed, its handle noted for the
+// frame tables (deleted_handles) and counted for the log line.
 settle_gone_machines :: proc(pool: ^Entity_Pool($T), reader: ^Byte_Reader) -> bool {
 	if reader.remap == nil {
 		return true
 	}
-	for &entry in pool.entries {
+	remap := reader.remap
+	for &entry, index in pool.entries {
 		if entry.machine != NO_MACHINE {
 			continue
 		}
-		if entry.alive {
-			reader.problem = fmt.tprintf("the save has placed %s machines, which this build's game data no longer has", reader.remap.first_gone[.Machines])
+		if entry.alive && remap.first_gone[.Machines] != "" {
+			reader.problem = fmt.tprintf("the save has placed %s machines, which this build's game data no longer has", remap.first_gone[.Machines])
 			return false
+		}
+		if entry.alive {
+			entry.alive = false
+			append(&pool.free, u32(index))
+			append(&remap.deleted_handles, entry.handle)
+			remap.deleted_entity_count += 1
 		}
 		entry.machine = 0
 	}
 	return true
+}
+
+// A handle of a placed machine deleted at load (settle_gone_machines).
+handle_was_deleted :: proc(remap: ^Content_Remap, handle: Entity_Handle) -> bool {
+	return remap != nil && slice.contains(remap.deleted_handles[:], handle)
 }
 
 // Cargo of a vanished item leaves the shipment record.

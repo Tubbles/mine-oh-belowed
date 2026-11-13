@@ -28,7 +28,9 @@ Entity_Kind :: enum u8 {
 	// Offshore pumps, boilers, steam engines, storage tanks and pumps
 	// (fluid_machine.odin).
 	Fluid_Machine,
-	// Small poles and power switches (power_machine.odin).
+	// Junction boxes, junction cabinets and power switches
+	// (power_machine.odin; the electric poles' pool until 0368, whose name
+	// the save keeps).
 	Pole,
 	Lamp,
 	// Crafting machines (assembler.odin) and labs (lab.odin).
@@ -149,7 +151,11 @@ Entities :: struct {
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
 	fluid_networks: Fluid_Networks,
-	// Derived from the poles and electric machines (power_network.odin).
+	// The cables between power ports (0368, cable.odin), saved after the
+	// later tables (write_cable_table).
+	cables:         Cable_Table,
+	// Derived from the cables and the entities with power ports
+	// (power_network.odin).
 	electric_networks: Electric_Networks,
 	// The frames and their occupant index (world_frame.odin): the frame
 	// records are saved, the index is derived from the pools. It rides on
@@ -235,6 +241,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	delete(entities.vessels)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
+	destroy_cable_table(&entities.cables)
 	destroy_electric_networks(&entities.electric_networks)
 	destroy_frame_table(&entities.frames)
 	delete(entities.loose_items.items)
@@ -687,7 +694,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.pipes, .Pipe, make_pipe(common))
 	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine, .Water_Pump:
 		handle = pool_add(&entities.fluid_machines, .Fluid_Machine, make_fluid_machine(common, machines.machines[machine]))
-	case .Pole, .Power_Switch:
+	case .Junction_Box, .Power_Switch:
 		handle = pool_add(&entities.poles, .Pole, make_pole(common))
 	case .Lamp:
 		handle = pool_add(&entities.lamps, .Lamp, make_lamp(common))
@@ -745,6 +752,7 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 	}
 	vacate_entity_cells(entities, machines, common^)
 	touches_power := machine_touches_power(machines.machines[common.machine])
+	remove_entity_cables(entities, machines, handle)
 	defer if touches_power {
 		rebuild_electric_networks(entities, machines)
 	}

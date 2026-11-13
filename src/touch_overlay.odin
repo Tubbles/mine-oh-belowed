@@ -298,6 +298,7 @@ Touch_Overlay_State :: struct {
 // press that frame sent. target_takes_interaction: the first player's
 // target after that tick takes Interact; target_has_panel: it has a
 // panel the inventory binding opens (both aimed_target_calls_for, 0194).
+// cable_held: the first player's selected stack is a cable (0368).
 // hotbar_slots: the HUD's hotbar slots in render pixels
 // (hud_hotbar_pixel_rectangles), and the slot the first player selected.
 Touch_Interaction_Frame :: struct {
@@ -306,6 +307,7 @@ Touch_Interaction_Frame :: struct {
 	ticked:                   bool,
 	target_takes_interaction: bool,
 	target_has_panel:         bool,
+	cable_held:               bool,
 	hotbar_slots:             [HOTBAR_SLOT_COUNT]Ui_Rectangle,
 	selected_hotbar_slot:     int,
 	// A double_tap_toggles button may latch (0120): the sneak setting is
@@ -1343,7 +1345,7 @@ advance_touch_tap :: proc(tap: Touch_Tap, layout: Touch_Overlay_Layout, world_sh
 	if tap.phase == .Pressing {
 		return {}
 	}
-	control := tap_control(layout.elements[tap.element], inputs.target_takes_interaction, inputs.target_has_panel)
+	control := tap_control(layout.elements[tap.element], inputs.target_takes_interaction, inputs.target_has_panel, inputs.cable_held)
 	return Touch_Tap{phase = .Pressing, point = tap.point, element = tap.element, control = control, aims = tap.aims}
 }
 
@@ -1368,9 +1370,10 @@ look_element_valid :: proc(layout: Touch_Overlay_Layout, element: int) -> bool {
 // Open_Inventory's control on a target that takes Interact or has a
 // panel, which the frame routes into turning a switch, taking a crate or
 // opening a panel (route_open_inventory_press, 0194, 0233), else Place's,
-// through the bindings like the buttons.
-tap_control :: proc(look: Touch_Overlay_Element, target_takes_interaction, target_has_panel: bool) -> Touch_Overlay_Control {
-	if target_takes_interaction || target_has_panel {
+// through the bindings like the buttons. With a cable held Place's
+// everywhere (0368), so a tap begins and ends a run on the thing tapped.
+tap_control :: proc(look: Touch_Overlay_Element, target_takes_interaction, target_has_panel, cable_held: bool) -> Touch_Overlay_Control {
+	if !cable_held && (target_takes_interaction || target_has_panel) {
 		return look.tap_open_control
 	}
 	return look.tap_place_control
@@ -1844,6 +1847,7 @@ touch_interaction_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_I
 		ticked = touch_context.frame_tick_count > 0,
 		target_takes_interaction = takes_interaction,
 		target_has_panel = has_panel,
+		cable_held = item_is_cable(touch_context.content.items, selected_hotbar_stack(simulation.players[touch_context.local_player]).item),
 		hotbar_slots = hud_hotbar_pixel_rectangles(touch_context.ui, selected),
 		selected_hotbar_slot = selected,
 		double_tap_latches = touch_context.settings.sneak_hold == .Hold,

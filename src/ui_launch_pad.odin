@@ -88,7 +88,7 @@ launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launc
 	if ui_button(state, cut_row(&content), text("launch_pad_launch")) {
 		queue_player_command(screen_context.player_commands, screen_context.player_index, Launch_Command{pad = pad.handle})
 	}
-	power_line := power_status_line(&screen_context.world.entities.electric_networks, pad.handle)
+	power_line := power_status_line(&screen_context.world.entities, screen_context.machines, pad.handle, screen_context.tick_rate)
 	detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	return result
 }

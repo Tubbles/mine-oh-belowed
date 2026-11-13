@@ -153,10 +153,13 @@ Statistics :: struct {
 	// Ticks in which some network was below full satisfaction while
 	// something asked for power.
 	brownout_ticks:              u64,
-	// Electric machines outside every network in the last tick, and that
-	// count summed over ticks for the quest hints.
+	// Electric machines outside every network or in one with no
+	// generator in the last tick (0368), and that count summed over ticks
+	// for the quest hints.
 	unpowered_machines:          u64,
 	unpowered_machine_ticks:     u64,
+	// Cables laid by hand or the developer command (0368).
+	cables_run:                  u64,
 	// Indexed by Item_Id: items rockets carried away, their sum over
 	// every item, and the rockets launched (launch_pad.odin).
 	shipped:                     []u64,

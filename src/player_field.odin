@@ -97,6 +97,9 @@ Field_Held_Tool :: enum u8 {
 	Water,
 	Drain,
 	Vessel_Part,
+	// A cable (0368, cable_field.odin): Place runs it from one power port
+	// to another.
+	Cable,
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]
@@ -259,6 +262,15 @@ Field_Player :: struct {
 	// from which the wait's settle counts. Saved by name; a save from
 	// before 0358 loads 0.
 	cradled_tick:      u64,
+	// A cable run carried (0368, cable_field.odin): its first end and the
+	// hotbar slot it was begun from; and the cable a held Mine takes up,
+	// by its first end, with the ticks held. Saved by name; a save from
+	// before 0368 loads no run.
+	cable_run:          bool,
+	cable_start:        Port_End,
+	cable_slot:         u8,
+	cable_take_up:      Port_End,
+	cable_take_up_ticks: u32,
 }
 
 Field_Ground :: struct {

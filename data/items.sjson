@@ -9,9 +9,9 @@
 // category is raw, intermediate, tool, machine or block; the inventory
 // sorts by category in that order, then by name.
 // stack_size follows doc/content.md: nothing stacks below 50; ore, plates,
-// spoils, machines and tools 50, intermediates 100, and the machines placed
-// by the dozen (inserters, belts, poles, lamps) 100. Blocks stack like raw
-// material.
+// spoils, machines and tools 50, intermediates 100, the machines placed by
+// the dozen (inserters, belts, junction boxes, lamps) 100 and the cables
+// 200. Blocks stack like raw material.
 // places_block (optional) is the block the item places, and mining that
 // block yields the item. mined_from (optional) lists further blocks whose
 // mining yields the item (grass gives dirt, ore blocks give the ore).
@@ -84,6 +84,12 @@
 // older build: a save naming one loads it as this item, with one log line
 // (doc/architecture.md, Saves). A former id is never a current id of the
 // table, nor listed twice.
+// Cables (work item 0368, doc/content.md, Cables and power ports): an item
+// with cable_kilowatts (1 to 1000000) is a cable, one item a metre, run
+// by hand from one power port to another. cable_span_metres (1 to 100, at
+// most the stack size) is the longest span one cable makes,
+// cable_thickness_millimetres (5 to 100) and cable_color ([r, g, b], 0 to
+// 255, not all zero) its look. All four keys or none.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", description_key = "describe_item_log", category = "raw", stack_size = 50, places_block = "log", mined_from = ["birch_log", "pine_log", "palm_log", "dead_log"], fuel_megajoules = 2, cannot_recycle = true, price = 1}
@@ -194,9 +200,11 @@ items = [
 	{id = "boiler", name_key = "item_boiler", description_key = "describe_item_boiler", category = "machine", stack_size = 50, price = 13}
 	{id = "fuel_generator", name_key = "item_fuel_generator", description_key = "describe_item_fuel_generator", category = "machine", stack_size = 50, price = 31}
 	{id = "steam_engine", name_key = "item_steam_engine", description_key = "describe_item_steam_engine", category = "machine", stack_size = 50, price = 62}
-	{id = "small_pole", name_key = "item_small_pole", description_key = "describe_item_small_pole", category = "machine", stack_size = 100, price = 3}
-	{id = "big_pole", name_key = "item_big_pole", description_key = "describe_item_big_pole", category = "machine", stack_size = 100, price = 28}
-	{id = "substation", name_key = "item_substation", description_key = "describe_item_substation", category = "machine", stack_size = 50, price = 160}
+	{id = "light_cable", name_key = "item_light_cable", description_key = "describe_item_light_cable", category = "machine", stack_size = 200, price = 1, cable_kilowatts = 300, cable_span_metres = 20, cable_thickness_millimetres = 12, cable_color = [52, 52, 56]}
+	{id = "heavy_cable", name_key = "item_heavy_cable", description_key = "describe_item_heavy_cable", category = "machine", stack_size = 200, price = 3, cable_kilowatts = 3000, cable_span_metres = 30, cable_thickness_millimetres = 24, cable_color = [176, 120, 36]}
+	{id = "trunk_cable", name_key = "item_trunk_cable", description_key = "describe_item_trunk_cable", category = "machine", stack_size = 200, price = 8, cable_kilowatts = 24000, cable_span_metres = 50, cable_thickness_millimetres = 40, cable_color = [140, 44, 36]}
+	{id = "junction_box", name_key = "item_junction_box", description_key = "describe_item_junction_box", category = "machine", stack_size = 100, price = 6}
+	{id = "junction_cabinet", name_key = "item_junction_cabinet", description_key = "describe_item_junction_cabinet", category = "machine", stack_size = 100, price = 30}
 	{id = "lamp", name_key = "item_lamp", description_key = "describe_item_lamp", category = "machine", stack_size = 100, price = 12}
 	{id = "power_switch", name_key = "item_power_switch", description_key = "describe_item_power_switch", category = "machine", stack_size = 50, price = 22}
 	{id = "assembler_1", name_key = "item_assembler_1", description_key = "describe_item_assembler_1", category = "machine", stack_size = 50, price = 56}

@@ -3,12 +3,13 @@ package game
 import "core:fmt"
 import "core:slice"
 
-// The entities of the power grid (doc/fluids.md, Power): poles (small,
-// big, substations) and power switches in one pool (the machine kind
+// The entities of the power grid (doc/fluids.md, Power): junction boxes,
+// junction cabinets and power switches in one pool (the machine kind
 // tells them apart), lamps, and the power side of the machines that
 // already exist: electric inserters, electric drills, pumps, steam
-// engines, combustion generators and hydro turbines. Networks and the
-// energy balance are in power_network.odin.
+// engines, combustion generators and hydro turbines. The cables between
+// their power ports are cable.odin's; the netlist and the energy balance
+// are power_network.odin's.
 //
 // A consumer's Power_State holds what its network gave it this tick. A
 // brownout slows machines through power credit: every tick adds the
@@ -25,7 +26,10 @@ Power_State :: struct {
 	credit:       u32,
 }
 
-// on only matters for a power switch; a small pole is always on.
+// The pool of the junction boxes, the junction cabinets and the power
+// switches (0368: it held the electric poles, whose name it keeps, since
+// the save matches pools by position and a handle's kind by name). on
+// only matters for a power switch; a box is always on.
 Pole :: struct {
 	using common: Entity_Common,
 	on:           bool,
@@ -45,24 +49,19 @@ make_lamp :: proc(common: Entity_Common) -> Lamp {
 	return Lamp{common = common}
 }
 
-// Poles: a square footprint across, a supply volume at least as wide
-// whose width and depth differ from the footprint's by an even count so
-// it centres on the pole, and a wire reach. Power switches: 1 by 1 by 1
-// with a reach and no volume. Lamps: 1 by 1 by 1, electric power and a
-// light level.
+// Junction boxes: a colour for their box (their ports are checked by
+// validate_power_ports_of_kind). Power switches: 1 by 1 by 1. Lamps: 1 by
+// 1 by 1, electric power and a light level.
 validate_power_machine_definition :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
-	footprint, volume := definition.footprint, definition.supply_volume
+	footprint := definition.footprint
 	#partial switch kind {
-	case .Pole:
-		if footprint.width != footprint.depth || definition.wire_reach <= 0 {
-			return fmt.tprintf("pole %q must be square across with a positive wire_reach", definition.id)
-		}
-		if volume.width < footprint.width || volume.depth < footprint.depth || volume.height < 1 || (volume.width - footprint.width) % 2 != 0 || (volume.depth - footprint.depth) % 2 != 0 {
-			return fmt.tprintf("pole %q needs a supply_volume centred on its footprint (as wide or wider, the difference even) and a positive height", definition.id)
+	case .Junction_Box:
+		if !foundation_color_is_valid(definition.color) {
+			return fmt.tprintf("junction box %q needs a color of three channels from 0 to 255", definition.id)
 		}
 	case .Power_Switch:
-		if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 || definition.wire_reach <= 0 {
-			return fmt.tprintf("power switch %q must be 1 by 1 by 1 with a positive wire_reach", definition.id)
+		if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 {
+			return fmt.tprintf("power switch %q must be 1 by 1 by 1", definition.id)
 		}
 	case .Lamp:
 		if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 || definition.electric_power_kilowatts <= 0 {
@@ -86,9 +85,21 @@ machine_is_generator :: proc(machine: Machine) -> bool {
 	return machine.electric_output_watts > 0
 }
 
-// Placing or removing it changes the networks or who belongs to them.
+// Placing or removing it changes the netlist's nodes: it has a power port.
 machine_touches_power :: proc(machine: Machine) -> bool {
-	return machine.kind == .Pole || machine.kind == .Power_Switch || machine_is_electric_consumer(machine) || machine_is_generator(machine)
+	return machine_power_port_count(machine) > 0
+}
+
+machine_power_port_count :: proc(machine: Machine) -> int {
+	count := 0
+	for index in 0 ..< machine.port_count {
+		count += machine.ports[index].kind == .Power ? 1 : 0
+	}
+	return count
+}
+
+machine_port_is_power :: proc(machine: Machine, port: int) -> bool {
+	return port >= 0 && port < machine.port_count && machine.ports[port].kind == .Power
 }
 
 // Integer division like fuel: 13 kW at 60 ticks per second is 216 J.

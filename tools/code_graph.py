@@ -70,7 +70,7 @@ PREFIX_CLUSTERS = {
         "entity", "belt", "splitter", "inserter", "fluid", "power", "machine", "assembler",
         "furnace", "drill", "lab", "launch", "crafting", "inventory", "item", "player",
         "loose", "statistics", "production", "developer", "venture", "recycler", "schematic",
-        "prospecting", "tree", "tick", "simulation", "vessel",
+        "prospecting", "tree", "tick", "simulation", "vessel", "cable",
     ),
     "presentation": (
         "render", "model", "texture", "particles", "ambient", "audio", "sound", "display", "weather",

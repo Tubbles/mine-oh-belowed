@@ -1,13 +1,17 @@
 package game
 
 import "core:fmt"
+import "core:math"
 
-// A machine's ports for cables and pipes (work item 0361, doc/vessels.md):
-// a named face of one footprint cell where a power cable or a fluid pipe
-// ends, with the most it carries. The vessel kinds list them; the cables
-// (0355) and the pipes (0356) end on them and extend the key to the other
-// machines. Separate from fluid_ports (machine_fluid_ports.odin), the
-// fluid network's buffers.
+// A machine's ports for cables and pipes (work items 0361 and 0368,
+// doc/vessels.md, doc/content.md): a named face of one footprint cell
+// where a power cable or a fluid pipe ends, with the most it carries. The
+// vessel kinds list both kinds; outside them every electric machine and
+// generator lists one power port, first, and the junction boxes and the
+// power switch list theirs (cable.odin); the pipes (0356) extend the
+// fluid kind to the other machines. A save names a port by its index, so
+// a record's ports are appended to and never reordered. Separate from
+// fluid_ports (machine_fluid_ports.odin), the fluid network's buffers.
 
 MAXIMUM_MACHINE_PORTS :: 8
 // Watts or litres a second; keeps a sum of every port far inside an i64.
@@ -45,17 +49,17 @@ Machine_Port :: struct {
 	capacity: i64,
 }
 
-// A machine's ports: only the vessel kinds list them until 0355, at most
+// A machine's ports: the kind's (validate_power_ports_of_kind), at most
 // MAXIMUM_MACHINE_PORTS, each with an id unique on the machine, a known
 // kind and face, its cell on the footprint's surface with the face out of
 // it (port_cell_is_on_the_surface), no two on one cell and face, and the
 // capacity of its kind 1 to MAXIMUM_PORT_CAPACITY with the other 0.
 validate_machine_ports :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	if problem := validate_power_ports_of_kind(definition, kind); problem != "" {
+		return problem
+	}
 	if len(definition.ports) == 0 {
 		return ""
-	}
-	if !machine_kind_is_vessel(kind) {
-		return fmt.tprintf("machine %q lists ports, which only a vessel_part or vessel_control_unit may", definition.id)
 	}
 	if len(definition.ports) > MAXIMUM_MACHINE_PORTS {
 		return fmt.tprintf("machine %q has more than %d ports", definition.id, MAXIMUM_MACHINE_PORTS)
@@ -73,6 +77,46 @@ validate_machine_ports :: proc(definition: Machine_Definition, kind: Machine_Kin
 				return fmt.tprintf("machine %q ports %q and %q share a cell and face", definition.id, earlier.id, port.id)
 			}
 		}
+	}
+	return ""
+}
+
+// The rating of an electric machine or generator in watts, 0 for none.
+definition_electric_watts :: proc(definition: Machine_Definition) -> int {
+	kilowatts := max(definition.electric_power_kilowatts, definition.electric_output_kilowatts)
+	return int(math.round(kilowatts * 1000))
+}
+
+// Which ports a kind lists (0368): any for the vessel kinds; outside
+// them power ports only (the fluid kind waits for the pipes, 0356), one
+// at index 0 of at least the rating on an electric machine or generator,
+// 2 to MAXIMUM_MACHINE_PORTS on a junction box, 2 on a power switch, and
+// none on any other kind.
+validate_power_ports_of_kind :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	if machine_kind_is_vessel(kind) {
+		return ""
+	}
+	for port in definition.ports {
+		if port.kind != machine_port_kind_names[.Power] {
+			return fmt.tprintf("machine %q port %q is not a power port, which only a vessel part may list", definition.id, port.id)
+		}
+	}
+	watts, count := definition_electric_watts(definition), len(definition.ports)
+	switch {
+	case watts > 0:
+		if count != 1 || definition.ports[0].capacity_watts < watts {
+			return fmt.tprintf("electric machine %q needs one power port, first, with capacity_watts of at least %d", definition.id, watts)
+		}
+	case kind == .Junction_Box:
+		if count < 2 || count > MAXIMUM_MACHINE_PORTS {
+			return fmt.tprintf("junction box %q needs 2 to %d power ports", definition.id, MAXIMUM_MACHINE_PORTS)
+		}
+	case kind == .Power_Switch:
+		if count != 2 {
+			return fmt.tprintf("power switch %q needs exactly 2 power ports", definition.id)
+		}
+	case count > 0:
+		return fmt.tprintf("machine %q lists ports, which only an electric machine, a generator, a junction box, a power switch or a vessel part may", definition.id)
 	}
 	return ""
 }
@@ -114,6 +158,13 @@ validate_machine_port :: proc(definition: Machine_Definition, port: Machine_Port
 		return fmt.tprintf("machine %q port %q is a %s port and cannot have %s", definition.id, port.id, port.kind, other_key)
 	}
 	return ""
+}
+
+// The world cell and face of a port on a placed machine, as
+// placed_port_face of a fluid port.
+placed_machine_port_face :: proc(common: Entity_Common, machine: Machine, port: Machine_Port) -> Cell_Face {
+	offset := rotate_footprint_cell(port.cell.xz, machine.footprint.x, machine.footprint.z, common.rotation)
+	return {cell = common.origin + {offset.x, port.cell.y, offset.y}, face = rotate_direction(port.face, common.rotation)}
 }
 
 // Validated before (validate_machine_ports).

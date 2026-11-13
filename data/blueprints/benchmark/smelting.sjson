@@ -15,8 +15,9 @@
 // for a second and would stop the line. The hematite goes on into a
 // second splitter whose halves feed one furnace each: an inserter from
 // the near half, a long inserter reaching over it from the far half.
-// Small poles power the drills and inserters. The generator and the
-// furnaces get starting coal.
+// Each drill, inserter and the generator has a cable to a junction
+// cabinet, and the cabinets are cabled towards the generator (work item
+// 0368). The generator and the furnaces get starting coal.
 origin = [0, 0, 0]
 commands = [
 	// Coal: drill, belt west, sink
@@ -90,17 +91,40 @@ commands = [
 	"place belt 15 0 9 0"
 	"place belt 16 0 9 0"
 	"place belt 17 0 9 0"
-	// Power
-	"place small_pole 1 0 4 0"
-	"place small_pole 6 0 4 0"
-	"place small_pole 10 0 4 0"
-	"place small_pole 14 0 4 0"
-	"place small_pole 18 0 4 0"
-	"place small_pole 10 0 7 0"
-	"place small_pole 14 0 7 0"
-	"place small_pole 0 0 10 0"
-	"place small_pole 7 0 12 0"
-	"place small_pole 12 0 12 0"
+	// Junction cabinets
+	"place junction_cabinet 1 0 4 0"
+	"place junction_cabinet 6 0 4 0"
+	"place junction_cabinet 10 0 4 0"
+	"place junction_cabinet 14 0 4 0"
+	"place junction_cabinet 18 0 4 0"
+	"place junction_cabinet 10 0 7 0"
+	"place junction_cabinet 14 0 7 0"
+	"place junction_cabinet 0 0 10 0"
+	"place junction_cabinet 7 0 12 0"
+	"place junction_cabinet 12 0 12 0"
+	// The cables: each machine to a cabinet, the cabinets towards the generators
+	"cable heavy_cable 1 0 4 b 6 0 4 a"
+	"cable heavy_cable 6 0 4 b 10 0 4 a"
+	"cable light_cable 10 0 4 d 10 0 7 c"
+	"cable light_cable 10 0 4 b 14 0 4 a"
+	"cable light_cable 14 0 4 d 14 0 7 c"
+	"cable light_cable 14 0 4 b 18 0 4 a"
+	"cable light_cable 10 0 7 d 12 0 12 c"
+	"cable light_cable 12 0 12 a 7 0 12 b"
+	"cable light_cable 1 0 4 d 0 0 10 c"
+	"cable light_cable 1 0 3 power 1 0 4 c"
+	"cable heavy_cable 3 0 5 power 1 0 4 h"
+	"cable light_cable 4 0 4 power 6 0 4 e"
+	"cable light_cable 12 0 4 power 14 0 4 e"
+	"cable light_cable 14 0 5 power 14 0 4 c"
+	"cable light_cable 17 0 0 power 18 0 4 c"
+	"cable light_cable 16 0 4 power 18 0 4 e"
+	"cable light_cable 18 0 5 power 18 0 4 d"
+	"cable light_cable 12 0 7 power 10 0 7 b"
+	"cable light_cable 11 1 10 power 10 0 7 h"
+	"cable light_cable 16 0 7 power 14 0 7 b"
+	"cable light_cable 1 0 11 power 0 0 10 d"
+	"cable light_cable 4 0 11 power 7 0 12 a"
 	// Starting coal
 	"insert coal 45 3 0 5"
 	"insert coal 45 12 0 5"

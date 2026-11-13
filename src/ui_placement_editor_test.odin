@@ -56,7 +56,7 @@ test_the_direct_placement_limit_sends_large_machines_to_the_editor :: proc(t: ^t
 	// TEST_FOUNDATION_SIZES {1, 2, 5}, TEST_FOUNDATION_HEIGHTS {1, 2}.
 	cases := [?]Case {
 		{"wood_gasifier", 0, 0, false},
-		{"big_pole", 0, 0, true},
+		{"junction_cabinet", 0, 0, false},
 		{"assembler_1", 0, 0, true},
 		{"wooden_foundation", 2, 0, true},
 		{"wooden_foundation", 1, 1, false},

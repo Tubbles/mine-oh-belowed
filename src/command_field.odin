@@ -165,6 +165,8 @@ field_world_command :: proc(command_context: Command_Context, name: string, argu
 		return command_seat(command_context, arguments), true
 	case "place":
 		return command_field_place(command_context, arguments), true
+	case "cable":
+		return command_field_cable(command_context, arguments), true
 	case "insert":
 		return command_field_insert(command_context, arguments), true
 	case "vein", "remove", "block", "recipe", "filter", "blueprint":
@@ -344,6 +346,36 @@ command_field_place :: proc(command_context: Command_Context, arguments: []strin
 		return command_error("%s", problem)
 	}
 	return command_ok("placed %s on frame %d at %d %d %d", arguments[0], frame, cell.x, cell.y, cell.z)
+}
+
+// cable <item> <frame> <x> <y> <z> <port id> <frame> <x> <y> <z> <port id>
+// (0368): the block world's cable with each end on a frame's cell. The
+// block world's nine words or a frame 0 answer NO_BLOCK_WORLD_PROBLEM.
+command_field_cable :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	usage :: "cable <item> <frame> <x> <y> <z> <port id> <frame> <x> <y> <z> <port id>"
+	if len(arguments) == 9 {
+		return command_error(NO_BLOCK_WORLD_PROBLEM)
+	}
+	if len(arguments) != 11 {
+		return usage_error(usage)
+	}
+	ends: [2]Cable_Command_End
+	for &end, role in ends {
+		words := arguments[1 + 5 * role:][:5]
+		if frame_word, is_number := parse_integer_word(words[0]); is_number && frame_word == 0 {
+			return command_error(NO_BLOCK_WORLD_PROBLEM)
+		}
+		frame, problem := parse_ranged_word(words[0], 1, int(max(i32)), "the frame")
+		if problem != "" {
+			return command_error("%s", problem)
+		}
+		cell, cell_ok := parse_coordinate_words(words[1:4])
+		if !cell_ok {
+			return usage_error(usage)
+		}
+		end = Cable_Command_End{cell = cell, frame = Frame_Id(frame), port_id = words[4]}
+	}
+	return command_cable_request(command_context, arguments[0], ends)
 }
 
 // insert <item> <count> <frame> <x> <y> <z> (0274): into the machine at a

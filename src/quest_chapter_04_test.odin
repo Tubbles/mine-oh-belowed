@@ -238,7 +238,7 @@ test_power_counters_count_brownouts_and_unpowered_machines :: proc(t: ^testing.T
 	networks: Electric_Networks
 	networks.networks = make([dynamic]Electric_Network, context.temp_allocator)
 	networks.participants = make([dynamic]Electric_Participant, context.temp_allocator)
-	append(&networks.networks, Electric_Network{supply = 50, demand = 100, delivered = 50, satisfaction = POWER_FULL / 2})
+	append(&networks.networks, Electric_Network{supply = 50, demand = 100, delivered = 50, satisfaction = POWER_FULL / 2, generator_count = 1, consumer_count = 1})
 	append(&networks.participants, Electric_Participant{network = 0, offered = 100, delivered = 50})
 	append(&networks.participants, Electric_Participant{network = -1})
 	append(&networks.participants, Electric_Participant{network = -1, generator = true})
@@ -250,7 +250,12 @@ test_power_counters_count_brownouts_and_unpowered_machines :: proc(t: ^testing.T
 	networks.networks[0].satisfaction = POWER_FULL
 	record_electric_tick(&statistics, &networks)
 	testing.expect_value(t, statistics.brownout_ticks, 2)
-	// A lamp in the world with no pole near it counts every tick.
+	testing.expect_value(t, statistics.unpowered_machine_ticks, 3)
+	// A consumer on a netlist with no generator is unpowered too (0368).
+	networks.networks[0].generator_count = 0
+	record_electric_tick(&statistics, &networks)
+	testing.expect_value(t, statistics.unpowered_machine_ticks, 5)
+	// A lamp in the world with no cable counts every tick.
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	records: Game_Records
@@ -261,13 +266,15 @@ test_power_counters_count_brownouts_and_unpowered_machines :: proc(t: ^testing.T
 	testing.expect_value(t, records.statistics.brownout_ticks, 0)
 }
 
-// Completes steam and first_pole, so first_research is active.
+// Completes steam and first_pole, so first_research is active. The
+// cables count from first_pole's activation (a counter objective).
 reach_first_research :: proc(test: ^Quest_Test) {
 	set_placed(test, "fuel_generator", 1)
 	set_placed(test, "offshore_pump", 1)
 	set_placed(test, "boiler", 1)
 	set_placed(test, "steam_engine", 1)
-	set_placed(test, "small_pole", 2)
+	run_quest_tick(test)
+	test.statistics.cables_run += 2
 	test.statistics.obtained[test_item(test.items, "glass")] = 5
 	run_quest_tick(test)
 }
@@ -318,7 +325,10 @@ test_chapter_04_completes_in_order :: proc(t: ^testing.T) {
 	set_placed(&test, "fuel_generator", 1)
 	run_quest_tick(&test)
 	testing.expect_value(t, active_quest_id(&test), "first_pole")
-	set_placed(&test, "small_pole", 2)
+	test.statistics.cables_run += 1
+	run_quest_tick(&test)
+	testing.expect_value(t, active_quest_id(&test), "first_pole")
+	test.statistics.cables_run += 1
 	test.statistics.obtained[test_item(test.items, "glass")] = 4
 	run_quest_tick(&test)
 	testing.expect_value(t, active_quest_id(&test), "first_pole")

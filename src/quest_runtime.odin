@@ -204,6 +204,8 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.brownout_ticks
 	case .Unpowered_Machine_Ticks:
 		return statistics.unpowered_machine_ticks
+	case .Cables_Run:
+		return statistics.cables_run
 	case .Recycled:
 		return statistics.recycled
 	case .Mixing_Refusals:

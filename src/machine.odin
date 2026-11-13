@@ -84,11 +84,11 @@ Machine_Kind :: enum u8 {
 	// The water tech demo's pump into or out of the water field (work item
 	// 0295, field_water_pump.odin): no ports, no power, no slots.
 	Water_Pump,
-	// Power (power_network.odin): a pole carries wires to other poles
-	// within reach and powers the machines in its supply volume, a power
-	// switch is a pole without a supply volume that can be turned off,
-	// and a lamp lights its surroundings while powered.
-	Pole,
+	// Power (power_network.odin, cable.odin, work item 0368): a junction
+	// box (or cabinet) joins the cables on its power ports, a power switch
+	// joins its two while on, and a lamp lights its surroundings while
+	// powered.
+	Junction_Box,
 	Power_Switch,
 	Lamp,
 	// Crafting machines (assembler.odin): assemblers, crushers, washers,
@@ -169,7 +169,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Combustion_Generator = "combustion_generator",
 	.Hydro_Turbine = "hydro_turbine",
 	.Water_Pump    = "water_pump",
-	.Pole          = "pole",
+	.Junction_Box  = "junction_box",
 	.Power_Switch  = "power_switch",
 	.Lamp          = "lamp",
 	.Crafting_Machine = "crafting_machine",
@@ -360,8 +360,6 @@ Machine_Definition :: struct {
 	fluid_litres_per_second:      int,
 	fluid_litres_per_minute:      int,
 	head_metres:                  int,
-	supply_volume:                Machine_Footprint_Definition,
-	wire_reach:                   int,
 	electric_output_kilowatts:    f32,
 	fuel_efficiency_percent:      int,
 	dispatch_order:               Maybe(int),
@@ -400,8 +398,11 @@ Machine_Definition :: struct {
 	ports:                        []Machine_Port_Definition,
 }
 
+// deleted_ids: the machines this build deleted (0368), whose placed
+// entities an old save loses at load (save_remap.odin).
 Machines_File :: struct {
-	machines: []Machine_Definition,
+	machines:    []Machine_Definition,
+	deleted_ids: []string,
 }
 
 // footprint is x (width), y (height), z (depth) before rotation. Speed is
@@ -445,11 +446,6 @@ Machine :: struct {
 	// Offshore, tar pit and electric pumps: how many blocks above their
 	// output port they lift a liquid (fluid_network.odin, 0139).
 	head_metres:                 i32,
-	// Poles: the box of cells powered, x y z like footprint, centred on
-	// the pole across and starting at its bottom. Zero for a power switch.
-	supply_volume:               [3]i32,
-	// Poles and power switches: the longest wire, in blocks.
-	wire_reach:                  i32,
 	// Generators (steam and combustion): the most power they give.
 	electric_output_watts:       u32,
 	// Combustion generators: the percent of a fuel item's energy they
@@ -579,6 +575,8 @@ Machine_Registry :: struct {
 	// The item each lab slot holds: Technology_Registry.science_packs, set
 	// once the technologies are loaded, since the machines load first.
 	lab_packs:        []Item_Id,
+	// The ids of machines this build deleted (0368, Machines_File).
+	deleted_ids:      []string,
 }
 
 parse_machines_file :: proc(data: []byte, allocator := context.allocator) -> (file: Machines_File, error: json.Unmarshal_Error) {
@@ -628,7 +626,7 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_splitter_definition(definition)
 	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine, .Water_Pump:
 		return validate_fluid_machine_definition(definition, kind)
-	case .Pole, .Power_Switch, .Lamp:
+	case .Junction_Box, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)
 	case .Crafting_Machine:
 		return validate_crafting_machine_definition(definition)
@@ -1037,8 +1035,6 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		fluid_litres_per_second = u32(max(definition.fluid_litres_per_second, 0)),
 		fluid_litres_per_minute = u32(max(definition.fluid_litres_per_minute, 0)),
 		head_metres = i32(max(definition.head_metres, 0)),
-		supply_volume = {i32(definition.supply_volume.width), i32(definition.supply_volume.height), i32(definition.supply_volume.depth)},
-		wire_reach = i32(max(definition.wire_reach, 0)),
 		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),
 		fuel_efficiency_percent = u32(max(definition.fuel_efficiency_percent, 0)),
 		dispatch_order = u8(clamp(definition.dispatch_order.? or_else 0, 0, MAXIMUM_DISPATCH_ORDER)),
@@ -1592,6 +1588,7 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 		}
 		registry.machines[index] = machine
 	}
+	registry.deleted_ids = file.deleted_ids
 	return registry, ""
 }
 

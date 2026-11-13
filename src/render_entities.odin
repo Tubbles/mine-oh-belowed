@@ -444,8 +444,8 @@ gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 
 // Between BeginMode3D and EndMode3D, after the chunks. Every pool's
 // bodies on both worlds (0362): the splitters, the fluid machines, the
-// poles and the lamps after the launch pads; a splitter's belt halves
-// stay draw_belts', the wires draw_wires', the ports and arrows
+// junction boxes and the lamps after the launch pads; a splitter's belt halves
+// stay draw_belts', the cables draw_cables', the ports and arrows
 // draw_ports_and_arrows'. In the scene's pass collecting instances
 // (model_frame_flat_batch) the pools' box draws, the held items and the
 // vessel parts' boxes go through the model shader's flat batch and take

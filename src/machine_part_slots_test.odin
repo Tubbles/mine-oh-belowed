@@ -105,7 +105,7 @@ test_malformed_part_slots_and_ports_are_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, validate_machine_definition({eight_ports}, 0), "")
 	ported_furnace := furnace
 	ported_furnace.ports = {fluid}
-	testing.expect_value(t, validate_machine_definition({ported_furnace}, 0), `machine "stone_furnace" lists ports, which only a vessel_part or vessel_control_unit may`)
+	testing.expect_value(t, validate_machine_definition({ported_furnace}, 0), `machine "stone_furnace" port "fluid" is not a power port, which only a vessel part may list`)
 
 	no_item := tank
 	no_item.item = ""

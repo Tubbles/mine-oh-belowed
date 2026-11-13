@@ -526,6 +526,18 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return "  it holds the vessel together"
 	case .Inside_A_Vessel:
 		return "  that is inside a vessel"
+	case .No_Free_Port:
+		return "  no free power port there"
+	case .Same_Thing:
+		return "  the cable needs a second thing"
+	case .Cable_Too_Short:
+		return "  the cable is too short"
+	case .Not_Enough_Cable:
+		return "  not enough cable"
+	case .Not_A_Connector:
+		return "  a vessel takes a cable on its connector"
+	case .Cable_End_Gone:
+		return "  the cable's first end is gone"
 	}
 	return ""
 }
@@ -555,6 +567,8 @@ field_held_name :: proc(player: Field_Player) -> string {
 		return "drain bucket"
 	case .Vessel_Part:
 		return fmt.tprintf("vessel part, %d quarter turns", player.placement_rotation)
+	case .Cable:
+		return player.cable_run ? "cable, run carried" : "cable"
 	}
 	return ""
 }

@@ -3,9 +3,10 @@
 // automation and the electric drill needs electric mining, which needs
 // automation, so the first research comes before the assembler and the
 // drill. The lamp needs optics, so "first_pole" asks for glass instead of
-// a lamp. Placement and output are measured, not the layout: nothing
-// checks that the poles reach the engine or that the gears come from the
-// assembler (gears crafted by hand count too). The main quest pays a
+// a lamp; its id and keys stay from the poles (saved progress names them,
+// 0368), and it counts cables run. Placement and output are measured, not
+// the layout: nothing checks that the cables reach the engine or that the
+// gears come from the assembler (gears crafted by hand count too). The main quest pays a
 // crusher and a washer for chapter 5. The steam quest asks for a fuel
 // generator first (work item 0140): the offshore pump needs power, and
 // the generator bootstraps it for the first boiler.
@@ -30,7 +31,7 @@ quests = [
 		title_key = "quest_first_pole_title"
 		text_key = "quest_first_pole_text"
 		objectives = [
-			{type = "place", entity = "small_pole", count = 2}
+			{type = "counter", counter = "cables_run", label_key = "objective_cables_run", count = 2}
 			{type = "obtain", item = "glass", count = 5}
 		]
 		message_key = "mc_first_pole"

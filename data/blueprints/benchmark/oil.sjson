@@ -13,9 +13,11 @@
 // from a machine that outputs 20 litres a craft; the refinery's 45
 // would never find room next to it.) Two electric drills on the coal
 // vein drop onto a coal belt that feeds the plant and three combustion
-// generators and ends in a sink chest. Small poles carry the power, to
-// the offshore pumps too (work item 0140); the generators get starting
-// coal.
+// generators and ends in a sink chest. Every electric machine, the
+// offshore pumps too (work item 0140), has a cable to a junction
+// cabinet, heavy from the generators and the refinery, and the cabinets
+// are cabled towards the generators (work item 0368); the generators get
+// starting coal.
 origin = [0, 0, 0]
 commands = [
 	// Two tar pit pumps pipe crude oil into the refinery
@@ -88,19 +90,51 @@ commands = [
 	"place inserter 3 0 13 2"
 	"place inserter 4 0 16 1"
 	"place iron_chest 4 0 17 0"
-	// Power
-	"place small_pole 11 0 4 0"
-	"place small_pole 18 0 13 0"
-	"place small_pole 9 0 6 0"
-	"place small_pole 5 0 1 0"
-	"place small_pole 5 0 6 0"
-	"place small_pole 5 0 11 0"
-	"place small_pole 5 0 15 0"
-	"place small_pole 10 0 11 0"
-	"place small_pole 14 0 15 0"
-	"place small_pole 1 0 9 0"
-	"place small_pole 1 0 12 0"
-	"place small_pole 18 0 8 0"
+	// Junction cabinets
+	"place junction_cabinet 11 0 4 0"
+	"place junction_cabinet 18 0 13 0"
+	"place junction_cabinet 9 0 6 0"
+	"place junction_cabinet 5 0 1 0"
+	"place junction_cabinet 5 0 6 0"
+	"place junction_cabinet 5 0 11 0"
+	"place junction_cabinet 5 0 15 0"
+	"place junction_cabinet 10 0 11 0"
+	"place junction_cabinet 14 0 15 0"
+	"place junction_cabinet 1 0 9 0"
+	"place junction_cabinet 1 0 12 0"
+	"place junction_cabinet 18 0 8 0"
+	// The cables: each machine to a cabinet, the cabinets towards the generators
+	"cable light_cable 11 0 4 a 9 0 6 c"
+	"cable heavy_cable 9 0 6 a 5 0 6 b"
+	"cable light_cable 5 0 6 c 5 0 1 d"
+	"cable heavy_cable 5 0 6 d 5 0 11 c"
+	"cable light_cable 5 0 11 d 5 0 15 c"
+	"cable heavy_cable 5 0 11 a 1 0 12 b"
+	"cable heavy_cable 1 0 12 c 1 0 9 d"
+	"cable heavy_cable 5 0 11 b 10 0 11 a"
+	"cable light_cable 10 0 11 b 14 0 15 c"
+	"cable light_cable 14 0 15 b 18 0 13 a"
+	"cable light_cable 18 0 13 c 18 0 8 d"
+	"cable light_cable 13 0 2 power 11 0 4 b"
+	"cable light_cable 13 0 4 power 11 0 4 f"
+	"cable light_cable 5 0 3 power 9 0 6 e"
+	"cable heavy_cable 10 0 6 power 9 0 6 b"
+	"cable light_cable 6 0 7 power 9 0 6 d"
+	"cable light_cable 1 0 1 power 5 0 1 a"
+	"cable light_cable 3 0 7 power 5 0 6 a"
+	"cable light_cable 5 0 8 power 5 0 6 h"
+	"cable light_cable 3 0 10 power 5 0 11 e"
+	"cable light_cable 7 0 10 power 5 0 11 f"
+	"cable light_cable 3 0 13 power 5 0 15 a"
+	"cable light_cable 4 0 16 power 5 0 15 d"
+	"cable light_cable 11 0 12 power 10 0 11 d"
+	"cable light_cable 8 0 13 power 10 0 11 e"
+	"cable light_cable 12 0 15 power 14 0 15 a"
+	"cable heavy_cable 0 0 7 power 1 0 9 a"
+	"cable heavy_cable 0 0 10 power 1 0 12 a"
+	"cable heavy_cable 0 0 13 power 1 0 12 d"
+	"cable light_cable 17 0 9 power 18 0 8 h"
+	"cable light_cable 15 0 10 power 18 0 8 a"
 	// Starting coal for the generators
 	"insert coal 45 0 0 7"
 	"insert coal 45 0 0 10"

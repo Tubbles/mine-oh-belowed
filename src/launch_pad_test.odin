@@ -24,8 +24,10 @@ make_launch_pad_test :: proc() -> Launch_Pad_Test {
 	}
 	test.world = make_drill_world(test.content)
 	test.records = make_fluid_test_records(test.content)
-	_, test.engine = add_test_power_plant(&test.world, test.content, {2, 1, 2}, {0, 1, 3})
+	box: Entity_Handle
+	box, test.engine = add_test_power_plant(&test.world, test.content, {2, 1, 2}, {0, 1, 3})
 	test.pad = place_test_entity(&test.world, test.content, "launch_pad", LAUNCH_PAD_TEST_ORIGIN)
+	cable_test_machines(&test.world, test.content, box, test.pad)
 	return test
 }
 

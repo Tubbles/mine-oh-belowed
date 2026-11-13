@@ -101,7 +101,7 @@ assembler_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, assembler: A
 	output_rate_label(state, &content, assembler.output_rate, screen_context)
 	detail_line(state, &content, text(assembler_state_keys[assembler.state]), UI_DIM_TEXT_COLOR)
 	if crafting_machine_is_electric(machine) {
-		power_line := power_status_line(&screen_context.world.entities.electric_networks, assembler.handle)
+		power_line := power_status_line(&screen_context.world.entities, screen_context.machines, assembler.handle, screen_context.tick_rate)
 		detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	}
 	return result
@@ -131,7 +131,7 @@ lab_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, lab: Lab, screen_c
 		push_screen(&state.screens, .Technologies)
 	}
 	detail_line(state, &content, text(lab_state_keys[lab.state]), UI_DIM_TEXT_COLOR)
-	power_line := power_status_line(&screen_context.world.entities.electric_networks, lab.handle)
+	power_line := power_status_line(&screen_context.world.entities, screen_context.machines, lab.handle, screen_context.tick_rate)
 	detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	return result
 }

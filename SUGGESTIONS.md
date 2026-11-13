@@ -437,3 +437,17 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - `test_a_machines_phase_offset_takes_its_frame` compares the block frame's offset with the default argument's, which is the same call. One literal offset from the old formula would guard the block world's phases.
 - `doc/audit/presentation.md` is a dated audit: its `draw_entities` row still lists the drill's drop arrow and its uncovered list predates the new coverage test.
 - A capture of a drill on a vein, for its arrow on a planet, needs a frame started by hand (`place` starts none); a socket command that starts a frame on the ground would make it a line.
+
+## Suggestions from the cables (0368, 2026-11-13)
+
+- Free port markers: nothing shows where a thing's power ports are or which are free until Place answers "No free power port there". Markers while a cable is held were left out; whether they are wanted is the user's call.
+- With a cable held, a touch tap never opens a panel or turns a switch (the tap is Place). A button on the touch layout, or the tap opening the panel where the thing has no free port, would give it back.
+- Belt runs have the fault cable runs lost: the gamepad's EAST is Sneak and Back, so a crouch ends a belt run.
+- A box's panel shows its tree's lowest level, so a box on the full side of a thin cable reads low, and an idle consumer reads "Draw: 0 W of 0 W".
+- Cable ends float a little off the drawn boxes and off models that do not fill their port face (inserters, lamps). The sockets belong to the model labs.
+- `field_aimed_cable` looks its frames up linearly, four per cable, per frame and viewport for the HUD. Worth a look in the frame table against the sixty fps target once factories carry hundreds of cables.
+- The dev kits of chapters 4 to 6 hold no heavy cable, so a steam engine there delivers 300 kW.
+- A save cut off right after the block world's cable marker loads with no cables and no word. A cable table whose count is malformed can allocate up to 36 times the file's size before it is refused (`struct_list_count_fits` first, as the water bodies do).
+- `settle_gone_machines` now deletes a broken pool entry of a malformed save where the load refused the file before, with the log line `removed 1 placed machines of deleted kinds ()`.
+- `append_power_nodes` splits any entry of the poles pool whose `on` is false; gating it on the power switch's kind would keep a malformed save's junction box whole.
+- `test_a_snapshot_hashes_to_the_direct_state_hash` (0382) runs at 3 s in the unit tier without a slow mark.

@@ -196,7 +196,6 @@ draw_placement_preview :: proc(world: ^World, content: Simulation_Content, model
 		draw_splitter_arrow(placement.origin, placement.size, placement.rotation, BELT_GHOST_ARROW_COLOR)
 	}
 	draw_fluid_machine_ghost(placement, content.machines, content.fluids)
-	draw_supply_volume_ghost(placement, content.machines)
 }
 
 // The cell the drill's ore goes to, outlined: whatever stands there

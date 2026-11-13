@@ -161,7 +161,11 @@ write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
 // write_machine_wear_table), the felled trees (0197,
 // write_felled_tree_table), the arrival (0200,
 // write_field_arrival_table), the water bodies (0293,
-// write_water_body_table) and the vessels (0361, write_vessel_tables).
+// write_water_body_table), the vessels (0361, write_vessel_tables) and
+// the cables (0368, write_cable_table). A block world with a cable writes
+// BLOCK_WORLD_CABLES_MARK and the cables after the later tables, which it
+// then writes even empty. A world without a cable writes no cable table,
+// so it keeps its bytes and its state hash.
 write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) {
 	write_world_state(bytes, &state.world, &state.records)
 	write_value_of(bytes, &state.unlocks)
@@ -170,7 +174,8 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 	for &player in state.players {
 		write_value_of(bytes, &player)
 	}
-	write_later_tables(bytes, &state.world, &state.records, state.field.enabled)
+	has_cables := len(state.world.entities.cables.cables) > 0
+	write_later_tables(bytes, &state.world, &state.records, state.field.enabled || has_cables)
 	if state.field.enabled {
 		write_field_tables(bytes, &state.field)
 		write_machine_wear_table(bytes, &state.world.entities)
@@ -178,7 +183,51 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 		write_field_arrival_table(bytes, &state.field)
 		write_water_body_table(bytes, &state.field.world)
 		write_vessel_tables(bytes, &state.world.entities)
+	} else if has_cables {
+		append_u32(bytes, BLOCK_WORLD_CABLES_MARK)
 	}
+	if has_cables {
+		write_cable_table(bytes, &state.world.entities)
+	}
+}
+
+// What a block world writes before its cable table (0368). A field world's
+// tables start with the spacing (333 to 1000), never 0, so the reader
+// tells the two apart by the next u32 (read_simulation_state); the version
+// cannot step (header_problem refuses any other).
+BLOCK_WORLD_CABLES_MARK :: u32(0)
+
+write_cable_table :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
+	write_list(bytes, entities.cables.cables[:])
+}
+
+// See write_cable_table: read while bytes are left, else empty, then
+// settled against the pools (settle_cables), with one line when cables
+// were dropped and one when cables were cut to the longest span.
+read_cable_table :: proc(reader: ^Byte_Reader, entities: ^Entities, content: Simulation_Content) -> bool {
+	clear(&entities.cables.cables)
+	if bytes_left(reader^) > 0 {
+		read_list(reader, &entities.cables.cables) or_return
+	}
+	dropped, clamped, problem := settle_cables(entities, content, reader.remap)
+	if problem != "" {
+		reader.problem = problem
+		return false
+	}
+	if dropped > 0 {
+		platform.log_printf("save: dropped %d cables whose item, port or machine this build no longer has", dropped)
+	}
+	if clamped > 0 {
+		platform.log_printf("save: cut %d cables longer than %d m to %d m", clamped, MAXIMUM_CABLE_SPAN_METRES, MAXIMUM_CABLE_SPAN_METRES)
+	}
+	return true
+}
+
+// The next u32 without consuming it is BLOCK_WORLD_CABLES_MARK.
+next_is_block_world_cables_mark :: proc(reader: Byte_Reader) -> bool {
+	peek := reader
+	mark, ok := read_u32(&peek)
+	return ok && mark == BLOCK_WORLD_CABLES_MARK
 }
 
 // Tables added after format version 2, in the order they were added. A
@@ -464,7 +513,11 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 		remap_craft_queue(&player.crafting, reader.remap^) or_return
 	}
 	read_later_tables(reader, &state.world, &state.records, content.machines) or_return
-	if bytes_left(reader^) > 0 {
+	clear(&state.world.entities.cables.cables)
+	if bytes_left(reader^) > 0 && next_is_block_world_cables_mark(reader^) {
+		read_u32(reader) or_return
+		read_cable_table(reader, &state.world.entities, content) or_return
+	} else if bytes_left(reader^) > 0 {
 		read_field_tables(reader, &state.field) or_return
 		state.field.enabled = true
 		read_machine_wear_table(reader, &state.world.entities) or_return
@@ -472,6 +525,9 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 		read_field_arrival_table(reader, &state.field) or_return
 		read_water_body_table(reader, &state.field.world) or_return
 		read_vessel_tables(reader, &state.world.entities, content.machines) or_return
+		read_cable_table(reader, &state.world.entities, content) or_return
+	} else {
+		read_cable_table(reader, &state.world.entities, content) or_return
 	}
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false
@@ -480,6 +536,10 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	// (work item 0198), so the rebuild sees only the new pod.
 	upgraded := upgrade_resized_pods(&state.world.entities, content.machines)
 	rebuild_loaded_world(&state.world, content.machines, derived)
+	// A deleted machine's frame of its own goes with it (0368).
+	for frame in reader.remap.deleted_frames {
+		release_empty_frame(&state.world.entities, frame)
+	}
 	if kept := count_entities_keeping_saved_size(&state.world.entities, content.machines); kept > 0 {
 		platform.log_printf("save: %d machines keep the footprint they were saved with; pick them up and place them again for the new size", kept)
 	}

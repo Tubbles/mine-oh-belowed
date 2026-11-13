@@ -37,8 +37,8 @@ make_deep_mining_world :: proc(content: Simulation_Content) -> World {
 }
 
 // A bore drill over a bauxite vein at (1, 1), dropping into a chest at
-// (3, 1, 0), with a pole and a steam engine whose offer the test sets
-// every tick (tick_with_engine_offer).
+// (3, 1, 0), cabled to a junction box with a steam engine whose offer the
+// test sets every tick (tick_with_engine_offer).
 make_bore_drill_test :: proc(content: Simulation_Content) -> Drill_Power_Test {
 	test := Drill_Power_Test {
 		world   = make_deep_mining_world(content),
@@ -49,7 +49,9 @@ make_bore_drill_test :: proc(content: Simulation_Content) -> Drill_Power_Test {
 	test.drill = place_test_entity(&test.world, content, "bore_drill", {-1, 1, -1})
 	test_drill(&test.world, test.drill).vein = vein
 	test.chest = place_test_entity(&test.world, content, "iron_chest", {3, 1, 0})
-	_, test.engine = add_test_power_plant(&test.world, content, {4, 1, 3}, {5, 1, -2})
+	box: Entity_Handle
+	box, test.engine = add_test_power_plant(&test.world, content, {4, 1, 3}, {5, 1, -2})
+	cable_test_machines(&test.world, content, box, test.drill)
 	return test
 }
 

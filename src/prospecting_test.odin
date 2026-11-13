@@ -233,8 +233,9 @@ test_core_sample_drill_reports_after_sampling_time :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
 	records := make_test_records(content)
-	add_test_power_plant(&world, content, {2, 1, 2}, {0, 1, 3})
+	box, _ := add_test_power_plant(&world, content, {2, 1, 2}, {0, 1, 3})
 	handle := place_test_entity(&world, content, "core_sample_drill", {4, 1, 0})
+	cable_test_machines(&world, content, box, handle)
 	testing.expect(t, entity_network(&world.entities.electric_networks, handle) >= 0)
 	sampling := int(core_sample_ticks(content.machines.machines[test_machine(content.machines, "core_sample_drill")], TEST_TICK_RATE))
 	for _ in 0 ..< sampling - 1 {

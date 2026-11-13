@@ -205,6 +205,9 @@ benchmark_command_problem :: proc(words: []string, content: Simulation_Content) 
 		_, found = find_block_id(content.blocks, words[1])
 	case "insert", "filter":
 		_, found = find_item_id(content.items, words[1])
+	case "cable":
+		item, item_found := find_item_id(content.items, words[1])
+		found = item_found && item_is_cable(content.items, item)
 	case "recipe":
 		found = find_recipe(content.recipes, words[1]) != NO_RECIPE
 	case "remove":

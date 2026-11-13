@@ -3,8 +3,9 @@ package game
 import "core:slice"
 import "core:testing"
 
-// Hydro turbines, big poles and substations, fast belts, fast and long
-// inserters (work item 0037). Worlds stand on the stone floor of
+// Hydro turbines, fast belts, fast and long inserters (work item 0037),
+// and the cables and the junction cabinet that took the big poles' and
+// substations' place (0368). Worlds stand on the stone floor of
 // make_floor_world (top at y 1).
 
 test_hydro_turbine_machine :: proc(content: Simulation_Content) -> Machine {
@@ -90,8 +91,8 @@ test_hydro_turbine_output_follows_the_water_level :: proc(t: ^testing.T) {
 	records: Game_Records
 	add_settled_source(t, &world, content, {0, 1, 0})
 	turbine := place_test_entity(&world, content, "hydro_turbine", {1, 1, 0})
-	place_test_entity(&world, content, "small_pole", {1, 1, 3})
-	place_test_entity(&world, content, "lamp", {2, 1, 3})
+	box := place_test_entity(&world, content, "junction_box", {1, 1, 3})
+	cable_test_machines(&world, content, box, turbine, place_test_entity(&world, content, "lamp", {2, 1, 3}))
 	// 7 + 6 + 6 + 5 = 24 levels, 240 kW, 4000 J a tick.
 	testing.expect_value(t, network_supply_after_tick(&world, &records, content), 4000)
 	testing.expect_value(t, test_fluid_machine(&world, turbine).state, Fluid_Machine_State.Generating)
@@ -128,92 +129,62 @@ test_water_flows_through_a_hydro_turbine :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_big_pole_and_substation_data :: proc(t: ^testing.T) {
+test_heavy_and_trunk_cable_and_junction_cabinet_data :: proc(t: ^testing.T) {
 	content := make_test_content()
-	big := content.machines.machines[test_machine(content.machines, "big_pole")]
-	testing.expect_value(t, big.kind, Machine_Kind.Pole)
-	testing.expect_value(t, big.footprint, [3]i32{1, 6, 1})
-	testing.expect_value(t, big.supply_volume, [3]i32{3, 6, 3})
-	testing.expect_value(t, big.wire_reach, 24)
-	substation := content.machines.machines[test_machine(content.machines, "substation")]
-	testing.expect_value(t, substation.footprint, [3]i32{2, 3, 2})
-	testing.expect_value(t, substation.supply_volume, [3]i32{18, 6, 18})
-	testing.expect_value(t, substation.wire_reach, 18)
-	// The volume must centre on the footprint.
-	definition := Machine_Definition{id = "odd", footprint = {width = 2, depth = 2, height = 3}, supply_volume = {width = 17, depth = 18, height = 6}, wire_reach = 18}
-	testing.expect(t, validate_power_machine_definition(definition, .Pole) != "")
-	definition.supply_volume.width = 18
-	testing.expect_value(t, validate_power_machine_definition(definition, .Pole), "")
-	definition.footprint.depth = 1
-	testing.expect(t, validate_power_machine_definition(definition, .Pole) != "")
-}
-
-@(test)
-test_big_poles_and_substations_connect_by_reach :: proc(t: ^testing.T) {
-	content := make_test_content()
-	world := make_floor_world(content.blocks, 32)
-	networks := &world.entities.electric_networks
-	first := place_test_entity(&world, content, "big_pole", {-24, 1, 0})
-	second := place_test_entity(&world, content, "big_pole", {0, 1, 0})
-	third := place_test_entity(&world, content, "big_pole", {25, 1, 0})
-	// 24 apart connects, 25 does not.
-	testing.expect_value(t, entity_network(networks, first), entity_network(networks, second))
-	testing.expect(t, entity_network(networks, third) != entity_network(networks, second))
-	// With a small pole the shorter reach (7) counts.
-	near_small := place_test_entity(&world, content, "small_pole", {7, 1, 0})
-	far_small := place_test_entity(&world, content, "small_pole", {0, 1, 8})
-	testing.expect_value(t, entity_network(networks, near_small), entity_network(networks, second))
-	testing.expect(t, entity_network(networks, far_small) != entity_network(networks, second))
-	// Substations 18 apart connect, 19 do not.
-	world = make_floor_world(content.blocks, 32)
-	networks = &world.entities.electric_networks
-	near := place_test_entity(&world, content, "substation", {-9, 1, -20})
-	middle := place_test_entity(&world, content, "substation", {9, 1, -20})
-	far := place_test_entity(&world, content, "substation", {9, 1, -1})
-	testing.expect_value(t, entity_network(networks, near), entity_network(networks, middle))
-	testing.expect(t, entity_network(networks, far) != entity_network(networks, middle))
-}
-
-// Wire reach measures between footprint centres: a substation's centre
-// sits one block in from its origin corner on x and z.
-@(test)
-test_substation_wire_reach_measures_from_the_footprint_centre :: proc(t: ^testing.T) {
-	content := make_test_content()
-	world := make_floor_world(content.blocks, 32)
-	networks := &world.entities.electric_networks
-	substation := place_test_entity(&world, content, "substation", {0, 1, 0})
-	// Corner to corner 7.07, centre to centre 6.52: connects.
-	east := place_test_entity(&world, content, "small_pole", {7, 1, 1})
-	// Corner to corner 7, centre to centre 7.5: does not.
-	west := place_test_entity(&world, content, "small_pole", {-7, 1, 0})
-	testing.expect_value(t, entity_network(networks, east), entity_network(networks, substation))
-	testing.expect(t, entity_network(networks, west) != entity_network(networks, substation))
-}
-
-@(test)
-test_supply_volumes_of_big_poles_and_substations :: proc(t: ^testing.T) {
-	content := make_test_content()
-	world := make_floor_world(content.blocks, 32)
-	networks := &world.entities.electric_networks
-	place_test_entity(&world, content, "substation", {0, 1, 0})
-	// Centred on the 2 by 2 footprint: x and z from -8 to 9, y 1 to 6.
-	testing.expect_value(t, supply_volume_origin({0, 1, 0}, {2, 3, 2}, {18, 6, 18}), World_Coordinate{-8, 1, -8})
-	for cell in ([?]World_Coordinate{{9, 1, 9}, {-8, 1, -8}, {9, 6, -8}}) {
-		lamp := place_test_entity(&world, content, "lamp", cell)
-		testing.expectf(t, entity_network(networks, lamp) == 0, "lamp at %v outside", cell)
+	heavy := content.items.items[test_item(content.items, "heavy_cable")]
+	testing.expect_value(t, heavy.cable_kilowatts, 3000)
+	testing.expect_value(t, heavy.cable_span_metres, 30)
+	testing.expect_value(t, heavy.cable_thickness_millimetres, 24)
+	trunk := content.items.items[test_item(content.items, "trunk_cable")]
+	testing.expect_value(t, trunk.cable_kilowatts, 24_000)
+	testing.expect_value(t, trunk.cable_span_metres, 50)
+	cabinet := content.machines.machines[test_machine(content.machines, "junction_cabinet")]
+	testing.expect_value(t, cabinet.kind, Machine_Kind.Junction_Box)
+	testing.expect_value(t, cabinet.footprint, [3]i32{1, 2, 1})
+	testing.expect_value(t, cabinet.port_count, 8)
+	for port in cabinet.ports[4:8] {
+		testing.expect_value(t, port.cell, [3]i32{0, 1, 0})
 	}
-	for cell in ([?]World_Coordinate{{10, 1, 0}, {-9, 1, 0}, {0, 1, -9}, {0, 7, 0}}) {
-		lamp := place_test_entity(&world, content, "lamp", cell)
-		testing.expectf(t, entity_network(networks, lamp) == -1, "lamp at %v inside", cell)
+}
+
+// A cable reaches as far as its span between the two port faces, the
+// chord rounded up to whole metres: a box's +x face at x -24 to the -x face
+// of a box at x 6 is 30 m, in a heavy cable's span; farther is not.
+@(test)
+test_a_cable_reaches_its_span_between_port_faces :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	heavy, light := test_item(content.items, "heavy_cable"), test_item(content.items, "light_cable")
+	first := place_test_entity(&world, content, "junction_box", {-25, 1, 0})
+	reached := place_test_entity(&world, content, "junction_box", {6, 1, 0})
+	too_far := place_test_entity(&world, content, "junction_box", {7, 1, 4})
+	testing.expect_value(t, port_span_metres(&world.entities, content.machines, {first, 1}, {reached, 0}), 30)
+	testing.expect_value(t, cable_placement_refusal(&world.entities, content, {ends = {{first, 1}, {reached, 0}}, item = heavy}, max(i64)), Field_Edit_Refusal.None)
+	testing.expect_value(t, cable_placement_refusal(&world.entities, content, {ends = {{first, 1}, {too_far, 0}}, item = heavy}, max(i64)), Field_Edit_Refusal.Cable_Too_Short)
+	// 20 along and 1 across is 20.02 m, rounded up past a light cable's 20.
+	near := place_test_entity(&world, content, "junction_box", {-4, 1, 0})
+	beside := place_test_entity(&world, content, "junction_box", {-4, 1, 1})
+	testing.expect_value(t, port_span_metres(&world.entities, content.machines, {first, 1}, {near, 0}), 20)
+	testing.expect_value(t, cable_placement_refusal(&world.entities, content, {ends = {{first, 1}, {near, 0}}, item = light}, max(i64)), Field_Edit_Refusal.None)
+	testing.expect_value(t, port_span_metres(&world.entities, content.machines, {first, 1}, {beside, 0}), 21)
+	testing.expect_value(t, cable_placement_refusal(&world.entities, content, {ends = {{first, 1}, {beside, 0}}, item = light}, max(i64)), Field_Edit_Refusal.Cable_Too_Short)
+}
+
+// A junction cabinet takes eight cables, a ninth finds no free port.
+@(test)
+test_a_junction_cabinet_takes_eight_cables :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	light := test_item(content.items, "light_cable")
+	cabinet := place_test_entity(&world, content, "junction_cabinet", {0, 1, 0})
+	for index in 0 ..< 8 {
+		lamp := place_test_entity(&world, content, "lamp", {i32(index) - 4, 1, 3})
+		lay_test_cable(&world, content, "light_cable", {lamp, 0}, {cabinet, u8(first_free_power_port(&world.entities, content.machines, cabinet))})
 	}
-	// A big pole covers 3 by 3, 6 high.
-	world = make_floor_world(content.blocks, 32)
-	networks = &world.entities.electric_networks
-	place_test_entity(&world, content, "big_pole", {0, 1, 0})
-	inside := place_test_entity(&world, content, "lamp", {1, 6, -1})
-	outside := place_test_entity(&world, content, "lamp", {2, 1, 0})
-	testing.expect_value(t, entity_network(networks, inside), 0)
-	testing.expect_value(t, entity_network(networks, outside), -1)
+	testing.expect_value(t, free_power_port_count(&world.entities, content.machines, cabinet), 0)
+	testing.expect_value(t, len(world.entities.electric_networks.networks), 1)
+	ninth := place_test_entity(&world, content, "lamp", {4, 1, 3})
+	testing.expect_value(t, cable_placement_refusal(&world.entities, content, {ends = {{ninth, 0}, {cabinet, 0}}, item = light}, max(i64)), Field_Edit_Refusal.No_Free_Port)
 }
 
 // Belt 2 in the data and in the drawing order.
@@ -348,7 +319,8 @@ test_long_inserter_reaches_two_cells :: proc(t: ^testing.T) {
 	inserter := place_test_entity(&world, content, "long_inserter", {2, 1, 0}, 0)
 	near_ahead := place_test_entity(&world, content, "wooden_chest", {3, 1, 0})
 	target := place_test_entity(&world, content, "wooden_chest", {4, 1, 0})
-	add_test_power_plant(&world, content, {2, 1, 2}, {0, 1, 3})
+	box, _ := add_test_power_plant(&world, content, {2, 1, 2}, {0, 1, 3})
+	cable_test_machines(&world, content, box, inserter)
 	plate, coal := test_item(content.items, "iron_plate"), test_item(content.items, "coal")
 	entity_insert(&world.entities, content, source, Item_Stack{plate, 5})
 	entity_insert(&world.entities, content, near_behind, Item_Stack{coal, 5})
@@ -374,7 +346,7 @@ test_grid_technologies_gate_their_recipes :: proc(t: ^testing.T) {
 	}
 	gates := []Gate {
 		{"hydro_power", "fluid_handling", 100, {"hydro_turbine"}},
-		{"electric_grid", "electric_mining", 100, {"big_pole", "substation"}},
+		{"electric_grid", "electric_mining", 100, {"trunk_cable", "junction_cabinet"}},
 		{"fast_inserters", "logistics", 75, {"fast_inserter", "long_inserter"}},
 		{"fast_belts", "logistics_science", 100, {"belt_2", "belt_ramp_2", "belt_lift_2"}},
 	}
@@ -398,23 +370,25 @@ test_grid_technologies_gate_their_recipes :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(test.recipes.recipes[belt].inputs), 3)
 }
 
-// Water source, turbine, substation, a chest of plates, a long inserter
-// onto three fast belts into three yellow ones, an inserter into a chest.
+// Water source, turbine, junction cabinet, a chest of plates, a long
+// inserter onto three fast belts into three yellow ones, an inserter into
+// a chest; the turbine and the inserters cabled to the cabinet.
 lay_hydro_factory :: proc(t: ^testing.T, world: ^World, content: Simulation_Content) -> (plates: Entity_Handle, tick: u64) {
 	tick = add_settled_source(t, world, content, {-10, 1, -10})
-	place_test_entity(world, content, "hydro_turbine", {-9, 1, -10})
-	place_test_entity(world, content, "substation", {-4, 1, -4})
+	turbine := place_test_entity(world, content, "hydro_turbine", {-9, 1, -10})
+	cabinet := place_test_entity(world, content, "junction_cabinet", {-4, 1, -4})
 	source := place_test_entity(world, content, "wooden_chest", {-7, 1, 3})
 	entity_insert(&world.entities, content, source, Item_Stack{test_item(content.items, "iron_plate"), 40})
-	place_test_entity(world, content, "long_inserter", {-5, 1, 3}, 0)
+	long := place_test_entity(world, content, "long_inserter", {-5, 1, 3}, 0)
 	for x in i32(-3) ..= -1 {
 		lay_belt_of(world, content, "belt_2", {x, 1, 3}, 0)
 	}
 	for x in i32(0) ..= 2 {
 		lay_belt_of(world, content, "belt", {x, 1, 3}, 0)
 	}
-	place_test_entity(world, content, "inserter", {3, 1, 3}, 0)
+	inserter := place_test_entity(world, content, "inserter", {3, 1, 3}, 0)
 	plates = place_test_entity(world, content, "wooden_chest", {4, 1, 3})
+	cable_test_machines(world, content, cabinet, turbine, long, inserter)
 	return
 }
 

@@ -230,7 +230,8 @@ lay_gear_line_at :: proc(world: ^World, content: Simulation_Content, offset: Wor
 	assembler = place_test_entity(world, content, "assembler_1", World_Coordinate{1, 1, -1} + offset)
 	place_fuelled_inserter(world, content, World_Coordinate{4, 1, 0} + offset, 0)
 	target = place_test_entity(world, content, "wooden_chest", World_Coordinate{5, 1, 0} + offset)
-	add_test_power_plant(world, content, World_Coordinate{2, 1, 3} + offset, World_Coordinate{3, 1, 3} + offset)
+	box, _ := add_test_power_plant(world, content, World_Coordinate{2, 1, 3} + offset, World_Coordinate{3, 1, 3} + offset)
+	cable_test_machines(world, content, box, assembler)
 	set_assembler_recipe(test_assembler(world, assembler), content.recipes, test_recipe(content.recipes, "iron_gear"))
 	entity_insert(&world.entities, content, source, {test_item(content.items, "iron_plate"), 40})
 	return

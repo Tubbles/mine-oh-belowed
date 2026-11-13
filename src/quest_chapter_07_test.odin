@@ -130,8 +130,8 @@ test_turbine_counters :: proc(t: ^testing.T) {
 	records: Game_Records
 	add_settled_source(t, &world, content, {0, 1, 0})
 	turbine := place_test_entity(&world, content, "hydro_turbine", {1, 1, 0})
-	place_test_entity(&world, content, "small_pole", {1, 1, 3})
-	place_test_entity(&world, content, "lamp", {2, 1, 3})
+	box := place_test_entity(&world, content, "junction_box", {1, 1, 3})
+	cable_test_machines(&world, content, box, turbine, place_test_entity(&world, content, "lamp", {2, 1, 3}))
 	tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	testing.expect_value(t, records.statistics.turbine_joules, 83)
 	tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
@@ -209,7 +209,7 @@ complete_hydro_to_sixty :: proc(t: ^testing.T, test: ^Quest_Test) {
 	run_quest_tick(test)
 	testing.expect_value(t, active_quest_id(test), "grid")
 	research_test_technology(test, "electric_grid")
-	set_placed(test, "substation", 1)
+	test.statistics.produced[test_item(test.items, "trunk_cable")] += 20
 	run_quest_tick(test)
 	testing.expect_value(t, active_quest_id(test), "schematic")
 	test.statistics.schematics_found += 1
@@ -299,7 +299,7 @@ test_chapter_07_hints_fire_once :: proc(t: ^testing.T) {
 	set_placed(&test, "hydro_turbine", 1)
 	test.statistics.turbine_joules += 10_000_000
 	research_test_technology(&test, "electric_grid")
-	set_placed(&test, "substation", 1)
+	test.statistics.produced[test_item(test.items, "trunk_cable")] += 20
 	run_quest_tick(&test)
 	run_quest_tick(&test)
 	testing.expect_value(t, active_quest_id(&test), "schematic")

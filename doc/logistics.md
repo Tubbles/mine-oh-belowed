@@ -115,4 +115,4 @@ How items move without hands: belts as transport lines, inserters, splitters, mi
 
 - `entity_accepts` (the slot or lane an item would go to), `entity_insert` (returns the leftover), `entity_extract` (by filter). Belts implement them against one lane of the block.
 - Inserters only feed a crafting machine's ingredient slot or a lab's pack slot below `INSERTION_LIMIT_CRAFTS` crafts, so one machine does not swallow a belt. The player's panel is not limited.
-- Splitters, pipes, fluid machines without a fuel slot, electric drills, poles, switches and lamps neither take nor give. Burner inserters and drills, boilers and combustion generators take only fuel.
+- Splitters, pipes, fluid machines without a fuel slot, electric drills, junction boxes, switches and lamps neither take nor give. Burner inserters and drills, boilers and combustion generators take only fuel.

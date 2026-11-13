@@ -119,6 +119,7 @@ test_pump_head_is_validated :: proc(t: ^testing.T) {
 		footprint                = {2, 1, 1},
 		fluid_litres_per_second  = 1200,
 		electric_power_kilowatts = 30,
+		ports                    = test_power_ports(30_000),
 		fluid_ports              = {
 			{cell = {0, 0, 0}, face = "negative_x", direction = "input", buffer_litres = 200},
 			{cell = {1, 0, 0}, face = "positive_x", direction = "output", buffer_litres = 200},

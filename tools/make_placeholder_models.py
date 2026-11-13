@@ -86,7 +86,6 @@ TAR_DARK = (70, 64, 60)
 FLARE_GREY = (120, 110, 100)
 GENERATOR_BROWN = (110, 100, 80)
 TURBINE_BLUE = (90, 120, 140)
-INSULATOR = (230, 230, 220)
 PAD_GREY = (120, 122, 128)
 PAD_STRIPE = (220, 180, 40)
 SUIT = (60, 110, 200)
@@ -558,23 +557,6 @@ def hydro_turbine():
     return {"": model, "_part": part}
 
 
-# Power.
-
-def substation():
-    """2 by 3 by 2: a transformer box inside a frame of four posts."""
-    model = Model((2, 3, 2))
-    base_plate(model, BASE, 0, 2)
-    for x in (1, 13):
-        for z in (1, 13):
-            model.box((x, 2, z), (x + 1, 21, z + 1), STEEL)
-    model.box((1, 20, 1), (14, 21, 14), STEEL_DARK)
-    model.clear((3, 20, 3), (12, 21, 12))
-    model.box((4, 2, 4), (11, 12, 11), IRON)
-    for x in (5, 9):
-        model.box((x, 13, 7), (x + 1, 15, 8), INSULATOR)
-    return {"": model}
-
-
 # The launch pad.
 
 def launch_pad():
@@ -660,7 +642,6 @@ MODELS = {
     "combustion_generator": combustion_generator,
     "fuel_generator": fuel_generator,
     "hydro_turbine": hydro_turbine,
-    "substation": substation,
     "crusher": crusher,
     "washer": washer,
     "alloy_furnace": alloy_furnace,

@@ -105,8 +105,8 @@ factory = {
 		{machine = "lab", cell = [8, 1, 14]}
 		{machine = "boiler", cell = [13, 1, 14], insert = [["coal", 20]]}
 		{machine = "steam_engine", cell = [17, 1, 13]}
-		{machine = "small_pole", cell = [22, 1, 14]}
-		{machine = "small_pole", cell = [24, 1, 4]}
+		{machine = "junction_box", cell = [22, 1, 14]}
+		{machine = "junction_box", cell = [24, 1, 4]}
 		{machine = "lamp", cell = [24, 1, 16]}
 	]
 }

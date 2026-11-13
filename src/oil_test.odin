@@ -453,8 +453,9 @@ test_oil_technologies_are_gated :: proc(t: ^testing.T) {
 
 // The power plant of the power tests, and beside it a tar pit pump on a
 // tar pit feeding a refinery (with 200 L of crude oil to start), whose
-// heavy oil feeds a cracking unit and whose gas a flare stack, on three
-// more poles.
+// heavy oil feeds a cracking unit and whose gas a flare stack, each
+// cabled to a junction box that is cabled to the power plant's first box
+// (0368).
 build_oil_plant :: proc(world: ^World, content: Simulation_Content) -> (refinery, unit, flare: Entity_Handle) {
 	build_power_plant(world, content)
 	world_set_block(world, {-4, 0, 0}, test_block(content.blocks, "tar_pit"))
@@ -466,9 +467,9 @@ build_oil_plant :: proc(world: ^World, content: Simulation_Content) -> (refinery
 	unit = place_test_entity(world, content, "cracking_unit", {-5, 1, 4})
 	pool_get(&world.entities.assemblers, unit).buffers[1] = {fluid = test_fluid(content, "water"), level = 200}
 	flare = place_test_fluid_entity(world, content, "flare_stack", {-12, 1, 3})
-	place_test_entity(world, content, "small_pole", {-2, 1, 2})
-	place_test_entity(world, content, "small_pole", {-7, 1, -1})
-	place_test_entity(world, content, "small_pole", {-13, 1, 1})
+	box := place_test_entity(world, content, "junction_box", {-7, 1, -1})
+	cable_test_machines(world, content, entity_at(&world.entities, {3, 1, -1}), box)
+	cable_test_machines(world, content, box, entity_at(&world.entities, {-6, 1, 0}), refinery, unit, flare)
 	return
 }
 

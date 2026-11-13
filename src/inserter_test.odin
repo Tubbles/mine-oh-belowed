@@ -226,7 +226,8 @@ test_filter_inserter_moves_only_its_filter_item :: proc(t: ^testing.T) {
 	// Outside every power network it stays unpowered.
 	tick_test_entities(&world, &records, content, 100)
 	testing.expect_value(t, inserter.state, Inserter_State.Unpowered)
-	add_test_power_plant(&world, content, {1, 1, 2}, {3, 1, 0})
+	box, _ := add_test_power_plant(&world, content, {1, 1, 2}, {3, 1, 0})
+	cable_test_machines(&world, content, box, pair.inserter)
 	tick_test_entities(&world, &records, content, 100)
 	testing.expect_value(t, inserter.state, Inserter_State.No_Filter)
 	testing.expect_value(t, inserter.held, EMPTY_STACK)

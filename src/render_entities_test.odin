@@ -171,8 +171,8 @@ test_a_launch_pads_tower_and_rocket_stand_on_its_frame :: proc(t: ^testing.T) {
 	}
 }
 
-// The glow and still kinds, the poles, the switch, the lamp and the
-// splitter are still casters, the spin and bob kinds moving ones; placing
+// The glow and still kinds, the junction box, the switch, the lamp and
+// the splitter are still casters, the spin and bob kinds moving ones; placing
 // a boiler on a frame moves the frame table's revision, so the kept sun
 // shadow map draws it.
 @(test)
@@ -188,7 +188,7 @@ test_fluid_and_power_machines_cast_still_or_moving_by_their_motion :: proc(t: ^t
 		testing.expectf(t, sun_shadow_entity_moves(handle.kind, machines.machines[machine_id]) == moves, "%s moves: %v", id, !moves)
 		testing.expectf(t, entities.frames.revision != revision, "placing %s moves the frame table's revision", id)
 	}
-	for id, index in ([6]string{"boiler", "storage_tank", "small_pole", "power_switch", "lamp", "splitter"}) {
+	for id, index in ([6]string{"boiler", "storage_tank", "junction_box", "power_switch", "lamp", "splitter"}) {
 		expect_moves(t, &entities, machines, id, {i32(index) * 13, 1, 0}, pad.id, false)
 	}
 	for id, index in ([2]string{"steam_engine", "pump"}) {

@@ -118,6 +118,16 @@ Field_Edit_Refusal :: enum u8 {
 	Holds_Equipment,
 	Holds_The_Vessel_Together,
 	Inside_A_Vessel,
+	// Cables (0368, cable.odin, cable_field.odin): no free power port on
+	// the aimed thing; the run's first thing again; the span past the
+	// cable's; fewer metres held than the span; a vessel's end that is not
+	// its connector; the run's first end gone or taken.
+	No_Free_Port,
+	Same_Thing,
+	Cable_Too_Short,
+	Not_Enough_Cable,
+	Not_A_Connector,
+	Cable_End_Gone,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -149,6 +159,12 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Holds_Equipment   = "field_refused_holds_equipment",
 	.Holds_The_Vessel_Together = "field_refused_holds_the_vessel_together",
 	.Inside_A_Vessel   = "field_refused_inside_a_vessel",
+	.No_Free_Port      = "field_refused_no_free_port",
+	.Same_Thing        = "field_refused_same_thing",
+	.Cable_Too_Short   = "field_refused_cable_too_short",
+	.Not_Enough_Cable  = "field_refused_not_enough_cable",
+	.Not_A_Connector   = "field_refused_not_a_connector",
+	.Cable_End_Gone    = "field_refused_cable_end_gone",
 }
 
 Queued_Field_Edit :: struct {
@@ -617,9 +633,11 @@ drain_field_edits :: proc(state: ^Simulation_State, content: Simulation_Content)
 }
 
 // One player moves and queues its brush edit, its placements (a vessel
-// part's on Place's press, queue_vessel_placement, 0361) and a finished
-// pick up (advance_field_pick_up) or, aimed at a trunk, a finished
-// felling (advance_field_felling, 0197); nothing edits the field yet.
+// part's on Place's press, queue_vessel_placement, 0361; a cable's,
+// update_field_cable_tool, 0368) and a finished pick up
+// (advance_field_pick_up) or, aimed at a trunk, a finished felling
+// (advance_field_felling, 0197); nothing edits the field yet. A Mine the
+// cable tool took (a run carried, a cable aimed) reaches none of them.
 // The tool follows the hotbar (simulation_field.odin) before this runs.
 // The move counts for the walk counter unless the player flies, as the
 // block world's (0187).
@@ -632,6 +650,11 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 	move_and_aim_field_player(field, &entities.frames, content.field, &player.field, input)
 	if !player.field.flying {
 		record_field_walked(&state.records.statistics, walk_start, player.field.position, player.field.up)
+	}
+	input := input
+	if update_field_cable_tool(state, content, index, input) {
+		input.held -= {.Dig}
+		input.just_pressed -= {.Dig}
 	}
 	if player.field.tree_target.hit {
 		if felling, finished := advance_field_felling(state, content, player, input); finished {

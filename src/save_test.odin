@@ -97,7 +97,8 @@ lay_save_test_splitter :: proc(world: ^World, content: Simulation_Content, offse
 lay_save_test_research :: proc(world: ^World, content: Simulation_Content, offset: World_Coordinate) {
 	first := place_test_entity(world, content, "lab", World_Coordinate{1, 1, -1} + offset)
 	second := place_test_entity(world, content, "lab", World_Coordinate{-4, 1, -1} + offset)
-	add_test_power_plant(world, content, World_Coordinate{-1, 1, 0} + offset, World_Coordinate{-2, 1, 2} + offset)
+	box, _ := add_test_power_plant(world, content, World_Coordinate{-1, 1, 0} + offset, World_Coordinate{-2, 1, 2} + offset)
+	cable_test_machines(world, content, box, first, second)
 	pack := test_item(content.items, "science_pack_1")
 	entity_insert(&world.entities, content, first, {pack, 6})
 	entity_insert(&world.entities, content, second, {pack, 6})
@@ -298,7 +299,8 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	records := &simulation.records
 	carve_save_test_floor(world, test_block(content.blocks, "stone"))
 	build_power_plant(world, content)
-	place_test_entity(world, content, "power_switch", {12, 1, 6})
+	// On the box build_power_plant chains above its third (0368).
+	cable_test_machines(world, content, entity_at(&world.entities, {6, 2, 9}), place_test_entity(world, content, "power_switch", {12, 1, 6}))
 	lay_gear_line_at(world, content, {-20, 0, 0})
 	lay_save_test_research(world, content, {-10, 0, -20})
 	lay_save_test_smelting(world, content, {12, 0, 14})
@@ -954,4 +956,254 @@ test_a_save_without_frame_tables_loads_on_frame_0 :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_at(&loaded.world.entities, {3, 1, 3}), chest)
 	testing.expect_value(t, entity_common(&loaded.world.entities, chest).frame, BLOCK_FRAME)
 	testing.expect_value(t, len(loaded.world.entities.frames.occupants), len(original.world.entities.frames.occupants))
+}
+
+// The save tests' world writing and reading a field world's tables
+// (0368): a spacing and a chunk radius, no field generated.
+enable_test_field_tables :: proc(simulation: ^Simulation_State) {
+	simulation.field.enabled = true
+	simulation.field.spacing_millimetres = 1000
+	simulation.field.chunk_set.radius = 1
+}
+
+// The shipped content as a build before 0368 had it: the small pole, the
+// big pole and the substation as junction boxes of two ports, with their
+// items and recipes, and no deleted_ids.
+content_with_the_poles :: proc(content: Simulation_Content) -> Simulation_Content {
+	old := content
+	items := make([dynamic]Item, context.temp_allocator)
+	machines := make([dynamic]Machine, context.temp_allocator)
+	recipes := make([dynamic]Recipe, context.temp_allocator)
+	append(&items, ..content.items.items)
+	append(&machines, ..content.machines.machines)
+	append(&recipes, ..content.recipes.recipes)
+	box_item := content.items.items[test_item(content.items, "junction_box")]
+	box := content.machines.machines[test_machine(content.machines, "junction_box")]
+	box_recipe := content.recipes.recipes[test_recipe(content.recipes, "junction_box")]
+	poles := [?]struct {
+		id:        string,
+		footprint: [3]i32,
+	}{{"small_pole", {1, 3, 1}}, {"big_pole", {1, 6, 1}}, {"substation", {2, 3, 2}}}
+	for pole in poles {
+		item, machine, recipe := box_item, box, box_recipe
+		item.id, recipe.id = pole.id, pole.id
+		append(&items, item)
+		machine.id, machine.item, machine.footprint, machine.port_count = pole.id, Item_Id(len(items) - 1), pole.footprint, 2
+		append(&machines, machine)
+		append(&recipes, recipe)
+	}
+	old.items.items, old.machines.machines, old.recipes.recipes = items[:], machines[:], recipes[:]
+	old.machines.deleted_ids = nil
+	return old
+}
+
+// Work item 0368, decision 7: a block world and a field world saved with
+// the poles load with them deleted: one line names the three, the switch
+// and the assembler stay with no cable, a pole's frame of its own is
+// released, the world saves and loads again to its hash, and a box placed
+// afterwards takes a freed slot. A cable from a pole to the switch goes
+// with the pole. Beside a gone machine that is not deleted, the load
+// refuses as before.
+@(test)
+test_old_saves_lose_their_poles :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	old := content_with_the_poles(content)
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	header := make_save_header()
+	ids := [5]string{"small_pole", "big_pole", "substation", "power_switch", "assembler_1"}
+	cells := [5]World_Coordinate{{0, 1, 0}, {3, 1, 0}, {6, 1, 0}, {10, 1, 0}, {13, 1, 0}}
+	for field_world in ([?]bool{false, true}) {
+		original := make_save_test_simulation(&generator, old)
+		defer destroy_simulation(&original)
+		entities := &original.world.entities
+		frame, bare := BLOCK_FRAME, BLOCK_FRAME
+		if field_world {
+			enable_test_field_tables(&original)
+			foundation := find_foundation_machine(old.machines)
+			_, frame = place_free_foundation(entities, old.machines, foundation, SAVE_TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+			for x in i32(0) ..< 16 {
+				for z in i32(0) ..< 3 {
+					place_on_frame(entities, old.machines, foundation, frame, {x, 0, z}, 0)
+				}
+			}
+			origin, axes := free_frame_at(SAVE_TEST_FRAME_HIT + {20 * POSITION_UNITS_PER_METRE, 0, 0}, {UNIT_VECTOR_ONE, 0, 0}, 500)
+			bare = add_frame(&entities.frames, origin, axes, 500)
+		}
+		placed: [5]Entity_Handle
+		for id, index in ids {
+			on, cell := frame, cells[index]
+			if field_world && id == "big_pole" {
+				on, cell = bare, {}
+			}
+			placed[index] = add_entity(entities, old.machines, test_machine(old.machines, id), cell, 0, on)
+		}
+		// A worn pole: the field's wear table skips it with the pole.
+		entity_common(entities, placed[1]).wear_ticks = 600
+		// A cable from the small pole to the switch: dropped with its pole.
+		lay_test_cable(&original.world, old, "light_cable", {placed[0], 1}, {placed[3], 0})
+		bytes := encode_entities(&original, old, header)
+
+		remap: Content_Remap
+		loaded := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&loaded)
+		testing.expect_value(t, decode_entities(&loaded, content, bytes, "entities.bin", header, &remap), "")
+		testing.expect_value(t, deleted_machines_line(remap), "save: removed 3 placed machines of deleted kinds (small_pole, big_pole, substation)")
+		loaded_entities := &loaded.world.entities
+		for index in 0 ..< 3 {
+			testing.expectf(t, entity_common(loaded_entities, placed[index]) == nil, "the %s is gone", ids[index])
+		}
+		for index in 3 ..< 5 {
+			common := entity_common(loaded_entities, entity_at(loaded_entities, cells[index], frame))
+			testing.expectf(t, common != nil && content.machines.machines[common.machine].id == ids[index], "the %s stays", ids[index])
+		}
+		testing.expect_value(t, len(loaded_entities.cables.cables), 0)
+		testing.expect_value(t, len(loaded_entities.electric_networks.networks), 0)
+		if field_world {
+			_, kept := find_frame(&loaded_entities.frames, frame)
+			_, released := find_frame(&loaded_entities.frames, bare)
+			testing.expect(t, kept && !released, "the bare ground pole's frame is released, the foundations' kept")
+		}
+
+		hash := simulation_state_hash(&loaded)
+		again_remap: Content_Remap
+		again := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&again)
+		testing.expect_value(t, decode_entities(&again, content, encode_entities(&loaded, content, header), "entities.bin", header, &again_remap), "")
+		testing.expect_value(t, deleted_machines_line(again_remap), "")
+		testing.expect_value(t, simulation_state_hash(&again), hash)
+
+		box := add_entity(loaded_entities, content.machines, test_machine(content.machines, "junction_box"), {20, 1, 1}, 0, frame)
+		freed := false
+		for handle in remap.deleted_handles {
+			freed ||= handle.kind == box.kind && handle.index == box.index
+		}
+		testing.expect(t, freed, "the box takes a deleted pole's slot")
+	}
+
+	retired := old
+	machines := make([dynamic]Machine, context.temp_allocator)
+	append(&machines, ..old.machines.machines)
+	chest := old.machines.machines[test_machine(old.machines, "wooden_chest")]
+	chest.id = "retired_chest"
+	append(&machines, chest)
+	retired.machines.machines = machines[:]
+	original := make_save_test_simulation(&generator, retired)
+	defer destroy_simulation(&original)
+	add_entity(&original.world.entities, retired.machines, test_machine(retired.machines, "small_pole"), {0, 1, 0}, 0)
+	add_entity(&original.world.entities, retired.machines, test_machine(retired.machines, "retired_chest"), {3, 1, 0}, 0)
+	remap: Content_Remap
+	loaded := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&loaded)
+	problem := decode_entities(&loaded, content, encode_entities(&original, retired, header), "entities.bin", header, &remap)
+	testing.expectf(t, strings.contains(problem, "placed retired_chest machines"), "%q", problem)
+}
+
+// Work item 0368: the hand run factory and a cable on a frame round trip
+// in a block world and a field world to the hash and the cable table; a
+// block world without a cable writes no cable table; a cable whose item
+// this build lacks is dropped; one longer than any span is cut to the
+// longest; a dead end and two cables on one port each refuse the file.
+@(test)
+test_cables_save_and_load :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	header := make_save_header()
+	box := test_machine(content.machines, "junction_box")
+	for field_world in ([?]bool{false, true}) {
+		original := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&original)
+		if field_world {
+			enable_test_field_tables(&original)
+		}
+		entities := &original.world.entities
+		lay_hand_run_factory(&original.world, content, true)
+		origin, axes := free_frame_at(SAVE_TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+		frame := add_frame(&entities.frames, origin, axes, 500)
+		near := add_entity(entities, content.machines, box, {0, 0, 0}, 0, frame)
+		far := add_entity(entities, content.machines, box, {4, 0, 0}, 0, frame)
+		lay_test_cable(&original.world, content, "light_cable", {near, 1}, {far, 0})
+		tick_test_entities(&original.world, &original.records, content, 3)
+
+		remap: Content_Remap
+		loaded := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&loaded)
+		testing.expect_value(t, decode_entities(&loaded, content, encode_entities(&original, content, header), "entities.bin", header, &remap), "")
+		testing.expect_value(t, loaded.field.enabled, field_world)
+		original_table, loaded_table := &original.world.entities.cables, &loaded.world.entities.cables
+		testing.expect(t, len(original_table.cables) > 10 && slice.equal(loaded_table.cables[:], original_table.cables[:]), "the cables come back")
+		testing.expect(t, slice.equal(loaded_table.watts[:], original_table.watts[:]), "their watts come back")
+		testing.expect_value(t, port_end_cable(loaded_table, {far, 0}), port_end_cable(original_table, {far, 0}))
+		testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(entities.electric_networks.networks))
+		testing.expect_value(t, simulation_state_hash(&loaded), simulation_state_hash(&original))
+	}
+
+	// Without a cable a block world ends with the later tables, and a cable
+	// laid and taken up leaves its bytes as they were.
+	{
+		plain := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&plain)
+		first := place_test_entity(&plain.world, content, "junction_box", {0, 1, 0})
+		second := place_test_entity(&plain.world, content, "junction_box", {5, 1, 0})
+		before := encode_entities(&plain, content, header)
+		later := make([dynamic]byte, context.temp_allocator)
+		write_later_tables(&later, &plain.world, &plain.records, false)
+		testing.expect(t, slice.has_suffix(before, later[:]), "the file ends with the later tables")
+		lay_test_cable(&plain.world, content, "light_cable", {first, 1}, {second, 0})
+		testing.expect(t, !slice.equal(encode_entities(&plain, content, header), before), "a cable is written")
+		remove_cable(&plain.world.entities, content.machines, 0)
+		testing.expect(t, slice.equal(encode_entities(&plain, content, header), before), "a cable taken up leaves the bytes")
+	}
+
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	entities := &original.world.entities
+	first := place_test_entity(&original.world, content, "junction_box", {0, 1, 0})
+	second := place_test_entity(&original.world, content, "junction_box", {5, 1, 0})
+	third := place_test_entity(&original.world, content, "junction_box", {10, 1, 0})
+	lay_test_cable(&original.world, content, "light_cable", {first, 1}, {second, 0})
+	lay_test_cable(&original.world, content, "heavy_cable", {first, 2}, {second, 2})
+	{
+		changed := content
+		changed.items.items = without(content.items.items, int(test_item(content.items, "light_cable")))
+		remap: Content_Remap
+		loaded := make_save_test_simulation(&generator, changed)
+		defer destroy_simulation(&loaded)
+		testing.expect_value(t, decode_entities(&loaded, changed, encode_entities(&original, content, header), "entities.bin", header, &remap), "")
+		cables := loaded.world.entities.cables.cables[:]
+		testing.expect_value(t, len(cables), 1)
+		testing.expect(t, len(cables) == 1 && changed.items.items[cables[0].item].id == "heavy_cable", "the heavy cable stays")
+	}
+	// A cable longer than any span is cut to the longest.
+	heavy_metres := entities.cables.cables[1].metres
+	entities.cables.cables[1].metres = 5000
+	{
+		remap: Content_Remap
+		loaded := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&loaded)
+		testing.expect_value(t, decode_entities(&loaded, content, encode_entities(&original, content, header), "entities.bin", header, &remap), "")
+		cables := loaded.world.entities.cables.cables[:]
+		testing.expect_value(t, len(cables), 2)
+		testing.expect(t, len(cables) == 2 && cables[1].metres == MAXIMUM_CABLE_SPAN_METRES && cables[0].metres == entities.cables.cables[0].metres, "the long cable is cut, the other kept")
+	}
+	entities.cables.cables[1].metres = heavy_metres
+	// Two cables on the first box's port b.
+	append(&entities.cables.cables, Cable{ends = {{first, 1}, {third, 0}}, item = test_item(content.items, "light_cable"), metres = 9})
+	{
+		remap: Content_Remap
+		loaded := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&loaded)
+		problem := decode_entities(&loaded, content, encode_entities(&original, content, header), "entities.bin", header, &remap)
+		testing.expectf(t, strings.contains(problem, "the save has two cables on one port"), "%q", problem)
+	}
+	// A cable whose end is a box gone.
+	pop(&entities.cables.cables)
+	testing.expect(t, remove_entity(entities, content.machines, third))
+	append(&entities.cables.cables, Cable{ends = {{second, 1}, {third, 0}}, item = test_item(content.items, "light_cable"), metres = 4})
+	{
+		remap: Content_Remap
+		loaded := make_save_test_simulation(&generator, content)
+		defer destroy_simulation(&loaded)
+		problem := decode_entities(&loaded, content, encode_entities(&original, content, header), "entities.bin", header, &remap)
+		testing.expectf(t, strings.contains(problem, "the save has a cable whose end is gone"), "%q", problem)
+	}
 }

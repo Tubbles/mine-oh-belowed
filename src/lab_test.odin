@@ -226,7 +226,8 @@ test_requeueing_drops_the_unit_in_progress :: proc(t: ^testing.T) {
 lay_research_site :: proc(world: ^World, content: Simulation_Content) -> (first, second: Entity_Handle) {
 	first = place_test_entity(world, content, "lab", {1, 1, -1})
 	second = place_test_entity(world, content, "lab", {-4, 1, -1})
-	add_test_power_plant(world, content, {-1, 1, 0}, {-2, 1, 2})
+	box, _ := add_test_power_plant(world, content, {-1, 1, 0}, {-2, 1, 2})
+	cable_test_machines(world, content, box, first, second)
 	pack := test_item(content.items, "science_pack_1")
 	entity_insert(&world.entities, content, first, {pack, 6})
 	entity_insert(&world.entities, content, second, {pack, 6})

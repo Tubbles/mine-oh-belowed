@@ -489,7 +489,8 @@ lay_ore_processing_line :: proc(world: ^World, content: Simulation_Content) -> (
 	lay_pipes(world, content, {6, 1, -1})
 	tank := place_test_fluid_entity(world, content, "storage_tank", {5, 1, -4})
 	test_fluid_machine(world, tank).buffers[0] = {fluid = test_fluid(content, "water"), level = 5000}
-	add_test_power_plant(world, content, {4, 1, 2}, {2, 1, 3})
+	box, _ := add_test_power_plant(world, content, {4, 1, 2}, {2, 1, 3})
+	cable_test_machines(world, content, box, crusher, washer)
 	entity_insert(&world.entities, content, source, {test_item(content.items, "hematite_low_grade"), 40})
 	return
 }

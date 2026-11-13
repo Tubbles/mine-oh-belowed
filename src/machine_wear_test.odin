@@ -98,17 +98,17 @@ test_a_furnace_stands_on_flat_bare_ground_and_is_refused_on_a_slope :: proc(t: ^
 	}
 }
 
-// A small pole stands on the thirty degree slope (stands_on_ground), and
-// a belt pole, a pipe and the stone cutting table (0196) never count wear
-// however they are ticked.
+// A junction box stands on the thirty degree slope (stands_on_ground),
+// and it, a belt pole, a pipe and the stone cutting table (0196) never
+// count wear however they are ticked.
 @(test)
 test_poles_and_pipes_stand_on_any_slope_and_never_wear :: proc(t: ^testing.T) {
 	simulation, content, items := make_wear_test(Test_Terrain{kind = .Slope, slope_degrees = 30})
 	defer destroy_simulation(&simulation)
-	refusal, handle := place_test_machine_on_bare_ground(&simulation, content, items, "small_pole")
+	refusal, handle := place_test_machine_on_bare_ground(&simulation, content, items, "junction_box")
 	testing.expect_value(t, refusal, Field_Edit_Refusal.None)
 	testing.expect(t, handle != NO_ENTITY)
-	for id in ([?]string{"belt_pole", "pipe", "small_pole", "stone_cutting_table"}) {
+	for id in ([?]string{"belt_pole", "pipe", "junction_box", "stone_cutting_table"}) {
 		machine := content.machines.machines[test_machine(content.machines, id)]
 		testing.expectf(t, machine.stands_on_ground, "%s stands on the ground", id)
 		common := Entity_Common{machine = test_machine(content.machines, id), frame = Frame_Id(1)}
@@ -387,8 +387,8 @@ make_block_wear_test :: proc() -> (content: Simulation_Content, world: World) {
 test_a_steam_engine_breaks_on_the_tick_of_its_minutes :: proc(t: ^testing.T) {
 	content, world := make_block_wear_test()
 	records: Game_Records
-	_, engine := add_test_power_plant(&world, content, {0, 1, 0}, {-3, 1, -2})
-	place_test_entity(&world, content, "lamp", {2, 1, 2})
+	box, engine := add_test_power_plant(&world, content, {0, 1, 0}, {-3, 1, -2})
+	cable_test_machines(&world, content, box, place_test_entity(&world, content, "lamp", {2, 1, 2}))
 	test_fluid_machine(&world, engine).founded = false
 	tick_test_entities(&world, &records, content, WEAR_TEST_LIFE_TICKS - 1)
 	testing.expect_value(t, test_fluid_machine(&world, engine).wear_ticks, u32(WEAR_TEST_LIFE_TICKS - 1))

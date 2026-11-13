@@ -116,6 +116,10 @@ Item_Definition :: struct {
 	tool_role:       string,
 	configurable:    string,
 	former_ids:      []string,
+	cable_kilowatts:             int,
+	cable_span_metres:           int,
+	cable_thickness_millimetres: int,
+	cable_color:                 [3]int,
 }
 
 Items_File :: struct {
@@ -137,7 +141,9 @@ Items_File :: struct {
 // string shown under the facts in the recipe browser, "" for none (work
 // item 0070). configurable is what the configure pop-up sets (0202).
 // former_ids are the ids the item had in an older build, which a save
-// may still name (save_remap.odin, work item 0196).
+// may still name (save_remap.odin, work item 0196). A cable (0368,
+// cable.odin) has cable_kilowatts, the most it carries, the longest span
+// one cable makes, its thickness and colour; 0 for every other item.
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -156,6 +162,10 @@ Item :: struct {
 	tool_role:       Item_Tool_Role,
 	configurable:    Item_Configuration,
 	former_ids:      []string,
+	cable_kilowatts:             u32,
+	cable_span_metres:           u16,
+	cable_thickness_millimetres: u16,
+	cable_color:                 [3]u8,
 }
 
 Item_Registry :: struct {
@@ -224,7 +234,43 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	if _, found := parse_named_enum(item_configuration_names, definition.configurable); !found {
 		return fmt.tprintf("item %q has unknown configurable %q", definition.id, definition.configurable)
 	}
+	if problem := validate_cable_item(definition); problem != "" {
+		return problem
+	}
 	return validate_item_use(definition)
+}
+
+MAXIMUM_CABLE_KILOWATTS :: 1_000_000
+MAXIMUM_CABLE_SPAN_METRES :: 100
+MINIMUM_CABLE_THICKNESS_MILLIMETRES :: 5
+MAXIMUM_CABLE_THICKNESS_MILLIMETRES :: 100
+
+// A cable (0368) lists all four cable keys or none: its kilowatts, its
+// span within its stack, its thickness and a colour.
+validate_cable_item :: proc(definition: Item_Definition) -> string {
+	listed := [4]bool{definition.cable_kilowatts != 0, definition.cable_span_metres != 0, definition.cable_thickness_millimetres != 0, definition.cable_color != {}}
+	all_listed, none_listed := [4]bool{true, true, true, true}, [4]bool{}
+	if listed == none_listed {
+		return ""
+	}
+	if listed != all_listed {
+		return fmt.tprintf("cable %q needs all of cable_kilowatts, cable_span_metres, cable_thickness_millimetres and cable_color", definition.id)
+	}
+	switch {
+	case definition.cable_kilowatts < 1 || definition.cable_kilowatts > MAXIMUM_CABLE_KILOWATTS:
+		return fmt.tprintf("cable %q has cable_kilowatts %d outside 1 to %d", definition.id, definition.cable_kilowatts, MAXIMUM_CABLE_KILOWATTS)
+	case definition.cable_span_metres < 1 || definition.cable_span_metres > MAXIMUM_CABLE_SPAN_METRES || definition.cable_span_metres > definition.stack_size:
+		return fmt.tprintf("cable %q has cable_span_metres %d outside 1 to %d or above its stack_size", definition.id, definition.cable_span_metres, MAXIMUM_CABLE_SPAN_METRES)
+	case definition.cable_thickness_millimetres < MINIMUM_CABLE_THICKNESS_MILLIMETRES || definition.cable_thickness_millimetres > MAXIMUM_CABLE_THICKNESS_MILLIMETRES:
+		return fmt.tprintf("cable %q has cable_thickness_millimetres %d outside %d to %d", definition.id, definition.cable_thickness_millimetres, MINIMUM_CABLE_THICKNESS_MILLIMETRES, MAXIMUM_CABLE_THICKNESS_MILLIMETRES)
+	case !foundation_color_is_valid(definition.cable_color):
+		return fmt.tprintf("cable %q needs a cable_color of three channels from 0 to 255, not all zero", definition.id)
+	}
+	return ""
+}
+
+item_is_cable :: proc(registry: Item_Registry, item: Item_Id) -> bool {
+	return int(item) < len(registry.items) && registry.items[item].cable_kilowatts > 0
 }
 
 // A tool role names a known role, on a tool of tier 1 or more.
@@ -314,6 +360,10 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		tool_role       = tool_role,
 		configurable    = configurable,
 		former_ids      = definition.former_ids,
+		cable_kilowatts = u32(definition.cable_kilowatts),
+		cable_span_metres = u16(definition.cable_span_metres),
+		cable_thickness_millimetres = u16(definition.cable_thickness_millimetres),
+		cable_color     = {u8(definition.cable_color[0]), u8(definition.cable_color[1]), u8(definition.cable_color[2])},
 	}
 	return item, ""
 }

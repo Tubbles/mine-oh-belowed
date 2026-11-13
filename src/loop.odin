@@ -1351,7 +1351,7 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 	}
 	draw_ports_and_arrows(world, content.machines, content.fluids, state.presentation.model_renderer, frame)
 	draw_pipes(world, content.machines, content.fluids)
-	draw_wires(world)
+	draw_cables(&world.entities, content.machines, content.items, Cable_Draw{models = state.presentation.model_renderer, daylight_tint = {1, 1, 1}})
 	draw_belts(&state.presentation.belt_renderer, world, content.items, content.machines, frame, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas})
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas})
 	draw_session_flames(&state.presentation.renderer, state.presentation.model_renderer, &world.entities, content.machines, camera, frame)

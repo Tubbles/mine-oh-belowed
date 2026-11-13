@@ -95,7 +95,7 @@ quests = [
 		text_key = "quest_grid_text"
 		objectives = [
 			{type = "research", technology = "electric_grid"}
-			{type = "place", entity = "substation", count = 1}
+			{type = "craft", item = "trunk_cable", count = 20}
 		]
 		message_key = "mc_grid"
 		complete_key = "mc_grid_done"

@@ -126,7 +126,7 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 		return SPLITTER_AREA_WIDTH
 	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
 		return fluid_area_size(machine).x
-	case .Pole, .Power_Switch, .Lamp:
+	case .Junction_Box, .Power_Switch, .Lamp:
 		return power_area_size(machine).x
 	case .Crafting_Machine, .Lab:
 		return crafting_machine_area_width(machine)
@@ -158,7 +158,7 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 		return UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)
 	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
 		return fluid_area_size(machine).y
-	case .Pole, .Power_Switch, .Lamp:
+	case .Junction_Box, .Power_Switch, .Lamp:
 		return power_area_size(machine).y
 	case .Crafting_Machine, .Lab:
 		return crafting_machine_area_height(machine, slot_count, width)
@@ -267,7 +267,7 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), inserter_cycle_fraction(inserter, machine, screen_context.tick_rate))
 	detail_line(state, &content, inserter_state_text(inserter, screen_context.items), UI_DIM_TEXT_COLOR)
 	if inserter_is_electric(machine) {
-		power_line := power_status_line(&screen_context.world.entities.electric_networks, inserter.handle)
+		power_line := power_status_line(&screen_context.world.entities, screen_context.machines, inserter.handle, screen_context.tick_rate)
 		detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	}
 	return result
@@ -292,7 +292,7 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 	content := area
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	if drill_is_electric(drill) {
-		draw_text_fitted(state, first, power_status_line(&screen_context.world.entities.electric_networks, drill.handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, first, power_status_line(&screen_context.world.entities, screen_context.machines, drill.handle, screen_context.tick_rate), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	} else {
 		slots := drill.slots
 		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, DRILL_FUEL_SLOT, slots[:], screen_context.items, &result.grid)

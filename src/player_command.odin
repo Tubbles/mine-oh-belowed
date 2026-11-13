@@ -578,6 +578,9 @@ developer_request_valid :: proc(request: Developer_Request, content: Simulation_
 		return enum_in_range(request.seat)
 	case .Place_On_Frame:
 		return index_in_range(int(request.machine), len(content.machines.machines)) && machine_takes_placement_command(content.machines.machines[request.machine]) && request.rotation < 4
+	case .Place_Cable:
+		// The ends and ports are checked when it is served.
+		return item_is_cable(content.items, request.item)
 	case .Hold_Field_Crouch, .Toggle_Fly_Mode, .Toggle_No_Clip, .Unlock_All, .Teleport, .Toggle_Cheat_Speed, .Toggle_Free_Crafting, .Add_Vein, .Remove_At, .Finish_Active_Quest:
 		return true
 	}

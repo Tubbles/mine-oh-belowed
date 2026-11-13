@@ -89,6 +89,8 @@ Developer_Action :: enum u8 {
 	Place_On_Frame,
 	// The pod's chair (0223): stand up from it or sit in it.
 	Set_Field_Seat,
+	// A cable between two power ports (0368, the cable command).
+	Place_Cable,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -113,7 +115,8 @@ Time_Of_Day :: enum u8 {
 // Set_Field_Look in ANGLE_UNITS_PER_TURN, camera_mode Set_Camera_Mode's,
 // crouch_held Hold_Field_Crouch's, frame with machine, cell (the
 // minimum corner) and rotation Place_On_Frame's, and seat Set_Field_Seat's
-// (0223).
+// (0223). Place_Cable (0368): item, the first end's cell and frame, the
+// second's second_cell and second_frame, and each end's port index.
 Developer_Request :: struct {
 	action:      Developer_Action,
 	chapter:     int,
@@ -135,6 +138,10 @@ Developer_Request :: struct {
 	crouch_held: bool,
 	frame:       Frame_Id,
 	seat:        Field_Seat,
+	second_cell: World_Coordinate,
+	second_frame: Frame_Id,
+	ports:       [2]u8,
+	item:        Item_Id,
 }
 
 // Kits file.
@@ -502,7 +509,29 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		return place_on_frame_for_developer(state, content, request.machine, request.frame, request.cell, request.rotation)
 	case .Set_Field_Seat:
 		return set_field_seat_for_developer(state, content, player, request.seat)
+	case .Place_Cable:
+		return place_cable_for_developer(state, content, request)
 	}
+	return ""
+}
+
+// A cable between the power ports at two cells (0368), the entities found
+// again on their frames, refused as a hand run is but with no metres
+// taken (the refusal's key), laid with its measured metres and counted.
+place_cable_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request) -> string {
+	entities := &state.world.entities
+	cells := [2]World_Coordinate{request.cell, request.second_cell}
+	frames := [2]Frame_Id{request.frame, request.second_frame}
+	placement := Cable_Placement{item = request.item}
+	for &end, role in placement.ends {
+		end = Port_End{entity = entity_at(entities, cells[role], frames[role]), port = request.ports[role]}
+	}
+	if refusal := cable_placement_refusal(entities, content, placement, max(i64)); refusal != .None {
+		return field_refusal_keys[refusal]
+	}
+	metres := port_span_metres(entities, content.machines, placement.ends[0], placement.ends[1])
+	add_cable(entities, content, Cable{ends = placement.ends, item = placement.item, metres = u16(metres)})
+	state.records.statistics.cables_run += 1
 	return ""
 }
 

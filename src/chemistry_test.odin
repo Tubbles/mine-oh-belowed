@@ -247,7 +247,8 @@ test_science_pack_2_costs_on_fast_belts :: proc(t: ^testing.T) {
 // Beside the power plant: a tar pit pump feeding a refinery (with 200 L
 // of crude oil to start) whose gas runs to a chemical plant making plastic
 // from coal, and a wood gasifier whose wood gas runs to a second chemical
-// plant making syngas plastic from charcoal, on four more poles.
+// plant making syngas plastic from charcoal, each cabled to a junction
+// box that is cabled to the power plant's first box (0368).
 Chemistry_Plant :: struct {
 	refinery:        Entity_Handle,
 	fossil_plant:    Entity_Handle,
@@ -270,11 +271,10 @@ build_chemistry_plant :: proc(world: ^World, content: Simulation_Content) -> (pl
 	lay_pipes(world, content, {-15, 1, -4})
 	plant.renewable_plant = place_test_entity(world, content, "chemical_plant", {-16, 1, -3})
 	pool_get(&world.entities.assemblers, plant.renewable_plant).slots[0] = {test_item(content.items, "charcoal"), 10}
-	place_test_entity(world, content, "small_pole", {-2, 1, 2})
-	place_test_entity(world, content, "small_pole", {-7, 1, -1})
-	place_test_entity(world, content, "small_pole", {-13, 1, 1})
-	place_test_entity(world, content, "small_pole", {-12, 1, 7})
-	place_test_entity(world, content, "small_pole", {-13, 1, -5})
+	box := place_test_entity(world, content, "junction_box", {-7, 1, -1})
+	cable_test_machines(world, content, entity_at(&world.entities, {3, 1, -1}), box)
+	pump := entity_at(&world.entities, {-6, 1, 0})
+	cable_test_machines(world, content, box, pump, plant.refinery, plant.fossil_plant, plant.gasifier, plant.renewable_plant)
 	return
 }
 

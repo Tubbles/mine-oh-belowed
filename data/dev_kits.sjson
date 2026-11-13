@@ -75,7 +75,8 @@ kits = [
 			{item = "boiler", count = 2}
 			{item = "steam_engine", count = 2}
 			{item = "pipe", count = 20}
-			{item = "small_pole", count = 20}
+			{item = "light_cable", count = 200}
+			{item = "junction_box", count = 10}
 			{item = "iron_plate", count = 200}
 			{item = "copper_plate", count = 100}
 			{item = "iron_gear", count = 100}
@@ -95,7 +96,8 @@ kits = [
 			{item = "lab", count = 4}
 			{item = "inserter", count = 20}
 			{item = "belt", count = 60}
-			{item = "small_pole", count = 30}
+			{item = "light_cable", count = 300}
+			{item = "junction_box", count = 15}
 			{item = "steam_engine", count = 5}
 			{item = "boiler", count = 3}
 			{item = "offshore_pump", count = 2}
@@ -125,7 +127,8 @@ kits = [
 			{item = "inserter", count = 30}
 			{item = "fast_inserter", count = 10}
 			{item = "belt", count = 60}
-			{item = "small_pole", count = 30}
+			{item = "light_cable", count = 300}
+			{item = "junction_box", count = 15}
 			{item = "pipe", count = 100}
 			{item = "pump", count = 2}
 			{item = "storage_tank", count = 2}
@@ -152,8 +155,9 @@ kits = [
 			{item = "fast_inserter", count = 20}
 			{item = "belt_2", count = 60}
 			{item = "splitter", count = 10}
-			{item = "small_pole", count = 20}
-			{item = "big_pole", count = 10}
+			{item = "light_cable", count = 200}
+			{item = "junction_box", count = 10}
+			{item = "heavy_cable", count = 200}
 			{item = "pipe", count = 100}
 			{item = "pump", count = 4}
 			{item = "storage_tank", count = 4}
@@ -176,7 +180,8 @@ kits = [
 			{item = "fast_inserter", count = 30}
 			{item = "belt_2", count = 60}
 			{item = "belt_lift_2", count = 10}
-			{item = "substation", count = 10}
+			{item = "trunk_cable", count = 200}
+			{item = "junction_cabinet", count = 10}
 			{item = "hydro_turbine", count = 4}
 			{item = "electrolyser", count = 2}
 			{item = "chemical_plant", count = 4}

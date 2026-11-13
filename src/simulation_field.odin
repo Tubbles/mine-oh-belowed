@@ -151,7 +151,7 @@ field_tick_input :: proc(frame: Input_Frame, tick_rate: int) -> Field_Player_Inp
 // What an item held in the hotbar lets Place do (Field_Held_Tool), with
 // the material or the machine it names. An item with a tool_role is the
 // Tool (0265), the buckets' roles the Water and the Drain (0295); a
-// role-less tool (the hammer) is the hand.
+// role-less tool (the hammer) is the hand; a cable item the Cable (0368).
 field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool: Field_Held_Tool, material: Field_Material, machine: Machine_Id) {
 	if item == NO_ITEM {
 		return .Hand, .Air, NO_MACHINE
@@ -173,6 +173,9 @@ field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool
 	}
 	if item == content.field.torch_item {
 		return .Torch, .Air, NO_MACHINE
+	}
+	if item_is_cable(content.items, item) {
+		return .Cable, .Air, NO_MACHINE
 	}
 	machine = item_places_machine(content.machines, item)
 	if machine == NO_MACHINE {
@@ -449,7 +452,8 @@ tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, resolved.just_pressed)
 	input := field_tick_input(resolved, state.tick_rate)
 	update_field_held_tool(player, content, input)
-	if queue_field_torch(state, content, index, input) {
+	// A run's Mine press is its take back, not a torch's (0368).
+	if !player.field.cable_run && queue_field_torch(state, content, index, input) {
 		input.held -= {.Dig}
 		input.just_pressed -= {.Dig}
 	}

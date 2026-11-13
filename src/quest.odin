@@ -94,6 +94,8 @@ Hint_Counter :: enum u8 {
 	Items_Shipped,
 	Launch_Parts_Missing,
 	Launch_Cargo_Empty,
+	// Cables laid (0368).
+	Cables_Run,
 }
 
 @(rodata)
@@ -138,6 +140,7 @@ hint_counter_names := [Hint_Counter]string {
 	.Items_Shipped               = "items_shipped",
 	.Launch_Parts_Missing        = "launch_parts_missing",
 	.Launch_Cargo_Empty          = "launch_cargo_empty",
+	.Cables_Run                  = "cables_run",
 }
 
 // As written in the files, before references are resolved.

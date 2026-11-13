@@ -2,7 +2,7 @@
 
 How liquids, gases and electricity move, and how assemblers and labs turn them into work. Everything runs per tick in integers: litres, joules and per mille. The values (rates, buffers, heads, powers) are in `data/machines.sjson` and `data/fluids.sjson`, whose headers explain each key. The phase and ratio rules are in [content.md](content.md).
 
-- A fluid network is a connected set of pipes and machine ports holding one fluid. An electric network is a connected set of poles. Every consumer in it gets the same share of its demand.
+- A fluid network is a connected set of pipes and machine ports holding one fluid. An electric network is a set of machines and junction boxes joined by cables run by hand. Every consumer in it gets the same share of its demand, except behind a cable too thin for what lies beyond it.
 - Networks are rebuilt when a member is placed or removed and evaluated every tick in a fixed order, so the result never depends on timing.
 
 ## Fluid networks
@@ -53,23 +53,30 @@ The recipes are in `data/recipes.sjson`, the port layouts in the header of `data
 
 ## Power
 
-`power_network.odin`, `power_machine.odin`.
+`power_network.odin`, `power_machine.odin`, `cable.odin` (the cable table), `cable_field.odin` (the run by hand).
 
-- Poles and power switches are the nodes. Two nodes are wired when their footprint centres (across, at the bottom) are at most the shorter of their two `wire_reach` apart. A switch that is off takes part in no network.
-- A pole's `supply_volume` is centred across its footprint and starts at its bottom. An electric machine or generator belongs to the network of the first pole whose volume covers one of its cells, and to none otherwise. Its panel then says so.
-- Networks and memberships are rebuilt when a pole, a switch or an electric machine is placed or removed, or a switch turns. Interact turns a switch (X on the gamepad, F); its panel opens from any pole of its network, or with E on the keyboard ([input.md](input.md)).
+- Every power connection is a cable run by hand from one power port to another (0368). Every electric machine and generator has one power port, the first of its `ports`, of at least its rating; a junction box has four (`a` to `d` on its side faces), a junction cabinet eight, a power switch two (`a`, `b`). Vessel parts list theirs ([vessels.md](vessels.md)).
+- A cable is one of three items: light (300 kW, spans up to 20 m), heavy (3 MW, 30 m) and trunk (24 MW, 50 m), one item a metre. It carries the least of its item's and its two ports' capacities. Its span is the distance between its ports' points (the centres of the port faces), rounded up to whole metres, and costs as many items. Taken up, or with either end picked up, its metres come back whole: the field refuses the pick up `Inventory_Full` when they do not fit, the block world spills them.
+- The netlist (`src/netlist/`): a node per live entity with a power port, its ports joined inside it, and two for a power switch that is off (port `a` on one, `b` on the other). An edge per cable; parallel cables between two nodes add their capacities. Nodes are numbered in pool order (junction boxes and switches, then the consumers' and generators' pools in the balance's order, then vessel parts), so leftover joules go in a fixed order. The netlist never sees a position: a span is measured when a cable is laid, aimed at or drawn, and only its whole metres are stored.
+- A cable may close a loop. It is laid, and one bundled edge of the loop, chosen by the sorted node order, becomes a chord that carries nothing until 0377, so laying a cable can idle an older cable of the loop while every node stays joined.
+- An electric network is a tree of the netlist holding a cable. The overview, the HUD warning and the statistics read only those. A consumer with no cable, or in a tree with no generator and no store, is unpowered (the `unpowered_machine_ticks` statistic), and its panel says so.
+- The netlist is rebuilt when a cable is laid or taken up, an entity with a power port is placed or removed, or a switch turns. Interact turns a switch (X on the gamepad, F); a junction box's panel shows its network ([input.md](input.md)).
+- The run and its refusals (no free power port, the same thing at both ends, past the span, not enough cable, a vessel end that is not its connector, the first end gone) are in [input.md](input.md), Bindings.
+- Old saves: the small pole, big pole and substation are `deleted_ids` of `data/machines.sjson`. A save that placed them loads with them deleted, their frames of their own released and one line `save: removed N placed machines of deleted kinds (...)`, with no refund. Its machines stand unpowered until cables are run (the user, 2026-11-11: all power hand run).
 
 ### Balance
 
-Rule: satisfaction is supply over demand, capped at one, and every consumer receives that share: a proportional brownout that slows every machine alike, as in Factorio.
+Rule: within a region of the netlist satisfaction is supply over demand, capped at one, and every consumer receives that share: a proportional brownout that slows every machine alike, as in Factorio.
 
 - Per tick in joules: consumers ask for their power while they have work (an inserter only while its arm moves, an offshore pump while its port has room), generators offer what they can give.
 - Brownout slowdown is power credit: every tick adds the satisfaction in per mille, and a machine takes one tick of work per `POWER_FULL` collected, so tick counts stay exact.
 - Generators serve in `dispatch_order`: the lowest order gives up to its offers first and each next order only what is left. Within an order the energy splits in proportion to the offers, the leftover joules in pool order. Hydro turbine 0, steam engine 1, combustion generator 2, fuel generator 3.
 - Generators share only what the consumers received and burn fuel, steam or gas only for their share, so produced equals consumed.
-- A lamp shines while its network gives more than `LAMP_ON_ABOVE` per mille. Lamps are entity light sources beside block light.
+- A lamp shines while its node gets more than `LAMP_ON_ABOVE` per mille. Lamps are entity light sources beside block light.
 - The power overview lists each network with supply, demand, satisfaction, its generators and largest consumers. The HUD warns while any network is below full.
-- The balance runs through the leaf package `src/netlist/` (0355): each network is a star of its participants around a hub node, joined by edges of `UNLIMITED_CAPACITY`, so the netlist's fast path gives exactly the pooled balance above. Under the poles every edge is unlimited and the result is the pooled one. The solve's slow path for limited edges exists for 0368 and has a known defect: the feeding side of a limiting edge is charged the edge's full capacity, so a small region feeding an overloaded one can be held tens of per mille under what it could reach (0373).
+- The balance runs through the leaf package `src/netlist/` (0355) on the cables' netlist: each node's bundled capacity in whole joules a tick (floored after bundling: a limit, no energy is lost), the solve, and each consumer's level from its own node. Where a cable carries less than what lies behind it asks for, the far side browns out at what the cable lets through and the near side stays full: a thin cable starves only what is behind it.
+- Inside a region the solve counts a consumer's exact need (`demand × level / 1000`, unrounded), as the pooled rule does. A branch at its cable's limit so sits up to `1000 × n / D` levels lower than a whole joule rule would put it (`n` consumers, `D` the branch's demand) while every delivery differs by at most 1 J, which keeps a machine's work in step with the energy it draws.
+- The solve's slow path has a known defect: the feeding side of a limiting edge is charged the edge's full capacity, so a small region feeding an overloaded one can be held tens of per mille under what it could reach (0373).
 
 ### Generators
 

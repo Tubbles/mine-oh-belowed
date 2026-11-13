@@ -2,7 +2,6 @@
 
 from . import (
     assembler_1,
-    big_pole,
     boiler,
     burner_mining_drill,
     crafting_bench,
@@ -19,7 +18,6 @@ from . import (
     power_switch,
     pump,
     schematic_crate,
-    small_pole,
     splitter,
     steam_engine,
     stone_cutter,
@@ -36,8 +34,6 @@ MACHINES = {
     "wooden_chest": wooden_chest.build,
     "iron_chest": iron_chest.build,
     "electric_mining_drill": electric_mining_drill.build,
-    "small_pole": small_pole.build,
-    "big_pole": big_pole.build,
     "boiler": boiler.build,
     "steam_engine": steam_engine.build,
     "offshore_pump": offshore_pump.build,

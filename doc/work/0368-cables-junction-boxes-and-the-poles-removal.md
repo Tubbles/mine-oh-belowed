@@ -1,6 +1,6 @@
 # 0368: Cables, junction boxes and the poles' removal
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 Part B of 0355's specification (`doc/work/done/0355-cables-and-the-power-netlist.md`), split off at its approval: the cable table and the ports, the run under the lockstep, the junction box (4 ports) and the cabinet (8), the poles deleted from the content and from old saves, the draw, and the quests, kits, technologies, recipes, blueprints, strings and models that follow. The specification below is this item's own, brought up to `main` on 2026-11-13; an implementer never opens 0355.
 
@@ -17,7 +17,8 @@ No new binding. The cable is a hotbar item, and running one is a mode the player
 - **Any tool, no run: Mine held on a cable** takes it up into the inventory, the hold that picks up an aimed machine (`PICK_UP_SECONDS`). Refused `Inventory_Full` when its metres do not fit.
 - Rotate_Building, Interact and Open_Inventory keep their meanings with a cable held and during a run. A machine's panel shows its draw; a junction box's panel its netlist.
 - A cable's capacity is its item (light, heavy and trunk are three items), never a setting cycled on a control. The junction box and the cabinet are placed as any machine.
-- Touch reaches all of it through Place's and Mine's gamepad bindings (0115); no touch code path.
+- Touch reaches all of it through Place's and Mine's gamepad bindings (0115). With a cable held a tap on any target presses Place's control, not the open panel's, so a run begins and ends by tap (decision 10); it is still a gamepad press routed by context (0194).
+- Back does nothing to a run (decision 11): its control carries Sneak.
 - A cable may close a loop (0377): until 0377 the loop's chord carries nothing.
 
 ## Change
@@ -328,7 +329,7 @@ Then:
 ### Decisions (main agent, 2026-11-13)
 
 1. Approved as specified, as step 1. Steps 2 and 3 are the items 0383 and 0384, written from this specification and queued behind this one.
-2. Controls, question 1: Back ends a run as it ends a belt run, the run taken back as by Mine. One meaning of Back in every run mode.
+2. Controls, question 1: Back ends a run as it ends a belt run, the run taken back as by Mine. One meaning of Back in every run mode. Reversed by decision 11.
 3. Controls, question 2: the take up hint on an aimed cable stays, as an aimed machine has its pick up hint.
 4. Controls, question 3: agreed. Mine held on an aimed cable takes it up with any tool held, as on an aimed machine: the aim chooses the meaning, the held item does not.
 5. Controls, question 4: no free port markers in this item. A note for `SUGGESTIONS.md` at the landing.
@@ -336,3 +337,21 @@ Then:
 7. 0373's question 2: no follow-up item; the sentence in `doc/fluids.md` as proposed.
 8. Implemented beside 0373's redesign, since it reads the netlist's interface and 0373 changes only the solve's inside. Landing order: 0373 first when it is ready, else this item lands on the solve as it is and the log says so.
 9. An old save's factory loses its poles and stands unpowered until cables are run. That is the user's decision of 2026-11-11 (all power hand run) and nothing softens it; the one log line and the quest's new counter are what the player meets.
+10. Touch (after the review): while a cable item is held, a tap on an entity presses Place's control (`tap_place_control`) instead of the open panel's, so a run begins and ends by tap. With no cable held nothing changes.
+11. Back no longer ends a cable run (reverses decision 2): the gamepad's EAST carries Sneak and Back, so a crouch took the run back. A run ends by Mine (Take back), a slot change, connecting, or its first end gone. Belt runs keep Back.
+
+### Deviations (implementation, 2026-11-13)
+
+- `cable_watts` takes `entities`: the ports' capacities come from the ends' machines.
+- `cable_span_metres` the procedure is `port_span_metres`: named like the item's field, it counted 9 content to simulation references in `tools/code_graph.py`.
+- `settle_cables` takes the remap and returns `(dropped, clamped: int, problem: string)`: the two refusals have their own texts for `reader.problem`; after the review a cable on a machine the load deleted is dropped, and one longer than `MAXIMUM_CABLE_SPAN_METRES` is cut to it with its own line.
+- `power_port_node` takes no `entities`: an off switch is the entity named by the next node too.
+- `Cable_Draw` has no `instances` until step 3 (0384).
+- `field_tool_line` also takes the held item, which the cable run line names.
+- `draw_field_cable_runs` reads the seat, not the body pose, which hides the first person viewer's body and would hide its own run.
+- A junction box with no network shows "Not connected" on the HUD (`power_entity_status_text`).
+- Placeholder icons for the five new items; the three pole icons go.
+- `tools/frame_profile_views.sjson`: the factory's two small poles become `junction_box` now, since the view would not load without them; its cables stay step 3's.
+- The hand made electric definitions of the combustion and fluid tests gained a power port; `machine_part_slots_test.odin`'s expected message follows the new port rule; the placement editor's `junction_cabinet` case expects false.
+- `test_field_cable_run_controls` runs on `make_pick_up_test`'s world (the same content, without the far players and the tilted frame) with a pad at the site; the field save tests use `make_save_test_simulation` with the field tables on.
+- The load's log lines are not captured: the tests read `deleted_machines_line(remap)` and the dropped cable's count.

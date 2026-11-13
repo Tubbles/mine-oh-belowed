@@ -369,6 +369,9 @@ read_machine_wear_table :: proc(reader: ^Byte_Reader, entities: ^Entities) -> bo
 	records := make([dynamic]Machine_Wear_Record, context.temp_allocator)
 	read_list(reader, &records) or_return
 	for record in records {
+		if handle_was_deleted(reader.remap, record.handle) {
+			continue
+		}
 		common := entity_common(entities, record.handle)
 		if common == nil {
 			return false

@@ -119,6 +119,9 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.loose_items.items = make([dynamic]Loose_Item, context.temp_allocator)
 	world.entities.breakdowns = make([dynamic]Machine_Id, context.temp_allocator)
 	world.entities.electric_networks.allocator = context.temp_allocator
+	world.entities.cables.cables = make([dynamic]Cable, context.temp_allocator)
+	world.entities.cables.watts = make([dynamic]i64, context.temp_allocator)
+	world.entities.cables.port_cable = make(map[Port_End]int, context.temp_allocator)
 	world.entity_lights = make(map[World_Coordinate]Light_Color, context.temp_allocator)
 	for coordinate in coordinates {
 		chunk := new(Chunk, context.temp_allocator)

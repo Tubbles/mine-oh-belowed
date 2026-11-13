@@ -7,20 +7,26 @@ import "core:testing"
 
 // The combustion generator (work item 0032). Worlds stand on the stone
 // floor of make_floor_world (top at y 1) with fluid statistics
-// (make_oil_world). A small pole at the origin powers x and z from -2 to
-// 2; the generator stands at (1, 1, 1) with its gas port facing -z.
+// (make_oil_world). A junction box at the origin has a cable to the
+// generator and to each lamp (0368); the generator stands at (1, 1, 1)
+// with its gas port facing -z.
 
-COMBUSTION_TEST_POLE :: World_Coordinate{0, 1, 0}
+COMBUSTION_TEST_BOX :: World_Coordinate{0, 1, 0}
 COMBUSTION_TEST_ORIGIN :: World_Coordinate{1, 1, 1}
 
-// A generator, its pole and two lamps asking 166 J a tick together.
+// A generator, its box and two lamps asking 166 J a tick together.
 make_combustion_world :: proc(content: Simulation_Content) -> (world: World, generator: Entity_Handle) {
 	world = make_oil_world(content)
 	generator = place_test_entity(&world, content, "combustion_generator", COMBUSTION_TEST_ORIGIN)
-	place_test_entity(&world, content, "small_pole", COMBUSTION_TEST_POLE)
-	place_test_entity(&world, content, "lamp", {0, 1, -2})
-	place_test_entity(&world, content, "lamp", {2, 1, -1})
+	cable_combustion_test_box(&world, content, generator)
 	return
+}
+
+// The box at COMBUSTION_TEST_BOX cabled to the generator and two lamps.
+cable_combustion_test_box :: proc(world: ^World, content: Simulation_Content, generator: Entity_Handle) {
+	box := place_test_entity(world, content, "junction_box", COMBUSTION_TEST_BOX)
+	lamps := [2]Entity_Handle{place_test_entity(world, content, "lamp", {0, 1, -2}), place_test_entity(world, content, "lamp", {2, 1, -1})}
+	cable_test_machines(world, content, box, generator, lamps[0], lamps[1])
 }
 
 set_generator_gas :: proc(world: ^World, content: Simulation_Content, generator: Entity_Handle, fluid: string, litres: i32) {
@@ -188,6 +194,7 @@ test_brownout_is_shared_between_steam_and_combustion :: proc(t: ^testing.T) {
 	world, generator := make_combustion_world(content)
 	records := make_fluid_test_records(content)
 	engine := place_test_entity(&world, content, "steam_engine", {-3, 1, -2})
+	cable_test_machines(&world, content, entity_at(&world.entities, COMBUSTION_TEST_BOX), engine)
 	networks := &world.entities.electric_networks
 	testing.expect_value(t, entity_network(networks, engine), entity_network(networks, generator))
 	for _ in 0 ..< 10 {
@@ -251,12 +258,13 @@ build_combustion_plant :: proc(world: ^World, content: Simulation_Content) -> (g
 	drill := place_test_entity(world, content, "electric_mining_drill", {0, 1, 0})
 	test_drill(world, drill).vein = vein
 	chest = place_test_entity(world, content, "iron_chest", {3, 1, 1})
-	place_test_entity(world, content, "small_pole", {4, 1, 3})
+	box := place_test_entity(world, content, "junction_box", {4, 1, 3})
 	gasifier := place_test_entity(world, content, "wood_gasifier", {6, 1, 1})
 	pool_get(&world.entities.assemblers, gasifier).slots[0] = {test_item(content.items, "log"), 40}
 	lay_pipes(world, content, {6, 1, 3})
 	generator = place_test_entity(world, content, "combustion_generator", {5, 1, 4})
 	set_generator_gas(world, content, generator, "wood_gas", 10)
+	cable_test_machines(world, content, box, drill, gasifier, generator)
 	return
 }
 
@@ -308,9 +316,7 @@ test_combustion_simulation_is_deterministic :: proc(t: ^testing.T) {
 make_fuel_generator_world :: proc(content: Simulation_Content) -> (world: World, generator: Entity_Handle) {
 	world = make_oil_world(content)
 	generator = place_test_entity(&world, content, "fuel_generator", COMBUSTION_TEST_ORIGIN)
-	place_test_entity(&world, content, "small_pole", COMBUSTION_TEST_POLE)
-	place_test_entity(&world, content, "lamp", {0, 1, -2})
-	place_test_entity(&world, content, "lamp", {2, 1, -1})
+	cable_combustion_test_box(&world, content, generator)
 	return
 }
 
@@ -374,12 +380,13 @@ test_fuel_generator_browns_out_under_a_pump_and_a_drill :: proc(t: ^testing.T) {
 	drill := place_test_entity(&world, content, "electric_mining_drill", {0, 1, 0})
 	test_drill(&world, drill).vein = vein
 	place_test_entity(&world, content, "iron_chest", {3, 1, 1})
-	place_test_entity(&world, content, "small_pole", {4, 1, 3})
+	box := place_test_entity(&world, content, "junction_box", {4, 1, 3})
 	generator := place_test_entity(&world, content, "fuel_generator", {5, 1, 4})
 	test_fluid_machine(&world, generator).slots[COMBUSTION_FUEL_SLOT] = {test_item(content.items, "coal"), 10}
 	pump := place_test_entity(&world, content, "offshore_pump", {3, 1, 5})
 	lay_pipes(&world, content, {2, 1, 5})
 	place_test_entity(&world, content, "storage_tank", {-1, 1, 4})
+	cable_test_machines(&world, content, box, drill, generator, pump)
 	tick_test_entities(&world, &records, content, 60)
 	network := world.entities.electric_networks.networks[0]
 	testing.expect_value(t, len(world.entities.electric_networks.networks), 1)
@@ -408,6 +415,7 @@ test_fuel_efficiency_is_validated :: proc(t: ^testing.T) {
 		electric_output_kilowatts = 75,
 		fuel_efficiency_percent   = 25,
 		dispatch_order            = 3,
+		ports                     = test_power_ports(75_000),
 	}
 	testing.expect_value(t, resolve_test_machines({generator}), "")
 	for percent in ([?]int{0, 101}) {
@@ -440,6 +448,7 @@ test_dispatch_order_is_validated :: proc(t: ^testing.T) {
 		electric_output_kilowatts = 75,
 		fuel_efficiency_percent   = 25,
 		dispatch_order            = 0,
+		ports                     = test_power_ports(75_000),
 	}
 	testing.expect_value(t, resolve_test_machines({generator}), "")
 	missing := generator

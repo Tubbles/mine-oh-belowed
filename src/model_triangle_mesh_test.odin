@@ -309,8 +309,6 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		{"wooden_chest", false},
 		{"iron_chest", false},
 		{"electric_mining_drill", true},
-		{"small_pole", false},
-		{"big_pole", false},
 		{"boiler", true},
 		{"steam_engine", true},
 		{"offshore_pump", false},

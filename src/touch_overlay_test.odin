@@ -1719,9 +1719,9 @@ test_a_layout_saved_with_tap_interact_control_loads_and_taps_x :: proc(t: ^testi
 			continue
 		}
 		look := layouts[0].layout.elements[0]
-		testing.expect_value(t, tap_control(look, true, false), Touch_Overlay_Control{button = .WEST})
-		testing.expect_value(t, tap_control(look, false, true), Touch_Overlay_Control{button = .WEST})
-		testing.expect_value(t, tap_control(look, false, false), look.tap_place_control)
+		testing.expect_value(t, tap_control(look, true, false, false), Touch_Overlay_Control{button = .WEST})
+		testing.expect_value(t, tap_control(look, false, true, false), Touch_Overlay_Control{button = .WEST})
+		testing.expect_value(t, tap_control(look, false, false, false), look.tap_place_control)
 		testing.expect_value(t, look.tap_place_control, Touch_Overlay_Control{is_trigger = true, trigger = .Left})
 		testing.expect(t, !strings.contains(touch_overlay_element_text(look), "tap_interact_control"))
 	}
@@ -1995,6 +1995,30 @@ touch_tap_into_tick :: proc(t: ^testing.T, world: ^World, content: Simulation_Co
 	players[0].on_ground = true
 	events = tick_player(world, &records, content, players, 0, frame, TEST_TICK_RATE, 0)
 	return frame.just_pressed, events
+}
+
+// Work item 0368: with a cable held a tap on a junction box, an assembler
+// or a fuel generator presses Place (the left trigger), so a run begins
+// and ends by tap; without one the same tap presses the panel's control.
+@(test)
+test_a_tap_with_a_cable_held_presses_place :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	layout := shipped_touch_overlay(t)
+	for id, index in ([?]string{"junction_box", "assembler_1", "fuel_generator"}) {
+		handle := add_entity(&world.entities, content.machines, test_machine(content.machines, id), {4 + 4 * i32(index), 1, 4}, 0)
+		takes_interaction, has_panel := aimed_target_calls_for(&world.entities, content.machines, handle, {}, false)
+		testing.expectf(t, has_panel, "%s has a panel", id)
+		for cable_held in ([2]bool{false, true}) {
+			state: Touch_Overlay_State
+			inputs := TAP_TOUCH
+			inputs.target_takes_interaction, inputs.target_has_panel, inputs.cable_held = takes_interaction, has_panel, cable_held
+			tap_at(&state, layout, 0, TAP_POINT, inputs)
+			output := touch_frame(&state, layout, {}, inputs = inputs)
+			testing.expectf(t, output.triggers[.Left] == cable_held, "%s, a cable held %v: Place", id, cable_held)
+			testing.expectf(t, output.buttons[int(sdl.GamepadButton.WEST)] == !cable_held, "%s, a cable held %v: the panel's control", id, cable_held)
+		}
+	}
 }
 
 // A tap on a furnace opens its panel (no Place, no inventory), on a

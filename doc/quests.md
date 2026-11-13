@@ -73,7 +73,7 @@ The objectives, hints and rewards are in the chapter files. The intent per chapt
    - A drill to a furnace by belt and inserter, the coal loop (a coal drill whose belt feeds its own fuel slot, running on into a chest), a plate line into a chest, four drills feeding three furnaces.
    - Main quest "Prove the outpost": 40 iron plates a minute held for five seconds. It releases the steam engine and lands an offshore pump, a boiler and pipes.
 4. Power, seventy five minutes.
-   - A fuel generator first, since the offshore pump draws power, then the offshore pump, boiler and engine. Two poles and five glass (the first dig for sand on purpose).
+   - A fuel generator first, since the offshore pump draws power, then the offshore pump, boiler and engine. Two cables run and five glass (the first dig for sand on purpose).
    - A lab and automation, with the brownout and unpowered hints, an assembler, the electric drill, a second engine.
    - Main quest "The first contract": 100 electronic circuits, paid with a crusher and a washer.
 5. Contracts. Low grade ore and its processing line, slag and concrete, alloys, the recycler, a rate contract that introduces the statistics screen. Main quest "Extraction rights" researches oil processing.

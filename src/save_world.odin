@@ -661,6 +661,9 @@ decode_entities :: proc(state: ^Simulation_State, content: Simulation_Content, d
 	if line := renamed_content_line(remap^); line != "" {
 		platform.log_printf("%s", line)
 	}
+	if line := deleted_machines_line(remap^); line != "" {
+		platform.log_printf("%s", line)
+	}
 	return ""
 }
 

@@ -665,11 +665,16 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	if hud.field_session && hud_field_player(screen_context, hud).seat == .Cradled {
 		draw_field_wait(state, hud)
 	}
+	// A cable's take up (0368) draws as a pick up's progress.
+	mining := player.mining
+	if hud.field_session && !mining.active {
+		mining = cable_take_up_mining_state(player.field, screen_context.tick_rate)
+	}
 	if hud.touch_aims {
-		draw_mining_ring(state, player.mining, hud.mining_ring_centre)
+		draw_mining_ring(state, mining, hud.mining_ring_centre)
 	} else {
 		draw_crosshair(state)
-		draw_mining_progress(state, player.mining)
+		draw_mining_progress(state, mining)
 	}
 	// The predicted body's jet budget and cheat tag (0296); touch sees
 	// the bar too.
@@ -701,7 +706,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	draw_discovery_card(state, items, hud.discovery_card_clearance)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.records, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
-	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content, hud.bare_ground, hud.field_spacing_millimetres); shown {
+	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content, hud.bare_ground, hud.field_spacing_millimetres, &screen_context.world.entities, selected_hotbar_stack(player^).item); shown {
 		tool_status = line
 	}
 	tool_color := UI_TEXT_COLOR
@@ -753,7 +758,8 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, inte
 	player := screen_context.player
 	// A seated player holds nothing to use (0223).
 	if hud.field_session && !stack_is_empty(selected_hotbar_stack(player^)) && hud_field_player(screen_context, hud).seat == .Standing {
-		append(&list, ..held_glyph_hints(hud_field_player(screen_context, hud).tool, screen_context.content.field.tech_demo))
+		field := hud_field_player(screen_context, hud)
+		append(&list, ..held_glyph_hints(field.tool, field.cable_run, screen_context.content.field.tech_demo))
 	}
 	kept = len(list)
 	if sprint_hint_shown(player^) {
@@ -771,8 +777,11 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, inte
 
 // What the aimed thing takes, the first group that applies: the pod's
 // chair (0223) or cradle (0358), the schematic crate or a usable item, a
-// trunk's Fell, a field cell's pick up (with a switch's Turn), a power
-// switch's Turn. In the temp allocator.
+// cable's Take up (0368: Mine goes to an aimed cable before anything
+// behind it, beside the aimed cell's Interact), a carried run's aimed
+// cell's Interact alone (0368: Mine is the run's Take back there, a held
+// hint), a trunk's Fell, a field cell's pick up (with a switch's Turn), a
+// power switch's Turn. In the temp allocator.
 aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> []Glyph_Hint {
 	if key := field_pod_seat_hint_key(screen_context, hud); key != "" {
 		hints := make([]Glyph_Hint, 1, context.temp_allocator)
@@ -785,17 +794,15 @@ aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> [
 	}
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
 	switch {
+	case field_take_up_hint_shown(screen_context, hud):
+		append_field_interact_hints(&list, screen_context, hud)
+		append(&list, Glyph_Hint{.Mine, text("hint_take_up")})
+	case hud.field_session && hud_field_player(screen_context, hud).cable_run:
+		append_field_interact_hints(&list, screen_context, hud)
 	case field_fell_hint_shown(screen_context, hud):
 		append(&list, Glyph_Hint{.Mine, text("hint_fell")})
 	case field_pick_up_hint_shown(screen_context, hud):
-		// Interact turns a power switch on the field too (0194), and cycles
-		// a water pump's mode (0295).
-		if field_target_is_power_switch(screen_context, hud) {
-			append(&list, Glyph_Hint{.Interact, text("hint_toggle")})
-		}
-		if field_target_is_water_pump(screen_context, hud) {
-			append(&list, Glyph_Hint{.Interact, text("hint_pump_mode")})
-		}
+		append_field_interact_hints(&list, screen_context, hud)
 		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
 		append(&list, Glyph_Hint{.Mine, text(pick_up)})
 	case entity_has_panel(&screen_context.world.entities, screen_context.machines, player.target.entity) && entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity):
@@ -805,13 +812,34 @@ aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> [
 	return list[:]
 }
 
+// Interact on the aimed field cell: it turns a power switch on the field
+// too (0194) and cycles a water pump's mode (0295).
+append_field_interact_hints :: proc(list: ^[dynamic]Glyph_Hint, screen_context: Screen_Context, hud: Hud_Context) {
+	if screen_context.world == nil {
+		return
+	}
+	if field_target_is_power_switch(screen_context, hud) {
+		append(list, Glyph_Hint{.Interact, text("hint_toggle")})
+	}
+	if field_target_is_water_pump(screen_context, hud) {
+		append(list, Glyph_Hint{.Interact, text("hint_pump_mode")})
+	}
+}
+
 // The held item's hints on the field (0219): Place with a placeable
-// tool, Tools with any item (Torch in the tech demo, where the control is
-// the torchlight's, 0297), then Turn with a machine (Next_Brush turns
-// it) or Brush where Next_Brush cycles the brush. In the temp allocator.
-held_glyph_hints :: proc(tool: Field_Held_Tool, tech_demo := false) -> []Glyph_Hint {
+// tool (a cable's Run cable, or during its run Connect and Mine's Take
+// back, 0368), Tools with any item (Torch in the tech demo, where the
+// control is the torchlight's, 0297), then Turn with a machine
+// (Next_Brush turns it) or Brush where Next_Brush cycles the brush. In
+// the temp allocator.
+held_glyph_hints :: proc(tool: Field_Held_Tool, cable_run: bool, tech_demo := false) -> []Glyph_Hint {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
-	if field_held_tool_places(tool) {
+	switch {
+	case tool == .Cable && cable_run:
+		append(&list, Glyph_Hint{.Use_Item, text("hint_connect")}, Glyph_Hint{.Mine, text("hint_take_back")})
+	case tool == .Cable:
+		append(&list, Glyph_Hint{.Use_Item, text("hint_run_cable")})
+	case field_held_tool_places(tool):
 		append(&list, Glyph_Hint{.Use_Item, text("hint_place")})
 	}
 	if tech_demo {
@@ -909,6 +937,16 @@ ui_hud_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole
 }
 
 // The field player aims at a tree's trunk, which Mine held fells (0197).
+// The field player carries no run and aims at a cable Mine takes up
+// (0368, advance_field_cable_take_up).
+field_take_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	if !hud.field_session || screen_context.world == nil {
+		return false
+	}
+	field := hud_field_player(screen_context, hud)
+	return !field.cable_run && field_aimed_cable(&screen_context.world.entities, screen_context.machines, field, screen_context.content.field.tuning) >= 0
+}
+
 field_fell_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
 	return hud_field_player(screen_context, hud).tree_target.hit
 }
@@ -1114,8 +1152,10 @@ target_status_lines :: proc(world: ^World, records: ^Game_Records, machines: Mac
 // (0201, bare_ground_line) says how long it lasts there, or the refusal
 // Place would toast where the ground is too steep; a held foundation
 // names its block (0193, field_foundation_block); a bucket counts the
-// litres it poured or drained (0295) at the field's spacing.
-field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare: Bare_Ground_Line, spacing_millimetres: int) -> (line: string, shown: bool) {
+// litres it poured or drained (0295) at the field's spacing; a carried
+// cable run (0368) the span it has left (cable_run_line), which needs the
+// entities and the held item.
+field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare: Bare_Ground_Line, spacing_millimetres: int, entities: ^Entities = nil, held_item := NO_ITEM) -> (line: string, shown: bool) {
 	switch bare {
 	case .None:
 	case .Wears_Out:
@@ -1131,8 +1171,25 @@ field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare:
 		return bucket_litres_line("field_tool_water_bucket", player.poured_fill, spacing_millimetres), true
 	case .Drain:
 		return bucket_litres_line("field_tool_drain_bucket", player.drained_fill, spacing_millimetres), true
+	case .Cable:
+		if player.cable_run && entities != nil {
+			return cable_run_line(player, content, entities, held_item)
+		}
 	}
 	return "", false
+}
+
+// "Light cable: 12 m of the span left" or "Light cable: 3 m past the
+// span" (0368): the item's span against chord_metres from the run's first
+// end to the hand. In the temp allocator.
+cable_run_line :: proc(player: Field_Player, content: Simulation_Content, entities: ^Entities, item: Item_Id) -> (line: string, shown: bool) {
+	if !item_is_cable(content.items, item) {
+		return "", false
+	}
+	start := power_port_point(entities, content.machines, player.cable_start) or_return
+	left := i64(content.items.items[item].cable_span_metres) - chord_metres(start, cable_hand_point(player, content.field.tuning))
+	line = replace_message_mark(text(left >= 0 ? "field_tool_cable_run" : "field_tool_cable_past"), "{name}", item_name(content.items, item))
+	return replace_message_mark(line, "{metres}", fmt.tprint(abs(left))), true
 }
 
 // "Water bucket, 1000 L poured": the fill in litres at the spacing (0 L

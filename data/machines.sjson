@@ -51,7 +51,7 @@
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
-// combustion_generator, hydro_turbine, water_pump, pole, power_switch, lamp,
+// combustion_generator, hydro_turbine, water_pump, junction_box, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
 // launch_pad, foundation, belt_pole, pod, crafting_station, tree, hatch,
 // locker, crafting_bench or charge_controller.
@@ -261,12 +261,13 @@
 // hydro_kilowatts_per_water_level times the sum of the flowing water
 // levels in its footprint, up to electric_output_kilowatts, read from the
 // blocks every tick.
-// Power (work item 0020, doc/fluids.md): electric machines (any with
-// electric_power_kilowatts: electric inserters, electric drills, pumps,
-// lamps) and generators (steam engines, combustion generators) belong to
-// the network of a pole whose supply_volume covers one of their cells. A
-// drill without a fuel slot and with electric_power_kilowatts is an
-// electric drill.
+// Power (work items 0020 and 0368, doc/fluids.md): electric machines (any
+// with electric_power_kilowatts: electric inserters, electric drills,
+// pumps, lamps) and generators (any with electric_output_kilowatts) have
+// exactly one power port, the first of their ports, with a capacity_watts
+// of at least their rating, and take power only through the cables run
+// to it by hand. A drill without a fuel slot and with
+// electric_power_kilowatts is an electric drill.
 // dispatch_order (work item 0140, required on every generator kind and
 // refused elsewhere, 0 to 9): generators with the lowest order serve
 // their network first, up to their offers; the next order takes only
@@ -274,17 +275,26 @@
 // engines (1) cover the load. Within one order the delivered energy is
 // split in proportion to the offers. Hydro turbine 0, combustion
 // generator 2.
-// Poles: supply_volume is width (x), depth (z) and height (y) of the box
-// of cells powered, centred across on the pole's square footprint (so the
-// volume's width and depth differ from the footprint's by an even count,
-// work item 0037) and starting at the pole's bottom. wire_reach connects it to every pole or
-// power switch whose footprint centre (across, at the bottom) is at most
-// that far from its own (straight line, the shorter reach of the two
-// counts; work item 0038 moved this from the origin corner).
-// Power switch: a 1 by 1 by 1 pole without a supply volume that joins the
-// networks it wires while on and splits them while off.
+// Junction boxes (kind junction_box, work item 0368): 2 to 8 power ports
+// and a color, the box drawn until its model comes; the cables on its
+// ports join inside it. The junction box has 4, the junction cabinet 8.
+// Power switch: 1 by 1 by 1 with exactly 2 power ports, joining the
+// cables on them while on and splitting them while off.
+// ports (optional, work items 0361 and 0368, at most 8) lists {id, kind,
+// cell = {x, y, z}, face, capacity_watts or capacity_litres_per_second}:
+// where a power cable or a fluid pipe ends, on a face out of the
+// footprint's surface, no two on one cell and face. Outside the vessel
+// kinds a port is a power port, and only the electric machines,
+// generators, junction boxes and power switches list one. A save names a
+// port by its index, so a record's ports are appended to and never
+// reordered.
+// deleted_ids (top level, work item 0368) lists the ids of machines this
+// build deleted: a save's placed machine of one is removed at load, with
+// one log line, instead of refusing the file. Each is neither a current
+// id nor a former id, nor listed twice.
 // Lamp: electric_power_kilowatts and light_level, the block light it
-// gives while its network is satisfied above half, and optionally
+// gives while its own node gets more than half its power (the cable
+// feeding it may starve it while its network does not), and optionally
 // light_color as for blocks (blocks.sjson), white when left out.
 // Crafting machines (work items 0021 and 0026): speed, recipe_maker (the
 // made_in category of recipes.sjson it makes: assembler, crusher, washer,
@@ -357,7 +367,7 @@
 // bare ground): stands_on_ground (optional, default false) marks a
 // machine that stands on the ground without a foundation for good: it is
 // never refused for slope and never wears. Set on the belts, the pipe,
-// the electric poles, the belt pole, the pod, the stone cutting table
+// the junction boxes, the belt pole, the pod, the stone cutting table
 // (a crafting station never operates, so it never wears either way) and
 // the water pump.
 // Every other machine placed on bare ground breaks down after
@@ -374,6 +384,7 @@
 // pipe run ends on it (doc/content.md, Belt poles and runs). Placed free
 // it is a one cell frame of its own facing the run; snapped it stands on
 // a frame's foundation.
+deleted_ids = ["small_pole", "big_pole", "substation"]
 machines = [
 	{
 		id = "wooden_chest"
@@ -548,6 +559,9 @@ machines = [
 		footprint = {width = 1, depth = 1, height = 1}
 		items_per_minute = 50
 		electric_power_kilowatts = 13
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 13000}
+		]
 	}
 	{
 		id = "filter_inserter"
@@ -562,6 +576,9 @@ machines = [
 		items_per_minute = 50
 		electric_power_kilowatts = 13
 		filter_slots = 1
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 13000}
+		]
 	}
 	{
 		id = "fast_inserter"
@@ -575,6 +592,9 @@ machines = [
 		footprint = {width = 1, depth = 1, height = 1}
 		items_per_minute = 138
 		electric_power_kilowatts = 46
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 46000}
+		]
 	}
 	{
 		id = "long_inserter"
@@ -589,6 +609,9 @@ machines = [
 		items_per_minute = 50
 		electric_power_kilowatts = 13
 		inserter_reach = 2
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 13000}
+		]
 	}
 	{
 		id = "burner_mining_drill"
@@ -620,6 +643,9 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", fluid = "mining_fluid", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 90000}
+		]
 	}
 	{
 		id = "bore_drill"
@@ -637,6 +663,9 @@ machines = [
 		revival_port = true
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", fluid = "mining_fluid", buffer_litres = 200}
+		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 2}, face = "negative_x", capacity_watts = 300000}
 		]
 	}
 	{
@@ -675,6 +704,9 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "water", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 1, y = 0, z = 0}, face = "positive_z", capacity_watts = 60000}
+		]
 	}
 	{
 		id = "boiler"
@@ -709,6 +741,9 @@ machines = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "steam", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 4}, face = "positive_z", direction = "input", fluid = "steam", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 2}, face = "negative_x", capacity_watts = 900000}
+		]
 	}
 	{
 		id = "storage_tank"
@@ -738,6 +773,9 @@ machines = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "input", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 0}, face = "positive_x", direction = "output", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 1, y = 0, z = 0}, face = "positive_z", capacity_watts = 30000}
+		]
 	}
 	{
 		id = "tar_pit_pump"
@@ -754,6 +792,9 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "crude_oil", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 1, y = 0, z = 0}, face = "positive_z", capacity_watts = 60000}
+		]
 	}
 	{
 		id = "flare_stack"
@@ -768,6 +809,9 @@ machines = [
 		electric_power_kilowatts = 10
 		fluid_ports = [
 			{face = "all", direction = "input", phase = "gas", buffer_litres = 200}
+		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 10000}
 		]
 	}
 	{
@@ -786,6 +830,9 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "burnable_gas", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 600000}
+		]
 	}
 	{
 		id = "fuel_generator"
@@ -800,6 +847,9 @@ machines = [
 		electric_output_kilowatts = 75
 		dispatch_order = 3
 		fuel_efficiency_percent = 25
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 75000}
+		]
 	}
 	{
 		id = "hydro_turbine"
@@ -814,6 +864,9 @@ machines = [
 		dispatch_order = 0
 		hydro_kilowatts_per_water_level = 10
 		hydro_minimum_water_level = 3
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 400000}
+		]
 	}
 	{
 		id = "water_pump"
@@ -828,42 +881,6 @@ machines = [
 		fluid_litres_per_second = 300
 	}
 	{
-		id = "small_pole"
-		name_key = "machine_small_pole"
-		description_key = "describe_machine_small_pole"
-		model = "small_pole"
-		item = "small_pole"
-		kind = "pole"
-		stands_on_ground = true
-		footprint = {width = 1, depth = 1, height = 3}
-		supply_volume = {width = 5, depth = 5, height = 4}
-		wire_reach = 7
-	}
-	{
-		id = "big_pole"
-		name_key = "machine_big_pole"
-		description_key = "describe_machine_big_pole"
-		model = "big_pole"
-		item = "big_pole"
-		kind = "pole"
-		stands_on_ground = true
-		footprint = {width = 1, depth = 1, height = 6}
-		supply_volume = {width = 3, depth = 3, height = 6}
-		wire_reach = 24
-	}
-	{
-		id = "substation"
-		name_key = "machine_substation"
-		description_key = "describe_machine_substation"
-		model = "substation"
-		item = "substation"
-		kind = "pole"
-		stands_on_ground = true
-		footprint = {width = 2, depth = 2, height = 3}
-		supply_volume = {width = 18, depth = 18, height = 6}
-		wire_reach = 18
-	}
-	{
 		id = "power_switch"
 		name_key = "machine_power_switch"
 		description_key = "describe_machine_power_switch"
@@ -871,7 +888,46 @@ machines = [
 		item = "power_switch"
 		kind = "power_switch"
 		footprint = {width = 1, depth = 1, height = 1}
-		wire_reach = 7
+		ports = [
+			{id = "a", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 24000000}
+			{id = "b", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_watts = 24000000}
+		]
+	}
+	{
+		id = "junction_box"
+		name_key = "machine_junction_box"
+		description_key = "describe_machine_junction_box"
+		item = "junction_box"
+		kind = "junction_box"
+		stands_on_ground = true
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [96, 98, 92]
+		ports = [
+			{id = "a", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 24000000}
+			{id = "b", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_watts = 24000000}
+			{id = "c", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 24000000}
+			{id = "d", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 24000000}
+		]
+	}
+	{
+		id = "junction_cabinet"
+		name_key = "machine_junction_cabinet"
+		description_key = "describe_machine_junction_cabinet"
+		item = "junction_cabinet"
+		kind = "junction_box"
+		stands_on_ground = true
+		footprint = {width = 1, depth = 1, height = 2}
+		color = [84, 88, 96]
+		ports = [
+			{id = "a", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 24000000}
+			{id = "b", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_x", capacity_watts = 24000000}
+			{id = "c", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_z", capacity_watts = 24000000}
+			{id = "d", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "positive_z", capacity_watts = 24000000}
+			{id = "e", kind = "power", cell = {x = 0, y = 1, z = 0}, face = "negative_x", capacity_watts = 24000000}
+			{id = "f", kind = "power", cell = {x = 0, y = 1, z = 0}, face = "positive_x", capacity_watts = 24000000}
+			{id = "g", kind = "power", cell = {x = 0, y = 1, z = 0}, face = "negative_z", capacity_watts = 24000000}
+			{id = "h", kind = "power", cell = {x = 0, y = 1, z = 0}, face = "positive_z", capacity_watts = 24000000}
+		]
 	}
 	{
 		id = "lamp"
@@ -884,6 +940,9 @@ machines = [
 		electric_power_kilowatts = 5
 		light_level = 15
 		light_color = [14, 14, 15]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 5000}
+		]
 	}
 	{
 		id = "assembler_1"
@@ -898,6 +957,9 @@ machines = [
 		electric_power_kilowatts = 75
 		recipe_maker = "assembler"
 		recipe_choice = "chosen"
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 75000}
+		]
 	}
 	{
 		id = "crusher"
@@ -914,6 +976,9 @@ machines = [
 		recipe_choice = "fixed"
 		input_slots = 1
 		output_slots = 2
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 60000}
+		]
 	}
 	{
 		id = "washer"
@@ -932,6 +997,9 @@ machines = [
 		output_slots = 2
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "water", buffer_litres = 200}
+		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 50000}
 		]
 	}
 	{
@@ -983,6 +1051,9 @@ machines = [
 		recipe_choice = "fixed"
 		input_slots = 1
 		output_slots = 4
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 100000}
+		]
 	}
 	{
 		id = "refinery"
@@ -1003,6 +1074,9 @@ machines = [
 			{cell = {x = 2, y = 0, z = 4}, face = "positive_z", direction = "output", fluid = "light_oil", buffer_litres = 200}
 			{cell = {x = 4, y = 0, z = 2}, face = "positive_x", direction = "output", fluid = "heavy_oil", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 400000}
+		]
 	}
 	{
 		id = "cracking_unit"
@@ -1021,6 +1095,9 @@ machines = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", buffer_litres = 200}
 			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", fluid = "water", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 2}, face = "positive_z", direction = "output", buffer_litres = 200}
+		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 200000}
 		]
 	}
 	{
@@ -1043,6 +1120,9 @@ machines = [
 			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 2}, face = "positive_z", direction = "output", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 210000}
+		]
 	}
 	{
 		id = "wood_gasifier"
@@ -1062,6 +1142,9 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 1}, face = "positive_z", direction = "output", fluid = "wood_gas", buffer_litres = 200}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 90000}
+		]
 	}
 	{
 		id = "electrolyser"
@@ -1078,6 +1161,9 @@ machines = [
 		recipe_choice = "fixed"
 		input_slots = 1
 		output_slots = 1
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 500000}
+		]
 	}
 	{
 		id = "core_sample_drill"
@@ -1090,6 +1176,9 @@ machines = [
 		footprint = {width = 1, depth = 1, height = 2}
 		electric_power_kilowatts = 40
 		sampling_seconds = 60
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 0}, face = "negative_x", capacity_watts = 40000}
+		]
 	}
 	{
 		id = "launch_pad"
@@ -1108,6 +1197,9 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 4, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "rocket_fuel", buffer_litres = 400}
 		]
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 4}, face = "negative_x", capacity_watts = 200000}
+		]
 	}
 	{
 		id = "lab"
@@ -1120,6 +1212,9 @@ machines = [
 		footprint = {width = 3, depth = 3, height = 2}
 		speed = 1
 		electric_power_kilowatts = 60
+		ports = [
+			{id = "power", kind = "power", cell = {x = 0, y = 0, z = 1}, face = "negative_x", capacity_watts = 60000}
+		]
 	}
 	{
 		id = "wooden_foundation"

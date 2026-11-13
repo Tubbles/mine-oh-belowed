@@ -141,7 +141,7 @@ fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_ma
 		detail_line(state, &content, combustion_fuel_line(machine, stored, screen_context.tick_rate), UI_DIM_TEXT_COLOR)
 	}
 	if fluid_machine_power_rows(machine.kind) > 0 {
-		power_line := power_status_line(&screen_context.world.entities.electric_networks, fluid_machine.handle)
+		power_line := power_status_line(&screen_context.world.entities, screen_context.machines, fluid_machine.handle, screen_context.tick_rate)
 		detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	}
 	return result

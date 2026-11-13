@@ -20,9 +20,10 @@
 // half the copper into a sink chest before the science pack and wire
 // assemblers, since the wire one would otherwise take every plate the
 // science pack one leaves and let the circuit assembler take the iron
-// the gear assembler needs. Small poles power everything; the
-// generators and the furnaces get starting coal. The builder queues the
-// lab's research in code.
+// the gear assembler needs. Every electric machine has a cable to a
+// junction cabinet, and the cabinets are cabled towards the generators
+// (work item 0368); the generators and the furnaces get starting coal.
+// The builder queues the lab's research in code.
 origin = [0, 0, 0]
 commands = [
 	// Drills on the mixed vein and the coal vein onto the ore belt
@@ -149,20 +150,63 @@ commands = [
 	"place long_inserter 7 0 10 1"
 	"place inserter 9 0 12 0"
 	"place iron_chest 10 0 12 0"
-	// Power
-	"place small_pole 5 0 1 0"
-	"place small_pole 19 0 4 0"
-	"place small_pole 23 0 2 0"
-	"place small_pole 27 0 2 0"
-	"place small_pole 1 0 7 0"
-	"place small_pole 5 0 7 0"
-	"place small_pole 10 0 7 0"
-	"place small_pole 14 0 7 0"
-	"place small_pole 18 0 7 0"
-	"place small_pole 22 0 7 0"
-	"place small_pole 26 0 7 0"
-	"place small_pole 5 0 10 0"
-	"place small_pole 11 0 11 0"
+	// Junction cabinets
+	"place junction_cabinet 5 0 1 0"
+	"place junction_cabinet 19 0 4 0"
+	"place junction_cabinet 23 0 2 0"
+	"place junction_cabinet 27 0 2 0"
+	"place junction_cabinet 1 0 7 0"
+	"place junction_cabinet 5 0 7 0"
+	"place junction_cabinet 10 0 7 0"
+	"place junction_cabinet 14 0 7 0"
+	"place junction_cabinet 18 0 7 0"
+	"place junction_cabinet 22 0 7 0"
+	"place junction_cabinet 26 0 7 0"
+	"place junction_cabinet 5 0 10 0"
+	"place junction_cabinet 11 0 11 0"
+	// The cables: each machine to a cabinet, the cabinets towards the generators
+	"cable light_cable 5 0 1 d 5 0 7 c"
+	"cable light_cable 5 0 7 d 5 0 10 c"
+	"cable light_cable 5 0 7 a 1 0 7 b"
+	"cable heavy_cable 5 0 7 b 10 0 7 a"
+	"cable heavy_cable 10 0 7 b 14 0 7 a"
+	"cable heavy_cable 14 0 7 b 18 0 7 a"
+	"cable heavy_cable 18 0 7 c 19 0 4 d"
+	"cable light_cable 18 0 7 b 22 0 7 a"
+	"cable light_cable 22 0 7 b 26 0 7 a"
+	"cable light_cable 10 0 7 d 11 0 11 c"
+	"cable heavy_cable 19 0 4 b 23 0 2 a"
+	"cable light_cable 23 0 2 b 27 0 2 a"
+	"cable light_cable 2 0 0 power 5 0 1 c"
+	"cable light_cable 6 0 0 power 5 0 1 b"
+	"cable light_cable 17 0 0 power 19 0 4 c"
+	"cable heavy_cable 20 0 0 power 19 0 4 g"
+	"cable light_cable 21 0 2 power 19 0 4 f"
+	"cable light_cable 20 0 4 power 19 0 4 h"
+	"cable light_cable 21 0 4 power 19 0 4 a"
+	"cable heavy_cable 23 0 0 power 23 0 2 c"
+	"cable light_cable 24 0 2 power 23 0 2 d"
+	"cable light_cable 24 0 4 power 23 0 2 h"
+	"cable light_cable 28 0 3 power 27 0 2 b"
+	"cable light_cable 25 0 4 power 27 0 2 d"
+	"cable light_cable 2 0 4 power 1 0 7 c"
+	"cable light_cable 3 0 7 power 1 0 7 f"
+	"cable light_cable 1 0 8 power 1 0 7 d"
+	"cable light_cable 6 0 4 power 5 0 7 g"
+	"cable light_cable 5 0 5 power 5 0 7 e"
+	"cable light_cable 7 0 7 power 5 0 7 f"
+	"cable light_cable 10 0 4 power 10 0 7 c"
+	"cable light_cable 9 0 5 power 10 0 7 g"
+	"cable light_cable 20 0 7 power 22 0 7 e"
+	"cable light_cable 26 0 5 power 26 0 7 c"
+	"cable light_cable 24 0 7 power 26 0 7 e"
+	"cable light_cable 3 0 10 power 5 0 10 a"
+	"cable light_cable 7 0 10 power 5 0 10 b"
+	"cable light_cable 2 0 11 power 5 0 10 e"
+	"cable light_cable 6 0 11 power 5 0 10 d"
+	"cable light_cable 5 0 12 power 5 0 10 h"
+	"cable light_cable 9 0 10 power 11 0 11 a"
+	"cable light_cable 9 0 12 power 11 0 11 e"
 	// Starting coal for the generators and the furnaces
 	"insert coal 45 20 0 0"
 	"insert coal 45 23 0 0"
