@@ -1,6 +1,6 @@
 # 0374: Hand run pipes on the field
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, 1bfd604b)
 
 Part B of 0356's specification (`doc/work/0356-the-pipes-netlist.md`): on the field every pipe is run by hand from port to port as a cable is (the user, 2026-11-11: "by hand yes"), a fluid junction, fluid ports in 0361's `ports` key, `machine_port_is_linked` for fluid ports, and the pipe run tool between belt poles removed.
 
