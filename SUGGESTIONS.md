@@ -501,3 +501,8 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The stacked toggle's widget id comes from its label, so a resize that swaps "Unlocked only" for "Unlocked" drops the focus from it.
 - `scroll_clip` is not reset in `ui_begin`: an early return between a region's begin and end, which nothing does today, would carry the clip into later widgets.
 - At 720p the detail panel's Made by and Used in rows shorten their names to an ellipsis.
+
+## Suggestions from the solve's replay (0390, 2026-11-13)
+
+- The solve is still cubic on a chain whose every fed region has a feeder of a joule a level and a fed cable with spare room (641 nodes: 16.8 million visits a tick). Replay steps of constant time (a skip pointer to the next source above, a difference array for what passed) would take about a third of it by the design's estimate; the rest is 0373's fill. Worth it only if the night's `test_netlist_solve_cost` or a save shows the shape.
+- `add_child_response` (`src/netlist/solve.odin`) reads `fill[level - 1]` at level 0 when a fed child's poor level is -1, which only a negative demand produces. The game's power is unsigned; a `level > 0` guard, as the brute force has, would make the package safe for another caller.

@@ -1,6 +1,6 @@
 # 0390: The solve's fed regions replayed
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 Found by 0373's review. The solve's pool reruns every inner fed region's capped greedy in each walk above it, so its work is quartic in the depth of nested fed regions that each have a cheap feeder: a chain of 321 nodes nested that way costs 28 million node visits a tick, one of 641 costs 445 million. Ordinary netlists do not nest so (2,701 nodes with every chain edge saturated and generators behind thin cables: 1.3 million), but a long line of generator and consumer pairs joined by thin cables does, and the solve runs every tick on every machine of a session. After 0373, in the same file, before or with 0389.
 
@@ -133,3 +133,9 @@ Not designed here. This change touches `Pools`, the walks, the replay, `reachabl
 3. The `plain_*` copies of the old pool stay in the test file as the equality test's reference.
 4. The test only thread local counters are accepted, as `field_water_span_count` is.
 5. The designer's Python model is at `tmp/0390_replay_model` in the main checkout (untracked): a reference to read and compare counts against, never ported line by line and never run from the tests.
+
+### Deviations (implementation, 2026-11-13)
+
+1. `pool_visits` and `pool_partial_replays` are declared in every build, not inside `when ODIN_TEST`: `./build.sh check` type-checks the test files without `ODIN_TEST`, so the tests' references to them did not resolve. Only their writes stay under `when ODIN_TEST` (`count_pool_visits`, `replay_steps`), as `data_edits_directory` gates its read. A release build carries two thread local ints it never writes.
+2. `pools_differ` runs both forms on a phase through a helper, `replayed_levels_differ`, shared by phase 1 and phase 2, and `test_replayed_pool_matches_the_plain_pool` logs the netlists compared, the differing count and the replays cut short.
+3. `tools/code_graph.py --check` prints no line counts: the netlist row's 1132 is `wc -l` of `netlist.odin` and `solve.odin`, as its 1056 was.

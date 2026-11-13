@@ -321,6 +321,9 @@ consumer_levels_sorted :: proc(inputs: []Node_Input, levels: []u32) -> []u32 {
 // region tables are left in responses.
 brute_force_responses :: proc(phase: Phase, status: []Edge_Status, thresholds: []Level_Thresholds, responses: []Response, pools: ^Pools, spare_tables: ^[dynamic][]i64) -> (root_level: u32, valid: bool) {
 	count := len(phase.nodes)
+	clear(&pools.steps)
+	slice.zero(pools.record_first)
+	slice.zero(pools.record_end)
 	top := make([]i32, count, context.temp_allocator)
 	ceiling := make([]i32, count, context.temp_allocator)
 	lines := make([]Response, count, context.temp_allocator)
@@ -362,6 +365,14 @@ brute_force_responses :: proc(phase: Phase, status: []Edge_Status, thresholds: [
 				return
 			}
 			thresholds[position] = {alone, alone}
+			// Fed whenever its parent sits above alone: the walks replay its
+			// run, so fed_fill records it (0390). Its net adds nothing.
+			if alone < LEVEL_FULL {
+				_, fill := fed_fill(phase, thresholds, responses, pools, i32(position), spare_tables)
+				if fill != nil {
+					append(spare_tables, fill)
+				}
+			}
 			continue
 		}
 		if status[position] == .Saturated_Up {
@@ -471,10 +482,10 @@ brute_force_levels_follow_the_flow :: proc(topology: Topology, status: []Edge_St
 // saturated edge may import into the richer side to soak up a rounding
 // leftover, as in seed 2169, where a 1000 J consumer behind a 901 J edge
 // takes 901 J at 901 while the root's 4000 J stay at 900.
-// It shares fed_fill, the walks, the greedy, the draws and settle_levels
-// with the solver, so it checks the edges' states, the clamps, the charge
-// and the envelope, not the pool's split: the definition test and the
-// hand cases guard that.
+// It shares fed_fill, the walks, the greedy, the replay, the draws and
+// settle_levels with the solver, so it checks the edges' states, the
+// clamps, the charge and the envelope, not the pool's split: the
+// definition test and the hand cases guard that.
 brute_force_levels :: proc(topology: Topology, inputs: []Node_Input) -> (best: []u32, found: bool) {
 	count := len(inputs)
 	phase := make_phase(topology, topology.order[topology.trees[0].first:][:topology.trees[0].count])
@@ -1360,6 +1371,281 @@ nested_chain_netlist :: proc(depth: int) -> Test_Netlist {
 		edges[feeder - 1] = {u32(feeder), u32(chain), 1000}
 	}
 	return {count, edges, inputs}
+}
+
+// The pool as before 0390, each fed region's capped greedy rerun in every
+// walk and every path walked: the reference of the replay and the memo.
+plain_candidates_below :: proc(candidates: []i32, first, end: i32) -> []i32 {
+	start, _ := slice.binary_search(candidates, first)
+	stop, _ := slice.binary_search(candidates, end)
+	return candidates[start:stop]
+}
+
+plain_settle_domain :: proc(phase: Phase, responses: []Response, pools: ^Pools) {
+	for position in pools.domain {
+		pools.net[position] = 0
+	}
+	for candidate in pools.candidates {
+		pools.net[phase.parent[candidate]] += pools.export[candidate]
+	}
+	for index := len(pools.domain) - 1; index >= 0; index -= 1 {
+		position := pools.domain[index]
+		pools.net[position] += phase.offer[position] - delivered_at(phase.demand[position], pools.level[position])
+		if index == 0 {
+			continue
+		}
+		parent := phase.parent[position]
+		if pools.state[position] != .Fed {
+			pools.net[parent] += min(pools.net[position], phase.upper[position])
+			continue
+		}
+		own := pools.net[position]
+		room := own - phase.lower[position]
+		pools.source[position] = room
+		below := plain_candidates_below(pools.candidates[:], position, pools.ends[position])
+		plain_greedy(phase, responses, pools, below, i32(pools.level[parent]) - 1, position, nil)
+		drawn := room - pools.source[position]
+		pools.source[position] = max(own - drawn, 0)
+		pools.net[position] = -max(drawn - own, 0)
+		pools.net[parent] += pools.net[position]
+	}
+}
+
+plain_reachable :: proc(phase: Phase, pools: Pools, candidate, bound: i32) -> i64 {
+	sources: i64
+	least := max(i64)
+	for position := phase.parent[candidate]; position != bound; position = phase.parent[position] {
+		sources += pools.source[position]
+		room := pools.export[position]
+		if pools.state[position] != .Feeder {
+			room = min(pools.net[position], phase.upper[position]) - phase.lower[position] - pools.passed[position]
+		} else if pools.level[position] == pools.level[phase.parent[position]] {
+			room = pools.export[position] - phase.lower[position]
+		}
+		least = min(least, room + sources)
+	}
+	return min(least, pools.source[bound] + sources)
+}
+
+plain_greedy :: proc(phase: Phase, responses: []Response, pools: ^Pools, candidates: []i32, cap_level, bound: i32, fill: []i64) {
+	for candidate in candidates {
+		pools.done[candidate] = false
+	}
+	for {
+		chosen, chosen_need := i32(-1), i64(0)
+		for candidate in candidates {
+			level := pools.level[candidate]
+			if pools.done[candidate] || i32(level) + 1 > cap_level {
+				continue
+			}
+			next := response_at(responses[candidate], int(level) + 1)
+			need := pools.export[candidate] - next / LEVEL_FULL
+			if next < 0 || need > plain_reachable(phase, pools^, candidate, bound) {
+				pools.done[candidate] = true
+				continue
+			}
+			if chosen < 0 || level < pools.level[chosen] || (level == pools.level[chosen] && need < chosen_need) {
+				chosen, chosen_need = candidate, need
+			}
+		}
+		if chosen < 0 {
+			return
+		}
+		bought := pools.level[chosen] + 1
+		pools.export[chosen] -= chosen_need
+		pools.level[chosen] = u32(largest_level_at_least(responses[chosen], LEVEL_FULL * pools.export[chosen]))
+		from_bound := draw(phase, pools, chosen, bound, chosen_need)
+		if fill != nil {
+			fill[bought] += from_bound
+		}
+	}
+}
+
+plain_fed_fill :: proc(phase: Phase, thresholds: []Level_Thresholds, responses: []Response, pools: ^Pools, position: i32, spare_tables: ^[dynamic][]i64) -> (own_net: i64, fill: []i64) {
+	walk_domain(phase, thresholds, pools, position, u32(max(thresholds[position].poor_level, 0)))
+	plain_settle_domain(phase, responses, pools)
+	own_net = pools.net[position]
+	if len(pools.candidates) == 0 {
+		return
+	}
+	pools.source[position] = own_net - phase.lower[position]
+	fill = take_table(spare_tables)
+	slice.zero(fill)
+	plain_greedy(phase, responses, pools, pools.candidates[:], LEVEL_FULL, position, fill)
+	for level in 1 ..< len(fill) {
+		fill[level] += fill[level - 1]
+	}
+	return
+}
+
+plain_region_levels :: proc(phase: ^Phase) {
+	count := len(phase.nodes)
+	responses := make([]Response, count, context.temp_allocator)
+	for position in 0 ..< count {
+		responses[position] = {a = LEVEL_FULL * phase.offer[position], b = phase.demand[position]}
+	}
+	thresholds := make([]Level_Thresholds, count, context.temp_allocator)
+	spare_tables := make([dynamic][]i64, 0, 16, context.temp_allocator)
+	pools := make_pools(phase^)
+	for position := count - 1; position > 0; position -= 1 {
+		response := responses[position]
+		if response.table != nil {
+			make_non_increasing(response.table)
+		}
+		low, high := LEVEL_FULL * phase.lower[position], LEVEL_FULL * phase.upper[position]
+		thresholds[position] = {
+			rich_level = largest_level_at_least(response, high),
+			poor_level = largest_level_at_least(response, low),
+		}
+		own_net: i64
+		fill: []i64
+		if thresholds[position].poor_level < LEVEL_FULL {
+			own_net, fill = plain_fed_fill(phase^, thresholds, responses, &pools, i32(position), &spare_tables)
+		}
+		add_child_response(&responses[phase.parent[position]], response, low, high, thresholds[position].poor_level, own_net, fill, &spare_tables)
+		if fill != nil {
+			append(&spare_tables, fill)
+		}
+		// A child that never feeds is never a candidate: no greedy reads its
+		// table again.
+		if response.table != nil && thresholds[position].rich_level < 0 {
+			append(&spare_tables, response.table)
+		}
+	}
+	root := responses[0]
+	if root.table != nil {
+		make_non_increasing(root.table)
+	}
+	root_level := response_at(root, 0) == 0 ? 0 : u32(largest_level_at_least(root, 0))
+	plain_settle_levels(phase^, thresholds, responses, &pools, root_level)
+	copy(phase.level, pools.level)
+	for position in 0 ..< count {
+		phase.delivered[position] = delivered_at(phase.demand[position], phase.level[position])
+	}
+}
+
+plain_settle_levels :: proc(phase: Phase, thresholds: []Level_Thresholds, responses: []Response, pools: ^Pools, root_level: u32) {
+	for position in 0 ..< i32(len(phase.nodes)) {
+		if position > 0 && pools.state[position] != .Feeder {
+			continue
+		}
+		walk_domain(phase, thresholds, pools, position, position == 0 ? root_level : pools.level[position])
+		plain_settle_domain(phase, responses, pools)
+		pools.source[position] = pools.net[position] - (position > 0 ? pools.export[position] : 0)
+		plain_greedy(phase, responses, pools, pools.candidates[:], LEVEL_FULL, 0, nil)
+	}
+}
+
+NESTED_FED_NETLISTS :: 500
+
+// Fed regions nested deep with feeders of several joules a level and
+// rooms of many, so the recorded runs are long and the caps cut them
+// (0390): below node 0, rich or not, a chain of 2 to 25 nodes asking 1000
+// to 100,000 J, each behind a cable carrying some level of it give or take
+// a few joules, with up to three feeders of 1000 to 9000 J on it. In the
+// temp allocator.
+nested_fed_netlist :: proc(seed: int) -> Test_Netlist {
+	state: rand.Default_Random_State
+	generator := seeded_generator(&state, seed)
+	depth := int(pick(generator, 2, 25))
+	inputs := make([dynamic]Node_Input, 1, 1 + 4 * depth, context.temp_allocator)
+	edges := make([dynamic]Edge, 0, 4 * depth, context.temp_allocator)
+	inputs[0].offer = rand.int_max(2, generator) == 0 ? 1_000_000_000 : pick(generator, 0, 50_000)
+	previous := u32(0)
+	for _ in 0 ..< depth {
+		chain := u32(len(inputs))
+		demand := 1000 * pick(generator, 1, 100)
+		append(&inputs, Node_Input{demand = demand})
+		capacity := max(demand * pick(generator, 1, 999) / 1000 + pick(generator, -30, 60), 0)
+		append(&edges, Edge{chain, previous, capacity})
+		for _ in 0 ..< pick(generator, 0, 3) {
+			feeder_demand := 1000 * pick(generator, 1, 9)
+			offer := feeder_demand * pick(generator, 100, 1500) / 1000 + pick(generator, 0, 50)
+			append(&edges, Edge{u32(len(inputs)), chain, pick(generator, 0, offer + 10)})
+			append(&inputs, Node_Input{demand = feeder_demand, offer = offer})
+		}
+		previous = chain
+	}
+	return {len(inputs), edges[:], inputs[:]}
+}
+
+// region_levels and plain_region_levels on the phase: 1 when their levels
+// differ, named by seed, tree and phase.
+replayed_levels_differ :: proc(t: ^testing.T, phase: ^Phase, seed, tree, phase_number: int) -> int {
+	region_levels(phase)
+	replayed := slice.clone(phase.level, context.temp_allocator)
+	plain_region_levels(phase)
+	same := slice.equal(replayed, phase.level)
+	testing.expectf(t, same, "seed %d, tree %d, phase %d: the replayed pool's levels differ from the plain pool's", seed, tree, phase_number)
+	return same ? 0 : 1
+}
+
+// Every tree of the netlist in phase 1 and, when the solve charges, in
+// phase 2 with its uneven bounds: how many differ.
+pools_differ :: proc(t: ^testing.T, netlist: Test_Netlist, seed: int) -> (differing: int) {
+	topology, outputs := solve_test_netlist(netlist)
+	for range, tree in topology.trees {
+		phase := make_phase(topology, topology.order[range.first:][:range.count])
+		set_supply_phase(&phase, topology, netlist.inputs)
+		differing += replayed_levels_differ(t, &phase, seed, tree, 1)
+		if set_charge_phase(&phase, topology, netlist.inputs, outputs) {
+			differing += replayed_levels_differ(t, &phase, seed, tree, 2)
+		}
+	}
+	return
+}
+
+@(test) // slow
+test_replayed_pool_matches_the_plain_pool :: proc(t: ^testing.T) {
+	pool_partial_replays = 0
+	differing := 0
+	for seed in 0 ..< BRUTE_FORCE_NETLISTS {
+		differing += pools_differ(t, brute_force_netlist(seed), seed)
+		free_all(context.temp_allocator)
+	}
+	for seed in 0 ..< LIGHT_CABLE_NETLISTS {
+		for twins in ([2]bool{true, false}) {
+			differing += pools_differ(t, light_cable_netlist(seed, twins), seed)
+			free_all(context.temp_allocator)
+		}
+	}
+	for seed in 0 ..< FEASIBILITY_NETLISTS {
+		differing += pools_differ(t, feasibility_netlist(seed), seed)
+		free_all(context.temp_allocator)
+	}
+	for seed in 0 ..< NESTED_FED_NETLISTS {
+		differing += pools_differ(t, nested_fed_netlist(seed), seed)
+		free_all(context.temp_allocator)
+	}
+	for depth in 1 ..= 40 {
+		differing += pools_differ(t, nested_chain_netlist(depth), depth)
+		free_all(context.temp_allocator)
+	}
+	for index in 0 ..< 3 {
+		differing += pools_differ(t, cost_netlist(index > 0, index > 1), index)
+		free_all(context.temp_allocator)
+	}
+	netlists := BRUTE_FORCE_NETLISTS + 2 * LIGHT_CABLE_NETLISTS + FEASIBILITY_NETLISTS + NESTED_FED_NETLISTS + 40 + 3
+	log.infof("the replayed pool against the plain pool: %d netlists, %d differ, %d replays cut short", netlists, differing, pool_partial_replays)
+	testing.expectf(t, differing == 0, "%d trees and phases differ", differing)
+	testing.expect(t, pool_partial_replays > 0, "some replay is cut short")
+}
+
+// The design's bound for this shape, 5 n² / 4 visits over n nodes, and
+// the model's counts: 7,620, 29,640, 116,880 and 464,160 at 81, 161, 321
+// and 641 nodes. Before the replay 152,390, 2,037,980 and 29,824,760, and
+// 445,146,000 visits of reachable alone at 641 (0390).
+@(test)
+test_nested_fed_regions_stay_within_the_visit_bound :: proc(t: ^testing.T) {
+	for depth in ([4]int{40, 80, 160, 320}) {
+		netlist := nested_chain_netlist(depth)
+		pool_visits = 0
+		solve_test_netlist(netlist)
+		node_count := netlist.node_count
+		log.infof("fed regions nested %d deep: %d pool visits over %d nodes", depth, pool_visits, node_count)
+		testing.expectf(t, 4 * pool_visits <= 5 * node_count * node_count, "nested %d deep: %d visits over %d nodes", depth, pool_visits, node_count)
+		free_all(context.temp_allocator)
+	}
 }
 
 // Measured, not asserted (0355, question 3; 0373): microseconds per solve

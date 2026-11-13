@@ -17,6 +17,8 @@ package netlist
 // takes (0373). Every spare joule, a region's slack at its level or the
 // room a fed region leaves on its edge, goes a level at a time to the
 // poorest region that can reach it (the pool: fed_fill, settle_levels).
+// Each fed region's run is recorded once, uncapped, and replayed up to its
+// parent's level by every walk that meets it (0390).
 //
 // Phase 2 charges the stores that supplied nothing from what phase 1 left
 // of the other offers and of every edge, by the same solve.
@@ -82,14 +84,44 @@ Child_State :: enum u8 {
 // passed what draws sent down that edge, source a domain root's or a fed
 // top's spare not yet drawn, export what a feeder sends up its edge; ends
 // one past each position's subtree in pre-order; domain and candidates
-// the lists of the last walk_domain.
+// the lists of the last walk_domain. steps holds every fed region's
+// uncapped run as fed_fill recorded it, back to back, a position's at
+// steps[record_first[position]:record_end[position]]. reach is a
+// position's value in the current pass of a greedy, valid while
+// reach_pass equals pass, and path the scratch of reachable.
 Pools :: struct {
 	state:                       []Child_State,
 	level:                       []u32,
 	export, net, passed, source: []i64,
+	reach, reach_pass:           []i64,
 	ends:                        []i32,
+	record_first, record_end:    []i32,
 	done:                        []bool,
-	domain, candidates:          [dynamic]i32,
+	domain, candidates, path:    [dynamic]i32,
+	steps:                       [dynamic]Greedy_Step,
+	pass:                        i64,
+}
+
+// One step of a fed region's uncapped run: the candidate, the level it
+// then sits at and the joules it cost.
+Greedy_Step :: struct {
+	candidate: i32,
+	level:     u32,
+	need:      i64,
+}
+
+// The positions the pool visited on this thread and the replays a cap cut
+// short, for the tests (0390). Declared in every build, since odin check
+// reads the tests without ODIN_TEST, and counted only under odin test.
+@(thread_local)
+pool_visits: int
+@(thread_local)
+pool_partial_replays: int
+
+count_pool_visits :: proc(count: int) {
+	when ODIN_TEST {
+		pool_visits += count
+	}
 }
 
 Node_Position :: struct {
@@ -458,16 +490,22 @@ child_state :: proc(thresholds: Level_Thresholds, region_level: u32) -> Child_St
 make_pools :: proc(phase: Phase) -> Pools {
 	count := len(phase.nodes)
 	pools := Pools {
-		state      = make([]Child_State, count, context.temp_allocator),
-		level      = make([]u32, count, context.temp_allocator),
-		export     = make([]i64, count, context.temp_allocator),
-		net        = make([]i64, count, context.temp_allocator),
-		passed     = make([]i64, count, context.temp_allocator),
-		source     = make([]i64, count, context.temp_allocator),
-		ends       = make([]i32, count, context.temp_allocator),
-		done       = make([]bool, count, context.temp_allocator),
-		domain     = make([dynamic]i32, 0, count, context.temp_allocator),
-		candidates = make([dynamic]i32, 0, count, context.temp_allocator),
+		state        = make([]Child_State, count, context.temp_allocator),
+		level        = make([]u32, count, context.temp_allocator),
+		export       = make([]i64, count, context.temp_allocator),
+		net          = make([]i64, count, context.temp_allocator),
+		passed       = make([]i64, count, context.temp_allocator),
+		source       = make([]i64, count, context.temp_allocator),
+		reach        = make([]i64, count, context.temp_allocator),
+		reach_pass   = make([]i64, count, context.temp_allocator),
+		ends         = make([]i32, count, context.temp_allocator),
+		record_first = make([]i32, count, context.temp_allocator),
+		record_end   = make([]i32, count, context.temp_allocator),
+		done         = make([]bool, count, context.temp_allocator),
+		domain       = make([dynamic]i32, 0, count, context.temp_allocator),
+		candidates   = make([dynamic]i32, 0, count, context.temp_allocator),
+		path         = make([dynamic]i32, 0, count, context.temp_allocator),
+		steps        = make([dynamic]Greedy_Step, 0, count, context.temp_allocator),
 	}
 	for position := count - 1; position >= 0; position -= 1 {
 		pools.ends[position] += 1
@@ -507,14 +545,7 @@ walk_domain :: proc(phase: Phase, thresholds: []Level_Thresholds, pools: ^Pools,
 		append(&pools.domain, position)
 		position += 1
 	}
-}
-
-// The run of candidates with positions in [first, end), contiguous in
-// pre-order.
-candidates_below :: proc(candidates: []i32, first, end: i32) -> []i32 {
-	start, _ := slice.binary_search(candidates, first)
-	stop, _ := slice.binary_search(candidates, end)
-	return candidates[start:stop]
+	count_pool_visits(len(pools.domain) + len(pools.candidates))
 }
 
 // The nets of the last walk's domain, bottom-up: each node's offer less
@@ -523,10 +554,11 @@ candidates_below :: proc(candidates: []i32, first, end: i32) -> []i32 {
 // plus its capacity) on its candidates below its parent's level, takes
 // what that spent beyond its net, and keeps the surplus its parent cannot
 // take as a source. Inner fed regions settle first.
-settle_domain :: proc(phase: Phase, responses: []Response, pools: ^Pools) {
+settle_domain :: proc(phase: Phase, pools: ^Pools) {
 	for position in pools.domain {
 		pools.net[position] = 0
 	}
+	count_pool_visits(len(pools.domain))
 	for candidate in pools.candidates {
 		pools.net[phase.parent[candidate]] += pools.export[candidate]
 	}
@@ -544,8 +576,9 @@ settle_domain :: proc(phase: Phase, responses: []Response, pools: ^Pools) {
 		own := pools.net[position]
 		room := own - phase.lower[position]
 		pools.source[position] = room
-		below := candidates_below(pools.candidates[:], position, pools.ends[position])
-		greedy(phase, responses, pools, below, i32(pools.level[parent]) - 1, position, nil)
+		// A fed region replays its recorded run up to one level under its
+		// parent's.
+		replay_steps(phase, pools, position, i32(pools.level[parent]) - 1)
 		drawn := room - pools.source[position]
 		pools.source[position] = max(own - drawn, 0)
 		pools.net[position] = -max(drawn - own, 0)
@@ -553,26 +586,61 @@ settle_domain :: proc(phase: Phase, responses: []Response, pools: ^Pools) {
 	}
 }
 
+// The fed region's recorded steps in order while each step's candidate
+// stays under cap_level, each setting the candidate's export and level and
+// making its draw. The capped run is the uncapped run's prefix (0373's
+// rule 6), so this is the capped greedy without its scans.
+replay_steps :: proc(phase: Phase, pools: ^Pools, position, cap_level: i32) {
+	for step in pools.steps[pools.record_first[position]:pools.record_end[position]] {
+		if i32(pools.level[step.candidate]) + 1 > cap_level {
+			when ODIN_TEST {
+				pool_partial_replays += 1
+			}
+			return
+		}
+		count_pool_visits(1)
+		pools.export[step.candidate] -= step.need
+		pools.level[step.candidate] = step.level
+		draw(phase, pools, step.candidate, position, step.need)
+	}
+}
+
+// The room of a position's edge towards a candidate below it: a feeder's
+// export, or down to its lower bound when the feeder sits at its parent's
+// level (the edge is open both ways there), else the edge's planned flow
+// above its lower bound.
+downward_room :: proc(phase: Phase, pools: Pools, position: i32) -> i64 {
+	if pools.state[position] != .Feeder {
+		return min(pools.net[position], phase.upper[position]) - phase.lower[position] - pools.passed[position]
+	}
+	if pools.level[position] == pools.level[phase.parent[position]] {
+		return pools.export[position] - phase.lower[position]
+	}
+	return pools.export[position]
+}
+
 // What the sources from the candidate's parent up to bound can bring it.
 // A source joins below its own edge, so the least, over the edges on the
-// path, of the edge's room towards the candidate plus the sources below
-// it. The room is a feeder's export, or down to its lower bound when the
-// feeder sits at its parent's level (the edge is open both ways there),
-// else the edge's planned flow above its lower bound.
-reachable :: proc(phase: Phase, pools: Pools, candidate, bound: i32) -> i64 {
-	sources: i64
-	least := max(i64)
-	for position := phase.parent[candidate]; position != bound; position = phase.parent[position] {
-		sources += pools.source[position]
-		room := pools.export[position]
-		if pools.state[position] != .Feeder {
-			room = min(pools.net[position], phase.upper[position]) - phase.lower[position] - pools.passed[position]
-		} else if pools.level[position] == pools.level[phase.parent[position]] {
-			room = pools.export[position] - phase.lower[position]
-		}
-		least = min(least, room + sources)
+// path, of the edge's room towards the candidate (downward_room) plus the
+// sources below it, as a running value down from bound: each position's
+// source added to the least of the value above it and its room, each
+// position once a pass of a greedy. No recursion.
+reachable :: proc(phase: Phase, pools: ^Pools, candidate, bound: i32) -> i64 {
+	clear(&pools.path)
+	position := phase.parent[candidate]
+	for position != bound && pools.reach_pass[position] != pools.pass {
+		append(&pools.path, position)
+		position = phase.parent[position]
 	}
-	return min(least, pools.source[bound] + sources)
+	reach := position == bound ? pools.source[bound] : pools.reach[position]
+	for index := len(pools.path) - 1; index >= 0; index -= 1 {
+		on_path := pools.path[index]
+		reach = min(reach, downward_room(phase, pools^, on_path)) + pools.source[on_path]
+		pools.reach[on_path] = reach
+		pools.reach_pass[on_path] = pools.pass
+	}
+	count_pool_visits(len(pools.path))
+	return reach
 }
 
 // Takes amount for the candidate from the sources on its path, nearest
@@ -582,6 +650,7 @@ reachable :: proc(phase: Phase, pools: Pools, candidate, bound: i32) -> i64 {
 draw :: proc(phase: Phase, pools: ^Pools, candidate, bound: i32, amount: i64) -> (from_bound: i64) {
 	from_bound = amount
 	for position := phase.parent[candidate]; position != bound; position = phase.parent[position] {
+		count_pool_visits(1)
 		taken := min(pools.source[position], from_bound)
 		pools.source[position] -= taken
 		from_bound -= taken
@@ -597,24 +666,26 @@ draw :: proc(phase: Phase, pools: ^Pools, candidate, bound: i32, amount: i64) ->
 
 // Raises the candidates a level at a time with what the sources up to
 // bound can bring them: the least level first, then the cheapest next
-// level, then the first in pre-order; none above cap_level. A level costs
-// what the candidate's export falls by, and the candidate then sits at the
-// highest level its export allows. With fill, what each level bought drew
-// from bound's source is added at that level.
-greedy :: proc(phase: Phase, responses: []Response, pools: ^Pools, candidates: []i32, cap_level, bound: i32, fill: []i64) {
+// level, then the first in pre-order. A level costs what the candidate's
+// export falls by, and the candidate then sits at the highest level its
+// export allows. With fill, what each level bought drew from bound's
+// source is added at that level and each step is also recorded.
+greedy :: proc(phase: Phase, responses: []Response, pools: ^Pools, candidates: []i32, bound: i32, fill: []i64) {
 	for candidate in candidates {
 		pools.done[candidate] = false
 	}
 	for {
+		pools.pass += 1
+		count_pool_visits(len(candidates))
 		chosen, chosen_need := i32(-1), i64(0)
 		for candidate in candidates {
 			level := pools.level[candidate]
-			if pools.done[candidate] || i32(level) + 1 > cap_level {
+			if pools.done[candidate] || level >= LEVEL_FULL {
 				continue
 			}
 			next := response_at(responses[candidate], int(level) + 1)
 			need := pools.export[candidate] - next / LEVEL_FULL
-			if next < 0 || need > reachable(phase, pools^, candidate, bound) {
+			if next < 0 || need > reachable(phase, pools, candidate, bound) {
 				pools.done[candidate] = true
 				continue
 			}
@@ -631,6 +702,7 @@ greedy :: proc(phase: Phase, responses: []Response, pools: ^Pools, candidates: [
 		from_bound := draw(phase, pools, chosen, bound, chosen_need)
 		if fill != nil {
 			fill[bought] += from_bound
+			append(&pools.steps, Greedy_Step{chosen, pools.level[chosen], chosen_need})
 		}
 	}
 }
@@ -638,18 +710,22 @@ greedy :: proc(phase: Phase, responses: []Response, pools: ^Pools, candidates: [
 // A fed child's domain at its poor level, settled, and its own net; with
 // candidates, its room (its net plus its capacity) spent on them by the
 // greedy without a cap, fill[μ] what that spends with the candidates
-// capped at μ (the running sums of what each level bought).
+// capped at μ (the running sums of what each level bought). Its run is
+// recorded for the walks above it (replay_steps).
 fed_fill :: proc(phase: Phase, thresholds: []Level_Thresholds, responses: []Response, pools: ^Pools, position: i32, spare_tables: ^[dynamic][]i64) -> (own_net: i64, fill: []i64) {
 	walk_domain(phase, thresholds, pools, position, u32(max(thresholds[position].poor_level, 0)))
-	settle_domain(phase, responses, pools)
+	settle_domain(phase, pools)
 	own_net = pools.net[position]
+	pools.record_first[position] = i32(len(pools.steps))
+	pools.record_end[position] = i32(len(pools.steps))
 	if len(pools.candidates) == 0 {
 		return
 	}
 	pools.source[position] = own_net - phase.lower[position]
 	fill = take_table(spare_tables)
 	slice.zero(fill)
-	greedy(phase, responses, pools, pools.candidates[:], LEVEL_FULL, position, fill)
+	greedy(phase, responses, pools, pools.candidates[:], position, fill)
+	pools.record_end[position] = i32(len(pools.steps))
 	for level in 1 ..< len(fill) {
 		fill[level] += fill[level - 1]
 	}
@@ -721,9 +797,9 @@ settle_levels :: proc(phase: Phase, thresholds: []Level_Thresholds, responses: [
 			continue
 		}
 		walk_domain(phase, thresholds, pools, position, position == 0 ? root_level : pools.level[position])
-		settle_domain(phase, responses, pools)
+		settle_domain(phase, pools)
 		pools.source[position] = pools.net[position] - (position > 0 ? pools.export[position] : 0)
-		greedy(phase, responses, pools, pools.candidates[:], LEVEL_FULL, 0, nil)
+		greedy(phase, responses, pools, pools.candidates[:], 0, nil)
 	}
 }
 
