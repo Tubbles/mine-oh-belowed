@@ -426,9 +426,9 @@ interact_on_field_pod_seat :: proc(state: ^Simulation_State, content: Simulation
 }
 
 // One field player's part of the tick, before the drain: the chair and
-// the cradle, the hotbar, the tool, the move and the queued edits and
-// placements, the hand crafting. A strapped or cradled player keeps the
-// look and Open_Aimed alone, a Seated one the camera toggle too
+// the cradle, the hotbar, the pipette, the tool, the move and the queued
+// edits and placements, the hand crafting. A strapped or cradled player
+// keeps the look and Open_Aimed alone, a Seated one the camera toggle too
 // (seated_field_frame); the hand crafting runs on.
 tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
@@ -450,6 +450,13 @@ tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_
 		record_world_action(&state.records.statistics)
 	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, resolved.just_pressed)
+	// The pipette (0216) after the slot keys, before the tool follows the
+	// selection; not during a cable run, which holds the hand.
+	if .Pipette in resolved.just_pressed && !player.field.cable_run {
+		entities := &state.world.entities
+		cable := field_aimed_cable(entities, content.machines, player.field, content.field.tuning)
+		apply_pipette(player, pipette_aimed_item(entities, content.machines, NO_ENTITY, player.field.frame_target, cable))
+	}
 	input := field_tick_input(resolved, state.tick_rate)
 	update_field_held_tool(player, content, input)
 	// A run's Mine press is its take back, not a torch's (0368).

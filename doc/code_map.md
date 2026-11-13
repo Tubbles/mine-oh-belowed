@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 289 files under `src/` plus 208 test files beside them. 261 are the `game` package, grouped into seven clusters; 28 are nine leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 290 files under `src/` plus 209 test files beside them. 262 are the `game` package, grouped into seven clusters; 28 are nine leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -14,7 +14,7 @@ The entry page for the source: 289 files under `src/` plus 208 test files beside
 | loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network, the LAN discovery and the server, the requests served between frames | `loop.odin` | 21 | 11239 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 51 | 17917 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 54 | 18400 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 54 | 21708 | [simulation](audit/simulation.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 55 | 21757 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 48 | 12794 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 18 | 6295 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 11 | 5203 | [loop](audit/loop.md), [content](audit/content.md) |
@@ -223,6 +223,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `simulation_arrival.odin`: a new world's fall (0200), `Field_Arrival`, the input cut to the look (`arrival_input`), the players strapped in for it (`strap_players_for_the_fall`, 0223), the landing, which leaves the hatches closed since 0222 and confirms touchdown to the strapped players (`land_field_arrival`), the hit (`hit_field_arrival`): the crater dug (`dig_impact_crater`, 0271), then the pod's rest with its bed in the ground (`rest_field_pod`, 0270), the arrival's table of the save.
   - `inventory.odin`, `inventory_interaction.odin`, `crafting.odin`: `Item_Stack`, `Inventory`; slot clicks; `Craft_Queue` and hand crafting.
   - `toolbar.odin`: the toolbars of item kinds over the inventory (0278), `Toolbar`, the selected kind's first stack (`selected_stack_index`), naming a kind on the first empty slot (`take_toolbar_slot`) and the arrivals' offer (`add_picked_up`, `offer_crafted_outputs`).
+  - `toolbar_pipette.odin`: the pipette (0216), the aimed thing's item (`pipette_aimed_item`) and the slot it selects or names (`apply_pipette`).
   - `inventory_transfer.odin`: the verbs the slot commands run: quick moves, the transfer buttons, the grid transfers, the inserter's hand, the slot filters of a machine.
   - `statistics.odin`, `production_statistics.odin`: `Statistics` and rate rings; statistics rows and the marker colours.
   - `recipe_unlocks.odin`, `quest_runtime.odin`: `Recipe_Unlocks` per tick; `Quest_State`, objectives, rewards, messages, the reward target (`quest_reward_target`, `settle_quest_reward_target`).

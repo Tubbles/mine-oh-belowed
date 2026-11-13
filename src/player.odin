@@ -646,6 +646,10 @@ tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_C
 		drop_player_stack(world, &records.statistics, content.blocks, player, index, selected_stack_index(player^))
 	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
+	// The pipette (0216), after the slot keys.
+	if .Pipette in input.just_pressed {
+		apply_pipette(player, pipette_aimed_item(&world.entities, content.machines, player.target.entity, {}, -1))
+	}
 	if finished, finished_free := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate, free_crafting); finished != NO_RECIPE {
 		offer_crafted_outputs(player, content.items, content.recipes.recipes[finished].outputs)
 		record_produced_stacks(&records.statistics, content.recipes.recipes[finished].outputs)

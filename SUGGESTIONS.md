@@ -543,3 +543,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - Touch has no way to clear a whole row, and a mouse alone has no way into the mode.
 - A carousel shift makes no sound, since the focused widget's id does not change.
 - `lockstep_test.odin` queues `Active_Toolbar_Command{0}` at one toolbar, a value that changes nothing; a swap pair and a second toolbar would test the path.
+
+## Suggestions from the pipette (0216, 2026-11-13)
+
+- The Pipette hint is hidden wherever its wider label would push another hint out (the largest text at most sizes). A glyph bar that can shorten or wrap would show it; the same limit hides the toolbar edit mode's hint (0279).
+- Torches cannot be pipetted: the HUD has no torch target.
+- Plausible and not traced (from 0215's ordering): a tap released in the frame a screen opens may still pipette under that screen, since `tools_radial_world_frame` adds Pipette back after `world_input` removed the world actions.

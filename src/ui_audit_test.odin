@@ -155,6 +155,10 @@ Ui_Audit_Case :: struct {
 	seat:              Field_Seat,
 	// The wait's counts (0358, Hud_Context.wait_waiting and wait_units).
 	wait_counts:       [2]int,
+	// The HUD's field player aims at this entity's cell, so the bar shows
+	// Pipette where it displaces nothing and keeps every hint it drew
+	// before 0216 (0216); NO_ENTITY for none.
+	aimed:             Entity_Handle,
 }
 
 // Owns everything a Screen_Context points into.
@@ -399,6 +403,9 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 		audit_field_session_hud(audit, &hud)
 		hud.field_view.seat = audit_case.seat
 		hud.wait_waiting, hud.wait_units = audit_case.wait_counts[0], audit_case.wait_counts[1]
+		if audit_case.aimed != NO_ENTITY {
+			hud.field_view.frame_target = Frame_Raycast_Hit{hit = true, occupant = {handle = entity_occupant_handle(audit_case.aimed)}}
+		}
 	}
 	if audit_case.hud {
 		draw_hud(state, screen_context, hud)
@@ -432,6 +439,21 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.seat == .Cradled && !audit_case.touch {
 		if _, found := glyph_beside_label(state.draw_list[:], text("hint_stop_waiting")); !found {
 			audit_report(audit, case_text, frame_name, .Glyph_Hint_Dropped, .Text, {}, text("hint_stop_waiting"))
+		}
+	}
+	// Every hint the bar drew before 0216 still draws, the Tools hint as
+	// Pipette or, where Pipette would push a hint out, as Tools
+	// (hud_world_glyph_bar_layout).
+	if audit_case.aimed != NO_ENTITY && !audit_case.touch {
+		before, before_kept := world_glyph_hints(screen_context, hud, glyph(state, .Interact) == glyph(state, .Inventory), false)
+		for hint in glyph_bar_layout_hints(hud_glyph_bar_layout(state, before, before_kept, false, toolbar_count(audit.content))) {
+			_, found := glyph_beside_label(state.draw_list[:], hint.label)
+			if !found && hint.label == text("hint_tools") {
+				_, found = glyph_beside_label(state.draw_list[:], text("hint_pipette"))
+			}
+			if !found {
+				audit_report(audit, case_text, frame_name, .Glyph_Hint_Dropped, .Text, {}, hint.label)
+			}
 		}
 	}
 }
@@ -1329,6 +1351,19 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	furnace := test_item(audit.content.items, "stone_furnace")
 	hold_test_stack(player, Item_Stack{furnace, 1})
 	audit_case(audit, {name = "hud field furnace held", hud = true, field_session = true})
+	// A chest aimed with the furnace held (0216): Pick up, Open, Place,
+	// Pipette, Turn as far as they fit, each hint the bar drew before 0216
+	// at every size, Pipette in the Tools hint's place where it pushes no
+	// hint out.
+	aimed_chest := NO_ENTITY
+	for chest in simulation.world.entities.chests.entries {
+		if chest.alive {
+			aimed_chest = chest.handle
+			break
+		}
+	}
+	assert(aimed_chest != NO_ENTITY)
+	audit_case(audit, {name = "hud field pipette target", hud = true, field_session = true, aimed = aimed_chest})
 	// Two toolbars (0278), both rows named, the furnace held.
 	count_before := audit.content.toolbar_count
 	audit.content.toolbar_count = 2

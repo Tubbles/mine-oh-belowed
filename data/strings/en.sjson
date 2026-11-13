@@ -954,6 +954,8 @@ hint_sprint = "Sprint"
 // The world's held item hints on the field (0219).
 hint_place = "Place"
 hint_tools = "Tools"
+// The aimed thing's pipette on the Tools glyph (0216): a tap picks its kind onto the toolbar.
+hint_pipette = "Pipette"
 hint_turn = "Turn"
 hint_brush = "Brush"
 // The torchlight's control in the tech demo, and that it is on (0297).

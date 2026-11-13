@@ -1,6 +1,6 @@
 # 0216: The pipette
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 ## Goal
 
@@ -143,3 +143,8 @@ New `src/toolbar_pipette_test.odin`:
 1. Approved: the pipette as a tick action on the `Pipette` bit, no command. The "After 0278" note's `Toolbar_Assign_Command` is replaced by the same write made in the tick.
 2. Torches stay out: the HUD names no torch target, and the tap never picks what the hints do not name.
 3. Hand run pipes (0374) need nothing here or there: they are records of the cable table told by their item, so the aimed cable's item is the pipe.
+
+### Fix round
+
+- Decision 9's claim does not hold: placed after Open, Pipette pushed Place and Turn out at the largest text (1920 by 1080 and 1280 by 800 at UI scale 1.5, text 1.6, keyboard). Pipette takes the held Tools hint's place (after Open with nothing held), and no hint that drew before 0216 drops because of it (main agent).
+- Deviation (implementation, 2026-11-13): "Pipette" is wider than "Tools", so in that place it still pushed Turn or Pause out at some sizes. `hud_world_glyph_bar_layout` lays the bar out with and without it and shows Pipette only where both draw the same hints, else the Tools hint (or none with nothing held). So Pipette does not show everywhere the Tools hint drew before. For the audit's chest with the furnace held it shows Tools at 1920 by 1080 scale 1.2 text 1.6 on the keyboard and scale 1.5 text 1.6 on both glyph sets (approximate text widths).

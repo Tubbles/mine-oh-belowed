@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:slice"
 import "core:testing"
 
@@ -177,7 +178,9 @@ test_the_glyph_bar_offers_nothing_on_a_hatch :: proc(t: ^testing.T) {
 // Work item 0233: on the gamepad Interact and Inventory share X, so on a
 // power switch the bar shows Turn alone and on a full schematic crate
 // Take alone; with separate controls (the keyboard's F and E) Open or
-// Inventory shows beside them. A furnace shows Open on X either way.
+// Inventory shows beside them. A furnace shows Open on X either way. The
+// switch and the furnace have items, so Pipette shows on the Tools glyph
+// (0216); a crate has none.
 @(test)
 test_x_shows_one_hint_on_a_switch_and_a_crate :: proc(t: ^testing.T) {
 	use_shipped_strings()
@@ -190,14 +193,15 @@ test_x_shows_one_hint_on_a_switch_and_a_crate :: proc(t: ^testing.T) {
 	player.target = Raycast_Hit{hit = true, block = {4, 1, 4}, entity = switch_handle}
 	screen_context := Screen_Context{content = content, world = &world, player = &player}
 	hints, _ := world_glyph_hints(screen_context, {}, true)
-	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Pause}), "Turn, Pause")
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Tools, .Pause}), "Turn, Pipette, Pause")
 	testing.expect_value(t, hints[0].label, "Turn")
+	testing.expect_value(t, hints[1].label, "Pipette")
 	hints, _ = world_glyph_hints(screen_context, {}, false)
-	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Inventory, .Pause}), "Turn, Open, Pause")
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Inventory, .Tools, .Pause}), "Turn, Open, Pipette, Pause")
 	testing.expect_value(t, hints[1].label, "Open")
 	player.target = Raycast_Hit{hit = true, block = {8, 1, 4}, entity = furnace}
 	hints, _ = world_glyph_hints(screen_context, {}, true)
-	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Pause}), "Open, Pause")
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Tools, .Pause}), "Open, Pipette, Pause")
 	testing.expect_value(t, hints[0].label, "Open")
 
 	crate_world := make_drill_world(content)
@@ -217,6 +221,192 @@ test_x_shows_one_hint_on_a_switch_and_a_crate :: proc(t: ^testing.T) {
 	pool_get(&crate_world.entities.schematic_crates, crate).slots[0] = EMPTY_STACK
 	hints, _ = world_glyph_hints(crate_context, {}, true)
 	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Pause}), "Inventory, Pause")
+}
+
+// Work item 0216: Pipette shows on the Tools glyph, in the held Tools
+// hint's place or after Open with nothing held, while a tap would pick
+// something (where the bar has room for it,
+// test_the_pipette_hint_gives_way_at_every_size): a placed
+// thing with an item, an aimed cable; not the pod, nothing aimed, during
+// a run, seated, in the tech demo or during the fall.
+@(test)
+test_the_pipette_hint_names_what_a_tap_picks :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	world: World
+	defer destroy_world(&world)
+	machines := make_test_machines()
+	items := make_test_items()
+	chest := add_entity(&world.entities, machines, test_machine(machines, "wooden_chest"), {4, 1, 4}, 0)
+	place_test_pod(&world.entities, machines)
+	pod, _, _ := find_pod(&world.entities, machines)
+	furnace := Item_Stack{test_item(items, "stone_furnace"), 1}
+	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
+	hold_test_stack(&player, furnace)
+	screen_context := Screen_Context{world = &world, player = &player, items = items, machines = machines}
+	hud := Hud_Context{field_view_set = true, field_session = true}
+	hud.field_view.tool = .Machine
+	hints, kept := world_glyph_hints(screen_context, hud)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Use_Item, .Tools, .Rotate, .Inventory, .Pause}), "nothing aimed: Place, Tools, Turn, Inventory, Pause")
+
+	frame_hit :: proc(handle: Entity_Handle) -> Frame_Raycast_Hit {
+		return Frame_Raycast_Hit{hit = true, occupant = {handle = entity_occupant_handle(handle)}}
+	}
+	hud.field_view.frame_target = frame_hit(chest)
+	testing.expect_value(t, hud_pipette_item(screen_context, hud), machines.machines[test_machine(machines, "wooden_chest")].item)
+	hints, kept = world_glyph_hints(screen_context, hud)
+	testing.expectf(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Mine, .Inventory, .Use_Item, .Tools, .Rotate, .Pause}), "the chest: Pick up, Open, Place, Pipette, Turn, Pause, not %v", hint_buttons(hints))
+	testing.expect_value(t, kept, 5)
+	testing.expect(t, slice.equal(hint_labels_on(hints, .Tools), []string{"Pipette"}), "Pipette in the Tools hint's place")
+	hold_test_stack(&player, EMPTY_STACK)
+	hints, kept = world_glyph_hints(screen_context, hud)
+	testing.expectf(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Mine, .Inventory, .Tools, .Pause}), "nothing held: Pick up, Open, Pipette, Pause, not %v", hint_buttons(hints))
+	testing.expect_value(t, kept, 3)
+	hold_test_stack(&player, furnace)
+
+	hud.field_view.frame_target = frame_hit(pod.handle)
+	testing.expect_value(t, hud_pipette_item(screen_context, hud), NO_ITEM)
+	hints, _ = world_glyph_hints(screen_context, hud)
+	testing.expect(t, slice.equal(hint_labels_on(hints, .Tools), []string{"Tools"}), "the pod: Tools back among the held hints")
+
+	hud.field_view.frame_target = frame_hit(chest)
+	no_pipette :: proc(t: ^testing.T, screen_context: Screen_Context, hud: Hud_Context, name: string) -> []Glyph_Hint {
+		testing.expectf(t, hud_pipette_item(screen_context, hud) == NO_ITEM, "%s picks nothing", name)
+		hints, _ := world_glyph_hints(screen_context, hud)
+		testing.expectf(t, !slice.contains(hint_labels_on(hints, .Tools), "Pipette"), "%s shows no Pipette", name)
+		return hints
+	}
+	run := hud
+	run.field_view.cable_run = true
+	run.field_view.tool = .Cable
+	hints = no_pipette(t, screen_context, run, "a run")
+	testing.expect(t, slice.equal(hint_labels_on(hints, .Use_Item), []string{"Connect"}), "the run's Connect")
+	testing.expect(t, slice.equal(hint_labels_on(hints, .Mine), []string{"Take back"}), "the run's Take back")
+	testing.expect(t, slice.equal(hint_labels_on(hints, .Tools), []string{"Tools"}), "the run's Tools")
+	seated := hud
+	seated.field_view.seat = .Seated
+	no_pipette(t, screen_context, seated, "seated")
+	tech_demo := screen_context
+	tech_demo.content.field.tech_demo = true
+	no_pipette(t, tech_demo, hud, "the tech demo")
+	falling := screen_context
+	falling.arrival_falling = true
+	no_pipette(t, falling, hud, "the fall")
+
+	// An aimed cable, nothing behind it.
+	light := test_item(items, "light_cable")
+	append(&world.entities.cables.cables, Cable{item = light})
+	cable := hud
+	cable.aimed_cable = 0
+	cable.field_view.frame_target = {}
+	testing.expect_value(t, hud_pipette_item(screen_context, cable), light)
+
+	// The block world: the raycast's entity.
+	player.target = Raycast_Hit{hit = true, block = {4, 1, 4}, entity = chest}
+	hints, _ = world_glyph_hints(screen_context, Hud_Context{field_view_set = true})
+	testing.expectf(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Tools, .Pause}), "the block world: Open, Pipette, Pause, not %v", hint_buttons(hints))
+	testing.expect_value(t, hints[0].label, "Open")
+	testing.expect_value(t, hints[1].label, "Pipette")
+}
+
+// Work item 0216, the fix round: what the held item does outranks the
+// pipette's hint. At every audited size, text scale and glyph set, walking
+// or not, a bar with a pipette target draws what the bar drew before 0216
+// (world_glyph_hints with pipette false), the Tools hint as Pipette where
+// "Pipette" displaces nothing and as Tools where it would; with nothing
+// held the same hints, with or without Pipette. Pipette shows at the
+// default size with every held case.
+@(test)
+test_the_pipette_hint_gives_way_at_every_size :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	theme, theme_problem := parse_ui_theme(#load("../data/ui/theme.sjson"), "data/ui/theme.sjson")
+	testing.expect_value(t, theme_problem, "")
+	world: World
+	defer destroy_world(&world)
+	machines := make_test_machines()
+	items := make_test_items()
+	entities := &world.entities
+	chest := add_entity(entities, machines, test_machine(machines, "wooden_chest"), {4, 1, 4}, 0)
+	broken := add_entity(entities, machines, test_machine(machines, "steel_furnace"), {8, 1, 4}, 0)
+	entity_common(entities, broken).broken = true
+	switch_handle := add_entity(entities, machines, test_machine(machines, "power_switch"), {12, 1, 4}, 0)
+	foundation := add_entity(entities, machines, test_foundation(machines), {16, 1, 4}, 0)
+	append(&entities.cables.cables, Cable{item = test_item(items, "light_cable")})
+	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
+	screen_context := Screen_Context{world = &world, player = &player, items = items, machines = machines}
+	Case :: struct {
+		name:  string,
+		aimed: Entity_Handle,
+		cable: int,
+		held:  string,
+		tool:  Field_Held_Tool,
+		field: bool,
+	}
+	cases := []Case {
+		{"a chest, a furnace held", chest, -1, "stone_furnace", .Machine, true},
+		{"a broken furnace, a furnace held", broken, -1, "stone_furnace", .Machine, true},
+		{"a switch behind a cable, a cable held", switch_handle, 0, "light_cable", .Cable, true},
+		{"a foundation, a furnace held", foundation, -1, "stone_furnace", .Machine, true},
+		{"a chest, nothing held", chest, -1, "", .Hand, true},
+		{"a foundation, nothing held", foundation, -1, "", .Hand, true},
+		{"a chest in the block world", chest, -1, "", .Hand, false},
+	}
+	pipette, tools := text("hint_pipette"), text("hint_tools")
+	bindings := shipped_default_bindings(t)
+	settings := DEFAULT_SETTINGS
+	sizes := UI_AUDIT_SIZES
+	for entry in cases {
+		hold_test_stack(&player, entry.held == "" ? EMPTY_STACK : Item_Stack{test_item(items, entry.held), 1})
+		hud := Hud_Context{field_view_set = true, field_session = entry.field, aimed_cable = entry.cable}
+		hud.field_view.tool = entry.tool
+		player.target = Raycast_Hit{entity = NO_ENTITY}
+		if entry.field {
+			hud.field_view.frame_target = Frame_Raycast_Hit{hit = true, occupant = {handle = entity_occupant_handle(entry.aimed)}}
+		} else {
+			player.target = Raycast_Hit{hit = true, entity = entry.aimed}
+		}
+		testing.expectf(t, hud_pipette_item(screen_context, hud) != NO_ITEM, "%s: a tap picks something", entry.name)
+		for walking in ([2]bool{false, true}) {
+			player.on_ground = true
+			player.velocity = walking ? {1, 0, 0} : {}
+			for size in sizes {
+				for text_scale in UI_AUDIT_TEXT_SCALES {
+					settings.text_scale = text_scale
+					for device in Input_Device {
+						state := Ui_State{theme = theme, active_device = device, bindings = bindings}
+						defer destroy_ui_state(&state)
+						ui_begin(&state, {}, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(settings))
+						state.active_device = device
+						shares := glyph(&state, .Interact) == glyph(&state, .Inventory)
+						hints, kept := world_glyph_hints(screen_context, hud, shares)
+						before, before_kept := world_glyph_hints(screen_context, hud, shares, false)
+						testing.expectf(t, len(hints) == len(before) + (entry.held == "" ? 1 : 0), "%s: one Pipette hint", entry.name)
+						drawn := glyph_bar_layout_hints(hud_world_glyph_bar_layout(&state, hints, kept, before, before_kept, 1))
+						expected := glyph_bar_layout_hints(hud_glyph_bar_layout(&state, before, before_kept, false, 1))
+						case_text := fmt.tprintf("%s, walking %v, %v scale %.1f text %.1f %v", entry.name, walking, size.pixels, size.scale, text_scale, device)
+						// The drawn hints read without Pipette, or with it as Tools.
+						read := make([dynamic]Glyph_Hint, context.temp_allocator)
+						shown := false
+						for hint in drawn {
+							if hint.label != pipette {
+								append(&read, hint)
+								continue
+							}
+							shown = true
+							if entry.held != "" {
+								append(&read, Glyph_Hint{.Tools, tools})
+							}
+						}
+						testing.expectf(t, slice.equal(read[:], expected), "%s: %v, before %v", case_text, drawn, expected)
+						if entry.aimed == chest && entry.held != "" && size == sizes[0] && text_scale == 1 {
+							testing.expectf(t, shown, "%s: Pipette shows", case_text)
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // Work item 0223: the chair's Interact hint is Unbuckle strapped in,

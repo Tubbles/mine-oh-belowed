@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:slice"
 
 // The world HUD, drawn through the UI draw list under any open screen:
 // crosshair, under it the targeted entity's name and state or the
@@ -811,18 +812,25 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		ui_hud_glyph_bar(state, hints[:], len(hints), true, toolbars)
 		return
 	}
-	hints, kept := world_glyph_hints(screen_context, hud, glyph(state, .Interact) == glyph(state, .Inventory))
-	ui_hud_glyph_bar(state, hints, kept, false, toolbars)
+	shares := glyph(state, .Interact) == glyph(state, .Inventory)
+	hints, kept := world_glyph_hints(screen_context, hud, shares)
+	before, before_kept := world_glyph_hints(screen_context, hud, shares, false)
+	layout := hud_world_glyph_bar_layout(state, hints, kept, before, before_kept, toolbars)
+	ui_glyph_rows(state, layout.rows, layout.right, layout.bottom)
 }
 
 // The world's glyph bar (0219), in the temp allocator: the aimed thing's
-// hints, the held item's on the field, Sprint, Torch on while the
-// torchlight is on (0297), then Inventory and Pause.
+// hints, Open, the held item's on the field, Sprint, Torch on while the
+// torchlight is on (0297), then Inventory and Pause. While a tap picks
+// something (0216, hud_pipette_item) Pipette stands in the held Tools
+// hint's place, or after Open with nothing held; pipette false leaves it
+// out, the bar as before 0216, which the bar falls back to where the
+// Pipette hint would push a hint out (hud_world_glyph_bar_layout).
 // kept counts the aimed and held hints, which the bar keeps beside the
 // hotbar or moves above it for (hud_glyph_bar_layout). Where the aimed
 // thing takes Interact on the Inventory's control (the gamepad's X, 0233)
 // neither Open nor Inventory shows: the press is Interact's there.
-world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, interact_shares_inventory_control := false) -> (hints: []Glyph_Hint, kept: int) {
+world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, interact_shares_inventory_control := false, pipette := true) -> (hints: []Glyph_Hint, kept: int) {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
 	append(&list, ..aimed_glyph_hints(screen_context, hud))
 	merged := interact_shares_inventory_control && hud_target_takes_interact(screen_context, hud)
@@ -830,11 +838,14 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, inte
 	if opens {
 		append(&list, Glyph_Hint{.Inventory, text("hint_open")})
 	}
+	picks := pipette && hud_pipette_item(screen_context, hud) != NO_ITEM
 	player := screen_context.player
 	// A seated player holds nothing to use (0223).
 	if hud.field_session && !stack_is_empty(selected_hotbar_stack(player^)) && hud_field_player(screen_context, hud).seat == .Standing {
 		field := hud_field_player(screen_context, hud)
-		append(&list, ..held_glyph_hints(field.tool, field.cable_run, screen_context.content.field.tech_demo))
+		append(&list, ..held_glyph_hints(field.tool, field.cable_run, screen_context.content.field.tech_demo, picks))
+	} else if picks {
+		append(&list, Glyph_Hint{.Tools, text("hint_pipette")})
 	}
 	kept = len(list)
 	if sprint_hint_shown(player^) {
@@ -904,10 +915,10 @@ append_field_interact_hints :: proc(list: ^[dynamic]Glyph_Hint, screen_context: 
 // The held item's hints on the field (0219): Place with a placeable
 // tool (a cable's Run cable, or during its run Connect and Mine's Take
 // back, 0368), Tools with any item (Torch in the tech demo, where the
-// control is the torchlight's, 0297), then Turn with a machine
-// (Next_Brush turns it) or Brush where Next_Brush cycles the brush. In
-// the temp allocator.
-held_glyph_hints :: proc(tool: Field_Held_Tool, cable_run: bool, tech_demo := false) -> []Glyph_Hint {
+// control is the torchlight's, 0297; Pipette while a tap picks something,
+// pipette, 0216), then Turn with a machine (Next_Brush turns it) or Brush
+// where Next_Brush cycles the brush. In the temp allocator.
+held_glyph_hints :: proc(tool: Field_Held_Tool, cable_run: bool, tech_demo := false, pipette := false) -> []Glyph_Hint {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
 	switch {
 	case tool == .Cable && cable_run:
@@ -920,7 +931,7 @@ held_glyph_hints :: proc(tool: Field_Held_Tool, cable_run: bool, tech_demo := fa
 	if tech_demo {
 		append(&list, Glyph_Hint{.Torchlight, text("hint_torchlight")})
 	} else {
-		append(&list, Glyph_Hint{.Tools, text("hint_tools")})
+		append(&list, Glyph_Hint{.Tools, text(pipette ? "hint_pipette" : "hint_tools")})
 	}
 	if field_held_tool_turns(tool) {
 		append(&list, Glyph_Hint{.Rotate, text("hint_turn")})
@@ -1011,6 +1022,53 @@ hud_glyph_bar_above_rows :: proc(screen_units: [2]f32, bottom: f32) -> int {
 	return rows
 }
 
+// The world's bar with the Pipette hint (0216) where it displaces nothing:
+// the layout of hints when it stands where the layout of before (the same
+// bar with world_glyph_hints' pipette false) stands and draws its hints,
+// with the Tools hint as Pipette or the Pipette hint added; else before's.
+// What the held item does outranks the pipette's hint, and "Pipette" is
+// wider than "Tools", so where it would push a hint out it gives way to
+// the Tools hint, or to nothing with nothing held.
+hud_world_glyph_bar_layout :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, before: []Glyph_Hint, before_kept: int, toolbar_rows: int) -> Hud_Glyph_Bar_Layout {
+	without := hud_glyph_bar_layout(state, before, before_kept, false, toolbar_rows)
+	if slice.equal(hints, before) {
+		return without
+	}
+	with := hud_glyph_bar_layout(state, hints, kept, false, toolbar_rows)
+	if with.beside == without.beside && pipette_displaces_nothing(glyph_bar_layout_hints(with), glyph_bar_layout_hints(without)) {
+		return with
+	}
+	return without
+}
+
+// The hints a layout draws, in order. In the temp allocator.
+glyph_bar_layout_hints :: proc(layout: Hud_Glyph_Bar_Layout) -> []Glyph_Hint {
+	list := make([dynamic]Glyph_Hint, context.temp_allocator)
+	for row in layout.rows {
+		append(&list, ..row)
+	}
+	return list[:]
+}
+
+// The hints drawn with the Pipette hint, read with it as the Tools hint
+// (or without it where those drawn without it hold no Tools hint), are
+// the hints drawn without it.
+pipette_displaces_nothing :: proc(with_pipette, without: []Glyph_Hint) -> bool {
+	tools, pipette := Glyph_Hint{.Tools, text("hint_tools")}, Glyph_Hint{.Tools, text("hint_pipette")}
+	added := !slice.contains(without, tools)
+	read := make([dynamic]Glyph_Hint, 0, len(with_pipette), context.temp_allocator)
+	for hint in with_pipette {
+		switch {
+		case hint == pipette && added:
+		case hint == pipette:
+			append(&read, tools)
+		case:
+			append(&read, hint)
+		}
+	}
+	return slice.equal(read[:], without)
+}
+
 // The HUD's glyph bar, laid out by hud_glyph_bar_layout over
 // toolbar_rows rows of toolbars.
 ui_hud_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole: bool, toolbar_rows: int) {
@@ -1055,6 +1113,21 @@ field_pick_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Contex
 		return false
 	}
 	return !field_entity_is_placed_by_world(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
+}
+
+// What a tap of Pipette's control picks (0216): the ticks' rule
+// (pipette_aimed_item) on the body the HUD shows, so the hint names what
+// a tap picks. NO_ITEM where the tick drops the press: in the tech demo,
+// during the fall, seated, strapped or cradled, and during a cable run.
+hud_pipette_item :: proc(screen_context: Screen_Context, hud: Hud_Context) -> Item_Id {
+	if screen_context.world == nil || screen_context.content.field.tech_demo || screen_context.arrival_falling {
+		return NO_ITEM
+	}
+	body := hud_field_player(screen_context, hud)
+	if body.seat != .Standing || body.cable_run {
+		return NO_ITEM
+	}
+	return pipette_aimed_item(&screen_context.world.entities, screen_context.machines, screen_context.player.target.entity, body.frame_target, hud.aimed_cable.? or_else hud_aimed_cable(screen_context, hud))
 }
 
 // What the Inventory glyph says: Open while it opens the aimed machine's
