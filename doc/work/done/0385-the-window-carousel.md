@@ -1,6 +1,6 @@
 # 0385: The window carousel
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, db53bf0)
 
 Split from 0276 on 2026-11-13: 0276 lands the screens layer's input (the actions, the modifiers, the tab step, the triggers over the old inventory strip), this item turns the triggers' step into a carousel of every window, after Techtonica (user, 2026-10-05, [inspiration.md](../inspiration.md), Techtonica's controls and screens), with the user's answers of 2026-11-13 on B and on Power.
 
