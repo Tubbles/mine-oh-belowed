@@ -154,6 +154,8 @@ test_malformed_cable_items_and_power_ports_are_refused :: proc(t: ^testing.T) {
 // heavy cable to a junction box with a lamp, and a light cable from it
 // (through a power switch when asked) to a second box whose trunk cables
 // feed five assemblers making gears, 375 kW behind 300 kW of light cable.
+// Bundled (0369), a heavy cable from the first box's port c to the second
+// box's b beside the light cable.
 Hand_Run_Factory :: struct {
 	engine:       Entity_Handle,
 	first_box:    Entity_Handle,
@@ -163,7 +165,7 @@ Hand_Run_Factory :: struct {
 	assemblers:   [5]Entity_Handle,
 }
 
-lay_hand_run_factory :: proc(world: ^World, content: Simulation_Content, with_switch: bool) -> (factory: Hand_Run_Factory) {
+lay_hand_run_factory :: proc(world: ^World, content: Simulation_Content, with_switch: bool, bundled := false) -> (factory: Hand_Run_Factory) {
 	factory.engine = place_test_entity(world, content, "steam_engine", {-3, 1, -2})
 	steam := test_fluid(content, "steam")
 	for &buffer in test_fluid_machine(world, factory.engine).buffers[:2] {
@@ -180,6 +182,9 @@ lay_hand_run_factory :: proc(world: ^World, content: Simulation_Content, with_sw
 		lay_test_cable(world, content, "light_cable", {factory.power_switch, 1}, {factory.second_box, 0})
 	} else {
 		lay_test_cable(world, content, "light_cable", {factory.first_box, 1}, {factory.second_box, 0})
+	}
+	if bundled {
+		lay_test_cable(world, content, "heavy_cable", {factory.first_box, 2}, {factory.second_box, 1})
 	}
 	origins := [5]World_Coordinate{{10, 1, -6}, {10, 1, -2}, {10, 1, 2}, {14, 1, -6}, {14, 1, -2}}
 	gear := test_recipe(content.recipes, "iron_gear")
@@ -278,6 +283,264 @@ test_a_power_switch_splits_its_netlist :: proc(t: ^testing.T) {
 	add_cable(entities, content, Cable{ends = loop.ends, item = loop.item, metres = u16(port_span_metres(entities, content.machines, loop.ends[0], loop.ends[1]))})
 	testing.expect_value(t, len(networks.networks), 1)
 	testing.expect_value(t, len(networks.topology.chords), 1)
+}
+
+// The hand run factory ticked once with the engine offering 15,000 J.
+ticked_hand_run_factory :: proc(content: Simulation_Content, bundled := false) -> (world: World, factory: Hand_Run_Factory) {
+	world = make_floor_world(content.blocks, 32)
+	records := make_test_records(content)
+	factory = lay_hand_run_factory(&world, content, false, bundled)
+	tick_with_hand_run_offer(&world, &records, content, factory.engine, 15_000)
+	return
+}
+
+// The cable whose nodes are the chord's, -1 for none.
+chord_cable :: proc(networks: ^Electric_Networks, table: ^Cable_Table, chord: netlist.Edge) -> int {
+	for cable, index in table.cables {
+		first, second := power_port_node(networks, cable.ends[0]), power_port_node(networks, cable.ends[1])
+		if u32(min(first, second)) == chord.first && u32(max(first, second)) == chord.second {
+			return index
+		}
+	}
+	return -1
+}
+
+// Each cable's load from the last balance (0369): none before the first
+// tick; with 900 kW offered the light cable carries its 5000 J to the
+// assemblers' 6250 J and limits them, the heavy cable carries the engine's
+// 5083 J, the lamp's cable its 83 J at capacity without limiting; bundled
+// with a heavy cable the two share the assemblers' 6250 J by their watts;
+// with a lamp more past it the light cable runs a level's step under its
+// capacity and still limits; a cable whose nodes are the chord's reads 0.
+@(test)
+test_cable_loads_follow_the_tree_flow :: proc(t: ^testing.T) {
+	content := make_test_content()
+	{
+		world := make_floor_world(content.blocks, 32)
+		factory := lay_hand_run_factory(&world, content, false)
+		entities := &world.entities
+		_, found := cable_load(&entities.electric_networks, &entities.cables, port_end_cable(&entities.cables, {factory.first_box, 1}))
+		testing.expect(t, !found, "a load before the first balance")
+	}
+	{
+		world, factory := ticked_hand_run_factory(content)
+		entities := &world.entities
+		networks := &entities.electric_networks
+		light, light_found := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.first_box, 1}))
+		testing.expect(t, light_found)
+		testing.expect_value(t, light, Cable_Load{joules_per_tick = 5000, watts = 300_000, at_capacity = true, limits = true, shortfall = 1250, source_end = 0, network = 0})
+		second := networks.node_of_entity[factory.second_box]
+		testing.expect_value(t, networks.edge_limits[second].shortfall, 1250)
+		heavy, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.engine, 0}))
+		testing.expect_value(t, heavy.joules_per_tick, 5083)
+		testing.expect_value(t, heavy.watts, 900_000)
+		testing.expect(t, !heavy.at_capacity && !heavy.limits, "the heavy cable neither at capacity nor limiting")
+		lamp, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.lamp, 0}))
+		testing.expect_value(t, lamp.joules_per_tick, 83)
+		testing.expect_value(t, lamp.watts, 5000)
+		testing.expect(t, lamp.at_capacity && !lamp.limits, "the lamp's cable at capacity and not limiting")
+		testing.expect_value(t, lamp.source_end, 1)
+	}
+	{
+		world, factory := ticked_hand_run_factory(content, bundled = true)
+		entities := &world.entities
+		networks := &entities.electric_networks
+		for assembler in factory.assemblers {
+			testing.expect_value(t, test_assembler(&world, assembler).power.satisfaction, 1000)
+		}
+		second := networks.node_of_entity[factory.second_box]
+		testing.expect_value(t, abs(networks.outputs[second].flow), 6250)
+		testing.expect_value(t, networks.topology.capacity[second], 3_300_000)
+		light, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.first_box, 1}))
+		heavy, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.first_box, 2}))
+		testing.expect_value(t, light.joules_per_tick, 568)
+		testing.expect_value(t, heavy.joules_per_tick, 5681)
+		testing.expect(t, !light.at_capacity && !heavy.at_capacity, "the bundle is not at capacity")
+	}
+	{
+		// A lamp more past the light cable: 6333 J asked, whole per mille
+		// levels deliver 4995 J, so the cable runs 5 J under its capacity,
+		// under a level of the region it feeds, and is at capacity.
+		world := make_floor_world(content.blocks, 32)
+		records := make_test_records(content)
+		factory := lay_hand_run_factory(&world, content, false)
+		entities := &world.entities
+		networks := &entities.electric_networks
+		last := entity_at(entities, {8, 3, 0})
+		lamp := place_test_entity(&world, content, "lamp", {9, 3, 2})
+		lay_test_cable(&world, content, "light_cable", {lamp, 0}, {last, u8(first_free_power_port(entities, content.machines, last))})
+		tick_with_hand_run_offer(&world, &records, content, factory.engine, 15_000)
+		light, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.first_box, 1}))
+		testing.expect_value(t, light.joules_per_tick, 4995)
+		testing.expect(t, light.at_capacity && light.limits, "the light cable under its capacity by a level's step is full and limits")
+		testing.expect_value(t, light.shortfall, 6333 - 4995)
+	}
+	{
+		world := make_floor_world(content.blocks, 32)
+		records := make_test_records(content)
+		factory := lay_hand_run_factory(&world, content, false)
+		entities := &world.entities
+		networks := &entities.electric_networks
+		// The loop of test_a_power_switch_splits_its_netlist.
+		last := entity_at(entities, {8, 3, 0})
+		lay_test_cable(&world, content, "light_cable", {factory.first_box, 2}, {last, u8(first_free_power_port(entities, content.machines, last))})
+		tick_with_hand_run_offer(&world, &records, content, factory.engine, 15_000)
+		if !testing.expect_value(t, len(networks.topology.chords), 1) {
+			return
+		}
+		load, found := cable_load(networks, &entities.cables, chord_cable(networks, &entities.cables, networks.topology.chords[0]))
+		testing.expect(t, found, "the chord's cable reads a load")
+		testing.expect_value(t, load.joules_per_tick, 0)
+		testing.expect(t, !load.at_capacity, "the chord's cable at capacity")
+	}
+}
+
+// A second steam engine on a light cable beside the first, at the same
+// dispatch order: the solve fills its cable before the first engine covers
+// the rest. The first engine offers 200 J and has 117 J left, so the
+// assemblers' shortfall behind the boxes' full light cable needs the second
+// engine's spare through its full cable: both limit (the series of
+// doc/fluids.md, Power).
+@(test)
+test_a_generator_cable_filled_by_the_dispatch_limits_in_series :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	records := make_test_records(content)
+	factory := lay_hand_run_factory(&world, content, false)
+	entities := &world.entities
+	networks := &entities.electric_networks
+	engine := place_test_entity(&world, content, "steam_engine", {-3, 1, 4})
+	lay_test_cable(&world, content, "light_cable", {engine, 0}, {factory.first_box, 2})
+	second := test_fluid_machine(&world, engine)
+	second.buffers[0], second.buffers[1] = EMPTY_FLUID_BUFFER, EMPTY_FLUID_BUFFER
+	second.fuel_joules = 15_000
+	tick_with_hand_run_offer(&world, &records, content, factory.engine, 200)
+	engine_load, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {engine, 0}))
+	testing.expect(t, engine_load.limits, "the second engine's light cable does not limit")
+	boxes_load, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.first_box, 1}))
+	testing.expect(t, boxes_load.limits, "the boxes' light cable does not limit")
+}
+
+// The engine on a light cable into the first box with nothing else on it,
+// the boxes' light cable on to the assemblers at 800, the engine with
+// 10,000 J left: both full cables limit, and the overview counts both.
+@(test)
+test_two_full_cables_in_series_both_limit :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	records := make_test_records(content)
+	factory := lay_hand_run_factory(&world, content, false)
+	entities := &world.entities
+	networks := &entities.electric_networks
+	remove_entity(entities, content.machines, factory.lamp)
+	remove_cable(entities, content.machines, port_end_cable(&entities.cables, {factory.engine, 0}))
+	lay_test_cable(&world, content, "light_cable", {factory.engine, 0}, {factory.first_box, 0})
+	tick_with_hand_run_offer(&world, &records, content, factory.engine, 15_000)
+	testing.expect_value(t, test_assembler(&world, factory.assemblers[0]).power.satisfaction, 800)
+	for port in ([2]u8{0, 1}) {
+		line, _, limits := power_port_text(entities, content.machines, content.items, {factory.first_box, port}, TEST_TICK_RATE)
+		testing.expectf(t, limits, "port %d does not limit: %q", port, line)
+	}
+	_, count, _ := network_limiting_cables(networks, &entities.cables, entity_network(networks, factory.first_box), POWER_CABLE_ROWS)
+	testing.expect_value(t, count, 2)
+}
+
+// The engine on a light cable offering exactly the cable's 5000 J: every
+// consumer is short because the engine has no more, and no cable limits.
+@(test)
+test_a_generation_shortage_blames_no_cable :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	records := make_test_records(content)
+	factory := lay_hand_run_factory(&world, content, false)
+	entities := &world.entities
+	networks := &entities.electric_networks
+	remove_cable(entities, content.machines, port_end_cable(&entities.cables, {factory.engine, 0}))
+	lay_test_cable(&world, content, "light_cable", {factory.engine, 0}, {factory.first_box, 0})
+	tick_with_hand_run_offer(&world, &records, content, factory.engine, 5000)
+	load, _ := cable_load(networks, &entities.cables, port_end_cable(&entities.cables, {factory.engine, 0}))
+	testing.expect(t, !load.limits, "the engine's cable limits in a generation shortage")
+	_, count, found := network_limiting_cables(networks, &entities.cables, entity_network(networks, factory.first_box), POWER_CABLE_ROWS)
+	testing.expect(t, found, "the network's limiting cables after the tick")
+	testing.expect_value(t, count, 0)
+}
+
+// insert_ranked_cable keeps the larger shortfalls, ties by the lower
+// index, whatever order they come in; network_limiting_cables finds none
+// before the first tick and the light cable after it.
+@(test)
+test_limiting_cables_rank_by_shortfall :: proc(t: ^testing.T) {
+	shortfalls := [6]i64{400, 1250, 1250, 90, 1250, 7}
+	for reverse in ([2]bool{false, true}) {
+		top := make([dynamic]Network_Cable, context.temp_allocator)
+		for step in 0 ..< len(shortfalls) {
+			index := reverse ? len(shortfalls) - 1 - step : step
+			insert_ranked_cable(&top, {index = index, load = {shortfall = shortfalls[index]}}, 3)
+		}
+		kept := make([dynamic]int, context.temp_allocator)
+		for cable in top {
+			append(&kept, cable.index)
+		}
+		testing.expectf(t, slice.equal(kept[:], []int{1, 2, 4}), "reverse %v keeps %v", reverse, kept[:])
+	}
+
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	records := make_test_records(content)
+	factory := lay_hand_run_factory(&world, content, false)
+	entities := &world.entities
+	_, _, found := network_limiting_cables(&entities.electric_networks, &entities.cables, 0, POWER_CABLE_ROWS)
+	testing.expect(t, !found, "limiting cables before the first balance")
+	tick_with_hand_run_offer(&world, &records, content, factory.engine, 15_000)
+	top, count, after := network_limiting_cables(&entities.electric_networks, &entities.cables, 0, POWER_CABLE_ROWS)
+	testing.expect(t, after)
+	testing.expect_value(t, count, 1)
+	if testing.expect_value(t, len(top), 1) {
+		testing.expect_value(t, top[0].index, port_end_cable(&entities.cables, {factory.first_box, 1}))
+	}
+}
+
+// The first box's port lines, the light cable's overview row and its HUD
+// line (0369), before the first tick and after it.
+@(test)
+test_cable_load_texts :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	content := make_test_content()
+	{
+		world := make_floor_world(content.blocks, 32)
+		factory := lay_hand_run_factory(&world, content, false)
+		entities := &world.entities
+		line, cabled, limits := power_port_text(entities, content.machines, content.items, {factory.first_box, 1}, TEST_TICK_RATE)
+		testing.expect_value(t, line, "Port b: Light cable to Junction box")
+		testing.expect(t, cabled && !limits, "port b before the tick")
+		hud, _ := cable_status_text(entities, content.items, port_end_cable(&entities.cables, {factory.first_box, 1}), TEST_TICK_RATE)
+		testing.expect_value(t, hud, "Light cable")
+	}
+	world, factory := ticked_hand_run_factory(content)
+	entities := &world.entities
+	expected := [4]struct {
+		line:           string,
+		cabled, limits: bool,
+	} {
+		{"Port a: 305.0 kW of 900.0 kW, Heavy cable from Steam engine", true, false},
+		{"Port b, limiting: 300.0 kW of 300.0 kW, Light cable to Junction box", true, true},
+		{"Port c: free", false, false},
+		{"Port d: 5.0 kW of 5.0 kW, Light cable to Lamp", true, false},
+	}
+	for entry, port in expected {
+		line, cabled, limits := power_port_text(entities, content.machines, content.items, {factory.first_box, u8(port)}, TEST_TICK_RATE)
+		testing.expectf(t, line == entry.line && cabled == entry.cabled && limits == entry.limits, "port %d: %q cabled %v limits %v", port, line, cabled, limits)
+	}
+	top, _, _ := network_limiting_cables(&entities.electric_networks, &entities.cables, 0, POWER_CABLE_ROWS)
+	if testing.expect_value(t, len(top), 1) {
+		testing.expect_value(t, power_cable_text(entities, content.machines, content.items, top[0], TEST_TICK_RATE), "Light cable, Junction box to Junction box: 300.0 kW of 300.0 kW")
+	}
+	hud, limits := cable_status_text(entities, content.items, port_end_cable(&entities.cables, {factory.first_box, 1}), TEST_TICK_RATE)
+	testing.expect_value(t, hud, "Light cable: 300.0 kW of 300.0 kW, limiting")
+	testing.expect(t, limits, "the light cable's HUD line limits")
 }
 
 // Each refusal of cable_placement_refusal once, in the block world, and
@@ -647,6 +910,13 @@ test_the_glyph_bar_during_a_run_and_on_a_switch_behind_a_cable :: proc(t: ^testi
 	aim_at_switch(&simulation, content, switch_point)
 	testing.expect(t, field_target_is_power_switch(screen_context, hud), "the reticle meets the switch")
 	testing.expect_value(t, field_aimed_cable(entities, content.machines, player.field, content.field.tuning), 0)
+	// The cable the HUD's name line reads (0369), and the take up hint from
+	// draw_hud's one scan or from its own.
+	testing.expect_value(t, hud_aimed_cable(screen_context, hud), 0)
+	none_aimed := hud
+	none_aimed.aimed_cable = -1
+	testing.expect(t, !field_take_up_hint_shown(screen_context, none_aimed), "the take up hint reads the HUD's -1")
+	testing.expect(t, field_take_up_hint_shown(screen_context, hud), "the take up hint looks the cable up")
 	aimed := aimed_glyph_hints(screen_context, hud)
 	testing.expectf(t, slice.equal(hint_labels_on(aimed, .Interact), []string{"Turn"}), "Interact %v", hint_labels_on(aimed, .Interact))
 	testing.expectf(t, slice.equal(hint_labels_on(aimed, .Mine), []string{"Take up"}), "Mine %v", hint_labels_on(aimed, .Mine))
@@ -654,6 +924,7 @@ test_the_glyph_bar_during_a_run_and_on_a_switch_behind_a_cable :: proc(t: ^testi
 	begin_test_run(&simulation, content, frame, {3, 1, 2})
 	testing.expect(t, player.field.cable_run, "Place on the box begins a run")
 	aim_at_switch(&simulation, content, switch_point)
+	testing.expect_value(t, hud_aimed_cable(screen_context, hud), -1)
 	all, _ := world_glyph_hints(screen_context, hud)
 	testing.expectf(t, slice.equal(hint_labels_on(all, .Interact), []string{"Turn"}), "the run's Interact %v", hint_labels_on(all, .Interact))
 	testing.expectf(t, slice.equal(hint_labels_on(all, .Mine), []string{"Take back"}), "the run's Mine on the switch %v", hint_labels_on(all, .Mine))

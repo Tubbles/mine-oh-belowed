@@ -93,6 +93,9 @@ Ui_Audit_Problem :: enum u8 {
 	// The crafting view's toggle label or queue summary not drawn whole
 	// (0277).
 	Crafting_Text_Cut,
+	// A limiting cable's port line on a power panel cut before its port
+	// letter, or not in the accent colour (0369).
+	Port_Letter_Cut,
 }
 
 // One screen stack to audit at every size.
@@ -826,6 +829,97 @@ audit_broken_furnace :: proc(audit: ^Ui_Audit) {
 	}
 }
 
+// A balance in which the cables at the indices limit (0369): every node's
+// capacity a tick from the topology, each such cable's child taking its
+// cable's capacity a tick and its edge limiting with 1000 J short, the
+// rest zero.
+set_test_cable_limits :: proc(entities: ^Entities, tick_rate: int, limiting: ..int) {
+	networks := &entities.electric_networks
+	topology := networks.topology
+	node_count := len(networks.node_entities)
+	resize(&networks.outputs, node_count)
+	resize(&networks.capacity_per_tick, node_count)
+	resize(&networks.edge_limits, node_count)
+	for node in 0 ..< node_count {
+		networks.capacity_per_tick[node] = topology.capacity[node] / i64(max(tick_rate, 1))
+		networks.outputs[node], networks.edge_limits[node] = {}, {}
+	}
+	for index in limiting {
+		ends := entities.cables.cables[index].ends
+		child, _ := cable_tree_child(topology, power_port_node(networks, ends[0]), power_port_node(networks, ends[1]))
+		networks.outputs[child].flow = -networks.capacity_per_tick[child]
+		networks.edge_limits[child] = {at_capacity = true, limits = true, shortfall = 1000}
+	}
+	networks.balance_current = true
+}
+
+// The third box of build_power_plant with the cables on its ports a, b and
+// d limiting (0369): its port lines in the accent colour on its panel, and
+// the overview's "Limiting cables: 3" with their rows, at every size; each
+// limiting line keeps its port letter at every size and text scale. The
+// balance is left stale again afterwards.
+audit_cable_loads :: proc(audit: ^Ui_Audit) {
+	entities := &audit.simulation.world.entities
+	box := entity_at(entities, {6, 1, 9})
+	assert(box.kind == .Pole)
+	limiting := [3]int{}
+	for port, index in ([3]u8{0, 1, 3}) {
+		limiting[index] = port_end_cable(&entities.cables, {box, port})
+		assert(limiting[index] >= 0)
+	}
+	set_test_cable_limits(entities, audit.simulation.tick_rate, ..limiting[:])
+	_, count, found := network_limiting_cables(&entities.electric_networks, &entities.cables, entity_network(&entities.electric_networks, box), POWER_CABLE_ROWS)
+	assert(found && count == 3)
+	audit_case(audit, {name = "junction box with limiting cables", screens = {.Machine}, machine = box, walk_focus = true})
+	audit_case(audit, {name = "power with limiting cables", screens = {.Power}, walk_focus = true})
+	text_scale := audit.settings.text_scale
+	for scale in UI_AUDIT_TEXT_SCALES {
+		audit.settings.text_scale = scale
+		for size in UI_AUDIT_SIZES {
+			audit_limiting_port_letters(audit, box, []string{"a", "b", "d"}, size)
+		}
+	}
+	audit.settings.text_scale = DECK_PRESET_TEXT_SCALE
+	audit_limiting_port_letters(audit, box, []string{"a", "b", "d"}, UI_AUDIT_DECK_SIZE)
+	audit.settings.text_scale = text_scale
+	entities.electric_networks.balance_current = false
+}
+
+// The box's panel at one size, settled: each limiting port's line is drawn
+// in the accent colour and starts with its port's prefix ("Port b"), so
+// the letter shows however much of the line is cut.
+audit_limiting_port_letters :: proc(audit: ^Ui_Audit, box: Entity_Handle, ports: []string, size: Ui_Audit_Size) {
+	state := Ui_State{theme = audit.theme, active_device = .Gamepad, bindings = audit.bindings}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Machine)
+	for frame in 0 ..= UI_AUDIT_SETTLE_FRAMES {
+		context.temp_allocator = virtual.arena_allocator(&audit.frame_arena)
+		defer free_all(context.temp_allocator)
+		audit.simulation.players[0].open_machine = box
+		ui_begin(&state, {}, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
+		run_screens(&state, audit_screen_context(audit))
+		ui_resolve(&state)
+		if frame < UI_AUDIT_SETTLE_FRAMES { continue }
+		case_text := fmt.tprintf("limiting port letters, %.0fx%.0f at scale %.2f, text %.1f", size.pixels.x, size.pixels.y, size.scale, audit.settings.text_scale)
+		template := text("power_port_out_limiting")
+		for port in ports {
+			prefix := fmt.tprintf("%s%s", template[:strings.index(template, "{port}")], port)
+			if !accent_text_with_prefix_drawn(state.draw_list[:], prefix) {
+				audit_report(audit, case_text, "settled", .Port_Letter_Cut, .Text, {}, prefix)
+			}
+		}
+	}
+}
+
+accent_text_with_prefix_drawn :: proc(commands: []Draw_Command, prefix: string) -> bool {
+	for command in commands {
+		if command.kind == .Text && command.color == UI_ACCENT_COLOR && strings.has_prefix(command.text, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // The Display tab with the Resolution row live (not borderless) at a
 // configured size outside the choices and the widest cap (work item 0080).
 // The settings are restored.
@@ -1165,6 +1259,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	}
 	audit_waiting_inserter(audit)
 	audit_broken_furnace(audit)
+	audit_cable_loads(audit)
 	audit_recipe_ingredient_states(audit)
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if assembler.alive && audit.content.machines.machines[assembler.machine].recipe_choice != .Fixed {

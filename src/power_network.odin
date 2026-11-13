@@ -31,6 +31,11 @@ import "netlist"
 // to its rate and its room from what the generators have left once the
 // consumers are served, through what that left of each cable. A battery
 // that gave this tick takes nothing. A control unit is a consumer.
+//
+// A cable's load (0369, cable_load) is read for the panels, the overview
+// and the HUD from the last balance: the solve's flows and each edge's
+// limit (netlist.measure_edge_limits). It is derived like the rest of this
+// struct, never saved or hashed, and changes no result.
 
 // The last tick's balance of one network, joules per tick. satisfaction
 // is the lowest level of its consumers with a demand, in per mille, or
@@ -93,6 +98,16 @@ Electric_Networks :: struct {
 	inputs:              [dynamic]netlist.Node_Input,
 	outputs:             [dynamic]netlist.Node_Output,
 	participant_of_node: [dynamic]i32,
+	// Per node, the limit of the edge to its parent and the scratch that
+	// measures it (netlist.measure_edge_limits), for the cables' loads
+	// (0369).
+	limit_reach:         [dynamic]netlist.Limit_Reach,
+	edge_limits:         [dynamic]netlist.Edge_Limit,
+	// The outputs, capacity_per_tick and the limits are the current
+	// topology's: set by the balance, cleared by a rebuild, so a frame
+	// drawn before the next balance reads no cable load. Derived, never
+	// saved or hashed.
+	balance_current:     bool,
 }
 
 electric_allocator :: proc(networks: ^Electric_Networks) -> runtime.Allocator {
@@ -110,6 +125,8 @@ destroy_electric_networks :: proc(networks: ^Electric_Networks) {
 	delete(networks.inputs)
 	delete(networks.outputs)
 	delete(networks.participant_of_node)
+	delete(networks.limit_reach)
+	delete(networks.edge_limits)
 }
 
 set_electric_allocators :: proc(networks: ^Electric_Networks) {
@@ -121,11 +138,13 @@ set_electric_allocators :: proc(networks: ^Electric_Networks) {
 	networks.node_entities.allocator, networks.network_of_tree.allocator = allocator, allocator
 	networks.capacity_per_tick.allocator, networks.inputs.allocator = allocator, allocator
 	networks.outputs.allocator, networks.participant_of_node.allocator = allocator, allocator
+	networks.limit_reach.allocator, networks.edge_limits.allocator = allocator, allocator
 	networks.node_of_entity = make(map[Entity_Handle]u32, allocator)
 }
 
 clear_electric_networks :: proc(networks: ^Electric_Networks) {
 	set_electric_allocators(networks)
+	networks.balance_current = false
 	netlist.destroy_topology(&networks.topology, electric_allocator(networks))
 	clear(&networks.networks)
 	clear(&networks.participants)
@@ -223,13 +242,16 @@ power_satisfaction :: proc(supply, demand: u64) -> u32 {
 // energy is lost), the solve, and each participant's delivered (supplied
 // for a generator) and charged (a battery's). The networks' figures are
 // summed from the participants; a network's satisfaction is the lowest
-// level among its consumers with a demand.
+// level among its consumers with a demand. Then each edge's limit for the
+// cables' loads (cable_load).
 balance_electric_energy :: proc(networks: ^Electric_Networks, tick_rate: int) {
 	node_count := len(networks.node_entities)
 	resize(&networks.capacity_per_tick, node_count)
 	resize(&networks.inputs, node_count)
 	resize(&networks.outputs, node_count)
 	resize(&networks.participant_of_node, node_count)
+	resize(&networks.limit_reach, node_count)
+	resize(&networks.edge_limits, node_count)
 	for node in 0 ..< node_count {
 		networks.capacity_per_tick[node] = networks.topology.capacity[node] / i64(max(tick_rate, 1))
 		networks.inputs[node], networks.outputs[node], networks.participant_of_node[node] = {}, {}, -1
@@ -271,6 +293,73 @@ balance_electric_energy :: proc(networks: ^Electric_Networks, tick_rate: int) {
 			network.satisfaction = power_satisfaction(network.supply, 0)
 		}
 	}
+	netlist.measure_edge_limits(topology, networks.inputs[:], networks.outputs[:], networks.limit_reach[:], networks.edge_limits[:])
+	networks.balance_current = true
+}
+
+// A cable's load in the last balance (0369, doc/fluids.md, Power):
+// joules_per_tick its share of its bundle's flow in proportion to its
+// watts, rounded down; watts its own (Cable_Table.watts); at_capacity its
+// bundle has no room for another level of what it feeds (the region the
+// flow enters and, through cables at capacity carrying it on, the regions
+// beyond); limits raising it, together with the other cables at capacity
+// on the power's path, would give a consumer there more
+// (netlist.measure_edge_limits); shortfall what it feeds' demand less
+// delivered. source_end is the end power came from, 0 with no flow;
+// network its tree's, -1 for none. A chord reads only its watts and
+// network until 0377.
+Cable_Load :: struct {
+	joules_per_tick: u64,
+	watts:           i64,
+	at_capacity:     bool,
+	limits:          bool,
+	shortfall:       i64,
+	source_end:      int,
+	network:         int,
+}
+
+// Of two nodes joined by a tree edge, the one whose parent is the other
+// and which end (0 or 1) it is; child -1 for a chord.
+cable_tree_child :: proc(topology: netlist.Topology, first, second: int) -> (child, child_end: int) {
+	switch {
+	case topology.parent[second] == u32(first):
+		return second, 1
+	case topology.parent[first] == u32(second):
+		return first, 0
+	}
+	return -1, 0
+}
+
+// Not found before the first balance after a rebuild, for an index
+// outside the table or an end without a node. Two map lookups and
+// constant work: the panels, the overview and the HUD read it each frame.
+cable_load :: proc(networks: ^Electric_Networks, table: ^Cable_Table, index: int) -> (load: Cable_Load, found: bool) {
+	if !networks.balance_current || index < 0 || index >= len(table.cables) {
+		return {}, false
+	}
+	cable := table.cables[index]
+	first, second := power_port_node(networks, cable.ends[0]), power_port_node(networks, cable.ends[1])
+	if first < 0 || second < 0 {
+		return {}, false
+	}
+	topology := networks.topology
+	load.watts = table.watts[index]
+	load.network = int(networks.network_of_tree[topology.tree_of[first]])
+	child, child_end := cable_tree_child(topology, first, second)
+	if child < 0 {
+		return load, true
+	}
+	flow := networks.outputs[child].flow
+	if bundled := topology.capacity[child]; bundled > 0 {
+		load.joules_per_tick = u64(i128(abs(flow)) * i128(load.watts) / i128(bundled))
+	}
+	if flow == 0 {
+		return load, true
+	}
+	load.source_end = flow > 0 ? child_end : 1 - child_end
+	limit := networks.edge_limits[child]
+	load.at_capacity, load.limits, load.shortfall = limit.at_capacity, limit.limits, limit.shortfall
+	return load, true
 }
 
 // A battery's dispatch order is STORE_DISPATCH_ORDER

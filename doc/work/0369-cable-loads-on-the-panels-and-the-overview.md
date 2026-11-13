@@ -1,6 +1,6 @@
 # 0369: Cable loads on the panels and the overview
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 Part C of 0355's specification (`doc/work/done/0355-cables-and-the-power-netlist.md`): a cable's load against its capacity and the bottleneck, on the junction box's panel and the power overview. The specification below is this item's own, brought up to `main` on 2026-11-13 (0368, 0383, 0384, 0385); an implementer never opens 0355.
 
@@ -152,3 +152,130 @@ On the field with `--dev`: a combustion generator with coal, a heavy cable to a 
 2. A limiting cable is marked by a word as well as by the accent colour, on the panel's line and on the HUD's (a string key of its own, "limiting", after the load): colour alone tells a colour blind player nothing, and the template is one more key.
 3. Cable ends are named by machine, no position and no marker in the world. A tint on limiting cables in the world's draw is not part of this item.
 4. A battery's unfilled charge room is not a shortage.
+
+### Deviations (implementation, 2026-11-13)
+
+1. ~~At capacity (`cable_bundle_is_full`) is the flow at `capacity_per_tick` or the solve's levels differing across the edge.~~ Replaced by the revised rule's `room < cost` (below).
+2. Decision 2's word: `power_cable_limiting` = "limiting", put in by a `{limiting}` mark (", limiting" while the cable limits, else empty) after `{capacity}` in `power_cable_load`, filled by `with_cable_load`. The overview's `power_cable_line` has no mark, since its rows are only limiting cables. The HUD line reads "Light cable: 300.0 kW of 300.0 kW, limiting". ~~The mark in `power_port_out` and `power_port_in`.~~ Replaced by the revised rule's `_limiting` port keys.
+3. A port's line says "to" when its load reads 0 J, also for a flow that rounds to 0 J: `Cable_Load` keeps no flow, and nothing shown flows.
+4. Fix round: `set_test_cable_limits` zeroes every node's `edge_limits` before marking the limiting cables, so a record left by an earlier balance of the audit's world cannot limit a cable the audit did not name. A small helper `expect_limiting_edges` (and its `Limit_Case`) runs each hand case of `test_edge_limits_on_hand_netlists`.
+5. Second fix round, the widened meaning (raising a cable together with the other cables at capacity on the power's path). Unclipped spare alone leaves the upstream cable of a series unmarked: it feeds an empty box at level 1000, whose region is short of nothing, and at 4995 of 5000 J it is not even at capacity against that box's cost of 1. So what a cable feeds also reaches on through cables at capacity carrying the power away (`Fed_Reach`, `fed_below` and `fed_above`, two passes before the spare's). The cost, the at capacity test and the short are measured on that reach, and the level test also passes when the reach holds consumers beyond. The short is less the spare that already reaches the fed end through rooms alone (`room_spare_below` and `room_spare_above`): without it, a full generator cable beside a free generator is marked, and with that spare passing full cables whole, two full feeders of one region each defer to the other. Four passes in all. `test_a_generator_cable_filled_by_the_dispatch_does_not_limit` becomes `..._limits_in_series`: its first engine has 117 J left, so the second engine's full cable is in series with the boxes' cable. The hand case "a full generator cable beside a free one" keeps the not limiting case.
+6. ~~Second fix round, the test's reference. A mark counts as right when raising its cable together with the cables at capacity in series with it (each on the other's feeding side, `edges_in_series`) gains its fed side more than 2 J. With every mark of the tree raised at once, a poorer region elsewhere takes the power: 23 chain marks lose even though raising their cable alone gains (chain seed 304: 380 J). That count is printed beside the measured one but not asserted. A miss is a starved tree without a mark outside the accepted pattern (`tree_holds_accepted_miss`), asserted at 1 % of the starved trees.~~ Replaced by 8.
+7. Second fix round: the limiting port lines read "Port {port}, limiting: …", and the UI audit checks at every size and text scale that each limiting line starts with its port's prefix in the accent colour (`audit_limiting_port_letters`, problem `Port_Letter_Cut`).
+8. Third fix round, the test's reference. A mark is right when raising its power path with the mark gains its fed side more than 2 J beyond the same path without it (`path_gain_of_edge`). The path is every edge carrying power in series with the mark, full or not: with only the full ones, a consumer's cable below its demand (game seed 364: 4419 of 5000 J for 6666) fills first and caps the gain, so 5 game and 116 chain marks read wrong. Asserted: wrong at most 1 % of the game marks and 2.5 % of the chain marks, no starved tree silent, and none whose marks are all wrong. The all at once count and the accepted miss pattern go. The accepted false mark beside a later generator (the review's H12) is a hand case that asserts only the cable that does limit.
+
+### The limits rule, revised (design, 2026-11-13)
+
+Against `main`'s solve (0373). It replaces, for the limits only, the Specification's `short_below`, `spare_below` and `sum_subtree_slack` lines, `cable_load`'s `at_capacity` and `limits` bullets, Deviation 1 and the port strings of Deviation 2. The panels, the overview, the HUD, the stale guard and the caps stand.
+
+**Meaning.** A cable limits when raising it alone would deliver more to some consumer on the side it feeds. The total may stay the same: between two short regions, raising the cable moves power from the richer region to the poorer one, and the cable limits.
+
+**The rule**, per tree edge (node `c`, parent `p`), from `Topology`, `Node_Input` and `Node_Output` only, with the capacity per tick:
+- No flow: not at capacity, no limit, shortfall 0. Otherwise the fed end is the end the flow enters (`c` when `flow < 0`) and the feeding end is the other. `room` is the capacity left in the flow's direction, `capacity - |flow|`.
+- The fed region is the fed end's equal level component (neighbours joined while their levels are equal). It has demand `D`, consumers `n` (nodes with demand) and short `S` (demand less delivered). A level of it costs `cost = max(1, ceil(D / 1000)) + n`.
+- **At capacity**: `room < cost`, with no levels test. The margin comes from 0373, which leaves each spare joule under the next level of every region it reaches plus under 1 J per consumer. Up to `cost - 1` joules of room can therefore stay unused under a cable that bounds its region (4995 of 5000 J), while a room of `cost` or more always gets a level bought through it when spare reaches it.
+- **Limits**: three conditions: the cable is at capacity, the fed end's level is below the feeding end's, and `min(S, A + T) >= cost`. In that test:
+  - `A` is the spare that reaches the cable from the feeding side. Each node's spare is `offer - supplied + charged`: a charging battery's intake counts, because the solve serves demand first. Spare passes towards the cable through each cable's room in that direction (`min(room, spare beyond)`), so a full cable passes only its rounding room.
+  - `T` is what the feeding region would give up at a common level, computed in i128: `min(P, D * D_F * (L_F - L_D) / (1000 * (D + D_F)))`. Here `D_F` is the feeding end's region demand and `L_F`, `L_D` are the two levels. `P` is the delivery of the nodes at `L_F` that reaches the cable through rooms towards it (only equal level neighbours join). `T` is 0 when `D_F` is 0.
+- **Shortfall**: `S`, the short of the region the cable feeds directly. The overview ranks by it, larger first and then the lower index (`cable_ranks_before` as it is).
+- **Steady**: rounding leftovers stay under `cost`, so neither a spare made of leftovers nor a short within a level's rounding reaches the test. A mark changes only when the spare, `T` or the short moves by a level's cost. The two short regions case (3000, 3001 and 2999 J offered) marks in all three ticks. The generation shortage (an engine filling its light cable, 4996 of 5000 J carried) marks in none.
+
+How the review cases come out on the model below:
+- The second engine's light cable, filled by the dispatch, does not limit: the first box's region is short of nothing.
+- A generator's cable carrying 100 J past a thin cable plus 900 J of charge does not limit, since its fed region is at 1000. The thin cable limits, because `A` holds the 900 J.
+- A generator's own cable in a generation shortage does not limit: `A` is only its rounding, and `T` is 0 because a generator's region has no demand.
+- Four recyclers behind a light cable at 4996 of 5000 J limit, and still do with a lamp more at 4997.
+- In the no demand box between, the two 1000 J cables limit and the 3000 J cable does not.
+- In the rated cables in a brownout, nothing limits.
+
+**Cost**: two passes over `Topology.order` a tick, after the solve. The reverse pre-order pass sums the regions and the reach below. The pre-order pass copies the region totals down, adds the reach above and writes each edge's record. Seven i64 a node, integers only.
+
+**Where it errs**, measured on a Python model. The model runs the rule on 0373's prototype (`tmp/0373_pool_model/pool.py`) plus `main`'s phase 2 (`set_charge_phase`), over 4,500 netlists from the reviewer's `probe_game_netlist` distribution (50,145 cables with capacity). The ground truth re-solves with the cable unlimited and sums the gain over the fed side.
+- The rule marks 1,857 cables; the snapshot's rule marks 2,524.
+- 2 marks are wrong (the fed side gains at most 2 J). Both are edges whose levels differ by one per mille (600 under 601), where `T` (4 J) plus a little spare just reaches `cost`. The snapshot's rule has 670.
+- 1 limit is missed at the reviewer's threshold (the fed side gains at least `max(10, capacity / 100)`): donors behind a feeding end that has no demand of its own and sits at the rich level 1000 (a 550 J gain). `T` counts only the feeding end's own equal level part, and the region that would give way sits at another level beyond it.
+- Five more cables gain 10 to 35 J unmarked: their region is within a level of full (999, 992), or a battery's 33 J faces a 35 J level. They fall under the margin by design.
+- By total delivery (the reviewer's `probe_gain`), 151 marks gain nothing. These follow the two short regions pattern, where the fed side's gain is paid by the feeding side, and are right by the meaning above.
+- A cable with no flow and a 0 J cable (which joins nothing) are never marked.
+
+The model's solve is a prototype; the Odin test below measures the real one.
+
+**Code.** The rule needs nothing from the game, and its ground truth needs the package's `solve` and test netlists, so it goes in a new file of package `netlist`, `src/netlist/limits.odin`:
+
+```odin
+// Per node, the edge to its parent after a solve (0369).
+Edge_Limit :: struct {
+	at_capacity, limits: bool,
+	shortfall:           i64,
+}
+
+// Per node, measure_edge_limits' sums.
+Limit_Reach :: struct {
+	region_demand, region_consumers, region_short:        i64,
+	spare_below, spare_above, donors_below, donors_above: i64,
+}
+```
+- `measure_edge_limits :: proc(topology: Topology, inputs: []Node_Input, outputs: []Node_Output, reach: []Limit_Reach, limits: []Edge_Limit)`: zeroes both arrays and calls `sum_limit_reach_below`. Then, in pre-order, it calls `spread_limit_reach_above` for each non root node and sets `limits[node] = edge_limit(...)`. A root's record stays zero.
+- `sum_limit_reach_below :: proc(topology: Topology, inputs: []Node_Input, outputs: []Node_Output, reach: []Limit_Reach)`: in reverse pre-order, each node first adds its own values: demand, 1 when demand > 0, `demand - delivered`, `offer - supplied + charged`, delivered. It then adds into its parent: the three region sums when the two levels are equal, `min(room_towards_parent, spare_below)` always, and `min(room_towards_parent, donors_below)` when the levels are equal.
+- `spread_limit_reach_above :: proc(topology: Topology, outputs: []Node_Output, reach: []Limit_Reach, node: u32)`: copies the three region sums from the parent when the levels are equal. `spare_above = parent.spare_below - min(room_towards_parent(node), node.spare_below)`, plus `min(room_towards_child(parent), parent.spare_above)` when the parent is not a root. `donors_above` follows the same pattern, with the node's term only when node and parent are at equal levels, and the parent's term only when the parent and its own parent are.
+- `edge_limit :: proc(topology: Topology, outputs: []Node_Output, reach: []Limit_Reach, node: u32) -> Edge_Limit` applies the rule above. With `flow < 0`: fed end `node`, feeding end `parent`, room `room_towards_child(node)`, `A = node.spare_above`, `P = node.donors_above`. Otherwise: fed end `parent`, feeding end `node`, room `room_towards_parent(node)`, `A = node.spare_below`, `P = node.donors_below`.
+- `room_towards_parent :: proc(topology: Topology, outputs: []Node_Output, node: u32) -> i64` returns `capacity - flow`, and `room_towards_child` returns `capacity + flow`. `region_level_cost :: proc(demand, consumers: i64) -> i64`. `ceded_joules :: proc(fed_demand, feeding_demand: i64, fed_level, feeding_level: u32, donors: i64) -> i64` returns 0 unless the feeding level is above the fed level and both demands are above 0.
+
+`src/power_network.odin`:
+- `Electric_Networks`: `limit_reach: [dynamic]netlist.Limit_Reach` and `edge_limits: [dynamic]netlist.Edge_Limit` replace `short_below` and `spare_below`, with the allocators, the deletes and the resizes the two had.
+- `balance_electric_energy`: `netlist.measure_edge_limits(topology, networks.inputs[:], networks.outputs[:], networks.limit_reach[:], networks.edge_limits[:])` replaces `sum_subtree_slack`. It takes the local per tick `topology`, and `balance_current = true` still comes after it.
+- `cable_load`: `at_capacity`, `limits` and `shortfall` come from `networks.edge_limits[child]`, and the early return for no flow stays. `sum_subtree_slack`, `cable_bundle_is_full` and `cable_flow_sides` go. In `Cable_Load`'s comment: `at_capacity` means its bundle has no room for another level of the region it feeds; `limits` means raising it alone would give a consumer there more (`netlist.measure_edge_limits`); `shortfall` is that region's demand less delivered.
+- `set_test_cable_limits` (`src/ui_audit_test.odin`): resizes `edge_limits` instead of the sums. For each limiting cable it sets the child's flow to `-capacity_per_tick` and `edge_limits[child] = {at_capacity = true, limits = true, shortfall = 1000}`. It sets no inputs and does not call `measure_edge_limits`.
+
+`src/ui_power.odin`: `power_port_text` takes `power_port_out_limiting` or `power_port_in_limiting` while `found && load.limits`, otherwise the same keys as now.
+
+**Strings** (`data/strings/en.sjson`). At the smallest size about 13 characters of a port line show, so the word leads. "Limiting port…" survives; the port letter is cut, but the line's place in port order and its colour still say which port it is.
+- `power_port_out` "Port {port}: {load} of {capacity}, {cable} to {peer}" and `power_port_in` "Port {port}: {load} of {capacity}, {cable} from {peer}", without the `{limiting}` mark.
+- New: `power_port_out_limiting` "Limiting port {port}: {load} of {capacity}, {cable} to {peer}" and `power_port_in_limiting` "Limiting port {port}: {load} of {capacity}, {cable} from {peer}".
+- `power_cable_load` keeps "{cable}: {load} of {capacity}{limiting}": the HUD line is fitted to the screen's width and shows it whole. The comment above the block says that `{limiting}` (in `power_cable_load` only) is ", " plus `power_cable_limiting` while the cable limits, and that the port lines have limiting forms of their own.
+
+**Tests**
+
+`src/netlist/limits_test.odin` (new):
+- `edge_limit_between :: proc(topology: Topology, limits: []Edge_Limit, first, second: u32) -> Edge_Limit`: the record of the tree edge's child.
+- `test_edge_limits_on_hand_netlists`: each case runs through `hand_netlist` and `measure_edge_limits`, and the listed edges limit while no others do.
+  - Two short regions: box 0, generator 1 offering 3000, then 3001, then 2999, consumers 2 and 3 asking 3000 each, edges 0-1 and 0-2 unlimited, 0-3 of 1000. 0-3 limits in all three, with shortfall equal to node 3's demand less delivered.
+  - Generation shortage: box 0, generator 1 offering 5000 on 0-1 of 5000, four consumers of 1666 on cables of 1666. Nothing limits.
+  - Dispatch filled: box 0, generators 1 and 2 offering 15000 at order 0 on cables of 15000 and 5000, box 3 by 0-3 of 5000, four consumers of 2500 on box 3 by cables of 2500. Only 0-3 limits.
+  - Charging battery and charging battery alone: the inputs of `tmp/0369/verify/tree0373/src/netlist/probe_0369_test.odin` in the main checkout, lines 339 to 341. 0-3 limits; with 0-3 unlimited, nothing limits.
+  - Four recyclers: box 0, generator 1 offering 15000 unlimited, box 2 by 0-2 of 5000, four consumers of 1666 on box 2 by cables of 1666; then again with a fifth consumer of 83 by a cable of 83. Only 0-2 limits, with `at_capacity`.
+  - No demand box between, as in the same file: 2-3 and 2-4 limit.
+  - Rated cables in a brownout and a thicker cable in a brownout, as in the same file: nothing limits. The battery's 50 J cable carries 9 J and is at capacity, since its 41 J room is under the 99999 J region's level cost of 101.
+- `game_shaped_netlist :: proc(seed: int) -> Test_Netlist`: the reviewer's `probe_game_netlist` (same file, lines 172 to 215), unchanged.
+- `fed_side_gain :: proc(topology: Topology, inputs: []Node_Input, outputs: []Node_Output, child: u32) -> i64`: re-solves with `capacity[child] = UNLIMITED_CAPACITY` and sums the change in delivered over the fed side. That is the child's subtree when `outputs[child].flow < 0`, otherwise the child's tree less that subtree. Temp allocator.
+- `LIMIT_NETLISTS :: 2000`. `test_edge_limits_match_raising_the_cable` runs seeds 0 ..< `LIMIT_NETLISTS` over every tree edge with capacity and flow. It counts the edges, the marks, the wrong marks (marked, gain ≤ 2) and the missed limits (not marked, gain ≥ `max(10, capacity / 100)`).
+  - It asserts `wrong * 100 <= marks`, `missed * 100 <= marks` and `marks * 100 >= edges`.
+  - It prints the four counts and the first five wrong and missed edges: seed, child, flow, capacity, the record and the gain.
+  - The model expects about 830 marks, 1 wrong and under 1 missed, so the 1% bound leaves the Odin solve ten times the model's rate.
+  - If it fails, the implementer reports the counts and the examples and does not loosen the bound without the main agent. The test is marked `// slow` if `build/test_times.tsv` shows it at 1 s or more.
+
+`src/cable_test.odin`:
+- `test_cable_loads_follow_the_tree_flow`: the `short_below` and `spare_below` lines become `networks.edge_limits[second].shortfall == 1250`. Every other expectation stays: the lamp's 83 J cable at capacity and not limiting, and the 4995 J case at capacity, limiting, with shortfall 1338.
+- `test_a_generator_cable_filled_by_the_dispatch_does_not_limit` and `test_a_generation_shortage_blames_no_cable`: the reviewer's two probes (`tmp/0369/verify/tree0373/src/probe_0369_game_test.odin`, lines 59 to 121) without their prints. The first also expects the boxes' light cable to limit; the second expects `network_limiting_cables` to count 0.
+- `test_cable_load_texts`: port b reads "Limiting port b: 300.0 kW of 300.0 kW, Light cable to Junction box"; the HUD line stays as it is.
+
+**Docs**
+- `doc/fluids.md`, Power, the cable load bullet (line 64): the clause from "It limits when its bundle carries all it may" to "has some left" becomes the meaning, at capacity and limits in this section's words: the fed region, a level's cost and why, the spare reaching through rooms including a charging battery's intake, the share given up at a common level, and the fed end below the feeding end. The bracket on levels differing goes. The panel line is led by "Limiting" while the cable limits, and the HUD's line ends in ", limiting". "(two sums per subtree beside the solve's flows) and kept nowhere" becomes "(the solve's flows and the per node record of `netlist.measure_edge_limits`, two passes after the solve)".
+- `doc/fluids.md`, line 77: "the largest shortfall of the side they feed" becomes "the largest shortfall of the region they feed".
+- `doc/code_map.md`: the netlist row's record (`code_graph.py --check`) and the package's file list (line 340) gain `limits.odin` (`Edge_Limit`, `measure_edge_limits`: each edge's limit from a solve's outputs, 0369) and `limits_test.odin`.
+
+**Hand-back check**: the record is resized and written only in the balance, as the sums were, and `balance_current` still guards a frame drawn after a rebuild.
+
+**Provisional answers**
+1. The meaning is "some consumer gets more", not total delivery: that is the item's meaning, and it lets the two short regions case mark steadily. For total delivery instead, drop `T` and require the feeding region's own short to be 0. Then 151 of the model's 1,857 marks go, and the two short regions case marks nothing.
+2. The port line reads "Limiting port b: …", which loses the letter at the smallest size. The alternative, "Port b: limiting, …", keeps the letter but shows only "Port b: limi…".
+3. The spare counts a charging battery's intake. Decision 4 concerns the short and still holds. Without the intake, the reviewer's charging battery case misses its thin cable.
+4. The missed limit behind a feeding end with no demand is accepted (1 in 4,500 netlists): catching it needs a level threshold per edge in the reach, which is no longer a fixed pair of passes.
+
+### Decisions on the revised rule (main agent, 2026-11-13)
+
+1. Approved. "Some consumer on the fed side gets more", not the total delivered: a cable between two short regions is why the far one is poorer, and it marks steadily.
+2. The port line reads "Port b, limiting: ...": the port letter first, then the word, so both show at the smallest size (second fix round).
+3. A charging battery's intake counts as spare on the feeding side.
+4. The one miss (the power given up sits behind a feeding end with no demand at level 1000) is accepted and named in `doc/fluids.md`.
+5. The designer's Python model of the rule is at `tmp/0369_limits_model.py` in the main checkout (untracked): a reference to read, never run from the tests.

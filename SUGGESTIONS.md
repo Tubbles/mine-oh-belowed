@@ -506,3 +506,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 
 - The solve is still cubic on a chain whose every fed region has a feeder of a joule a level and a fed cable with spare room (641 nodes: 16.8 million visits a tick). Replay steps of constant time (a skip pointer to the next source above, a difference array for what passed) would take about a third of it by the design's estimate; the rest is 0373's fill. Worth it only if the night's `test_netlist_solve_cost` or a save shows the shape.
 - `add_child_response` (`src/netlist/solve.odin`) reads `fill[level - 1]` at level 0 when a fed child's poor level is -1, which only a negative demand produces. The game's power is unsigned; a `level > 0` guard, as the brute force has, would make the package safe for another caller.
+
+## Suggestions from the cable loads (0369, 2026-11-13)
+
+- The limiting rule measures the spare at a cable's fed end. Measuring it where the shortage enters (the fed reach's own region and the full cables carrying power on from it) would remove the false mark on a full generator cable beside a later generator with spare (1 in 500 marks on factory shapes, 1 in 60 on box chains). Worth it if a player is misled by one; the reviewer's cases are in `limits_test.odin`'s H12 hand case.
+- A mark says which cables to raise, not which one first. The overview ranks by the shortage behind each; a "raise this one first" hint would need the re-solve the test does.
+- `Limit_Reach` is 120 bytes a node. Nothing measures the four passes' time; the night window's frame table would show them on `factory_large`.

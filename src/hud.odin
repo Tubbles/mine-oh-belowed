@@ -107,6 +107,10 @@ Hud_Context :: struct {
 	// the cradle and all the connected units, for the wait's line.
 	wait_waiting:             int,
 	wait_units:               int,
+	// The HUD field player's aimed cable (0369, hud_aimed_cable), -1 for
+	// none: set once by draw_hud, so the name line and the glyph hints share
+	// one scan. Nil, field_take_up_hint_shown looks it up itself.
+	aimed_cable:              Maybe(int),
 }
 
 // The field player the tool line describes.
@@ -660,6 +664,7 @@ draw_contract_objective :: proc(state: ^Ui_State, screen_context: Screen_Context
 }
 
 draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Context) {
+	hud := hud
 	player, items := screen_context.player, screen_context.items
 	// Waiting in the cradle (0358): the backdrop under the rest of the HUD.
 	if hud.field_session && hud_field_player(screen_context, hud).seat == .Cradled {
@@ -690,6 +695,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		state.tools_radial = {}
 		return
 	}
+	hud.aimed_cable = hud_aimed_cable(screen_context, hud)
 	switch hud_objective_source(screen_context.quest_state, screen_context.records.contracts.open_count) {
 	case .Quest:
 		draw_quest_objective(state, screen_context)
@@ -717,8 +723,14 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.records.assayed_veins[:], screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {
 		vein_status = ghost_line
 	}
-	// An entity's line is its state, a block's only says what it is.
+	// An entity's line is its state, a block's only says what it is. An
+	// aimed cable's is its load (0369), in the accent colour while it limits.
 	name_color := player.target.entity == NO_ENTITY ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR
+	if cable := hud.aimed_cable.? or_else -1; cable >= 0 {
+		limits: bool
+		name_status, limits = cable_status_text(&screen_context.world.entities, items, cable, screen_context.tick_rate)
+		name_color = limits ? UI_ACCENT_COLOR : UI_TEXT_COLOR
+	}
 	line := draw_target_status(state, name_status, 0, name_color)
 	line = draw_target_status(state, tool_status, line, tool_color)
 	draw_target_status(state, vein_status, line)
@@ -936,17 +948,30 @@ ui_hud_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole
 	ui_glyph_rows(state, layout.rows, layout.right, layout.bottom)
 }
 
-// The field player aims at a tree's trunk, which Mine held fells (0197).
 // The field player carries no run and aims at a cable Mine takes up
-// (0368, advance_field_cable_take_up).
+// (0368, advance_field_cable_take_up): hud.aimed_cable, or looked up.
 field_take_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
-	if !hud.field_session || screen_context.world == nil {
-		return false
+	if cable, set := hud.aimed_cable.?; set {
+		return cable >= 0
 	}
-	field := hud_field_player(screen_context, hud)
-	return !field.cable_run && field_aimed_cable(&screen_context.world.entities, screen_context.machines, field, screen_context.content.field.tuning) >= 0
+	return hud_aimed_cable(screen_context, hud) >= 0
 }
 
+// The cable Take up names (0368): the HUD field player's aimed cable in a
+// field session with a world and no run carried, else -1. field_aimed_cable
+// scans every cable, so draw_hud runs it once a frame (Hud_Context).
+hud_aimed_cable :: proc(screen_context: Screen_Context, hud: Hud_Context) -> int {
+	if !hud.field_session || screen_context.world == nil {
+		return -1
+	}
+	field := hud_field_player(screen_context, hud)
+	if field.cable_run {
+		return -1
+	}
+	return field_aimed_cable(&screen_context.world.entities, screen_context.machines, field, screen_context.content.field.tuning)
+}
+
+// The field player aims at a tree's trunk, which Mine held fells (0197).
 field_fell_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
 	return hud_field_player(screen_context, hud).tree_target.hit
 }

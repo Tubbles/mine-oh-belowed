@@ -1153,6 +1153,20 @@ power_switch_off = "Off"
 power_switch_open = "Not connected"
 power_draw = "Draw: {delivered} of {demand}"
 power_no_cable = "No cable"
+// A cable's load (0369): {limiting}, in power_cable_load only, is ", " and
+// power_cable_limiting while the cable limits, else empty. The port lines
+// have limiting forms of their own, the word right after the port letter,
+// so both show at the smallest size.
+power_limiting_cables = "Limiting cables"
+power_cable_limiting = "limiting"
+power_cable_line = "{cable}, {from} to {to}: {load} of {capacity}"
+power_cable_load = "{cable}: {load} of {capacity}{limiting}"
+power_port_free = "Port {port}: free"
+power_port_cable = "Port {port}: {cable} to {peer}"
+power_port_out = "Port {port}: {load} of {capacity}, {cable} to {peer}"
+power_port_in = "Port {port}: {load} of {capacity}, {cable} from {peer}"
+power_port_out_limiting = "Port {port}, limiting: {load} of {capacity}, {cable} to {peer}"
+power_port_in_limiting = "Port {port}, limiting: {load} of {capacity}, {cable} from {peer}"
 lamp_lit = "Lit"
 lamp_dark = "Dark"
 fluid_water = "Water"
