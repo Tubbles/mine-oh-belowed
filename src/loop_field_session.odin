@@ -572,17 +572,23 @@ draw_field_players :: proc(scene: Field_Scene, camera: Maybe([3]f32) = nil) {
 	}
 }
 
-// Each standing player's carried cable run (0368, draw_cable_run), the
-// predicted body for a local player, with its selected stack's item. The
-// seat decides, not the body's pose: the viewer in first person, its body
-// hidden, sees its own run.
-draw_field_cable_runs :: proc(scene: Field_Scene, draw: Cable_Draw) {
+// Each standing player's carried cable run (0368, cable_run_look), the
+// predicted body for a local player, with its selected stack's item, for
+// draw_cables to draw with the cables (0384). The seat decides, not the
+// body's pose: the viewer in first person, its body hidden, sees its own
+// run.
+field_cable_run_looks :: proc(scene: Field_Scene, draw: Cable_Draw) -> []Cable_Look {
+	looks := make([dynamic]Cable_Look, context.temp_allocator)
 	for index in 0 ..< len(scene.state.players) {
 		player := field_scene_player(scene, index)
-		if player.field.cable_run && player.field.seat == .Standing {
-			draw_cable_run(&scene.state.world.entities, scene.content.machines, scene.content.items, player.field, scene.content.field.tuning, selected_hotbar_stack(player).item, draw)
+		if !player.field.cable_run || player.field.seat != .Standing {
+			continue
+		}
+		if look, found := cable_run_look(&scene.state.world.entities, scene.content.machines, scene.content.items, player.field, scene.content.field.tuning, selected_hotbar_stack(player).item, draw); found {
+			append(&looks, look)
 		}
 	}
+	return looks[:]
 }
 
 // The viewer's ghosts are drawn for a viewer standing: nothing is placed
@@ -682,9 +688,10 @@ draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_
 // the cables and the belt items are culled by the camera's frustum and the
 // haze's end (Model_View), the machines drawn instanced after
 // draw_entities (draw_scene_model_instances) with the model shader's
-// instancing, the pod alone. The slabs, the runs, the poles, the cables,
-// the belt items, the torch boxes and the emissive layers draw flat
-// through the model shader and are hazed as the machines (0360). Every
+// instancing, the pod alone. The slabs, the runs, the poles, the cables
+// (boxes near the eye, instanced, 0384), the belt items, the torch boxes
+// and the emissive layers draw flat through the model shader and are
+// hazed as the machines (0360). Every
 // machine pool is draw_entities' (0362); the ports and arrows follow the
 // machines (draw_ports_and_arrows),
 // and a launching rocket, translucent, is drawn after the players without
@@ -732,9 +739,8 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	runs := Belt_Run_Draw{view = &run_view, frames = &frames, models = scene.models, items = &buffers.items}
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate, runs)
 	// The cables' points are world positions too (0368).
-	cables := Cable_Draw{view = &run_view, frames = &frames, models = scene.models, daylight_tint = daylight_tint}
-	draw_cables(&world.entities, scene.content.machines, scene.content.items, cables)
-	draw_field_cable_runs(scene, cables)
+	cables := Cable_Draw{view = &run_view, frames = &frames, models = scene.models, instances = &buffers.cables, daylight_tint = daylight_tint}
+	draw_cables(&world.entities, scene.content.machines, scene.content.items, cables, field_cable_run_looks(scene, cables))
 	profile_mark(scene.profile, .Effects)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres, scene.models)
 	push_pod_transform(scene.pod_transform)

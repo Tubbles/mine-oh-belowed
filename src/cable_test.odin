@@ -1,5 +1,6 @@
 package game
 
+import "core:math/linalg"
 import "core:mem/virtual"
 import "core:slice"
 import "core:strings"
@@ -8,7 +9,8 @@ import "netlist"
 
 // Cables (work item 0368): the shipped ports, the malformed data, the
 // hand run factory on the netlist, the refusals, the run and the take up
-// on the field, the pick up, the curve and the benchmark modules' cables.
+// on the field, the pick up, the curve and the benchmark modules' cables;
+// the boxes a cable draws near the eye (0384).
 
 // The shipped definition of an item, as parsed.
 shipped_item_definition :: proc(id: string) -> Item_Definition {
@@ -792,6 +794,126 @@ test_cable_spans_and_sag :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, look_field_player_at(&player, tuning, middle + World_Position(fixed_scale(beside, millimetres_to_position_units(300)))))
 	testing.expect_value(t, field_aimed_cable(&entities, machines, player, tuning), -1)
+}
+
+// The 12 boxes of a cable (0384) join end to end at its curve's points,
+// each the item's thickness across, and carry its varied colour; the
+// cable is near an eye at its middle, not 40 m from its box, never
+// without a view.
+@(test)
+test_cable_instances_follow_the_curve :: proc(t: ^testing.T) {
+	content := make_test_content()
+	machines := content.machines
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame := lay_test_pad(&entities, machines, 0, 0, {-4, 0, -4}, {6, 0, 4})
+	box := test_machine(machines, "junction_box")
+	south, _ := place_on_frame(&entities, machines, box, frame.id, {0, 1, -3}, 0)
+	north, _ := place_on_frame(&entities, machines, box, frame.id, {0, 1, 3}, 0)
+	cable := Cable{ends = {{south, 3}, {north, 2}}, item = test_item(content.items, "heavy_cable"), metres = 3}
+	add_cable(&entities, content, cable)
+	look, found := cable_look(&entities, machines, content.items, Cable_Draw{daylight_tint = {1, 1, 1}}, cable)
+	if !testing.expect(t, found) {
+		return
+	}
+	item := content.items.items[cable.item]
+	color := cable_draw_color(item, cable, {1, 1, 1})
+	testing.expect_value(t, look.color, color)
+	testing.expect_value(t, look.thickness_metres, f32(0.024))
+	segments := make([dynamic]matrix[4, 4]f32, context.temp_allocator)
+	append_cable_segment_instances(&segments, look)
+	if !testing.expect_value(t, len(segments), CABLE_CURVE_STEPS) {
+		return
+	}
+	// The points lie 8 km from the planet's centre, where an f32 steps by
+	// half a millimetre.
+	near :: proc(first, second: [3]f32) -> bool {
+		return linalg.length(first - second) < 1e-3
+	}
+	for instance, step in segments {
+		start := (instance * [4]f32{0, 0, -0.5, 1}).xyz
+		end := (instance * [4]f32{0, 0, 0.5, 1}).xyz
+		testing.expectf(t, near(start, look.points[step]) && near(end, look.points[step + 1]), "segment %d runs %v to %v, not %v to %v", step, start, end, look.points[step], look.points[step + 1])
+		across := [3]f32{instance[0, 0], instance[1, 0], instance[2, 0]}
+		beside := [3]f32{instance[0, 1], instance[1, 1], instance[2, 1]}
+		along := [3]f32{instance[0, 2], instance[1, 2], instance[2, 2]}
+		testing.expectf(t, along == look.points[step + 1] - look.points[step], "segment %d is not its points' difference along", step)
+		testing.expectf(t, abs(linalg.length(across) - look.thickness_metres) < 1e-6 && abs(linalg.length(beside) - look.thickness_metres) < 1e-6, "segment %d is not the thickness across", step)
+		testing.expectf(t, abs(linalg.dot(across, along)) < 1e-6 && abs(linalg.dot(beside, along)) < 1e-6 && abs(linalg.dot(across, beside)) < 1e-8, "segment %d is skewed", step)
+		testing.expectf(t, linalg.dot(linalg.cross(across, beside), along) > 0, "segment %d turns the cube inside out", step)
+		bottom := [4]f32{instance[3, 0], instance[3, 1], instance[3, 2], instance[3, 3]}
+		testing.expect_value(t, bottom, [4]f32{f32(color.r) / 255, f32(color.g) / 255, f32(color.b) / 255, 1})
+	}
+	testing.expect(t, look.points[CABLE_CURVE_STEPS / 2] != (look.points[0] + look.points[CABLE_CURVE_STEPS]) / 2, "the cable does not sag")
+
+	minimum, maximum := cable_draw_box(look.points, look.thickness_metres)
+	view := Model_View{eye = look.points[CABLE_CURVE_STEPS / 2], transform = 1}
+	testing.expect(t, cable_box_is_near(&view, minimum, maximum))
+	view.eye = maximum + {0, 40, 0}
+	testing.expect(t, !cable_box_is_near(&view, minimum, maximum))
+	view.eye = maximum + {0, CABLE_BOX_METRES - 1, 0}
+	testing.expect(t, cable_box_is_near(&view, minimum, maximum))
+	testing.expect(t, !cable_box_is_near(nil, minimum, maximum))
+}
+
+// A box corner's offset from the centre of the box's end face.
+cable_box_corner_offset :: proc(instance: matrix[4, 4]f32, corner: [2]f32) -> [3]f32 {
+	return (instance * [4]f32{corner.x, corner.y, 0, 0}).xyz
+}
+
+// The look's segments lean across a world y of 0.9, where a side axis per
+// segment would turn the boxes; at every joint each corner's offset from
+// the joint is the same on both boxes within 1 mm (the joints themselves
+// are test_cable_instances_follow_the_curve's).
+expect_cable_joints_meet :: proc(t: ^testing.T, look: Cable_Look, name: string) {
+	lowest, highest := f32(1), f32(0)
+	for step in 0 ..< CABLE_CURVE_STEPS {
+		height := abs(linalg.normalize(look.points[step + 1] - look.points[step]).y)
+		lowest, highest = min(lowest, height), max(highest, height)
+	}
+	testing.expectf(t, lowest < 0.9 && highest >= 0.9, "%s: the segments' world y runs %v to %v, not across 0.9", name, lowest, highest)
+	segments := make([dynamic]matrix[4, 4]f32, context.temp_allocator)
+	append_cable_segment_instances(&segments, look)
+	for step in 0 ..< CABLE_CURVE_STEPS - 1 {
+		for corner in ([4][2]f32{{-0.5, -0.5}, {0.5, -0.5}, {0.5, 0.5}, {-0.5, 0.5}}) {
+			moved := linalg.length(cable_box_corner_offset(segments[step], corner) - cable_box_corner_offset(segments[step + 1], corner))
+			testing.expectf(t, moved < 1e-3, "%s: joint %d's corner %v moves %v m", name, step, corner, moved)
+		}
+	}
+}
+
+// A trunk cable's boxes meet at every joint (0384): steep and diagonal in
+// the block world, and level on a frame leaning 64 degrees from world y
+// along its forward.
+@(test)
+test_cable_boxes_meet_at_every_joint :: proc(t: ^testing.T) {
+	content := make_test_content()
+	machines := content.machines
+	box := test_machine(machines, "junction_box")
+	trunk := test_item(content.items, "trunk_cable")
+	draw := Cable_Draw{daylight_tint = {1, 1, 1}}
+	{
+		entities: Entities
+		defer destroy_entities(&entities)
+		low := add_entity(&entities, machines, box, {0, 1, 0}, 0)
+		high := add_entity(&entities, machines, box, {4, 10, 3}, 0)
+		look, found := cable_look(&entities, machines, content.items, draw, Cable{ends = {{low, 1}, {high, 0}}, item = trunk})
+		if testing.expect(t, found) {
+			expect_cable_joints_meet(t, look, "steep")
+		}
+	}
+	entities: Entities
+	defer destroy_entities(&entities)
+	radius := f64(metres_to_position_units(8_000))
+	hit := World_Position{0, i64(radius * 0.4359), i64(radius * 0.9)}
+	origin, axes := free_frame_at(hit, {0, UNIT_VECTOR_ONE, 0}, 500)
+	frame := add_frame(&entities.frames, origin, axes, 500)
+	first := add_entity(&entities, machines, box, {0, 0, 0}, 0, frame)
+	second := add_entity(&entities, machines, box, {0, 0, 8}, 0, frame)
+	look, found := cable_look(&entities, machines, content.items, draw, Cable{ends = {{first, 3}, {second, 2}}, item = trunk})
+	if testing.expect(t, found) {
+		expect_cable_joints_meet(t, look, "level")
+	}
 }
 
 // Two block worlds with the hand run factory and its switch, 600 ticks

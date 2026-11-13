@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests of tools/frame_profile.py (work item 0379): the runs of a view
 that names a water model, the game's command for a model and when a run
-starts a fresh game; the large factory's runs, copies and note (0347).
-No game runs.
+starts a fresh game; the large factory's runs, copies and note (0347);
+the factory's cable lines (0384). No game runs.
 
 Usage: python3 tools/frame_profile_test.py
 """
@@ -80,6 +80,23 @@ class FrameProfileTest(unittest.TestCase):
         self.assertEqual(target, ((-314 - 8) / 2, 4.5, (36 + 174) / 2))
         frame = {"origin": (0, 0, 0), "pitch": 0.5, "right": (1, 0, 0), "up": (0, 1, 0), "forward": (0, 0, 1)}
         self.assertEqual(frame_profile.factory_large_eye(frame, (10, 20, 30), large), (10, 45, -15))
+
+    def test_the_factory_runs_its_cables_after_its_machines(self):
+        shipped = frame_profile.sjson.load(frame_profile.repository_root() / "tools" / "frame_profile_views.sjson")
+        factory = shipped["factory"]
+        corner = (-34, 3, 36)
+        lines = frame_profile.factory_lines(7, corner, factory)
+        cables = [line for line in lines if line.startswith("cable ")]
+        self.assertEqual(len(cables), 5)
+        self.assertEqual(lines[-len(cables):], cables)
+        self.assertEqual(cables[0], "cable heavy_cable 7 -17 4 49 power 7 -12 4 50 a")
+        cells = {tuple(machine["cell"]) for machine in factory["machines"]}
+        ends = [(tuple(cable[side]), cable[f"{side}_port"]) for cable in factory["cables"] for side in ("from", "to")]
+        for cell, port in ends:
+            self.assertIn(cell, cells, port)
+        self.assertEqual(len(ends), len(set(ends)), "a port takes two cables")
+        copied = frame_profile.copied_factory(factory, shipped["factory_large"])
+        self.assertEqual([line for line in frame_profile.factory_lines(7, corner, copied) if line.startswith("cable ")], [])
 
     def test_the_game_command_names_the_water_model(self):
         directories = frame_profile.run_directories(pathlib.Path("/output"), "/run", 1)

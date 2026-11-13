@@ -672,8 +672,22 @@ def machine_cell(corner, machine):
     return tuple(corner[axis] + machine["cell"][axis] for axis in range(3))
 
 
+def relative_cell_words(corner, cell):
+    return " ".join(str(corner[axis] + cell[axis]) for axis in range(3))
+
+
+def cable_line(frame, corner, cable):
+    """A factory cable's line (0384): its two ends' cells on the frame, each
+    relative to the pad's corner, with their power ports' ids."""
+    return (
+        f"cable {cable['item']} {frame} {relative_cell_words(corner, cable['from'])} {cable['from_port']} "
+        f"{frame} {relative_cell_words(corner, cable['to'])} {cable['to_port']}"
+    )
+
+
 def factory_lines(frame, corner, factory):
-    """The pad's foundations, the machines and their inserts, in order."""
+    """The pad's foundations, the machines and their inserts, then the
+    cables, in order."""
     width, depth = factory["pad"]
     lines = [
         f"place wooden_foundation {frame} {corner[0] + x} {corner[1]} {corner[2] + z} 0"
@@ -684,6 +698,7 @@ def factory_lines(frame, corner, factory):
         cell = " ".join(str(value) for value in machine_cell(corner, machine))
         lines.append(f"place {machine['machine']} {frame} {cell} 0")
         lines += [f"insert {item} {count} {frame} {cell}" for item, count in machine.get("insert", [])]
+    lines += [cable_line(frame, corner, cable) for cable in factory.get("cables", [])]
     return lines
 
 
@@ -909,8 +924,8 @@ def factory_copy_corners(corner, factory, copies):
 
 
 def copied_factory(factory, large):
-    """The factory with only the machines the copies hold."""
-    return dict(factory, machines=[machine for machine in factory["machines"] if machine["machine"] in large["machines"]])
+    """The factory with only the machines the copies hold, and no cable."""
+    return dict(factory, machines=[machine for machine in factory["machines"] if machine["machine"] in large["machines"]], cables=[])
 
 
 def placed_kind(line):

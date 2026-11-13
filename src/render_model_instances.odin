@@ -20,8 +20,9 @@ import "render_frustum"
 // a viewport and pass (Field_Instance_Buffers). An instance carries its
 // layer's colour in its matrix's bottom row, as a tree's does: the model
 // shader takes the transform with instanced_on and the colour with
-// instance_tint_on, and draws the emissive layer, the slabs and the belt
-// items unlit with flat_on, as raylib's default shader on its white
+// instance_tint_on, and draws the emissive layer, the slabs, the belt
+// items and the cables' boxes unlit with flat_on, as raylib's default
+// shader on its white
 // texture does, hazed on the open sky (0360); rlgl's batch takes the same
 // flat mode between begin_flat_batch and end_flat_batch (the runs, the
 // poles, the torch boxes and the scene's box draws). The pod
@@ -116,10 +117,10 @@ Instance_Buffer :: struct {
 
 // A viewport's buffers, each written at most once a frame: the sun's
 // machines (the whole pass, or the moving casters over a kept map), the
-// still casters drawn into its kept map (0348), the scene's machines and
-// the belt items.
+// still casters drawn into its kept map (0348), the scene's machines, the
+// belt items and the cables' boxes near the eye (0384).
 Field_Instance_Buffers :: struct {
-	cast_models, kept_cast_models, models, items: Instance_Buffer,
+	cast_models, kept_cast_models, models, items, cables: Instance_Buffer,
 }
 
 // Pure.
@@ -477,10 +478,11 @@ white_model_material :: proc(renderer: Model_Renderer) -> rl.Material {
 	return material
 }
 
-// The slabs, their edges and the belt items draw between these: the
-// model shader instanced and flat, the colour per instance with tint,
-// matModel the rlgl stack's transform (a frame's matrix for the slabs,
-// the identity for the items) as draw_scene_model_instances sets it, so
+// The slabs, their edges, the belt items and the cables' boxes draw
+// between these: the model shader instanced and flat, the colour per
+// instance with tint, matModel the rlgl stack's transform (a frame's
+// matrix for the slabs, the identity for the items and the cables) as
+// draw_scene_model_instances sets it, so
 // the haze reads the world position.
 begin_flat_instances :: proc(renderer: Model_Renderer, tint: bool) {
 	set_model_instancing(renderer, true, tint, true)
@@ -586,5 +588,6 @@ release_field_instance_buffers :: proc(buffers: []Field_Instance_Buffers) {
 		release_instance_buffer(&slot.kept_cast_models)
 		release_instance_buffer(&slot.models)
 		release_instance_buffer(&slot.items)
+		release_instance_buffer(&slot.cables)
 	}
 }

@@ -109,6 +109,17 @@ factory = {
 		{machine = "junction_box", cell = [24, 1, 4]}
 		{machine = "lamp", cell = [24, 1, 16]}
 	]
+	// Run after the machines (0384): each a cable line on the pad's frame
+	// from the machine at from (a cell relative to the pad's corner) by its
+	// power port from_port to the one at to by to_port. The rows before
+	// 0384 drew no cable, so they do not compare with the rows after it.
+	cables = [
+		{item = "heavy_cable", from = [17, 1, 13], from_port = "power", to = [22, 1, 14], to_port = "a"}
+		{item = "light_cable", from = [22, 1, 14], from_port = "b", to = [24, 1, 16], to_port = "power"}
+		{item = "trunk_cable", from = [22, 1, 14], from_port = "c", to = [24, 1, 4], to_port = "a"}
+		{item = "light_cable", from = [24, 1, 4], from_port = "b", to = [8, 1, 14], to_port = "power"}
+		{item = "light_cable", from = [24, 1, 4], from_port = "c", to = [1, 1, 14], to_port = "power"}
+	]
 }
 
 // The large factory (0347), built after the factory's runs and run in one
@@ -117,7 +128,7 @@ factory = {
 // the frame's right (along it the leaning pad sinks under the ground) and
 // along its forward. A copy holds only the factory's machines named here,
 // the ones the field session drew before 0362 (no fluid or power machine),
-// so its rows stay comparable across it.
+// and no cable, so its rows stay comparable across it.
 // The camera stands back_metres back along the frame's forward and
 // up_metres up along its up from the middle of the copies one row over
 // the pads, looking at it.

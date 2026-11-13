@@ -459,3 +459,11 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - The flick is also held off while the left trackpad is touched, since Hotbar_Radial is bound there and the letter wheel follows the pad, not the stick.
 - `doc/audit/ui.md` names `Menu_Secondary` in a dated audit note.
 - `doc/code_map.md`'s field count of `Ui_State` was already behind the struct before this item (the implementer counted 61 against the recorded 58).
+
+## Suggestions from the cable's look (0384, 2026-11-13)
+
+- A refused run near the eye is opaque red where its line was see through, since an instance carries no alpha.
+- A box chain leaves a wedge of half a millimetre at the outer side of each bend. Lengthening each box by its thickness would hide it; it cannot be seen at today's sags.
+- The frame profile's heavy cable leaves the steam engine's port on its far face and runs through the engine's body. A port on the side facing the box would read right in captures.
+- `draw_cables` sizes its looks list for every cable, not only the shown ones: one temp allocation a frame.
+- The near cut could scale with the thickness (boxes only where they are a pixel or wider), which would spare the instances of light cables between 9 and 32 m. Worth it only if the night's figure for many cables asks.
