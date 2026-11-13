@@ -95,3 +95,8 @@ No save change: the record's motion is presentation only (`hatch_open_fraction` 
 ### Decisions (main agent, 2026-10-05)
 
 1. The specification is approved. The implementation waits for two answers of the user: whether the round four iris previews (`tmp/pod_lab/previews/pod_hatch_aperture_open_*.png`, sent 2026-10-05) are accepted, and whether the 0.7 m aperture stays although a crouched body passes through its lower rim in the eyes of another player (the frame leaves room for about 0.95 m, a note to the modeller would widen it).
+
+## Decisions (user, 2026-11-13)
+
+- The 0.7 m aperture stays for now.
+- All model work is paused, this item with it.

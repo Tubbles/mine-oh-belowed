@@ -17,3 +17,7 @@ Mine and Place as the hand tools; a mode or a size is chosen on the inventory vi
 ## Verify
 
 - Decided with the design.
+
+## Direction (user, 2026-11-13)
+
+Not one manipulator with modes but dedicated power tools. A pickaxe with an explosive charge in the pick: about 0.5 s a swing for a large chunk, set by the player to finer steps (about 0.35 s and 0.1 s swings). A belt sander ("bandslip") smooths, a hedge trimmer like tool flattens, and some tool fills. The setting is chosen on the inventory view or a panel, never by cycling a world control (CLAUDE.md, keybindings). Not designed and not asked for implementation.

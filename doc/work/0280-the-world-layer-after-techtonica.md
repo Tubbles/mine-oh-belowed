@@ -29,3 +29,9 @@ The world layer, gamepad. Every line is a proposal until the user approves the i
 - Tests: the effective bindings carry no control with two world meanings in one context; the sheathe hides the ghost and blocks Place; a toolbar step unsheathes.
 - The touch overlay's audit, the editor's table.
 - The couch.
+
+## Decisions (user, 2026-11-13)
+
+- The tools radial gets a second home on R1 held.
+- A interacts and X jumps.
+- Open still: whether a world drop is wanted, and which button opens the crafting view.
