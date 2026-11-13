@@ -1,6 +1,6 @@
 # 0216: The pipette
 
-Status: verified (2026-11-13)
+Status: landed (2026-11-13, a843560d)
 
 ## Goal
 
