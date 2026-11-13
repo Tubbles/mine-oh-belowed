@@ -584,7 +584,7 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "map", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("map_title"), UI_HEADING_TEXT_SIZE, .Left)
+	ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
 	side := min(content.height, content.width - MAP_LEGEND_WIDTH - UI_PADDING)
 	image := Ui_Rectangle{content.x, content.y, side, side}
 	// The legend takes the width the square image leaves.

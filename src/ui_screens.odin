@@ -165,21 +165,21 @@ Developer_Context :: struct {
 	data_browser:       ^Data_Browser,
 }
 
-// Pause opens the pause menu from the world, Open_Inventory the inventory,
-// Open_Recipes the recipe browser, Open_Journal the journal (which it also
-// closes), Open_Power_Overview the power overview, Open_Statistics the
-// production statistics, Open_Technologies the technology screen and
-// Open_Map the map (likewise). With a
-// screen open, Back and Pause both
-// step back one screen (the first press closes an open tooltip).
-// Open_Inventory closes the inventory tab strip's screens (the inventory,
-// the recipe browser, the technology screen) and a machine panel too,
-// except on the gamepad, where the same X press is the context action;
-// Open_Recipes closes the recipe browser. The pause menu opens neither
-// the recipe browser nor the technology screen: the inventory's tab strip
-// reaches them (work item 0094). While the world falls (only_pause, 0200)
-// Pause is the one binding that opens a screen from the world.
-handle_screen_keys :: proc(state: ^Ui_State, only_pause := false) {
+// The screen stack (0385), the world being the empty stack. Push: from the
+// world Pause opens the pause menu, Open_Inventory the inventory,
+// Open_Recipes the recipe browser, Open_Journal the journal,
+// Open_Power_Overview the power overview, Open_Statistics the statistics,
+// Open_Technologies the technology screen and Open_Map the map; the
+// panels and the pause menu push theirs. Replace: on a window of the
+// carousel (in_carousel) the window step puts the previous or the next
+// window in its place, ahead of the closes, so the keyboard's E
+// (Open_Inventory and Window_Next) steps there. Pop one: Back and Pause,
+// a window's own key, and Open_Inventory on the inventory, the recipe
+// browser, the technology screen and a machine panel, except on the
+// gamepad, where the same X press is the context action. The first press
+// closes an open info panel alone. While the world falls (only_pause,
+// 0200) Pause is the one binding that opens a screen from the world.
+handle_screen_keys :: proc(state: ^Ui_State, only_pause := false, in_carousel := false) {
 	input := state.input
 	if state.screens.count == 0 {
 		if only_pause {
@@ -211,6 +211,11 @@ handle_screen_keys :: proc(state: ^Ui_State, only_pause := false) {
 	top := top_screen(state.screens)
 	// The title is the bottom screen while no world is played.
 	if top == .Title {
+		return
+	}
+	steps := int(input.window_next) - int(input.window_previous)
+	if in_carousel && steps != 0 {
+		replace_top_screen(&state.screens, step_window_carousel(top, steps))
 		return
 	}
 	closes_inventory := (top == .Inventory || top == .Machine || top == .Recipes || top == .Technologies) && input.open_inventory && !input.context_action
@@ -299,7 +304,7 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// and the screen change land in the same frame. While the keyboard is
 	// open, Back and Pause belong to it.
 	if !typing {
-		handle_screen_keys(state, screen_context.arrival_falling)
+		handle_screen_keys(state, screen_context.arrival_falling, window_in_carousel(top_screen(state.screens), screen_context.views))
 	}
 	if screen_context.waiting_for_player {
 		keep_waiting_player_screens(&state.screens)

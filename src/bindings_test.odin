@@ -385,7 +385,7 @@ menu_actions_of :: proc(bindings: []Binding, device: Binding_Device, control: st
 
 // Work item 0276: no control carries two meanings in menus, but X (the
 // gamepad's Open_Inventory and Context_Action, handle_screen_keys) and
-// the keyboard's E (Open_Inventory and Window_Next, inventory_tabs),
+// the keyboard's E (Open_Inventory and Window_Next, handle_screen_keys),
 // whose screens decide between the two. No control of the window step
 // or a confirm modifier is Confirm too.
 @(test)

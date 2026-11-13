@@ -232,13 +232,14 @@ participant_group_index :: proc(groups: []Participant_Group, machine: Machine_Id
 
 // Opened with Open_Power_Overview or from the pause menu, and does not
 // pause: the network list on the left, the focused network on the right.
+// The window carousel's seventh window (0385).
 power_overview_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_panel_area(state)
 	panel := fitted_panel(area, POWER_OVERVIEW_WIDTH, panel_height(1, f32(POWER_DETAIL_ROWS) * UI_LINE_HEIGHT))
 	ui_panel_begin(state, "power", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("power_overview_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
 	cut_top(&content, UI_GAP)
 	power_overview_body(state, content, screen_context)
 	ui_panel_end(state)
@@ -246,8 +247,7 @@ power_overview_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
-// The network list and the focused network's detail, also the Power tab
-// of the statistics screen.
+// The network list and the focused network's detail.
 power_overview_body :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
 	networks := &screen_context.world.entities.electric_networks

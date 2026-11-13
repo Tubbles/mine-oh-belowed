@@ -1220,9 +1220,6 @@ splitter_side_left = "Left"
 splitter_side_right = "Right"
 
 // Recipe browser and hand crafting (data/recipes.sjson)
-inventory_tab_inventory = "Inventory"
-inventory_tab_recipes = "Recipes"
-inventory_tab_technologies = "Research"
 recipes_title = "Recipes"
 recipes_can_craft = "Can craft now"
 recipes_tags = "Tags"
@@ -1758,9 +1755,8 @@ mc_self_sufficient = "Head office reviews the outpost when the manifests reach a
 mc_self_sufficient_done = "The venture declares the outpost self sufficient and thanks you for your service, contractor. The contracts continue."
 
 // Production statistics and the bottleneck overlay (work item 0028).
-statistics_title = "Production statistics"
+statistics_title = "Statistics"
 statistics_tab_production = "Production"
-statistics_tab_power = "Power"
 statistics_window = "Window"
 statistics_window_1 = "1 minute"
 statistics_window_10 = "10 minutes"

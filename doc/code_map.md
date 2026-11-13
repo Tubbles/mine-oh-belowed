@@ -102,6 +102,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `bindings.odin`, `ui_input.odin`: the bindings file and `Input_Bindings`; `make_ui_input`, device detection.
   - `text_input.odin`, `ui_keyboard.odin`: `Text_Field` and `Keyboard_State`; the text field widget and the game's keyboard.
   - `ui_screens.odin`: `Frame_Request` (what a screen asks of the loop), `Screen_Context` and `Developer_Context`, `handle_screen_keys`, `run_screens`, the pause menu, settings.
+  - `ui_window_carousel.odin`: the window carousel's order, step and title row (0385).
   - `ui_title.odin`, `ui_world_setup.odin`: `Title_State`, load and delete; the new world values.
   - `ui_multiplayer.odin`: the Multiplayer screen (0188), `Multiplayer_State` and its list of `Lan_Game` (`add_lan_answer`, `prune_lan_games`), the join request.
   - `ui_tech_demo.odin`: the Tech demos list (0302) and the Tech demo screen (0291), `Tech_Demo_Setup` and its rows' steps, the tech demo request, the bare flag's screens (`push_tech_demo_menu`).

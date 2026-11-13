@@ -20,9 +20,11 @@
 // One control may carry several actions, a world and a menu meaning: A is
 // Jump and Confirm, X is Open_Inventory and Interact in the world and
 // Context_Action in menus (work item 0233). The keyboard's E is
-// Open_Inventory and Window_Next, and on the inventory's strip the
-// Open_Inventory press wins (inventory_tabs). Open_Inventory opens the
-// targeted machine's panel instead of the inventory, and on a target
+// Open_Inventory and Window_Next: on a window of the carousel it steps
+// to the next window, on a machine panel, the recipe picker and the
+// station browser it closes them (handle_screen_keys, 0385).
+// Open_Inventory opens the targeted machine's panel instead of the
+// inventory, and on a target
 // Interact acts on (a power switch, a schematic crate) a press of both is
 // Interact's alone (route_open_inventory_press in src/input_actions.odin).
 // A configuration file may list bindings in the same shape under

@@ -2,60 +2,6 @@ package game
 
 import "core:testing"
 
-// The triggers (the window step, 0276) step the inventory tab strip from
-// each of its screens, wrapping, by replacing the top screen (work item
-// 0094). The tab step is left to the screen's own tabs.
-@(test)
-test_the_triggers_step_the_inventory_tab_strip :: proc(t: ^testing.T) {
-	strip := Ui_Rectangle{0, 0, 600, 56}
-	Step :: struct {
-		from, next, previous: Screen,
-	}
-	steps := [?]Step {
-		{.Inventory, .Recipes, .Technologies},
-		{.Recipes, .Technologies, .Inventory},
-		{.Technologies, .Inventory, .Recipes},
-	}
-	for step in steps {
-		for input in ([2]Ui_Input{{window_next = true}, {window_previous = true}}) {
-			state: Ui_State
-			// Opened from a lab's panel: Back returns there.
-			push_screen(&state.screens, .Machine)
-			push_screen(&state.screens, step.from)
-			test_ui_frame(&state, input)
-			inventory_tabs(&state, strip)
-			testing.expect_value(t, top_screen(state.screens), input.window_next ? step.next : step.previous)
-			testing.expect_value(t, state.screens.count, 2)
-			testing.expect_value(t, state.screens.screens[0], Screen.Machine)
-			// A frame without a trigger keeps the tab, and so does the tab step.
-			test_ui_frame(&state, {})
-			inventory_tabs(&state, strip)
-			testing.expect_value(t, top_screen(state.screens), input.window_next ? step.next : step.previous)
-			test_ui_frame(&state, {tab_next = true})
-			inventory_tabs(&state, strip)
-			testing.expect_value(t, top_screen(state.screens), input.window_next ? step.next : step.previous)
-			destroy_ui_state(&state)
-		}
-	}
-}
-
-// On the keyboard E is Open_Inventory and Window_Next: it closes the
-// strip from any of its screens instead of stepping.
-@(test)
-test_open_inventory_closes_the_strip :: proc(t: ^testing.T) {
-	strip := Ui_Rectangle{0, 0, 600, 56}
-	for screen in inventory_tab_screens {
-		state: Ui_State
-		push_screen(&state.screens, screen)
-		test_ui_frame(&state, {open_inventory = true, window_next = true})
-		inventory_tabs(&state, strip)
-		testing.expect_value(t, top_screen(state.screens), screen)
-		handle_screen_keys(&state)
-		testing.expect_value(t, state.screens.count, 0)
-		destroy_ui_state(&state)
-	}
-}
-
 // A frame in the world forgets the focus of the last screen; a screen
 // open keeps it.
 @(test)

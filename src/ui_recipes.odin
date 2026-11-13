@@ -4,8 +4,8 @@ import "core:fmt"
 import "core:slice"
 import "core:strings"
 
-// The recipe browser (DESIGN.md, User interface): the inventory tab strip
-// on the triggers (ui_inventory.odin), the category tabs as a focusable
+// The recipe browser (DESIGN.md, User interface): the window's title row
+// (ui_window_carousel.odin), the category tabs as a focusable
 // row stepped with left and right and by the tab step (the right stick's
 // flick, `[` and `]`), the "can craft now" and "unlocked only"
 // toggles and the tag filter on the left, the
@@ -22,8 +22,8 @@ import "core:strings"
 //
 // In the selection mode, opened from an assembler's panel, the list holds
 // the available recipes an assembler makes, and Confirm sets the focused
-// one on the assembler and goes back to its panel. It shows no inventory
-// tab strip.
+// one on the assembler and goes back to its panel. It lies outside the
+// window carousel and shows no title row.
 
 RECIPE_FILTER_COLUMN_WIDTH :: 380
 RECIPE_LIST_COLUMN_WIDTH :: 560
@@ -663,15 +663,15 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "recipes", panel)
 	content := inset(panel, UI_PADDING)
+	// The picker and the station mode belong to a machine's panel, outside
+	// the window carousel, and keep their own title.
 	if !selecting && !at_station {
-		inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
+		ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
 		cut_top(&content, UI_GAP)
+	} else {
+		title := at_station ? text(station.name_key) : text("recipes_choose_title")
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), title, UI_HEADING_TEXT_SIZE, .Centre)
 	}
-	title := text(selecting ? "recipes_choose_title" : "recipes_title")
-	if at_station {
-		title = text(station.name_key)
-	}
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), title, UI_HEADING_TEXT_SIZE, .Centre)
 	shown := at_station ? station_categories(screen_context.recipes, station.recipe_maker) : ~Recipe_Categories{}
 	recipe_category_tabs(state, cut_top(&content, UI_ROW_HEIGHT), browser, shown)
 	cut_top(&content, UI_GAP)
@@ -726,7 +726,7 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	apply_recipe_craft_input(state, screen_context, activated, selected_shown, button)
 	if !touch {
-		recipe_glyph_bar(state, !at_station)
+		recipe_glyph_bar(state)
 	}
 }
 
@@ -744,20 +744,15 @@ recipe_selection_glyph_bar :: proc(state: ^Ui_State) {
 }
 
 // The modifiers' glyphs go before their Confirm, unlabelled, so the bar
-// drops each pair together. strip: the inventory's tab strip shows, so
-// the tabs hint names the window step. Without it (a station) it names
-// the categories' tab step.
-recipe_glyph_bar :: proc(state: ^Ui_State, strip: bool) {
+// drops each pair together. The tabs hint names the categories' tab step;
+// the window step's glyphs sit in the title row (ui_window_title_row).
+recipe_glyph_bar :: proc(state: ^Ui_State) {
 	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 	append(&hints, Glyph_Hint{.Confirm, text("hint_craft")})
 	append(&hints, Glyph_Hint{.Five, ""}, Glyph_Hint{.Confirm, text("hint_craft_five")})
 	append(&hints, Glyph_Hint{.Most, ""}, Glyph_Hint{.Confirm, text("hint_craft_most")})
 	append(&hints, Glyph_Hint{.Context_Action, text("hint_cancel_craft")})
-	if strip {
-		append(&hints, Glyph_Hint{.Window_Previous, ""}, Glyph_Hint{.Window_Next, text("hint_tabs")})
-	} else {
-		append(&hints, Glyph_Hint{.Tabs, text("hint_tabs")})
-	}
+	append(&hints, Glyph_Hint{.Tabs, text("hint_tabs")})
 	append(&hints, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
 }

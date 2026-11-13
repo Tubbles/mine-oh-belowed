@@ -355,7 +355,7 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "journal", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
 	if len(screen_context.quests.chapters) == 0 {
 		ui_panel_end(state)
 		journal_glyph_bar(state)

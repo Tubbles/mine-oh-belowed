@@ -1,6 +1,6 @@
 # 0385: The window carousel
 
-Status: implementing (2026-11-13)
+Status: verified (2026-11-13)
 
 Split from 0276 on 2026-11-13: 0276 lands the screens layer's input (the actions, the modifiers, the tab step, the triggers over the old inventory strip), this item turns the triggers' step into a carousel of every window, after Techtonica (user, 2026-10-05, [inspiration.md](../inspiration.md), Techtonica's controls and screens), with the user's answers of 2026-11-13 on B and on Power.
 
@@ -141,3 +141,12 @@ Changed:
 ### Decisions (2026-11-13)
 
 User: B pops one level; Power is the seventh window. Main agent: the title row's tap arrows; no sound on a step. Design, approved: the inventory binding always opens the inventory; `statistics_title`. Main agent, at the approval: Statistics' Power tab goes (one place for the view; "Statistics keeps its tabs as they are" in the design's brief was the main agent's sentence, not the user's). The keyboard's E steps on a window and no longer closes the inventory, Esc and Backspace do; named to the user.
+
+### Deviations (implementation, 2026-11-13)
+
+- 0276 landed as its specification named everything this item uses (`Ui_Input.window_previous` and `window_next`, `Glyph_Button.Window_Previous` and `Window_Next`, `inventory_tabs`); its fix round's changes (`make_ui_input`'s flick arming, the modifier cleared off the slots) touch nothing here.
+- `window_carousel_index` (the screen's place, -1 outside) serves `step_window_carousel` and `window_in_carousel`; the title row draws through `draw_window_step_glyph` and `window_title_arrow`, the arrow icon inset by `UI_GAP` in its square.
+- Research keeps one `UI_GAP` under the title row (the strip, its gap, the label and its gap became the row and a gap).
+- `test_pause_menu_and_initial_focus` checks the pause menu against `recipes_title` and `technologies_title` (the same texts) in place of the removed strip keys.
+- The carousel's tests share helpers in `ui_window_carousel_test.odin` (`carousel_test_state`, `expect_screens`, `audit_panel_of_kind`, `draw_list_icon` and two finders); the title row test presses the right arrow with the mouse and on touch.
+- `doc/audit/ui.md`, refactor 3: its guard `test_open_inventory_closes_the_strip` became `test_the_keyboard_window_step_wins_over_open_inventory` (`tools/check_docs.py` names removed tests).

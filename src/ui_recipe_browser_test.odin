@@ -258,8 +258,8 @@ audit_crafting_bench :: proc(audit: ^Ui_Audit) -> Entity_Handle {
 	return NO_ENTITY
 }
 
-// The recipe browser open on the plank recipe's focused row, from the
-// inventory's strip or (station) a crafting station's panel, with the
+// The recipe browser open on the plank recipe's focused row, as a window
+// of the carousel or (station) a crafting station's panel, with the
 // inventory holding logs and nothing queued. Returns the row's id.
 open_recipe_browser_on_plank :: proc(audit: ^Ui_Audit, state: ^Ui_State, station: Entity_Handle, logs: u16) -> Ui_Id {
 	player := &audit.simulation.players[0]
@@ -395,7 +395,7 @@ test_modifiers_where_five_and_most_mean_nothing :: proc(t: ^testing.T) {
 
 // Work item 0276: the tab step (the right stick's flick, `[` and `]`)
 // steps the recipe categories wherever the focus is and drops the tags,
-// with the inventory's strip and in the picker. The window step leaves
+// as a window of the carousel and in the picker. The window step leaves
 // the picker's screen and category alone.
 @(test)
 test_recipe_categories_follow_the_tab_step :: proc(t: ^testing.T) {

@@ -3,12 +3,12 @@ package game
 import "core:fmt"
 
 // The production statistics screen (work item 0028), opened with
-// Open_Statistics or from the pause menu; it does not pause. Three tabs:
+// Open_Statistics or from the pause menu; it does not pause. Two tabs:
 // Production (the window choice and the item list sorted by produced over
 // the window on the left, the fluids below the items in litres per minute,
-// the focused row's detail on the right), Power (the power overview's
-// body) and Shipments (ui_launch_pad.odin). The pure parts are in
-// production_statistics.odin.
+// the focused row's detail on the right) and Shipments
+// (ui_launch_pad.odin). The power overview is the window carousel's next
+// window (0385). The pure parts are in production_statistics.odin.
 
 STATISTICS_LIST_COLUMN_WIDTH :: 900
 // The list column's most share of the panel on a narrow screen.
@@ -209,16 +209,15 @@ statistics_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "statistics", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("statistics_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
 	cut_top(&content, UI_GAP)
-	tab_labels := [?]string{text("statistics_tab_production"), text("statistics_tab_power"), text("statistics_tab_shipments")}
+	// The power overview is the carousel's next window (0385), not a tab.
+	tab_labels := [?]string{text("statistics_tab_production"), text("statistics_tab_shipments")}
 	tab := ui_tabs(state, cut_top(&content, UI_ROW_HEIGHT), "statistics_tabs", tab_labels[:])
 	cut_top(&content, UI_GAP)
 	switch tab {
 	case 0:
 		production_tab(state, content, screen_context)
-	case 1:
-		power_overview_body(state, content, screen_context)
 	case:
 		shipments_tab(state, content, screen_context)
 	}

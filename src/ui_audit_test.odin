@@ -1113,7 +1113,9 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 		audit_case(audit, {name = fmt.tprintf("journal tab %d", tab), screens = {.Journal}, tab_next = tab, walk_focus = true})
 	}
 	audit_every_note(audit)
-	for tab in 0 ..< 3 {
+	// Production and Shipments; the power overview, Statistics' Power tab
+	// until 0385, is the "power" case.
+	for tab in 0 ..< 2 {
 		audit_case(audit, {name = fmt.tprintf("statistics tab %d", tab), screens = {.Statistics}, tab_next = tab, walk_focus = true})
 	}
 	audit_case(audit, {name = "power", screens = {.Power}, walk_focus = true})
@@ -1156,25 +1158,14 @@ test_every_screen_stays_inside_the_screen :: proc(t: ^testing.T) {
 	testing.expectf(t, audit.failures == 0, "%d UI bounds problems", audit.failures)
 }
 
-// The screens of work item 0094 with the shipped content: the strip on
-// the three screens and none on the recipe picker, the pause menu without
-// Recipes and Research, and the inventory and a machine panel opening on
-// the selected hotbar slot.
+// The screens of work item 0094 with the shipped content: the window step
+// changes neither the recipe picker nor its category, the pause menu has
+// no Recipes and Research rows, and the inventory and a machine panel
+// open on the selected hotbar slot.
 @(test)
-test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
+test_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
-	for screen, index in inventory_tab_screens {
-		state := Ui_State{theme = audit.theme}
-		push_screen(&state.screens, screen)
-		screen_test_frame(audit, &state, {window_next = true})
-		next := inventory_tab_screens[(index + 1) % len(inventory_tab_screens)]
-		testing.expect_value(t, top_screen(state.screens), next)
-		testing.expect_value(t, state.screens.count, 1)
-		destroy_ui_state(&state)
-	}
-	// The picker: no strip, and the window step changes neither the screen
-	// nor the category.
 	simulation := &audit.simulation
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if !assembler.alive || audit.content.machines.machines[assembler.machine].recipe_choice == .Fixed {
@@ -1190,7 +1181,6 @@ test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 		testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
 		testing.expect_value(t, state.screens.count, 2)
 		testing.expect_value(t, audit.views.recipe_browser.filter.category, category)
-		testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_tab_technologies")))
 		destroy_ui_state(&state)
 		break
 	}
@@ -1198,8 +1188,8 @@ test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 	push_screen(&pause.screens, .Pause)
 	screen_test_frame(audit, &pause, {})
 	testing.expect(t, draw_list_has_text(pause.draw_list[:], text("pause_journal")))
-	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("inventory_tab_recipes")))
-	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("inventory_tab_technologies")))
+	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("recipes_title")))
+	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("technologies_title")))
 	destroy_ui_state(&pause)
 	player := &simulation.players[0]
 	player.selected_hotbar_slot = 3

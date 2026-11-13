@@ -1244,8 +1244,8 @@ pop_screen :: proc(stack: ^Screen_Stack) {
 	stack.count = max(stack.count - 1, 0)
 }
 
-// Swaps the top screen for another (the inventory tab strip), so Back
-// still returns to what was under it.
+// Swaps the top screen for another (the window carousel's step, 0385),
+// so Back still returns to what was under it.
 replace_top_screen :: proc(stack: ^Screen_Stack, screen: Screen) {
 	pop_screen(stack)
 	push_screen(stack, screen)

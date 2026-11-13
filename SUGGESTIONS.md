@@ -476,3 +476,9 @@ The user decided the four forks: the player becomes a machine and Mission Contro
 - A vessel part record with both store and draw figures, or with supply and no storage, is taken as a battery only or as nothing. Data validation could refuse those shapes.
 - The docking connector's one fluid port has the power port's problem for pipes; 0356 will need a second.
 - No UI audit case shows a battery in the overview: the audit's site is a block world, which holds no vessel parts.
+
+## Suggestions from the window carousel (0385, 2026-11-13)
+
+- `Ui_Icon.Inventory`, `.Recipes` and `.Technologies` have no caller left but the theme test. The title row could show the window's icon beside its name, or the icons could go.
+- The keyboard's E no longer closes the inventory, it steps to the next window. If the toggle is missed, the step could move to other keys and E go back to closing.
+- At 720p the inventory's glyph bar draws over the HUD's hotbar (seen in the captures, older than this item).

@@ -74,8 +74,8 @@ Action :: enum u8 {
 	Tab_Next,
 	Info_Panel,
 	Context_Action,
-	// The triggers (or Q and E) in menus: the previous and the next window,
-	// wrapping. Until 0385 they step the inventory's tab strip (0276).
+	// The triggers (or Q and E) in menus: the previous and the next window
+	// of the carousel, wrapping (0276, 0385, ui_window_carousel.odin).
 	Window_Previous,
 	Window_Next,
 	// Held with Confirm (R1 or Left Control): five crafts, on a slot the

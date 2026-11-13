@@ -7,7 +7,8 @@ import "core:slice"
 // queued technology and its progress on the left with the filter toggle,
 // the technologies sorted by name in the middle with the letter wheel,
 // and the focused one's status, cost, description, prerequisites and
-// unlocks on the right, under the inventory tab strip (ui_inventory.odin).
+// unlocks on the right, under the window's title row
+// (ui_window_carousel.odin).
 // Confirm queues the focused technology when it is available, replacing
 // the queued one. On touch a tap selects a technology and the touch row's
 // Research queues the selected one (0137). It does not pause.
@@ -194,9 +195,7 @@ technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "technologies", panel)
 	content := inset(panel, UI_PADDING)
-	inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
-	cut_top(&content, UI_GAP)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_window_title_row(state, cut_top(&content, UI_ROW_HEIGHT))
 	cut_top(&content, UI_GAP)
 	status_width, list_width := three_column_widths(content, TECHNOLOGY_STATUS_COLUMN_WIDTH, TECHNOLOGY_LIST_COLUMN_WIDTH)
 	technology_status_column(state, cut_left(&content, status_width), screen_context)
@@ -230,7 +229,7 @@ technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		queue_focused_research(state, screen_context, activated)
 	}
 	if !touch {
-		hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Window_Previous, ""}, {.Window_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
+		hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Back, text("hint_close")}}
 		ui_glyph_bar(state, hints[:])
 	}
 }
