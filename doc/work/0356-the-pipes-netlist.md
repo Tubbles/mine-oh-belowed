@@ -1,6 +1,6 @@
 # 0356: The pipes' netlist
 
-Status: designed (2026-11-11)
+Status: implementing (2026-11-13)
 
 The user (2026-11-11): "we need to have a netlist based simulation, same for the fluids as well, no gravity". Today pipes carry liquids and gases in one network model in which liquids run downhill for free and need pumps to climb (`doc/fluids.md`). The world's water (lakes, the sea, streams, the water bodies) is the terrain's and is not this item.
 
@@ -187,3 +187,8 @@ Elsewhere:
 6. Question 4: the electric pump's rate accumulates credits in this item, since the pump is rewritten here.
 7. Question 5: agreed.
 8. `DESIGN.md`'s pipes on poles and `doc/architecture.md` line 145 are corrected in this item's docs.
+
+### Decisions (main agent, 2026-11-13, at the start)
+
+1. Started on `main` of 2026-11-13, two days after the design: `src/netlist/solve.odin` is 0373's pool now (0355's `bound_flows_by_levels` plan and `add_clamped_response` are gone), stores exist in play (0383's batteries), and power runs on cables (0368). Decision 7's reuse holds for the interface (`Edge`, `Topology`, `build_topology`, `Node_Input`, `Node_Output`, `solve`); where this specification names something inside the solve that no longer exists, the implementer follows `main` and names it as a deviation.
+2. The top-up (decision 6) is added beside the solve's phases and changes nothing inside 0373's pool or the repair, which 0390 and 0389 are about to change in the same file.
